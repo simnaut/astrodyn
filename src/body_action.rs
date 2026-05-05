@@ -115,6 +115,7 @@
 //! `Interaction` reads them.
 
 use std::any::TypeId;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use bevy::ecs::message::MessageWriter;
@@ -125,6 +126,51 @@ use crate::components::{
     Abm4StateC, DynamicsConfigC, GaussJacksonStateC, MassPropertiesC, RotationalStateC,
     TranslationalStateC,
 };
+
+/// Set of planet `TypeId`s for which a per-planet body-action pipeline
+/// (`BodyActionsR<P>` queue + `body_action_intake_system::<P>` +
+/// `body_action_system::<P>`) has been registered with the Bevy `App`.
+///
+/// `crate::JeodPlugin::build` inserts `TypeId::of::<jeod_sim::Earth>()`;
+/// `crate::register_planet_systems::<P>` inserts `TypeId::of::<P>()`
+/// when wiring an additional planet pipeline. The
+/// [`BodyActionEvent::Add`] writer surfaces — both
+/// [`BodyActionCommandsExt::add_body_action_for::<P>`] and the
+/// post-intake [`body_action_unregistered_planet_fence_system`] —
+/// consult this resource to refuse a planet-tagged add whose intake
+/// pipeline isn't wired. Without the guard, an `add_for::<Mars>`
+/// against a body in an `App` that never called
+/// `register_planet_systems::<Mars>` would land in the unified
+/// `Messages<BodyActionEvent>` buffer, be skipped by every existing
+/// per-planet intake (TypeId mismatch), and silently age out of the
+/// double-buffer with no observable effect — a Fail-Loudly violation.
+#[derive(Resource, Debug, Default)]
+pub struct RegisteredPlanetsR {
+    pub(crate) planets: HashSet<TypeId>,
+}
+
+impl RegisteredPlanetsR {
+    /// Record that planet `P`'s body-action pipeline has been wired.
+    /// Called by `register_planet_systems::<P>` (and by
+    /// `JeodPlugin::build` for Earth).
+    #[inline]
+    pub fn register<P: Planet>(&mut self) {
+        self.planets.insert(TypeId::of::<P>());
+    }
+
+    /// `true` iff a per-planet body-action pipeline for `P` has been
+    /// registered.
+    #[inline]
+    pub fn contains<P: Planet>(&self) -> bool {
+        self.planets.contains(&TypeId::of::<P>())
+    }
+
+    /// `true` iff the supplied `TypeId` matches a registered planet.
+    #[inline]
+    pub fn contains_type_id(&self, type_id: TypeId) -> bool {
+        self.planets.contains(&type_id)
+    }
+}
 
 /// One pending body action awaiting execution.
 ///
@@ -384,6 +430,69 @@ pub fn body_action_intake_system<P: Planet>(
                     .pending
                     .retain(|act| act.name.as_deref() != Some(name.as_str()));
             }
+        }
+    }
+}
+
+/// Fail-loud fence that catches `BodyActionEvent::Add` messages
+/// whose `planet` `TypeId` does not match any registered per-planet
+/// body-action pipeline.
+///
+/// The per-planet [`body_action_intake_system::<P>`] each filter their
+/// own `Local<MessageCursor<BodyActionEvent>>` and silently `continue`
+/// past `Add` entries whose `planet` field doesn't match `<P>`. With
+/// no fence, an `add_for::<Mars>` issued in an `App` that never called
+/// [`crate::register_planet_systems::<jeod_sim::Mars>`] would be
+/// skipped by every existing intake and age out of the message
+/// double-buffer with no observable effect — a Fail-Loudly violation
+/// (the action targets a body, but the pipeline that should mutate
+/// that body's `<Mars>` storage was never wired).
+///
+/// This fence reads the same shared message buffer through its own
+/// `Local<MessageCursor>` and panics on any `Add` whose `planet`
+/// `TypeId` is not in [`RegisteredPlanetsR`]. Pinned to run after
+/// every per-planet intake (so the well-formed adds have already
+/// been claimed) but before any `body_action_system::<P>` apply pass
+/// (so the panic precedes the silent state mutation that the
+/// downstream apply systems would *not* perform on the unregistered
+/// planet).
+///
+/// Pairs with the call-site assertion in
+/// [`BodyActionCommandsExt::add_body_action_for::<P>`]: the
+/// `Commands` path catches the misconfiguration at queue-flush time,
+/// the fence catches the direct-`MessageWriter` path at intake time.
+/// Both diagnostics name the unregistered planet via
+/// [`std::any::type_name`] and point to
+/// [`crate::register_planet_systems`] as the fix.
+pub fn body_action_unregistered_planet_fence_system(
+    mut messages: bevy::ecs::message::MessageReader<BodyActionEvent>,
+    registered: Res<RegisteredPlanetsR>,
+) {
+    for msg in messages.read() {
+        if let BodyActionEvent::Add {
+            entity,
+            name,
+            planet,
+            ..
+        } = msg
+        {
+            assert!(
+                registered.contains_type_id(*planet),
+                "BodyActionEvent::Add for planet TypeId {planet:?} against entity \
+                 {entity:?} (action_name={name:?}) but no per-planet body-action \
+                 pipeline is registered for that planet — the unified \
+                 `Messages<BodyActionEvent>` buffer holds the entry, but no \
+                 `body_action_intake_system::<P>` will claim it (every existing \
+                 intake will skip it on `TypeId` mismatch) and the message will \
+                 age out of the double-buffer with no observable effect. \
+                 Fix: call `bevy_jeod::register_planet_systems::<P>(&mut app)` \
+                 during `App` setup for the planet whose body this action targets, \
+                 before writing `BodyActionEvent::add_for::<P>` (or use \
+                 `BodyActionCommandsExt::add_body_action_for::<P>`, which performs \
+                 the same registration check at the call site). `JeodPlugin::build` \
+                 pre-registers `jeod_sim::Earth`; additional planets must be \
+                 registered explicitly.",
+            );
         }
     }
 }
@@ -679,6 +788,28 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
     ) {
         let name = name.map(|n| n.to_string());
         self.queue(move |world: &mut World| {
+            // Fail loudly when planet `P`'s pipeline isn't registered:
+            // the matching `body_action_intake_system::<P>` never runs
+            // and the message would otherwise age out of the
+            // double-buffer with no observable effect. The diagnostic
+            // names the unregistered planet, the subject entity, and
+            // the API call to wire it up.
+            if let Some(registered) = world.get_resource::<RegisteredPlanetsR>() {
+                assert!(
+                    registered.contains::<P>(),
+                    "BodyAction queued for planet `{planet}` against entity {entity:?} \
+                     (action_name={name:?}) but no per-planet body-action pipeline is \
+                     registered for that planet. The unified `Messages<BodyActionEvent>` \
+                     buffer would never be drained for this `<P>` and the action would \
+                     silently age out of the double-buffer. \
+                     Fix: call `bevy_jeod::register_planet_systems::<{planet}>(&mut app)` \
+                     during `App` setup (after `app.add_plugins(JeodPlugin)`), before \
+                     queuing actions for `{planet}`-integrated bodies. \
+                     `JeodPlugin::build` pre-registers `jeod_sim::Earth`; additional \
+                     planets must be registered explicitly.",
+                    planet = std::any::type_name::<P>(),
+                );
+            }
             let mut writer = world.resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>();
             writer.write(BodyActionEvent::Add {
                 entity,

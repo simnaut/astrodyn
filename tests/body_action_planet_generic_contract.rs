@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    register_planet_systems, BodyActionEvent, JeodPlugin, MassPropertiesC, PlanetBundle,
-    SourceInertialPositionC, TranslationalStateC, VehicleConfigBevyExt,
+    register_planet_systems, BodyActionCommandsExt, BodyActionEvent, JeodPlugin, MassPropertiesC,
+    PlanetBundle, SourceInertialPositionC, TranslationalStateC, VehicleConfigBevyExt,
 };
 use glam::DVec3;
 use jeod_sim::{
@@ -386,4 +386,317 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
          Observed drift {earth_drift} m from the replacement state, \
          post-state {earth_post:?}",
     );
+}
+
+#[test]
+fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
+    // Cross-planet `Remove` contract: a `BodyActionEvent::Remove`
+    // sent from code that holds no `<P>` witness must reach every
+    // per-planet `BodyActionsR<P>` queue and drop matching entries.
+    // The fan-out is the implementation of the docstring on
+    // `BodyActionEvent::Remove` ("a name-based remove from
+    // Earth-orbit code reaches a Mars-tagged add on the same name
+    // even when the calling system holds no `<P>` witness").
+    //
+    // This test:
+    //   - registers Earth (via `JeodPlugin`) and Mars (via
+    //     `register_planet_systems::<Mars>`),
+    //   - spawns one Earth body and one Mars body, each with a
+    //     queued `Add` whose name shares a unique tag for the Mars
+    //     body and a separate one for the Earth body,
+    //   - sends a planet-agnostic `Remove` for the Mars body's tag,
+    //   - ticks once, then asserts:
+    //     (a) the Mars body's translational state is the spawn state
+    //         (the queued Mars `Add` was dropped before `body_action_system::<Mars>`
+    //         ran), and
+    //     (b) the Earth body's translational state reflects the
+    //         Earth `Add`'s replacement (the Remove targeted only the
+    //         Mars-named action).
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    register_planet_systems::<jeod_sim::Mars>(&mut app);
+
+    let earth_planet = app
+        .world_mut()
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(
+            "Earth",
+            &jeod_sim::EARTH,
+        ))
+        .id();
+    let mars_planet = app
+        .world_mut()
+        .spawn(PlanetBundle::<jeod_sim::Mars>::point_mass("Mars", &MARS))
+        .id();
+
+    let cfg_mars = VehicleBuilder::new()
+        .with_state(body_state_initial())
+        .sixdof(initial_rot(), vehicle_mass())
+        .rk4()
+        .gravity(GravityControl::new_spherical(0_usize, false))
+        .build();
+    let cfg_earth = VehicleBuilder::new()
+        .with_state(TranslationalState {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        })
+        .sixdof(initial_rot(), vehicle_mass())
+        .rk4()
+        .gravity(GravityControl::new_spherical(0_usize, false))
+        .build();
+
+    let mars_body = {
+        let world = app.world_mut();
+        let mut commands_queue = world.commands();
+        let id = cfg_mars.spawn_bevy::<jeod_sim::Mars>(&mut commands_queue, &[mars_planet]);
+        world.flush();
+        id
+    };
+    let earth_body = {
+        let world = app.world_mut();
+        let mut commands_queue = world.commands();
+        let id = cfg_earth.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth_planet]);
+        world.flush();
+        id
+    };
+
+    // Earth replacement state — the post-tick Earth body should
+    // land near this (one DT of integration from this point).
+    let earth_replacement = TranslationalState {
+        position: DVec3::new(8_000_000.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 6500.0, 0.0),
+    };
+    // Mars replacement state — the Mars body must NOT land near
+    // this; the planet-agnostic Remove should drop the queued Mars
+    // Add before its apply pass runs.
+    let mars_replacement = body_state_replacement();
+
+    {
+        let mut messages = app
+            .world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>();
+        // Earth Add with one name.
+        messages.write(BodyActionEvent::add(
+            earth_body,
+            BodyAction::InitTrans {
+                state: earth_replacement,
+            },
+            Some("earth_only_init"),
+        ));
+        // Mars Add with a *different* name — the Remove targets
+        // only the Mars-named action.
+        messages.write(BodyActionEvent::add_for::<jeod_sim::Mars>(
+            mars_body,
+            BodyAction::InitTrans {
+                state: mars_replacement,
+            },
+            Some("mars_init_to_be_cancelled"),
+        ));
+        // Planet-agnostic Remove for the Mars-named action. The
+        // sender holds no `<P>` witness — this is the documented
+        // cross-planet contract under test.
+        messages.write(BodyActionEvent::remove("mars_init_to_be_cancelled"));
+    }
+
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(DT));
+    app.world_mut().run_schedule(FixedUpdate);
+
+    // (a) Mars body's queued action did NOT execute: its position
+    //     stays near the spawn-time `body_state_initial()` (one DT
+    //     of integration drift, well under 10 km), NOT near
+    //     `mars_replacement` (which is ~6.4 Mm away).
+    let mars_post = app
+        .world()
+        .entity(mars_body)
+        .get::<TranslationalStateC<jeod_sim::Mars>>()
+        .unwrap()
+        .0
+        .to_untyped();
+    let mars_drift_from_initial = (mars_post.position - body_state_initial().position).length();
+    assert!(
+        mars_drift_from_initial < 10_000.0,
+        "Planet-agnostic Remove must drop the Mars-tagged Add before \
+         `body_action_system::<Mars>` runs — Mars body should still be near \
+         its spawn-time position. Observed drift {mars_drift_from_initial} m, \
+         post-state {mars_post:?}",
+    );
+    let mars_dist_to_replacement = (mars_post.position - mars_replacement.position).length();
+    assert!(
+        mars_dist_to_replacement > 1_000_000.0,
+        "Mars body must NOT reflect the cancelled replacement state — \
+         observed only {mars_dist_to_replacement} m from the replacement, \
+         which would indicate the Remove failed to reach `BodyActionsR<Mars>`. \
+         Post-state {mars_post:?}",
+    );
+
+    // (b) Earth body's queued action DID execute: its post-tick
+    //     position is near `earth_replacement` (one DT of integration
+    //     drift).
+    let earth_post = app
+        .world()
+        .entity(earth_body)
+        .get::<TranslationalStateC<jeod_sim::Earth>>()
+        .unwrap()
+        .0
+        .to_untyped();
+    let earth_drift = (earth_post.position - earth_replacement.position).length();
+    assert!(
+        earth_drift < 10_000.0,
+        "Planet-agnostic Remove must NOT cancel a differently-named Earth Add — \
+         the Earth body should land near its replacement state. Observed drift \
+         {earth_drift} m from `earth_replacement`, post-state {earth_post:?}",
+    );
+}
+
+#[test]
+#[should_panic(expected = "no per-planet body-action pipeline is registered for that planet")]
+fn add_for_unregistered_planet_panics_with_named_diagnostic() {
+    // Concern 1 / Fail-Loudly: queuing a `BodyActionEvent::Add`
+    // tagged for a planet whose pipeline was never registered must
+    // panic with a diagnostic that names the planet (via
+    // `std::any::type_name::<P>()`) and points to
+    // `register_planet_systems::<P>` as the fix. Without the guard,
+    // the message would land in the unified `Messages<BodyActionEvent>`
+    // buffer, be skipped by every existing per-planet intake (TypeId
+    // mismatch), and silently age out of the double-buffer with no
+    // observable effect — the regression the deleted Earth-pinned
+    // `should_panic` test was guarding against.
+    //
+    // The mission here calls `JeodPlugin::build` (which registers
+    // Earth) and spawns a Mars body but *never* calls
+    // `register_planet_systems::<Mars>`. The `add_for::<Mars>`
+    // message must trip the
+    // `body_action_unregistered_planet_fence_system` panic — the
+    // direct-`MessageWriter` path (the `Commands` path has its own
+    // call-site assertion, exercised by a separate test).
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
+
+    let earth_planet = app
+        .world_mut()
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(
+            "Earth",
+            &jeod_sim::EARTH,
+        ))
+        .id();
+
+    // Spawn an Earth body so the App is otherwise well-formed —
+    // the Mars `Add` message is the only misconfiguration on this
+    // tick.
+    let cfg_earth = VehicleBuilder::new()
+        .with_state(TranslationalState {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        })
+        .sixdof(initial_rot(), vehicle_mass())
+        .rk4()
+        .gravity(GravityControl::new_spherical(0_usize, false))
+        .build();
+    let earth_body = {
+        let world = app.world_mut();
+        let mut commands_queue = world.commands();
+        let id = cfg_earth.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth_planet]);
+        world.flush();
+        id
+    };
+
+    // Direct-writer path: an `add_for::<Mars>` lands in the message
+    // buffer. The fence system, registered by `JeodPlugin::build`
+    // and chained between the per-planet intakes and apply passes,
+    // must observe it and panic.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>()
+        .write(BodyActionEvent::add_for::<jeod_sim::Mars>(
+            earth_body,
+            BodyAction::InitTrans {
+                state: body_state_replacement(),
+            },
+            Some("mars_init_unregistered"),
+        ));
+
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(DT));
+    app.world_mut().run_schedule(FixedUpdate);
+}
+
+#[test]
+#[should_panic(expected = "no per-planet body-action pipeline is registered for that planet")]
+fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
+    // Companion to `add_for_unregistered_planet_panics_with_named_diagnostic`:
+    // exercises the `Commands` path
+    // (`BodyActionCommandsExt::add_body_action_for::<P>`) instead of
+    // a direct `MessageWriter` write. The `Commands::queue` closure
+    // checks `RegisteredPlanetsR` at flush time and panics with the
+    // same diagnostic shape (named planet, named call-site fix). Two
+    // separate tests because the two surfaces panic at different
+    // sites — the direct-writer path is caught by the
+    // post-intake fence system, the `Commands` path is caught at
+    // queue-flush time, before the message ever reaches the buffer.
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
+
+    let earth_planet = app
+        .world_mut()
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(
+            "Earth",
+            &jeod_sim::EARTH,
+        ))
+        .id();
+    let cfg_earth = VehicleBuilder::new()
+        .with_state(TranslationalState {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        })
+        .sixdof(initial_rot(), vehicle_mass())
+        .rk4()
+        .gravity(GravityControl::new_spherical(0_usize, false))
+        .build();
+    let earth_body = {
+        let world = app.world_mut();
+        let mut commands_queue = world.commands();
+        let id = cfg_earth.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth_planet]);
+        world.flush();
+        id
+    };
+
+    // Queue a Mars action via the `Commands` extension. Bevy's
+    // `Commands::queue` runs the closure at the next flush; the
+    // closure consults `RegisteredPlanetsR`, finds Mars unregistered,
+    // and panics. We perform the queue + flush by spawning a
+    // `CommandQueue` directly (avoids the ZST-only restriction on
+    // `run_system_cached`).
+    {
+        use bevy::ecs::world::CommandQueue;
+        let mut queue = CommandQueue::default();
+        let world = app.world_mut();
+        {
+            let mut commands = bevy::ecs::system::Commands::new(&mut queue, world);
+            commands.add_body_action_for::<jeod_sim::Mars>(
+                earth_body,
+                BodyAction::InitTrans {
+                    state: body_state_replacement(),
+                },
+                Some("mars_init_via_commands"),
+            );
+        }
+        // Apply the queued commands: the deferred closure consults
+        // `RegisteredPlanetsR`, finds Mars unregistered, and panics
+        // before the message buffer is touched.
+        queue.apply(world);
+    }
+
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(DT));
+    app.world_mut().run_schedule(FixedUpdate);
 }

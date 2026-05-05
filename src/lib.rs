@@ -18,8 +18,9 @@ pub mod validation;
 pub mod wrench;
 
 pub use body_action::{
-    add_body_action_via, body_action_intake_system, body_action_system, BodyActionCommandsExt,
-    BodyActionEvent, BodyActionsR,
+    add_body_action_via, body_action_intake_system, body_action_system,
+    body_action_unregistered_planet_fence_system, BodyActionCommandsExt, BodyActionEvent,
+    BodyActionsR, RegisteredPlanetsR,
 };
 pub use bundles::*;
 pub use components::*;
@@ -244,6 +245,19 @@ impl Plugin for JeodPlugin {
         // additional planets call `register_planet_systems::<P>`.
         app.add_message::<body_action::BodyActionEvent>();
         app.init_resource::<body_action::BodyActionsR<jeod_sim::Earth>>();
+        // Track which planets have a per-planet body-action pipeline
+        // registered. Earth is wired below by `JeodPlugin::build`;
+        // additional planets call `register_planet_systems::<P>`,
+        // which inserts `TypeId::of::<P>()` into this resource. The
+        // `BodyActionEvent::Add` writer surfaces consult this set to
+        // refuse a planet-tagged add whose intake pipeline isn't
+        // wired, panicking with a diagnostic that names the
+        // unregistered planet rather than letting the message age out
+        // of the double-buffer silently (Fail-Loudly).
+        app.init_resource::<body_action::RegisteredPlanetsR>();
+        app.world_mut()
+            .resource_mut::<body_action::RegisteredPlanetsR>()
+            .register::<jeod_sim::Earth>();
 
         // ── Systems ──
         // Source-frame registration runs at Startup to spawn the ECS
@@ -595,6 +609,22 @@ impl Plugin for JeodPlugin {
                     .after(systems::sync_body_mass_point_ref_system)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
+                // Fail-loud fence on unregistered-planet adds. Runs
+                // after the Earth intake (so the well-formed Earth
+                // adds have already been claimed) and before any
+                // `body_action_system::<P>` apply pass; reads the
+                // shared `Messages<BodyActionEvent>` buffer through
+                // its own `Local<MessageCursor>` and panics on any
+                // `Add` whose `planet` `TypeId` is not registered in
+                // `RegisteredPlanetsR`. Wired here so single-planet
+                // (Earth-only) missions still get the guard with no
+                // explicit `register_planet_systems::<Earth>` call.
+                body_action::body_action_unregistered_planet_fence_system
+                    .after(JeodSet::TimeUpdate)
+                    .after(body_action::body_action_intake_system::<jeod_sim::Earth>)
+                    .before(body_action::body_action_system::<jeod_sim::Earth>)
+                    .before(systems::mass_update_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Strictly ordered before `mass_update_system` so a
                 // queued `BodyAction::InitMass` lands its `dirty=true`
                 // mass replacement *before* the per-tick recompute walks
@@ -609,6 +639,7 @@ impl Plugin for JeodPlugin {
                 body_action::body_action_system::<jeod_sim::Earth>
                     .after(JeodSet::TimeUpdate)
                     .after(body_action::body_action_intake_system::<jeod_sim::Earth>)
+                    .after(body_action::body_action_unregistered_planet_fence_system)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Pre-integration kinematic state propagation: walks
@@ -771,6 +802,19 @@ pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
     // (already wired by `JeodPlugin::build`) does not double-init the
     // queue.
     app.init_resource::<body_action::BodyActionsR<P>>();
+    // Track this planet in the registry consulted by the
+    // `BodyActionEvent::Add` writer surfaces (the
+    // `BodyActionCommandsExt::add_body_action_for::<P>` call-site
+    // assertion and the per-tick `body_action_unregistered_planet_fence_system`).
+    // Without this insertion, `add_for::<P>` would reach the apply
+    // pipeline but the fence would treat `P` as unregistered and
+    // panic — which is correct for missions that forgot
+    // `register_planet_systems::<P>`, but wrong for missions that
+    // *did* call it. `RegisteredPlanetsR::register` is idempotent
+    // (it's a `HashSet::insert`), so a redundant call is harmless.
+    app.world_mut()
+        .resource_mut::<body_action::RegisteredPlanetsR>()
+        .register::<P>();
     app.add_systems(
         Startup,
         (
@@ -851,11 +895,13 @@ pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
             body_action::body_action_intake_system::<P>
                 .after(JeodSet::TimeUpdate)
                 .after(systems::sync_body_mass_point_ref_system)
+                .before(body_action::body_action_unregistered_planet_fence_system)
                 .before(systems::mass_update_system)
                 .before(JeodSet::EphemerisUpdate),
             body_action::body_action_system::<P>
                 .after(JeodSet::TimeUpdate)
                 .after(body_action::body_action_intake_system::<P>)
+                .after(body_action::body_action_unregistered_planet_fence_system)
                 .before(systems::mass_update_system)
                 .before(JeodSet::EphemerisUpdate),
             frame_attach_system::frame_attach_system::<P>
