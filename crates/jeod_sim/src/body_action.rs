@@ -5,9 +5,8 @@
 //! [`models/dynamics/body_action/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/body_action/)
 //! family of `BodyAction` subclasses. The variants currently ported are
 //! `MassBodyInit`, `DynBodyInitTransState`, `DynBodyInitRotState`,
-//! `DynBodyInitOrbit`, `DynBodyInitLvlhTransState`, and
-//! `DynBodyInitNedTransState`. JEOD's `DynBodyInitLvlhRotState`
-//! (LVLH-relative rotational-state init) is not yet ported.
+//! `DynBodyInitOrbit`, `DynBodyInitLvlhTransState`,
+//! `DynBodyInitLvlhRotState`, and `DynBodyInitNedTransState`.
 //!
 //! The common JEOD pattern is:
 //!
@@ -32,9 +31,10 @@
 
 use glam::{DMat3, DVec3};
 
+pub use jeod_dynamics::body_init::LvlhAngularVelocityFrame;
 use jeod_dynamics::body_init::{
     init_from_lvlh, init_from_mean_anomaly, init_from_ned, init_from_orbital_elements,
-    init_from_time_periapsis,
+    init_from_time_periapsis, init_rot_from_lvlh,
 };
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_math::{GeodeticState, JeodQuat, OrbitalElements};
@@ -97,6 +97,37 @@ pub enum BodyAction {
         quaternion: JeodQuat,
         /// Angular velocity expressed in the body frame (rad/s).
         ang_vel_body: DVec3,
+    },
+
+    /// Replace the subject's rotational state from an LVLH-relative
+    /// attitude + angular velocity plus a reference orbit.
+    ///
+    /// JEOD analog: `DynBodyInitLvlhRotState`. Delegates to
+    /// [`jeod_dynamics::body_init::init_rot_from_lvlh`], which
+    /// constructs the reference-orbit LVLH frame from
+    /// (`reference_position`, `reference_velocity`) and composes the
+    /// user-supplied LVLH→body attitude / LVLH-relative angular
+    /// velocity with the LVLH frame's own orientation and angular
+    /// velocity wrt inertial.
+    InitLvlhRot {
+        /// LVLH→body attitude quaternion (scalar-first,
+        /// left-transformation; JEOD convention).
+        q_lvlh_body: JeodQuat,
+        /// Angular velocity of the body wrt the LVLH frame (rad/s),
+        /// expressed in the frame indicated by `ang_vel_frame`.
+        ang_vel_lvlh_to_body: DVec3,
+        /// Coordinate frame of `ang_vel_lvlh_to_body`. JEOD's
+        /// `rate_in_parent` flag picks between body-frame and
+        /// parent-frame interpretation; we expose the equivalent
+        /// choice through this enum and apply the same transform
+        /// JEOD's `apply_user_inputs` does.
+        ang_vel_frame: LvlhAngularVelocityFrame,
+        /// Reference orbit position in the central body's
+        /// planet-inertial frame (m).
+        reference_position: DVec3,
+        /// Reference orbit velocity in the central body's
+        /// planet-inertial frame (m/s).
+        reference_velocity: DVec3,
     },
 
     /// Replace the subject's translational state from Keplerian
@@ -259,7 +290,9 @@ impl BodyAction {
                 t_eci_pcpf,
                 *omega_planet,
             )),
-            BodyAction::InitMass { .. } | BodyAction::InitRot { .. } => None,
+            BodyAction::InitMass { .. }
+            | BodyAction::InitRot { .. }
+            | BodyAction::InitLvlhRot { .. } => None,
         }
     }
 
@@ -275,6 +308,19 @@ impl BodyAction {
                 quaternion: *quaternion,
                 ang_vel_body: *ang_vel_body,
             }),
+            BodyAction::InitLvlhRot {
+                q_lvlh_body,
+                ang_vel_lvlh_to_body,
+                ang_vel_frame,
+                reference_position,
+                reference_velocity,
+            } => Some(init_rot_from_lvlh(
+                *q_lvlh_body,
+                *ang_vel_lvlh_to_body,
+                *ang_vel_frame,
+                *reference_position,
+                *reference_velocity,
+            )),
             BodyAction::InitMass { .. }
             | BodyAction::InitTrans { .. }
             | BodyAction::InitTransOrbital { .. }
@@ -290,6 +336,7 @@ impl BodyAction {
             BodyAction::InitMass { mass } => Some(*mass),
             BodyAction::InitTrans { .. }
             | BodyAction::InitRot { .. }
+            | BodyAction::InitLvlhRot { .. }
             | BodyAction::InitTransOrbital { .. }
             | BodyAction::InitTransLvlh { .. }
             | BodyAction::InitTransNed { .. } => None,
@@ -335,6 +382,37 @@ mod tests {
         let out = action.apply_rotational().expect("rot present");
         assert_eq!(out.quaternion, JeodQuat::identity());
         assert_eq!(out.ang_vel_body, DVec3::ZERO);
+    }
+
+    #[test]
+    fn init_lvlh_rot_dispatches_to_kernel() {
+        // Smoke test for the variant dispatch: identity LVLH→body with
+        // zero LVLH-relative rate must produce a non-None
+        // `RotationalState`, leave `apply_translational` / `apply_mass`
+        // returning None, and report `is_ready() == true`. Kernel
+        // correctness is covered by
+        // `jeod_dynamics::body_init::tests::lvlh_rot_*`.
+        const EARTH_MU: f64 = 3.986_004_415e14;
+        let r = 6_778_137.0;
+        let v = (EARTH_MU / r).sqrt();
+        let action = BodyAction::InitLvlhRot {
+            q_lvlh_body: JeodQuat::identity(),
+            ang_vel_lvlh_to_body: DVec3::ZERO,
+            ang_vel_frame: LvlhAngularVelocityFrame::Body,
+            reference_position: DVec3::new(r, 0.0, 0.0),
+            reference_velocity: DVec3::new(0.0, v, 0.0),
+        };
+        assert!(action.is_ready());
+        let out = action.apply_rotational().expect("rot present");
+        // `LvlhFrame::compute` produces a non-trivial
+        // inertial→LVLH rotation; the identity LVLH→body input must
+        // therefore *not* yield identity inertial→body.
+        assert_ne!(out.quaternion, JeodQuat::identity());
+        // LVLH frame is rotating wrt inertial at the orbital rate;
+        // identity LVLH→body forwards that rate into the body frame.
+        assert!(out.ang_vel_body.length() > 0.0);
+        assert!(action.apply_translational().is_none());
+        assert!(action.apply_mass().is_none());
     }
 
     #[test]
