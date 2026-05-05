@@ -694,9 +694,10 @@ fn tier3_sim_compute_child_derivative_pre_attach_trajectory() {
 ///    root again with composite mass 1; v3's composite drops back to
 ///    5 (v2 + v3); v2's composite stays at 2 (just v2 alone, no
 ///    children any more).
-/// 4. After `attach(v1, v2)` again, the runner re-roots v1 under v2
-///    (which is now interior to v3's tree), and v3's composite climbs
-///    back to 6.
+/// 4. After `attach(v1, v2)` again, v1 is a standalone root (just
+///    detached in step 3) and v2 is interior to v3's tree, so this
+///    takes the plain root-subject attach path (no rerooting); v1
+///    becomes a child of v2 and v3's composite climbs back to 6.
 ///
 /// Composite-mass values are independent of attach geometry (mass tree
 /// arithmetic doesn't care about offsets), so the assertions hold
@@ -791,9 +792,11 @@ fn tier3_sim_complex_attach_detach_rerooting_topology() {
         "post-v1-detach v3 composite = v2 + v3"
     );
 
-    // -- t=55: attach v1 → v2 again. v2 is interior to v3's tree, so
-    //    the runner re-roots v1 (the subject root, since v1 is
-    //    standalone again) under v2. v1's tree merges back into v3's.
+    // -- t=55: attach v1 → v2 again. v1 is a standalone root (just
+    //    detached at t=50), so this is a plain root-subject attach
+    //    under an interior parent — the kernel takes the
+    //    `parent[child].is_none()` short-circuit, not the reroot path.
+    //    v1 merges back into v3's tree under v2.
     advance_to(&mut sim, COMPLEX_REATTACH_V1_V2_TIME);
     sim.attach(v1, v2, offset_v1_v2, t_v1_v2);
     sim.mark_kinematic_only(v1);

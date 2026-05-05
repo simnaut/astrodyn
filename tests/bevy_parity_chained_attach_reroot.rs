@@ -46,10 +46,12 @@ use jeod_sim::{MassProperties, MassTree};
 /// `MassTree` and return it. The sequence mirrors the topological
 /// timeline of `RUN_complex_attach_detach`:
 ///   - attach v1 → v2 (root subject)
-///   - attach v1 → v3 (chained: re-roots v2 under v3)
+///   - attach v1 → v3 (chained: v1 already has parent v2, so
+///     `attach_with_reroot` re-roots v2 under v3)
 ///   - detach v1 from v2
-///   - re-attach v1 → v2 (chained: re-roots v1 under v2 which is
-///     interior to v3's tree)
+///   - re-attach v1 → v2 (v1 is a standalone root again after the
+///     detach, so this is a plain root-subject attach under v2,
+///     which is interior to v3's tree — no reroot path)
 fn run_chained_attach_sequence_on_tree(
     tree: &mut MassTree,
 ) -> (

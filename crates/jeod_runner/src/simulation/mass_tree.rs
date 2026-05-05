@@ -566,11 +566,11 @@ impl Simulation {
                             "attach (reroot): SimBody {body_idx} (mass_body_id {id:?}) is in \
                              the rerooted subtree under subject_root {subject_root_id:?} but \
                              has no RotationalState. Kinematic propagation derives both `trans` \
-                             and `rot`, so 3-DOF bodies cannot be reparented through a chained \
-                             attach — their state would go stale post-reroot. Either set \
-                             `VehicleConfig::rot = Some(...)` on this body before the attach, \
-                             or perform a simple root-subject attach (detach the subject from \
-                             its current parent first)."
+                             and `rot` from the integrating root, so any attached (non-root) \
+                             body must be 6-DOF — a 3-DOF body's state would go stale post-attach. \
+                             Make this body 6-DOF by setting `VehicleConfig::rot = Some(...)` \
+                             before the attach, or restructure the topology so this body never \
+                             becomes a non-root member of the merged tree."
                         );
                         body.kinematic_only = true;
                     }
