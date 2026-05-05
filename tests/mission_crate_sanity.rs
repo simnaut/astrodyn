@@ -46,7 +46,7 @@ fn setup_iss(mut commands: Commands) {
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
 
-    let vehicle_entity = cfg.spawn_bevy(&mut commands, &[earth]);
+    let vehicle_entity = cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth]);
     commands.insert_resource(VehicleEntity(vehicle_entity));
 }
 
