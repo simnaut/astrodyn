@@ -575,7 +575,7 @@ let cfg = VehicleBuilder::new()
     .rk4()
     .gravity(GravityControl::new_spherical(0_usize, false))
     .build();
-let vehicle_entity = cfg.spawn_bevy(&mut commands, &[earth_entity]);
+let vehicle_entity = cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth_entity]);
 ```
 
 **Compiler errors as physics**: passing a `Position<Ecef>` where

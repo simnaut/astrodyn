@@ -63,7 +63,7 @@ fn setup(mut commands: Commands) {
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
 
-    cfg.spawn_bevy(&mut commands, &[earth_entity]);
+    cfg.spawn_bevy::<Earth>(&mut commands, &[earth_entity]);
 }
 
 fn main() {
