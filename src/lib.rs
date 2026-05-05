@@ -729,10 +729,11 @@ impl Plugin for JeodPlugin {
 /// downstream multi-planet mission.
 ///
 /// `JeodPlugin::build` registers every planet-generic system with
-/// `<jeod_sim::Earth>` (preserving the single-planet-Earth behavior of
-/// pre-#300 missions). A mission that integrates bodies in multiple
-/// planet-inertial frames (e.g. a Mars-orbit chief + Earth-orbit
-/// deputy) calls this helper once per *additional* planet:
+/// `<jeod_sim::Earth>` so that single-planet Earth missions work out of
+/// the box without any extra registration call. A mission that
+/// integrates bodies in multiple planet-inertial frames (e.g. a
+/// Mars-orbit chief + Earth-orbit deputy) calls this helper once per
+/// *additional* planet:
 ///
 /// ```ignore
 /// use bevy::prelude::*;

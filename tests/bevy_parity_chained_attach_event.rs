@@ -301,7 +301,7 @@ fn spawn_body(
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(mass),
             MassBodyIdC(id),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(rot),
             TotalForceC::default(),
             FrameDerivativesC::default(),
