@@ -2130,7 +2130,65 @@ run_frame_switch_group() {
 throttled_bg run_frame_switch_group
 PID_FRAME_SWITCH=$LAST_BG_PID
 
-# Group 31: SIM_contact — free-space contact dynamics (5 scenarios)
+# Group 33: SIM_ref_attach — JEOD's reference-frame attachment verification
+# (issues #198 / #206). The two RUNs each attach the target vehicle to a
+# parent ref frame at t=50s and run to t=100s; the body's state stops
+# integrating and is derived each tick from the parent frame.
+# RUN_ref_attach_matrix uses BodyAttachMatrix (offset + rotation), parent =
+# Earth.pfix.
+# RUN_ref_attach_pt2pt uses BodyAttachAligned (mass-point to mass-point
+# alignment), parent = Earth.inertial.
+# We log composite-body state so the runner-side Tier 3 test
+# (`tier3_sim_ref_attach.rs`) can cross-validate trajectory + post-attach
+# rigid attachment.
+REF_ATTACH_SNIPPET='
+dr = trick.DRAscii("ref_attach_state")
+dr.thisown = 0
+dr.set_cycle(0.5)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"target.dyn_body.composite_body.state.trans.position[{i}]")
+for i in range(3):
+    dr.add_variable(f"target.dyn_body.composite_body.state.trans.velocity[{i}]")
+dr.add_variable("target.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+for i in range(3):
+    dr.add_variable(f"target.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+for i in range(3):
+    dr.add_variable(f"target.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+'
+
+run_ref_attach_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_ref_attach"
+    local -a RUNS=(
+        "SET_test/RUN_ref_attach_matrix:ref_attach_matrix:ref_attach_matrix_ref_attach_state.csv"
+        "SET_test/RUN_ref_attach_pt2pt:ref_attach_pt2pt:ref_attach_pt2pt_ref_attach_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_ref_attach group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$REF_ATTACH_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_ref_attach_group
+PID_REF_ATTACH=$LAST_BG_PID
+
+# Group 34: SIM_contact — free-space contact dynamics (5 scenarios)
 # ASCII snippet logs: time (implicit), veh{1,2} position/velocity,
 # contact force/torque on each vehicle, composite masses.
 # Matches JEOD Log_data/log_contact_data.py variables.
@@ -2203,7 +2261,7 @@ run_contact_group() {
 throttled_bg run_contact_group
 PID_CONTACT=$LAST_BG_PID
 
-# Group 32: SIM_ground_contact — Earth-frame ground contact (1 scenario)
+# Group 35: SIM_ground_contact — Earth-frame ground contact (1 scenario)
 # Shares the CONTACT_SNIPPET log variables; adds Earth central body.
 run_ground_contact_group() {
     local sim_dir="models/interactions/contact/verif/SIM_ground_contact"
@@ -2560,6 +2618,7 @@ wait $PID_ATTACH_MASS    || { echo "WARN: SIM_verif_attach_mass group had failur
 wait $PID_ATTACH_DETACH  || { echo "WARN: SIM_verif_attach_detach group had failures"; FAIL=1; }
 wait $PID_KINEMATIC_PROP || { echo "WARN: SIM_verif_attach_detach kinematic-propagation group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
+wait $PID_REF_ATTACH     || { echo "WARN: SIM_ref_attach group had failures"; FAIL=1; }
 wait $PID_CONTACT        || { echo "WARN: SIM_contact group had failures"; FAIL=1; }
 wait $PID_GROUND_CONTACT || { echo "WARN: SIM_ground_contact group had failures"; FAIL=1; }
 # WS-R4: JEOD time verification SIMs 1-6

@@ -23,17 +23,42 @@
 //!
 //! # Schedule
 //!
-//! Runs in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection), **after**
-//! [`composite_mass_system`](crate::mass_tree::composite_mass_system)
-//! (which writes the live composite CoM into each entity's
-//! [`MassPropertiesC`]) and **before**
-//! [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
-//! (so the upward wrench walk reads the fresh per-chain attitudes the
-//! propagation has just installed). The wrench-aggregation guard that
-//! requires `RotationalStateC` on every member of a rotated chain
-//! becomes pure defense-in-depth once this system runs in front of
-//! it: every kinematic child gets its `RotationalStateC` written
-//! before the guard checks for it.
+//! The plugin schedules **two** kinematic-propagation passes per tick,
+//! mirroring the runner's stage 3b / 8d sweeps in
+//! `crates/jeod_runner/src/simulation/step/mod.rs`:
+//!
+//! - Pre-integration (this fn) — pinned between
+//!   [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
+//!   and [`JeodSet::Environment`](crate::JeodSet::Environment),
+//!   **after**
+//!   [`composite_mass_system`](crate::mass_tree::composite_mass_system)
+//!   (which writes the live composite CoM into each entity's
+//!   [`MassPropertiesC`]) and after
+//!   [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
+//!   (so a frame-attached mass-tree root has its parent-frame-derived
+//!   state available before the kinematic walk reads it). Pinning the
+//!   walk before `JeodSet::Environment` lets gravity / atmosphere /
+//!   interaction force producers (drag, SRP, gravity-torque) read
+//!   freshly-derived child state rather than a one-tick-stale
+//!   composition. Upstream of
+//!   [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
+//!   by construction (wrench is in
+//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection),
+//!   which runs after Environment + Interaction); the wrench-aggregation
+//!   guard that requires `RotationalStateC` on every member of a
+//!   rotated chain remains pure defense-in-depth — every kinematic
+//!   child gets its `RotationalStateC` written before the guard
+//!   checks for it.
+//! - Post-integration ([`propagate_state_from_root_post_integration_system`])
+//!   — runs in [`JeodSet::Integration`](crate::JeodSet::Integration),
+//!   after `frame_switch_system` and after the post-integration
+//!   frame-attached propagation, and before
+//!   [`JeodSet::DerivedState`](crate::JeodSet::DerivedState). Without
+//!   this pass, kinematic descendants of a freshly-integrated (or
+//!   freshly frame-attached) root would lag by one tick — derived
+//!   states (`orbital_elements_system`, `geodetic_system`, …) would
+//!   observe the *previous* tick's parent state composed with the
+//!   link.
 //!
 //! # Roots are read-only
 //!
@@ -84,12 +109,18 @@ use crate::mass_tree::MassTreeView;
 /// check uses `parents_q.is_empty()` so the cost is one query
 /// iteration over the empty set.
 ///
-/// # Order in `JeodSet::ForceCollection`
+/// # Order
 ///
 /// Schedule this system **after**
 /// [`composite_mass_system`](crate::mass_tree::composite_mass_system)
-/// and **before**
-/// [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system).
+/// (mass-tree composite recompute) and
+/// [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
+/// (frame-attached parent state), and **before**
+/// [`JeodSet::Environment`](crate::JeodSet::Environment) so gravity /
+/// atmosphere observe the freshly-derived child state, and ahead of
+/// [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
+/// in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
+/// (which the pre-Environment placement satisfies by construction).
 /// The plugin wires this ordering automatically; tests that compose
 /// a custom subset of systems must replicate it.
 ///
@@ -273,6 +304,47 @@ pub fn propagate_state_from_root_system(
             }
         }
     }
+}
+
+/// Post-integration twin of [`propagate_state_from_root_system`].
+///
+/// Re-runs the same root → leaves kinematic walk after
+/// `integration_system` + `sync_body_to_frame_system` +
+/// `frame_switch_system` have landed, so a kinematic child whose root
+/// was just integrated reflects the same-tick parent state rather than
+/// the previous tick's. Mirrors stage 8d of the runner's
+/// `Simulation::step_internal` (see
+/// `crates/jeod_runner/src/simulation/step/mod.rs`), which calls
+/// `propagate_kinematic_state` both before and after integration.
+///
+/// Without this pass the kinematic descendants of a freshly-integrated
+/// (or freshly frame-attached) root would lag by one tick — the
+/// pre-integration sweep observed the *previous* tick's integrated
+/// root. Derived-state consumers in
+/// [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) would then
+/// observe stale child state.
+///
+/// Distinct fn from the pre-integration sibling so Bevy's
+/// `SystemTypeSet` treats the two registrations as independent system
+/// instances; the body delegates to the same logic to keep the two
+/// passes byte-for-byte equivalent.
+// JEOD_INV: DB.13 — kinematic state propagation routed through structural frames
+// JEOD_INV: DB.17 — only the root integrates; non-root state is derived each step,
+//   and the post-integration sweep is what makes "each step" mean "after the step
+//   actually finished" rather than "before the step started".
+#[allow(clippy::type_complexity)]
+pub fn propagate_state_from_root_post_integration_system(
+    mass_q: Query<(Entity, &MassPropertiesC)>,
+    parents_q: Query<(Entity, &MassChildOf)>,
+    kinematic_q: Query<Entity, With<KinematicChildC>>,
+    names_q: Query<&Name>,
+    struct_q: Query<&StructuralTransformC>,
+    state_qs: ParamSet<(
+        Query<(&RotationalStateC, &TranslationalStateC)>,
+        Query<(&mut RotationalStateC, &mut TranslationalStateC), With<KinematicChildC>>,
+    )>,
+) {
+    propagate_state_from_root_system(mass_q, parents_q, kinematic_q, names_q, struct_q, state_qs);
 }
 
 #[cfg(test)]
