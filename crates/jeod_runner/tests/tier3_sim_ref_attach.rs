@@ -100,7 +100,8 @@ struct StateRow {
 }
 
 /// Load the `ref_attach_*_ref_attach_state.csv` Trick output. Format:
-/// time, pos[0..3], vel[0..3], q_scalar, q_vec[0..3], ang_vel_this[0..3]
+/// time, pos (indices 0,1,2), vel (indices 0,1,2), q_scalar,
+/// q_vec (indices 0,1,2), ang_vel_this (indices 0,1,2)
 fn load_state_csv(filename: &str) -> Vec<StateRow> {
     let path = test_data_dir().join(filename);
     assert!(
