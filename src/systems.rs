@@ -1925,7 +1925,15 @@ pub fn integration_system(
     // See `KinematicChildC` and `DetachedSubtreeStateC` for the
     // detailed lifecycles.
     // JEOD_INV: DB.17 — kinematic children skip integration.
-    // JEOD_INV: DB.21 — detached subtrees skip integration.
+    // JEOD_INV: DB.21 — detached subtrees and frame-attached bodies
+    //   skip integration. The frame-attach filter mirrors the runner's
+    //   `if body.frame_attach.is_some() { continue; }` guard in
+    //   `step::integrate.rs`; bodies attached to a non-body reference
+    //   frame have their state derived each tick by
+    //   `propagate_frame_attached_state_system` (parent frame's
+    //   current state composed with the captured offset) and the
+    //   integrator must not stomp the kinematic value with a
+    //   force-driven update.
     mut bodies: Query<
         (
             Entity,
@@ -1947,6 +1955,7 @@ pub fn integration_system(
         (
             Without<KinematicChildC>,
             Without<crate::DetachedSubtreeStateC>,
+            Without<crate::components::FrameAttachedC>,
         ),
     >,
     sources: Query<

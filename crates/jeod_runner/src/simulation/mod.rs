@@ -10,6 +10,10 @@
 //! - [`bodies`] — body lifecycle, accessors, setters, contact-pair
 //!   registration.
 //! - [`mass_tree`] — attach/detach topology, detached-subtree machinery.
+//! - [`frame_attach`] — `attach_to_frame` / `detach_from_frame` for
+//!   non-body reference-frame attachment (port of JEOD's
+//!   `DynBody::attach_to_frame`; the kinematic-only side of frame-tree
+//!   attachment).
 //! - [`validate`] — pre-step setup-time validation.
 //! - [`step`] — the per-step integration pipeline.
 //!
@@ -17,6 +21,7 @@
 //! public surface (`Simulation`, `VehicleOutput`, etc.) via `pub use`.
 
 mod bodies;
+mod frame_attach;
 mod mass_tree;
 mod sources;
 mod step;
@@ -25,7 +30,7 @@ mod validate;
 
 pub use jeod_dynamics::DetachedSubtreeState;
 pub use jeod_sim::{GroundFacet, SphericalTerrain, Terrain};
-pub use types::{ContactPairConfig, GroundContactPairConfig, VehicleOutput};
+pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, VehicleOutput};
 
 use std::collections::HashMap;
 

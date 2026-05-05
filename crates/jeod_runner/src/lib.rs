@@ -57,6 +57,6 @@ pub use jeod_frames::FrameId;
 // `Simulation` and its supporting public types live in the `simulation`
 // submodule (issue #253). Re-exported here for API stability.
 pub use simulation::{
-    ContactPairConfig, DetachedSubtreeState, GroundContactPairConfig, GroundFacet, Simulation,
-    SphericalTerrain, Terrain, VehicleOutput,
+    ContactPairConfig, DetachedSubtreeState, FrameAttachState, GroundContactPairConfig,
+    GroundFacet, Simulation, SphericalTerrain, Terrain, VehicleOutput,
 };
