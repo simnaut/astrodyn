@@ -978,7 +978,8 @@ mod tests {
         step_bevy(&mut app, 1, 0.1);
     }
 
-    /// Schedule-order regression for issue #309 thread 1.
+    /// Schedule-order regression: frame-attach must precede the
+    /// mass-tree kinematic walk.
     ///
     /// A frame-attached body that is also a mass-tree root with a
     /// kinematic child must propagate to its parent reference frame

@@ -1051,17 +1051,15 @@ mod tests {
             .expect("step until propagate_kinematic_state runs");
     }
 
-    /// Post-integration ordering regression for issue #309 thread 2
-    /// (round-2 review). The post-integration sweep in
-    /// `step::mod::step_internal` must run
+    /// Post-integration ordering regression: the post-integration
+    /// sweep in `step::mod::step_internal` must run
     /// `propagate_frame_attached_state(&body_integ_origins_post)`
     /// **before** `propagate_kinematic_state(&body_integ_origins_post)`.
     ///
-    /// Same root-cause shape as the round-1 pre-integration fix
-    /// (commit `5dec6d7`): a frame-attached body that is also a
-    /// mass-tree root with a kinematic descendant needs its
-    /// parent-frame-derived state in place before the kinematic walk
-    /// reads `body.trans` as the seed.
+    /// Same root-cause shape as the pre-integration fix: a
+    /// frame-attached body that is also a mass-tree root with a
+    /// kinematic descendant needs its parent-frame-derived state in
+    /// place before the kinematic walk reads `body.trans` as the seed.
     ///
     /// The bug is observable when the parent reference frame's state
     /// **changes during integration** — the frame-attach walk runs

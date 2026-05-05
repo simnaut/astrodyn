@@ -12,8 +12,8 @@
 //! - [`mass_tree`] — attach/detach topology, detached-subtree machinery.
 //! - [`frame_attach`] — `attach_to_frame` / `detach_from_frame` for
 //!   non-body reference-frame attachment (port of JEOD's
-//!   `DynBody::attach_to_frame`; the kinematic-only side of issues
-//!   #198 + #206).
+//!   `DynBody::attach_to_frame`; the kinematic-only side of frame-tree
+//!   attachment).
 //! - [`validate`] — pre-step setup-time validation.
 //! - [`step`] — the per-step integration pipeline.
 //!
