@@ -310,14 +310,20 @@ pub enum LvlhAngularVelocityFrame {
 /// inertial, `B` = LVLH, `C` = body):
 ///
 /// ```text
-/// Q_inertial_body = Q_lvlh_body * Q_inertial_lvlh
-/// w_inertial_body_in_body = Q_lvlh_body * w_inertial_lvlh_in_lvlh
+/// Q_inertial_body         = Q_lvlh_body * Q_inertial_lvlh
+/// w_inertial_body_in_body = T_lvlh_body * w_inertial_lvlh_in_lvlh
 ///                         + w_lvlh_body_in_body
 /// ```
 ///
 /// where `Q_lvlh_body` is the user-supplied attitude (LVLH-frame attitude
-/// of the body) and `w_lvlh_body` is the user-supplied LVLH-relative
-/// angular velocity expressed per `ang_vel_frame`.
+/// of the body) — composed with `Q_inertial_lvlh` via quaternion
+/// multiplication — and `T_lvlh_body` is the equivalent rotation matrix
+/// derived from `Q_lvlh_body`, used to project the LVLH-frame angular
+/// velocity into the body frame. `w_lvlh_body_in_body` is the
+/// user-supplied LVLH-relative angular velocity already expressed in the
+/// body frame (when the user supplies it in the LVLH frame, the same
+/// `T_lvlh_body` matrix lifts it into the body frame first — see
+/// `ang_vel_frame` below).
 ///
 /// # Arguments
 /// * `q_lvlh_body` - LVLH→body attitude quaternion (scalar-first,
