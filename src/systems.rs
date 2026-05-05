@@ -3388,10 +3388,10 @@ pub fn staging_system(
         // where the 3-DOF side's rotation snaps to identity and the
         // merged attitude / angular momentum is silently wrong. We
         // reject the asymmetric case below.
-        let parent_has_state = parent_orig
-            .map(|_| eligibility.get(evt.parent).unwrap_or((false, false, false)));
-        let child_has_state = child_orig
-            .map(|_| eligibility.get(evt.child).unwrap_or((false, false, false)));
+        let parent_has_state =
+            parent_orig.map(|_| eligibility.get(evt.parent).unwrap_or((false, false, false)));
+        let child_has_state =
+            child_orig.map(|_| eligibility.get(evt.child).unwrap_or((false, false, false)));
         let rotational_asymmetry = match (parent_has_state, child_has_state) {
             (Some((_, _, parent_rot)), Some((_, _, child_rot))) => parent_rot != child_rot,
             _ => false,
