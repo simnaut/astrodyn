@@ -321,7 +321,7 @@ fn spawn_body(
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(mass),
             MassBodyIdC(id),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(rot),
             TotalForceC::default(),
             FrameDerivativesC::default(),
@@ -342,7 +342,7 @@ fn step_bevy(app: &mut App) {
 fn read_bevy_state(app: &App, entity: Entity) -> SixDofState {
     let trans = app
         .world()
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .to_untyped();

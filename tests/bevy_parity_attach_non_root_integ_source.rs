@@ -135,11 +135,11 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -155,7 +155,7 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(parent_mass()),
             MassBodyIdC(id_parent),
-            TranslationalStateC::from(parent_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_initial_trans()),
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
@@ -169,7 +169,7 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(child_mass()),
             MassBodyIdC(id_child),
-            TranslationalStateC::from(child_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_initial_trans()),
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
@@ -181,7 +181,7 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, MOON_VELOCITY);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -263,14 +263,14 @@ fn bevy_parity_attach_non_root_integ_source_lift_and_lower() {
 
     let post_pos_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .position
         .raw_si();
     let post_vel_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .velocity

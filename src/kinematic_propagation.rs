@@ -85,7 +85,7 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 use jeod_sim::{
-    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage,
+    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, Planet,
     RotationalStateTyped, SelfRef, TranslationalStateTyped,
 };
 
@@ -136,7 +136,7 @@ use crate::mass_tree::MassTreeView;
 // JEOD_INV: DB.13 — kinematic state propagation routed through structural frames (parent → struct → link → child struct → child body)
 // JEOD_INV: DB.17 — only the root integrates; non-root state is derived each step
 #[allow(clippy::type_complexity)]
-pub fn propagate_state_from_root_system(
+pub fn propagate_state_from_root_system<P: Planet>(
     mass_q: Query<(Entity, &MassPropertiesC)>,
     parents_q: Query<(Entity, &MassChildOf)>,
     kinematic_q: Query<Entity, With<KinematicChildC>>,
@@ -150,8 +150,8 @@ pub fn propagate_state_from_root_system(
     // view of the same components — without it Bevy's borrow checker
     // would refuse the conflicting access (`B0001`).
     mut state_qs: ParamSet<(
-        Query<(&RotationalStateC, &TranslationalStateC)>,
-        Query<(&mut RotationalStateC, &mut TranslationalStateC), With<KinematicChildC>>,
+        Query<(&RotationalStateC, &TranslationalStateC<P>)>,
+        Query<(&mut RotationalStateC, &mut TranslationalStateC<P>), With<KinematicChildC>>,
     )>,
 ) {
     // 1. Fast path: no MassChildOf edges → nothing to propagate.
@@ -298,7 +298,7 @@ pub fn propagate_state_from_root_system(
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                    TranslationalStateTyped::<jeod_sim::PlanetInertial<P>>::from_untyped_unchecked(
                         &state.trans,
                     );
             }
@@ -333,18 +333,25 @@ pub fn propagate_state_from_root_system(
 //   and the post-integration sweep is what makes "each step" mean "after the step
 //   actually finished" rather than "before the step started".
 #[allow(clippy::type_complexity)]
-pub fn propagate_state_from_root_post_integration_system(
+pub fn propagate_state_from_root_post_integration_system<P: Planet>(
     mass_q: Query<(Entity, &MassPropertiesC)>,
     parents_q: Query<(Entity, &MassChildOf)>,
     kinematic_q: Query<Entity, With<KinematicChildC>>,
     names_q: Query<&Name>,
     struct_q: Query<&StructuralTransformC>,
     state_qs: ParamSet<(
-        Query<(&RotationalStateC, &TranslationalStateC)>,
-        Query<(&mut RotationalStateC, &mut TranslationalStateC), With<KinematicChildC>>,
+        Query<(&RotationalStateC, &TranslationalStateC<P>)>,
+        Query<(&mut RotationalStateC, &mut TranslationalStateC<P>), With<KinematicChildC>>,
     )>,
 ) {
-    propagate_state_from_root_system(mass_q, parents_q, kinematic_q, names_q, struct_q, state_qs);
+    propagate_state_from_root_system::<P>(
+        mass_q,
+        parents_q,
+        kinematic_q,
+        names_q,
+        struct_q,
+        state_qs,
+    );
 }
 
 #[cfg(test)]
@@ -374,8 +381,9 @@ mod tests {
             Update,
             (
                 composite_mass_system,
-                propagate_state_from_root_system.after(composite_mass_system),
-                wrench_aggregation_system.after(propagate_state_from_root_system),
+                propagate_state_from_root_system::<jeod_sim::Earth>.after(composite_mass_system),
+                wrench_aggregation_system
+                    .after(propagate_state_from_root_system::<jeod_sim::Earth>),
             ),
         );
         app.update();
@@ -420,7 +428,7 @@ mod tests {
                 Name::new("rotated_parent"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::from_untyped(parent_rot),
-                TranslationalStateC::from_untyped(parent_trans),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(parent_trans),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -440,7 +448,7 @@ mod tests {
                 MassChildOf::with_rotation(parent, offset, t_pc),
                 // Stale state — propagation must overwrite both.
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -457,7 +465,10 @@ mod tests {
         app.update();
 
         let child_rot = app.world().get::<RotationalStateC>(child).unwrap();
-        let child_trans = app.world().get::<TranslationalStateC>(child).unwrap();
+        let child_trans = app
+            .world()
+            .get::<TranslationalStateC<jeod_sim::Earth>>(child)
+            .unwrap();
 
         // Expected: T_inertial_body_child = T_pc · T_inertial_body_parent
         let parent_t_ib = parent_q.left_quat_to_transformation();
@@ -534,7 +545,7 @@ mod tests {
                 Name::new("root"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::default(),
-                TranslationalStateC::from_untyped(parent_trans),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(parent_trans),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -558,7 +569,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(root, zero, t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -574,7 +585,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(2.0)),
                 MassChildOf::with_rotation(mid, zero, t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -589,7 +600,10 @@ mod tests {
         app.update();
 
         let leaf_rot = app.world().get::<RotationalStateC>(leaf).unwrap();
-        let leaf_trans = app.world().get::<TranslationalStateC>(leaf).unwrap();
+        let leaf_trans = app
+            .world()
+            .get::<TranslationalStateC<jeod_sim::Earth>>(leaf)
+            .unwrap();
 
         // T_leaf = T_pc · T_pc (60° about Z).
         let expected_leaf_t = t_pc * t_pc;
@@ -621,7 +635,7 @@ mod tests {
         // Mid is between them — same expectation.
         let mid_pos = app
             .world()
-            .get::<TranslationalStateC>(mid)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(mid)
             .unwrap()
             .0
             .position
@@ -676,7 +690,7 @@ mod tests {
                 Name::new("rotated_parent"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::from_untyped(parent_rot),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -705,7 +719,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),

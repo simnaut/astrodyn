@@ -102,7 +102,7 @@ pub fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
 pub fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
         trans: world
-            .get::<TranslationalStateC>(entity)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
             .unwrap()
             .0
             .to_untyped(),
@@ -116,7 +116,7 @@ pub fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
 
 pub fn read_trans(world: &World, entity: Entity) -> TranslationalState {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .unwrap()
         .0
         .to_untyped()
@@ -203,7 +203,7 @@ pub fn spawn_earth_source(app: &mut App) -> Entity {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id()
 }

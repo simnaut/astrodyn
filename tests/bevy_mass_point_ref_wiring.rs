@@ -65,7 +65,7 @@ fn mass_point_ref_inserted_on_body_with_mass_properties() {
         .world_mut()
         .spawn((
             Name::new("vehicle"),
-            TranslationalStateC::from(trans_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(mass()),
             DynamicsConfigC(dynamics()),
@@ -114,7 +114,7 @@ fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
         .world_mut()
         .spawn((
             Name::new("late_mass"),
-            TranslationalStateC::from(trans_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_state()),
             RotationalStateC::from(RotationalState::default()),
             // Note: no MassPropertiesC at spawn — kinematic-only.
             DynamicsConfigC(dynamics()),
@@ -173,7 +173,7 @@ fn mass_point_ref_removed_when_mass_lost_after_registration() {
         .world_mut()
         .spawn((
             Name::new("loses_mass"),
-            TranslationalStateC::from(trans_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(mass()),
             DynamicsConfigC(dynamics()),
@@ -219,7 +219,7 @@ fn mass_point_ref_omitted_for_kinematic_only_body() {
         .world_mut()
         .spawn((
             Name::new("kinematic"),
-            TranslationalStateC::from(trans_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_state()),
             RotationalStateC::from(RotationalState::default()),
             DynamicsConfigC(dynamics()),
         ))

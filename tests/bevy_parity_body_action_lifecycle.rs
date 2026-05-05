@@ -144,7 +144,7 @@ fn build_app() -> (App, Entity) {
             Name::new("Earth"),
             bevy_jeod::GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -154,7 +154,7 @@ fn build_app() -> (App, Entity) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_typical_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_typical_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(MassProperties::new(1.0)),
             bevy_jeod::DynamicsConfigC(DynamicsConfig {
@@ -193,7 +193,7 @@ fn read_mass(app: &App, vehicle: Entity) -> f64 {
 fn read_trans(app: &App, vehicle: Entity) -> TranslationalState {
     app.world()
         .entity(vehicle)
-        .get::<TranslationalStateC>()
+        .get::<TranslationalStateC<jeod_sim::Earth>>()
         .expect("translational state present")
         .0
         .to_untyped()
@@ -454,7 +454,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -465,7 +465,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_typical_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_typical_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(MassProperties::new(400_000.0)),
             DynamicsConfigC(DynamicsConfig {
@@ -609,7 +609,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -621,7 +621,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_typical_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_typical_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(MassProperties::new(400_000.0)),
             DynamicsConfigC(DynamicsConfig {
@@ -774,14 +774,14 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_typical_state()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_typical_state()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(MassProperties::new(M0)),
             DynamicsConfigC(DynamicsConfig {

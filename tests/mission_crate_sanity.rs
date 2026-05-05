@@ -35,7 +35,7 @@ fn setup_iss(mut commands: Commands) {
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<Earth>::default(),
         ))
         .id();
 
@@ -78,7 +78,7 @@ fn mission_crate_sanity_iss_one_hour() {
     let vehicle = app.world().resource::<VehicleEntity>().0;
     let state = app
         .world()
-        .get::<TranslationalStateC>(vehicle)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
         .expect("vehicle has TranslationalStateC after propagation");
     // `state.position` / `state.velocity` are typed; `.length()` returns
     // a `Quantity` (Length / Velocity). Drop to f64 SI base for the

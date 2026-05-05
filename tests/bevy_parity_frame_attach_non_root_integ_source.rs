@@ -102,11 +102,11 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
 
     let body = app
@@ -115,7 +115,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
             Name::new("Lunar"),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(body_mass()),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
@@ -131,7 +131,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     // body's integration-frame origin.
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -222,7 +222,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     //    `MOON_OFFSET` (~3.84e8 m).
     let body_trans = app
         .world()
-        .get::<TranslationalStateC>(body)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(body)
         .expect("body must keep TranslationalStateC after frame attach")
         .0
         .position
@@ -247,7 +247,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     // identically zero — both branches of the lower must agree.
     let body_vel = app
         .world()
-        .get::<TranslationalStateC>(body)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(body)
         .unwrap()
         .0
         .velocity

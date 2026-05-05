@@ -74,7 +74,7 @@ fn build_app() -> (App, Entity, Entity) {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -87,7 +87,7 @@ fn build_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
@@ -113,7 +113,9 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
     }
 
     let world = app.world();
-    let trans = world.get::<TranslationalStateC>(vehicle).unwrap();
+    let trans = world
+        .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
+        .unwrap();
     let rot = world.get::<RotationalStateC>(vehicle).unwrap();
     SixDofState {
         trans: trans.0.to_untyped(),
@@ -234,7 +236,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -246,7 +248,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {

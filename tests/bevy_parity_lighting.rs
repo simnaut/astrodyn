@@ -66,7 +66,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC::from(TranslationalState {
+        TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -74,7 +74,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC::from(TranslationalState {
+        TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -83,7 +83,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: veh_pos,
                 velocity: DVec3::new(0.0, 7668.56, 0.0),
             }),
@@ -280,7 +280,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC::from(TranslationalState {
+        TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -288,7 +288,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC::from(TranslationalState {
+        TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -297,7 +297,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -440,7 +440,10 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // `set_source_state`.
     let sun_entity = app
         .world_mut()
-        .spawn((PlanetBundle::point_mass("Sun", &jeod_sim::SUN), SunMarker))
+        .spawn((
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Sun", &jeod_sim::SUN),
+            SunMarker,
+        ))
         .id();
 
     // Moon: dual-role marker + non-root gravity source. The body's
@@ -448,7 +451,10 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // is parented to the Moon's frame entity (non-root integ frame).
     let moon_entity = app
         .world_mut()
-        .spawn((PlanetBundle::point_mass("Moon", &MOON), MoonMarker))
+        .spawn((
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON),
+            MoonMarker,
+        ))
         .id();
 
     // Run Startup so register_source_frames_system spawns the source
@@ -462,7 +468,7 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // correct moon/sun positions when it runs.
     let setup = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon_entity, MOON_OFFSET, DVec3::ZERO);
             m.set_source_state(sun_entity, SUN_POS, DVec3::ZERO);
         });
@@ -471,7 +477,7 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: body_moon_rel_pos,
                 velocity: body_moon_rel_vel,
             }),

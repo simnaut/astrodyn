@@ -344,7 +344,7 @@ pub fn body_action_system(
     mut queue: ResMut<BodyActionsR>,
     mut bodies: Query<
         (
-            Option<&mut TranslationalStateC>,
+            Option<&mut TranslationalStateC<jeod_sim::Earth>>,
             Option<&mut RotationalStateC>,
             Option<&mut MassPropertiesC>,
             Option<&mut GaussJacksonStateC>,
@@ -398,14 +398,26 @@ pub fn body_action_system(
                 .as_deref_mut()
                 .unwrap_or_else(|| {
                     panic!(
-                        "BodyAction targets translational state on entity {:?} (action_name={:?}) but the entity has no TranslationalStateC. \
-                         Add `TranslationalStateC::default()` to the entity (or spawn via `VehicleConfig::spawn_bevy`) before queuing this action.",
+                        "BodyAction targets translational state on entity {:?} (action_name={:?}) \
+                         but the entity has no `TranslationalStateC<jeod_sim::Earth>` slot. \
+                         The queued-action path is currently Earth-only: this system writes \
+                         through `Query<Option<&mut TranslationalStateC<jeod_sim::Earth>>>`. \
+                         Two valid options: \
+                         (a) if the body integrates against Earth, ensure `TranslationalStateC::<jeod_sim::Earth>` \
+                         is inserted on the entity before queuing the action (spawn via \
+                         `VehicleConfig::spawn_bevy` does this automatically); \
+                         (b) for non-Earth integration sources, do not queue a translational \
+                         BodyAction — instead mutate `Query<&mut TranslationalStateC<P>>` \
+                         directly with the same untyped state, since the queue does not yet \
+                         carry a `<P>` tag. Adding a `TranslationalStateC::<jeod_sim::Earth>` slot \
+                         to a non-Earth body is *not* a valid workaround — it would silently \
+                         land the action in the wrong planet's storage.",
                         action.entity, action.name,
                     )
                 });
             // allowed: action-fire boundary — `BodyAction::apply_translational` returns the
             // ECS-agnostic `TranslationalState` (the kernels in `jeod_dynamics::body_init`
-            // are untyped). Lifting back to the typed `<PlanetInertial<SelfPlanet>>` storage
+            // are untyped). Lifting back to the typed `<PlanetInertial<Earth>>` storage
             // is a one-time relabel at the action-fire boundary, identical in shape to the
             // `VehicleConfig::spawn_bevy` initial-state lift in `lib.rs`. Not a per-step
             // bypass.
@@ -617,7 +629,7 @@ mod tests {
     fn spawn_vehicle(app: &mut App) -> Entity {
         app.world_mut()
             .spawn((
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 RotationalStateC::default(),
                 MassPropertiesC::from(MassProperties::new(400_000.0)),
                 // `body_action_system` filters by `With<DynamicsConfigC>`;
@@ -740,7 +752,7 @@ mod tests {
         let trans = app
             .world()
             .entity(entity)
-            .get::<TranslationalStateC>()
+            .get::<TranslationalStateC<jeod_sim::Earth>>()
             .expect("trans state present")
             .0
             .to_untyped();

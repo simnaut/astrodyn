@@ -44,15 +44,17 @@ fn tier3_bevy_sh4x4_rnp() {
             Name::new("Earth"),
             GravitySourceC(sh_source.clone()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             DynamicsConfigC(jeod_sim::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -147,8 +149,10 @@ fn tier3_bevy_tidal_sh4x4() {
             Name::new("Earth"),
             GravitySourceC(sh_source.clone()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
             TidalConfigC::from_untyped(&tidal_config),
         ))
         .id();
@@ -156,7 +160,7 @@ fn tier3_bevy_tidal_sh4x4() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             DynamicsConfigC(jeod_sim::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -222,7 +226,7 @@ fn tier3_bevy_run2p_polar_motion() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -284,7 +288,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -292,7 +296,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC::from(gj_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(gj_trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),

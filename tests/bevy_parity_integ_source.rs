@@ -13,9 +13,10 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, FlatPlateConfigC, GravityControlsC, IntegSourceC, JeodPlugin, MassPropertiesC,
-    PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC, SourceInertialPositionC,
-    SourceInertialVelocityC, SourceMutator, SunMarker, TranslationalStateC,
+    register_planet_systems, DynamicsConfigC, FlatPlateConfigC, GravityControlsC, IntegSourceC,
+    JeodPlugin, MassPropertiesC, PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC,
+    SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, SunMarker,
+    TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_runner::Simulation;
@@ -114,28 +115,43 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(JeodPlugin);
+    // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`
+    // — its integration frame is `PlanetInertial<Moon>`. Register the
+    // Moon-instantiated systems so the body is matched by the
+    // integration / gravity / frame / staging pipeline. JeodPlugin
+    // alone only registers the `<Earth>` instantiation; the
+    // `<Moon>`-tagged body would silently fall out of every system
+    // without this call.
+    register_planet_systems::<jeod_sim::Moon>(&mut app);
 
     // Earth (central) + Moon (offset) as gravity sources. Earth sits at
     // root-relative origin; Moon is positioned via SourceMutator after
     // registration so its frame node carries the offset that the body
     // integrates relative to.
+    //
+    // The two source bundles are tagged `<Earth>` because the gravity
+    // sources themselves are stored in the simulation's root inertial
+    // frame (which by convention is Earth-centered for this test);
+    // the source-side `<Earth>` tag is unrelated to the body's
+    // integration frame, which is moon-centered.
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
     // Vehicle: integrates in Moon.inertial; gravity from both Earth and
-    // Moon (Earth is the differential third body).
+    // Moon (Earth is the differential third body). The body's typed
+    // state is tagged `<Moon>` because it lives in `PlanetInertial<Moon>`.
     let vehicle = app
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Moon>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -161,10 +177,13 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     app.world_mut().run_schedule(Startup);
 
     // Set the Moon's inertial position via SourceMutator (parity with
-    // `jeod_runner::Simulation::set_source_position`).
+    // `jeod_runner::Simulation::set_source_position`). The mutator's
+    // `<Earth>` instantiation matches the source-side `TranslationalStateC<Earth>`
+    // on the Moon entity (the Moon source is tagged `<Earth>`; only
+    // the body integrating around it is tagged `<Moon>`).
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -179,7 +198,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Moon>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -249,21 +268,25 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(JeodPlugin);
+    // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
+    // register the Moon-instantiated systems so the body is matched by
+    // the integration / gravity / frame / staging pipeline.
+    register_planet_systems::<jeod_sim::Moon>(&mut app);
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Moon>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -290,7 +313,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     // auto-inserts SourceInertialVelocityC since PlanetBundle didn't.
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, moon_vel);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -305,7 +328,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Moon>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -381,7 +404,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -393,7 +416,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(MassProperties::with_inertia(
                 400_000.0,
@@ -422,7 +445,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -514,26 +537,42 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(JeodPlugin);
+    // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
+    // register the Moon-instantiated systems (including
+    // `solar_beta_system::<Moon>`, which expects `TranslationalStateC<Moon>`
+    // on both the body AND the Sun marker entity by query unification).
+    register_planet_systems::<jeod_sim::Moon>(&mut app);
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
+    // Sun carries `TranslationalStateC` tagged with both `<Earth>` and
+    // `<Moon>`: `<Earth>` is required by the validation system (which
+    // is `<Earth>`-instantiated by `JeodPlugin`); `<Moon>` is required
+    // by `solar_beta_system::<Moon>`'s
+    // `Query<&TranslationalStateC<Moon>, With<SunMarker>>`. Bevy stores
+    // them as distinct components on the same entity. The numeric
+    // position is the same in both — the planet phantom is a
+    // type-level convention that unifies queries within each
+    // instantiation.
+    let sun_state = TranslationalState {
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+    };
     let _sun = app
         .world_mut()
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
-                position: sun_pos,
-                velocity: DVec3::ZERO,
-            }),
+            TranslationalStateC::<jeod_sim::Earth>::from(sun_state),
+            TranslationalStateC::<jeod_sim::Moon>::from(sun_state),
         ))
         .id();
 
@@ -541,7 +580,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_tilted),
+            TranslationalStateC::<jeod_sim::Moon>::from(lunar_tilted),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -567,7 +606,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -711,25 +750,36 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(JeodPlugin);
+    // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
+    // register the Moon-instantiated systems (the SRP system unifies
+    // body and Sun queries on the same `<Moon>` tag).
+    register_planet_systems::<jeod_sim::Moon>(&mut app);
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
+    // Sun carries `TranslationalStateC<Earth>` (validation requires
+    // it) and `TranslationalStateC<Moon>` (so
+    // `flat_plate_srp_system::<Moon>`'s
+    // `Query<&TranslationalStateC<Moon>, With<SunMarker>>` matches);
+    // see the solar-beta test above for the same dual-tag rationale.
+    let sun_state = TranslationalState {
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+    };
     let _sun = app
         .world_mut()
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
-                position: sun_pos,
-                velocity: DVec3::ZERO,
-            }),
+            TranslationalStateC::<jeod_sim::Earth>::from(sun_state),
+            TranslationalStateC::<jeod_sim::Moon>::from(sun_state),
         ))
         .id();
 
@@ -737,7 +787,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
         .world_mut()
         .spawn((
             Name::new("Lunar-SRP"),
-            TranslationalStateC::from(lunar_tilted),
+            TranslationalStateC::<jeod_sim::Moon>::from(lunar_tilted),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -768,7 +818,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -787,7 +837,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Moon>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),

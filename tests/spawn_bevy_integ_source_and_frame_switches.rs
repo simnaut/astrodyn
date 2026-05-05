@@ -137,11 +137,11 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
 
     // Build a config that integrates in Moon (source index 1).
@@ -178,11 +178,11 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
 
     let cfg = earth_then_moon_config();
@@ -213,7 +213,7 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
 
     // No `.integ_source(...)` call -> `integ_source: None` in the config.
@@ -247,7 +247,7 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
 
     let cfg = VehicleBuilder::new()
@@ -276,7 +276,7 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
 
     let cfg = VehicleBuilder::new()
@@ -298,7 +298,7 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
     app.add_plugins(MinimalPlugins);
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
 
     let cfg = VehicleBuilder::new()
@@ -334,11 +334,11 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
 
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -373,7 +373,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     // during propagation.
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -411,7 +411,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),

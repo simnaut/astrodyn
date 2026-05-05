@@ -44,7 +44,7 @@ fn build_planet_app(name: &str, config: &PlanetConfig) -> (App, Entity) {
     app.add_plugins(JeodPlugin);
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass(name, config))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(name, config))
         .id();
     (app, planet)
 }
@@ -110,7 +110,7 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -141,7 +141,7 @@ fn tier3_bevy_planet_ang_vel_mars_iau() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -168,7 +168,7 @@ fn tier3_bevy_planet_ang_vel_moon_iau() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -209,17 +209,19 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                glam::DMat3::IDENTITY,
+            )),
             RotationModelC(RotationModel::None),
             PlanetOmegaC(EARTH.omega),
-            PlanetAngularVelocityC::default(),
+            PlanetAngularVelocityC::<jeod_sim::Earth>::default(),
         ))
         .id();
     step_bevy_once(&mut app);
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -395,7 +397,7 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
     app.insert_resource(EphemerisR(eph));
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
     // Override the bundle's default `RotationModelC(MoonIAU)` (copied
     // from `MOON.rotation_model`) with `MoonDE421`. Inserting after
@@ -407,7 +409,7 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();

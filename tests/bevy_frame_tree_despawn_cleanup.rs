@@ -38,7 +38,7 @@ fn source_despawn_despawns_inertial_and_pfix_frame_entities() {
     let mut app = build_app();
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     app.update();
 
@@ -87,7 +87,7 @@ fn source_respawn_after_despawn_does_not_shadow() {
     let mut app = build_app();
     let earth1 = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     app.update();
     let original_inertial_frame_entity = app.world().get::<FrameEntityC>(earth1).unwrap().0;
@@ -97,7 +97,7 @@ fn source_respawn_after_despawn_does_not_shadow() {
 
     let earth2 = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     app.update();
 
@@ -118,13 +118,13 @@ fn body_despawn_despawns_body_frame_entity() {
     let mut app = build_app();
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let body = app
         .world_mut()
         .spawn((
             Name::new("vehicle"),
-            TranslationalStateC::from_untyped(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7.5e3, 0.0),
             }),
@@ -168,7 +168,7 @@ fn rotation_none_then_source_despawn_does_not_leak_retired_pfix_entity() {
     let mut app = build_app();
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     app.update();
 

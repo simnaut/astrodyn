@@ -203,7 +203,7 @@ impl Plugin for JeodPlugin {
                  frame is inertial — source / body registration tags new children \
                  with `InertialFrameMarker` and the typed Bevy components \
                  (`Position<RootInertial>`, \
-                 `TranslationalStateC` storing `<PlanetInertial<SelfPlanet>>`) \
+                 `TranslationalStateC<P>` storing `<PlanetInertial<P>>`) \
                  are all phantom-tagged for an inertial root. Add \
                  `InertialFrameMarker` to the entity, or let JeodPlugin spawn the \
                  root frame.",
@@ -228,11 +228,6 @@ impl Plugin for JeodPlugin {
                  let JeodPlugin spawn the root frame.",
             );
         }
-
-        // ── Typed-Component reflection ──
-        // Centralized in `register_jeod_component_types` so the smoke
-        // test and any other consumer registers exactly the same set.
-        register_jeod_component_types(app);
 
         // ── Events ──
         app.add_message::<AttachEvent>();
@@ -284,14 +279,16 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             Startup,
             (
-                systems::register_source_frames_system,
-                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
-                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                systems::register_source_frames_system::<jeod_sim::Earth>,
+                systems::register_pfix_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_source_frames_system::<jeod_sim::Earth>),
+                systems::register_body_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_pfix_frames_system::<jeod_sim::Earth>),
                 // Maintain `MassPointRef` ↔ `MassPropertiesC` invariant
                 // for bodies that gain or lose mass after the one-time
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
-                    .after(systems::register_body_frames_system),
+                    .after(systems::register_body_frames_system::<jeod_sim::Earth>),
                 // Body-action systems are intentionally NOT registered
                 // in `Startup`. Bevy gives every system instance an
                 // independent `Local<MessageCursor<BodyActionEvent>>`
@@ -348,11 +345,13 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             PreUpdate,
             (
-                systems::register_source_frames_system,
-                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
-                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                systems::register_source_frames_system::<jeod_sim::Earth>,
+                systems::register_pfix_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_source_frames_system::<jeod_sim::Earth>),
+                systems::register_body_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_pfix_frames_system::<jeod_sim::Earth>),
                 systems::sync_body_mass_point_ref_system
-                    .after(systems::register_body_frames_system),
+                    .after(systems::register_body_frames_system::<jeod_sim::Earth>),
             ),
         );
         // ECS frame-entity cleanup on owner despawn: the registration
@@ -374,22 +373,23 @@ impl Plugin for JeodPlugin {
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
-                systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
+                systems::register_source_frames_system::<jeod_sim::Earth>
+                    .before(JeodSet::EphemerisUpdate),
                 // Late-attached `PlanetFixedRotationC` → pfix child node
                 // (see `register_pfix_frames_system` doc).
-                systems::register_pfix_frames_system
-                    .after(systems::register_source_frames_system)
+                systems::register_pfix_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_source_frames_system::<jeod_sim::Earth>)
                     .before(JeodSet::EphemerisUpdate),
                 // Catch dynamically-spawned bodies (after source registration so
                 // any IntegSourceC reference resolves to a registered source).
-                systems::register_body_frames_system
-                    .after(systems::register_pfix_frames_system)
+                systems::register_body_frames_system::<jeod_sim::Earth>
+                    .after(systems::register_pfix_frames_system::<jeod_sim::Earth>)
                     .before(JeodSet::EphemerisUpdate),
                 // Late-acquired / late-lost `MassPropertiesC` →
                 // insert / remove `MassPointRef` for bodies that have
                 // already passed through `register_body_frames_system`.
                 systems::sync_body_mass_point_ref_system
-                    .after(systems::register_body_frames_system)
+                    .after(systems::register_body_frames_system::<jeod_sim::Earth>)
                     .before(JeodSet::EphemerisUpdate),
                 // Validation runs *after* registration but before any
                 // pipeline consumer touches the new components. The
@@ -407,26 +407,28 @@ impl Plugin for JeodPlugin {
                 // ephemeris / pfix consumers live) preserves the
                 // "validate before consumers" intent without racing
                 // the frame-tree wiring.
-                validation::validate_jeod_invariants
-                    .after(systems::register_body_frames_system)
+                validation::validate_jeod_invariants::<jeod_sim::Earth>
+                    .after(systems::register_body_frames_system::<jeod_sim::Earth>)
                     .before(JeodSet::EphemerisUpdate),
                 // After ephemeris_update_system writes new source
                 // position / velocity, mirror the values into the
                 // source's frame entity so frame-tree consumers
                 // (`RelativeFrameState`, `FrameOrigin`,
                 // frame-switch evaluation) see the latest state.
-                systems::sync_source_to_frame_system
+                systems::sync_source_to_frame_system::<jeod_sim::Earth>
                     .in_set(JeodSet::EphemerisUpdate)
-                    .after(systems::ephemeris_update_system)
-                    .after(systems::planet_fixed_rotation_system),
+                    .after(systems::ephemeris_update_system::<jeod_sim::Earth>)
+                    .after(systems::planet_fixed_rotation_system::<jeod_sim::Earth>),
                 // Planet-fixed rotation (RNP)
-                systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
+                systems::planet_fixed_rotation_system::<jeod_sim::Earth>
+                    .in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)
-                systems::ephemeris_update_system.in_set(JeodSet::EphemerisUpdate),
+                systems::ephemeris_update_system::<jeod_sim::Earth>
+                    .in_set(JeodSet::EphemerisUpdate),
                 // Tidal ΔC20 (must run after planet-fixed rotation)
-                systems::tidal_update_system
+                systems::tidal_update_system::<jeod_sim::Earth>
                     .in_set(JeodSet::EphemerisUpdate)
-                    .after(systems::planet_fixed_rotation_system),
+                    .after(systems::planet_fixed_rotation_system::<jeod_sim::Earth>),
                 // Mass update: recompute inverse_mass/inverse_inertia each step.
                 systems::mass_update_system
                     .after(JeodSet::TimeUpdate)
@@ -445,13 +447,13 @@ impl Plugin for JeodPlugin {
                     .after(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Gravity pre-computation
-                systems::gravity_computation_system.in_set(JeodSet::Environment),
+                systems::gravity_computation_system::<jeod_sim::Earth>.in_set(JeodSet::Environment),
                 // Atmosphere evaluation
-                systems::atmosphere_update_system.in_set(JeodSet::Environment),
+                systems::atmosphere_update_system::<jeod_sim::Earth>.in_set(JeodSet::Environment),
                 // Interactions
                 // Mass tree staging (attach/detach) — runs before interactions
                 // so mass changes affect the current step's forces and integration.
-                systems::staging_system
+                systems::staging_system::<jeod_sim::Earth>
                     .after(JeodSet::Environment)
                     .before(JeodSet::Interaction),
                 // Detached-subtree ballistic propagation: advance every
@@ -470,14 +472,14 @@ impl Plugin for JeodPlugin {
                 // it — leaving the frame tree desynced for one tick.
                 // Pin `step_detached_system` before both so the synced
                 // frame entity reflects the post-step body state.
-                systems::step_detached_system
+                systems::step_detached_system::<jeod_sim::Earth>
                     .in_set(JeodSet::Integration)
-                    .before(systems::sync_body_to_frame_system)
-                    .before(systems::frame_switch_system),
-                systems::aero_drag_system.in_set(JeodSet::Interaction),
+                    .before(systems::sync_body_to_frame_system::<jeod_sim::Earth>)
+                    .before(systems::frame_switch_system::<jeod_sim::Earth>),
+                systems::aero_drag_system::<jeod_sim::Earth>.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
-                systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
-                systems::cannonball_srp_system.in_set(JeodSet::Interaction),
+                systems::flat_plate_srp_system::<jeod_sim::Earth>.in_set(JeodSet::Interaction),
+                systems::cannonball_srp_system::<jeod_sim::Earth>.in_set(JeodSet::Interaction),
             ),
         );
         app.add_systems(
@@ -535,7 +537,7 @@ impl Plugin for JeodPlugin {
                 // events on the same tick they were dispatched. Runner
                 // counterpart: events are applied before stage 3a in
                 // `Simulation::step_internal`.
-                frame_attach_system::frame_attach_system
+                frame_attach_system::frame_attach_system::<jeod_sim::Earth>
                     .after(JeodSet::EphemerisUpdate)
                     .before(JeodSet::Environment),
                 // Frame-attached body kinematic propagation. Derives
@@ -553,8 +555,8 @@ impl Plugin for JeodPlugin {
                 // Runs after `frame_attach_system` so freshly-attached
                 // bodies pick up the parent-frame composition the same
                 // tick they were attached.
-                frame_attach_system::propagate_frame_attached_state_system
-                    .after(frame_attach_system::frame_attach_system)
+                frame_attach_system::propagate_frame_attached_state_system::<jeod_sim::Earth>
+                    .after(frame_attach_system::frame_attach_system::<jeod_sim::Earth>)
                     .before(JeodSet::Environment),
                 // Body-action lifecycle: drain `BodyActionEvent`
                 // (`Add` / `Remove` variants) into `BodyActionsR`,
@@ -624,8 +626,10 @@ impl Plugin for JeodPlugin {
                 // mass-tree root would otherwise hand its kinematic
                 // descendants a stale pre-frame-attach root state).
                 // Fast-path no-op when no entity carries `MassChildOf`.
-                kinematic_propagation::propagate_state_from_root_system
-                    .after(frame_attach_system::propagate_frame_attached_state_system)
+                kinematic_propagation::propagate_state_from_root_system::<jeod_sim::Earth>
+                    .after(
+                        frame_attach_system::propagate_frame_attached_state_system::<jeod_sim::Earth>,
+                    )
                     .before(JeodSet::Environment),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
@@ -643,20 +647,20 @@ impl Plugin for JeodPlugin {
                 wrench::wrench_aggregation_system
                     .in_set(JeodSet::ForceCollection)
                     .after(systems::force_collection_system),
-                systems::integration_system.in_set(JeodSet::Integration),
+                systems::integration_system::<jeod_sim::Earth>.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into
                 // its frame entity's `FrameTransC` so frame-switch
                 // evaluation and downstream `RelativeFrameState` /
                 // `FrameOrigin` queries see current distances.
-                systems::sync_body_to_frame_system
+                systems::sync_body_to_frame_system::<jeod_sim::Earth>
                     .in_set(JeodSet::Integration)
-                    .after(systems::integration_system),
+                    .after(systems::integration_system::<jeod_sim::Earth>),
                 // Evaluate distance-based frame switches and reparent
                 // the body's frame entity in the ECS hierarchy on
                 // trigger.
-                systems::frame_switch_system
+                systems::frame_switch_system::<jeod_sim::Earth>
                     .in_set(JeodSet::Integration)
-                    .after(systems::sync_body_to_frame_system),
+                    .after(systems::sync_body_to_frame_system::<jeod_sim::Earth>),
                 // Post-integration frame-attached body propagation.
                 // Symmetric to the pre-integration sweep above: the
                 // integrator just produced fresh source-body state and
@@ -679,9 +683,11 @@ impl Plugin for JeodPlugin {
                 // descendants a stale pre-frame-attach root state —
                 // same constraint as the pre-integration ordering,
                 // applied to the post-integration sweep.
-                frame_attach_system::propagate_frame_attached_state_post_integration_system
+                frame_attach_system::propagate_frame_attached_state_post_integration_system::<
+                    jeod_sim::Earth,
+                >
                     .in_set(JeodSet::Integration)
-                    .after(systems::frame_switch_system),
+                    .after(systems::frame_switch_system::<jeod_sim::Earth>),
                 // Post-integration kinematic state propagation
                 // (root → leaves). The integrator just produced fresh
                 // root-body state; rerun the kinematic walk so every
@@ -691,10 +697,12 @@ impl Plugin for JeodPlugin {
                 // `DynBody::propagate_state_from_structure` invocation
                 // at the end of every integration cycle and the
                 // runner's stage 8d post-integration sweep.
-                kinematic_propagation::propagate_state_from_root_post_integration_system
+                kinematic_propagation::propagate_state_from_root_post_integration_system::<
+                    jeod_sim::Earth,
+                >
                     .in_set(JeodSet::Integration)
                     .after(
-                        frame_attach_system::propagate_frame_attached_state_post_integration_system,
+                        frame_attach_system::propagate_frame_attached_state_post_integration_system::<jeod_sim::Earth>,
                     ),
             ),
         );
@@ -706,112 +714,146 @@ impl Plugin for JeodPlugin {
             FixedUpdate,
             (
                 // Derived states
-                systems::orbital_elements_system.in_set(JeodSet::DerivedState),
+                systems::orbital_elements_system::<jeod_sim::Earth>.in_set(JeodSet::DerivedState),
                 systems::euler_angles_system.in_set(JeodSet::DerivedState),
-                systems::lvlh_system.in_set(JeodSet::DerivedState),
-                systems::geodetic_system.in_set(JeodSet::DerivedState),
-                systems::solar_beta_system.in_set(JeodSet::DerivedState),
-                systems::earth_lighting_system.in_set(JeodSet::DerivedState),
+                systems::lvlh_system::<jeod_sim::Earth>.in_set(JeodSet::DerivedState),
+                systems::geodetic_system::<jeod_sim::Earth>.in_set(JeodSet::DerivedState),
+                systems::solar_beta_system::<jeod_sim::Earth>.in_set(JeodSet::DerivedState),
+                systems::earth_lighting_system::<jeod_sim::Earth>.in_set(JeodSet::DerivedState),
             ),
         );
     }
 }
 
-/// Register every `Reflect`-derived Component from
-/// [`crate::components`] in the `App`'s `TypeRegistry`.
+/// Register the planet-generic system instantiations needed for a
+/// downstream multi-planet mission.
 ///
-/// `JeodPlugin::build` calls this; downstream consumers that don't use
-/// `JeodPlugin` (e.g. test harnesses, custom adapters that compose only
-/// a subset of systems) can call it directly to populate the same
-/// registry. Tests use this through the same entry point so the list
-/// can't drift between production and verification.
+/// `JeodPlugin::build` registers every planet-generic system with
+/// `<jeod_sim::Earth>` so that single-planet Earth missions work out of
+/// the box without any extra registration call. A mission that
+/// integrates bodies in multiple planet-inertial frames (e.g. a
+/// Mars-orbit chief + Earth-orbit deputy) calls this helper once per
+/// *additional* planet:
 ///
-/// Inner `jeod_*` types are `#[reflect(opaque)]` so the Component
-/// appears as a leaf with its type name. Field-level introspection of
-/// `Position<RootInertial>`, `RotationalState`, etc. would require
-/// propagating `Reflect` into the source crates and is out of scope
-/// here.
-pub fn register_jeod_component_types(app: &mut App) {
-    // Dynamics state
-    app.register_type::<components::TranslationalStateC>();
-    app.register_type::<components::RotationalStateC>();
-    app.register_type::<components::MassPropertiesC>();
-    app.register_type::<components::GravityAccelerationC>();
-    app.register_type::<components::TotalForceC>();
-    app.register_type::<components::FrameDerivativesC>();
-    // Dynamics config + integrator state
-    app.register_type::<components::DynamicsConfigC>();
-    app.register_type::<components::IntegratorTypeC>();
-    app.register_type::<components::GaussJacksonStateC>();
-    app.register_type::<components::Abm4StateC>();
-    // Gravity
-    app.register_type::<components::GravityControlsC>();
-    app.register_type::<components::GravitySourceC>();
-    app.register_type::<components::SourceInertialPositionC>();
-    app.register_type::<components::SourceInertialVelocityC>();
-    // Interactions
-    app.register_type::<components::AerodynamicForceC>();
-    app.register_type::<components::RadiationForceC>();
-    app.register_type::<components::GravityTorqueC>();
-    app.register_type::<components::AtmosphericStateC>();
-    // Frame transforms
-    app.register_type::<components::StructuralTransformC>();
-    app.register_type::<components::PlanetFixedRotationC>();
-    app.register_type::<components::PlanetOmegaC>();
-    app.register_type::<components::PlanetAngularVelocityC>();
-    app.register_type::<components::IntegSourceC>();
-    app.register_type::<components::FrameSwitchesC>();
-    // Frames-as-entities components.
-    app.register_type::<components::FrameTransC>();
-    app.register_type::<components::FrameRotC>();
-    app.register_type::<components::FrameAngVelC>();
-    app.register_type::<components::InertialFrameMarker>();
-    app.register_type::<components::PlanetFixedFrameMarker>();
-    app.register_type::<components::BodyFrameMarker>();
-    app.register_type::<components::IntegrationFrameMarker>();
-    app.register_type::<components::FrameEntityC>();
-    app.register_type::<components::PfixFrameEntityC>();
-    app.register_type::<components::RetiredPfixFrameEntityC>();
-    app.register_type::<components::FrameAttachedC>();
-    app.register_type::<components::JointKinematicsC>();
-    app.register_type::<components::SinusoidalJointKinematicsC>();
-    app.register_type::<components::ClosureJointKinematicsC>();
-    app.register_type::<components::MultiDofJointKinematicsC>();
-    // Tidal
-    app.register_type::<components::TidalConfigC>();
-    app.register_type::<components::TidalDeltaC20C>();
-    // Drag / SRP
-    app.register_type::<components::DragConfigC>();
-    app.register_type::<components::FlatPlateConfigC>();
-    app.register_type::<components::CannonballSrpC>();
-    app.register_type::<components::ShadowBodyC>();
-    // External loads
-    app.register_type::<components::ExternalForceC>();
-    app.register_type::<components::ExternalTorqueC>();
-    // Body / planet identity + ephemeris
-    app.register_type::<components::MassBodyIdC>();
-    app.register_type::<components::MassChildOf>();
-    app.register_type::<components::MassPointRef>();
-    app.register_type::<components::DetachedSubtreeStateC>();
-    app.register_type::<components::KinematicChildC>();
-    app.register_type::<components::PlanetC>();
-    app.register_type::<components::RotationModelC>();
-    app.register_type::<components::EphemerisBodyC>();
-    app.register_type::<components::SunMarker>();
-    app.register_type::<components::MoonMarker>();
-    app.register_type::<components::CentralSourceMarker>();
-    // Derived-state config
-    app.register_type::<components::OrbitalElementsConfigC>();
-    app.register_type::<components::EulerAnglesConfigC>();
-    app.register_type::<components::GeodeticConfigC>();
-    app.register_type::<components::EarthLightingConfigC>();
-    // Derived-state output
-    app.register_type::<components::OrbitalElementsC>();
-    app.register_type::<components::EulerAnglesC>();
-    app.register_type::<components::LvlhFrameC>();
-    app.register_type::<components::GeodeticStateC>();
-    app.register_type::<components::SolarBetaC>();
-    app.register_type::<components::EarthLightingStateC>();
+/// ```ignore
+/// use bevy::prelude::*;
+/// use bevy_jeod::{JeodPlugin, register_planet_systems};
+/// use jeod_sim::Mars;
+///
+/// let mut app = App::new();
+/// app.add_plugins(JeodPlugin);            // registers Earth instantiations
+/// register_planet_systems::<Mars>(&mut app); // adds Mars instantiations
+/// ```
+///
+/// Each instantiation only matches entities whose Planet-flavored
+/// components carry the same `<P>` tag — `register_body_frames_system::<Earth>`
+/// only registers bodies with `TranslationalStateC<Earth>`,
+/// `register_body_frames_system::<Mars>` only the Mars-tagged ones,
+/// etc. The two registrations therefore cover disjoint entity sets
+/// and run in parallel without conflict.
+///
+/// Schedule ordering and set membership mirror the Earth registrations
+/// in `JeodPlugin::build` — this helper is the structural single
+/// source of truth for the per-planet system set.
+pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
+    app.add_systems(
+        Startup,
+        (
+            systems::register_source_frames_system::<P>,
+            systems::register_pfix_frames_system::<P>
+                .after(systems::register_source_frames_system::<P>),
+            systems::register_body_frames_system::<P>
+                .after(systems::register_pfix_frames_system::<P>),
+        ),
+    );
+    app.add_systems(
+        PreUpdate,
+        (
+            systems::register_source_frames_system::<P>,
+            systems::register_pfix_frames_system::<P>
+                .after(systems::register_source_frames_system::<P>),
+            systems::register_body_frames_system::<P>
+                .after(systems::register_pfix_frames_system::<P>),
+        ),
+    );
+    app.add_systems(
+        FixedUpdate,
+        (
+            systems::register_source_frames_system::<P>.before(JeodSet::EphemerisUpdate),
+            systems::register_pfix_frames_system::<P>
+                .after(systems::register_source_frames_system::<P>)
+                .before(JeodSet::EphemerisUpdate),
+            systems::register_body_frames_system::<P>
+                .after(systems::register_pfix_frames_system::<P>)
+                .before(JeodSet::EphemerisUpdate),
+            // Per-planet validator instantiation. Mirrors the schedule
+            // slot of the Earth registration in `JeodPlugin::build`:
+            // after `register_body_frames_system::<P>` so the body's
+            // `FrameEntityC` parent chain is wired (the frame-switch
+            // and non-root-integ checks walk it), before
+            // `JeodSet::EphemerisUpdate` so consumers of validated
+            // state see the post-validation gravity-control
+            // auto-corrections.
+            validation::validate_jeod_invariants::<P>
+                .after(systems::register_body_frames_system::<P>)
+                .before(JeodSet::EphemerisUpdate),
+            systems::sync_source_to_frame_system::<P>
+                .in_set(JeodSet::EphemerisUpdate)
+                .after(systems::ephemeris_update_system::<P>)
+                .after(systems::planet_fixed_rotation_system::<P>),
+            systems::planet_fixed_rotation_system::<P>.in_set(JeodSet::EphemerisUpdate),
+            systems::ephemeris_update_system::<P>.in_set(JeodSet::EphemerisUpdate),
+            systems::tidal_update_system::<P>
+                .in_set(JeodSet::EphemerisUpdate)
+                .after(systems::planet_fixed_rotation_system::<P>),
+            systems::gravity_computation_system::<P>.in_set(JeodSet::Environment),
+            systems::atmosphere_update_system::<P>.in_set(JeodSet::Environment),
+            systems::staging_system::<P>
+                .after(JeodSet::Environment)
+                .before(JeodSet::Interaction),
+            systems::step_detached_system::<P>
+                .in_set(JeodSet::Integration)
+                .before(systems::sync_body_to_frame_system::<P>)
+                .before(systems::frame_switch_system::<P>),
+            systems::aero_drag_system::<P>.in_set(JeodSet::Interaction),
+            systems::flat_plate_srp_system::<P>.in_set(JeodSet::Interaction),
+            systems::cannonball_srp_system::<P>.in_set(JeodSet::Interaction),
+        ),
+    );
+    app.add_systems(
+        FixedUpdate,
+        (
+            frame_attach_system::frame_attach_system::<P>
+                .after(JeodSet::EphemerisUpdate)
+                .before(JeodSet::Environment),
+            frame_attach_system::propagate_frame_attached_state_system::<P>
+                .after(frame_attach_system::frame_attach_system::<P>)
+                .before(JeodSet::Environment),
+            kinematic_propagation::propagate_state_from_root_system::<P>
+                .after(frame_attach_system::propagate_frame_attached_state_system::<P>)
+                .before(JeodSet::Environment),
+            systems::integration_system::<P>.in_set(JeodSet::Integration),
+            systems::sync_body_to_frame_system::<P>
+                .in_set(JeodSet::Integration)
+                .after(systems::integration_system::<P>),
+            systems::frame_switch_system::<P>
+                .in_set(JeodSet::Integration)
+                .after(systems::sync_body_to_frame_system::<P>),
+            frame_attach_system::propagate_frame_attached_state_post_integration_system::<P>
+                .in_set(JeodSet::Integration)
+                .after(systems::frame_switch_system::<P>),
+            kinematic_propagation::propagate_state_from_root_post_integration_system::<P>
+                .in_set(JeodSet::Integration)
+                .after(
+                    frame_attach_system::propagate_frame_attached_state_post_integration_system::<P>,
+                ),
+            systems::orbital_elements_system::<P>.in_set(JeodSet::DerivedState),
+            systems::lvlh_system::<P>.in_set(JeodSet::DerivedState),
+            systems::geodetic_system::<P>.in_set(JeodSet::DerivedState),
+            systems::solar_beta_system::<P>.in_set(JeodSet::DerivedState),
+            systems::earth_lighting_system::<P>.in_set(JeodSet::DerivedState),
+        ),
+    );
 }
 
 // ── Bevy spawn helpers for the typestate VehicleBuilder ──
@@ -836,7 +878,7 @@ pub fn register_jeod_component_types(app: &mut App) {
 ///
 /// let mut app = App::new();
 /// app.add_systems(Startup, |mut commands: Commands| {
-///     let earth = commands.spawn(PlanetBundle::point_mass("Earth", &EARTH)).id();
+///     let earth = commands.spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH)).id();
 ///     let cfg = VehicleBuilder::new()
 ///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 ///         .three_dof_point_mass(vehicle::iss_mass())
@@ -869,6 +911,41 @@ pub trait VehicleConfigBevyExt {
     /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
     /// lighting). These are tracked for future expansion of
     /// `spawn_bevy`.
+    ///
+    /// # Planet pinning
+    ///
+    /// This convenience helper currently inserts the translational-state
+    /// slot as `TranslationalStateC<jeod_sim::Earth>` regardless of which
+    /// planet pipeline the body is intended to integrate against.
+    /// `VehicleConfig.trans` is the ECS-agnostic untyped
+    /// [`jeod_sim::TranslationalState`] (no planet tag), and the spawn-side
+    /// witness for `<P>` is not yet plumbed through this helper.
+    ///
+    /// Consequence: `cfg.spawn_bevy(&mut commands, &[mars_entity])` will
+    /// spawn a body with an `<Earth>`-tagged translational slot even if the
+    /// only registered planet pipeline is
+    /// `register_planet_systems::<jeod_sim::Mars>(...)`. The
+    /// planet-generic consumer systems (`atmosphere_*`,
+    /// `lvlh_derived_state_*`, `geodetic_*`, `orbital_elements_*`) gate on
+    /// `TranslationalStateC<P>` and would silently skip the body.
+    ///
+    /// For non-Earth integration sources, do **not** rely on `spawn_bevy`'s
+    /// translational insert. Instead, either:
+    ///
+    /// - spawn the entity manually with the correct
+    ///   `TranslationalStateC::<P>(jeod_sim::TranslationalStateTyped::from_untyped_unchecked(&state))`
+    ///   slot, or
+    /// - call `spawn_bevy` and immediately `commands.entity(id).remove::<TranslationalStateC<jeod_sim::Earth>>()`
+    ///   followed by `commands.entity(id).insert(TranslationalStateC::<P>(...))`,
+    ///   mutating through `Query<&mut TranslationalStateC<P>>` for any
+    ///   subsequent state changes. Queued translational `BodyAction`s are
+    ///   currently Earth-only for the same reason — see the panic
+    ///   diagnostic in `body_action_system`.
+    ///
+    /// The queue-side / spawn-side refactor that lifts this restriction
+    /// (parameterizing the translational insert by `<P>` and giving
+    /// `BodyActionsR` a planet tag) is tracked in
+    /// [issue #330](https://github.com/simnaut/bevy_jeod/issues/330).
     ///
     /// # Panics
     ///
@@ -930,7 +1007,7 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         };
 
         let mut entity = commands.spawn((
-            components::TranslationalStateC::from(self.trans),
+            components::TranslationalStateC::<jeod_sim::Earth>::from(self.trans),
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
             components::IntegratorTypeC(self.integrator),

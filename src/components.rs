@@ -1,17 +1,20 @@
 //! Bevy `Component` newtypes wrapping `jeod_sim` typed siblings (state,
-//! mass, gravity controls, interactions, derived states). Each component
-//! is `#[reflect(opaque, Component)]` so it appears in Bevy's type
-//! registry as a leaf of its `jeod_*` inner type.
+//! mass, gravity controls, interactions, derived states).
+//!
+//! `Reflect` derives are deferred until inspector / scene-tooling adoption
+//! demands them; absent that bound, components can carry `<P: Planet>`
+//! generics directly without the `TypePath` constraint that previously
+//! forced a `<SelfPlanet>` wildcard at the storage layer.
 
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Angle, AngularVelocity, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig,
+    Angle, AngularVelocity, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, Earth,
     FrameDerivatives, FrameDerivativesTyped, FrameTransform, GravityAcceleration,
     GravityAccelerationTyped, GravityControls, GravitySource, MassProperties, MassPropertiesTyped,
     Planet, PlanetFixed, PlanetInertial, PlanetShape, Position, Ratio, RootInertial,
-    RotationalState, RotationalStateTyped, SelfPlanet, SelfRef, StructuralFrame, Torque,
-    TotalForce, TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
+    RotationalState, RotationalStateTyped, SelfRef, StructuralFrame, Torque, TotalForce,
+    TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
 };
 
 // ── Dynamics ──
@@ -29,18 +32,17 @@ use jeod_sim::{
 // `From<Untyped>` impls are provided on every spatial Component so
 // existing test/example code that constructs `TranslationalStateC(state)`
 // from an untyped `TranslationalState` switches to
-// `TranslationalStateC::from(state)` without other changes.
+// `TranslationalStateC::<jeod_sim::Earth>::from(state)` without other changes.
 
 /// Translational state (position, velocity) for the body being
 /// integrated. Wraps a typed
-/// [`TranslationalStateTyped<PlanetInertial<SelfPlanet>>`](TranslationalStateTyped)
+/// [`TranslationalStateTyped<PlanetInertial<P>>`](TranslationalStateTyped)
 /// sibling so the frame phantom is enforced at the type level.
 ///
 /// # Frame semantics: planet-inertial, not root-inertial
 ///
-/// The frame phantom is [`PlanetInertial<SelfPlanet>`] (a particular
-/// planet's inertial frame, with the wildcard `SelfPlanet` standing
-/// in for "this entity's planet"). Two relabel categories apply at
+/// The frame phantom is [`PlanetInertial<P>`] for the planet `P` that
+/// this body integrates around. Two relabel categories apply at
 /// consumer call sites, and they are independent — a consumer may
 /// need one, both, or neither:
 ///
@@ -52,147 +54,97 @@ use jeod_sim::{
 ///    [`crate::frame_param::FrameOrigin`] SystemParam supplies the
 ///    offset and the gravity / integration / SRP systems perform the
 ///    shift at the call site.
-/// 2. **Wildcard → concrete planet relabel** (phantom-only,
-///    bit-identical, no arithmetic). Required whenever a typed kernel
-///    is parameterized over a concrete `PlanetInertial<P>` (e.g.
-///    `PlanetInertial<Earth>`) rather than the wildcard
-///    `SelfPlanet`. Callers do `Position::<PlanetInertial<P>>::
-///    from_raw_si(state.position.raw_si())` at the boundary; the
+/// 2. **Same-planet relabel** (phantom-only, bit-identical, no
+///    arithmetic). The component already carries the concrete `P`,
+///    so consumers that wanted `Position<PlanetInertial<P>>` get it
+///    by direct projection through `as_planet_inertial()` — the
 ///    underlying SI coordinates are preserved exactly.
 ///
 /// Atmosphere/drag, LVLH, geodetic, and orbital-elements consumers
 /// do **not** apply the integ-origin shift (they live in
-/// planet-inertial throughout). Drag, LVLH, and geodetic still
-/// apply category 2 to satisfy a concrete-planet typed kernel
-/// signature — for them, calling the path "no relabel" would be
-/// misleading because the phantom-tag attachment at the call site
-/// *is* the relabel. Orbital elements is the one exception in this
-/// group: its kernel
-/// [`jeod_sim::compute_orbital_elements`] is planet-erased and
-/// returns `OrbitalElements<SelfPlanet>` directly, so the
-/// `OrbitalElementsC` storage matches the `<SelfPlanet>` source
-/// state without any relabel. This was the original "kernels generic
-/// over `SelfPlanet` avoid both categories" exit, now realized by one
-/// consumer; atmosphere also avoids both categories, but by feeding
-/// the kernel raw `DVec3` via `state.position.raw_si()` rather than
-/// by being `<SelfPlanet>`-typed end-to-end.
+/// planet-inertial throughout).
 ///
-/// For root-integrated bodies (`IntegSourceC` is `None` or omitted)
-/// the integ-origin shift is zero, so the planet-inertial coordinates
-/// numerically equal root-inertial; the typed phantom stays distinct
-/// so arithmetic mixing the body state with a
-/// `Position<RootInertial>` gravity-source position still requires
-/// the explicit shift the runner already performs.
+/// For root-integrated bodies the integ-origin shift is zero, so the
+/// planet-inertial coordinates numerically equal root-inertial; the
+/// typed phantom stays distinct so arithmetic mixing the body state
+/// with a `Position<RootInertial>` gravity-source position still
+/// requires the explicit shift the runner already performs.
 ///
-/// # `<SelfPlanet>` wildcard
+/// # `<P: Planet>` parametrization
 ///
-/// `SelfPlanet` is the planet-side analog of `SelfRef` — the
-/// "wildcard" tag the Bevy adapter uses when a Component carries a
-/// frame phantom whose planet identity is determined at runtime by
-/// the entity itself. The Component is non-generic so that
-/// `Query<&TranslationalStateC>` resolves to a single concrete type
-/// (Bevy queries cannot range over a free generic parameter), and
-/// every body's integration-frame planet is recovered at runtime via
-/// the body frame entity's `ChildOf` chain plus
-/// [`crate::frame_param::FrameOrigin`].
+/// The component is generic over the planet marker `P`. Every call site
+/// must pin `P` explicitly — there is no fallback. Mission code that needs
+/// multiple planets in a single `World` (e.g. a Mars-orbit chief plus an
+/// Earth-orbit deputy) instantiates `TranslationalStateC<Mars>` and
+/// `TranslationalStateC<Earth>` as distinct component types — Bevy
+/// queries discriminate them at the type level.
 ///
-/// Mission code that needs compile-time planet identity (e.g. a
-/// Mars-orbit chief plus an Earth-orbit deputy in the same `World`)
-/// should use the typed sibling
-/// [`TranslationalStateTyped<PlanetInertial<P>>`](TranslationalStateTyped)
-/// directly off-component, or a small mission-side wrapper Component
-/// pinning `P`. The `<SelfPlanet>` storage is a zero-cost relabel
-/// from any `<PlanetInertial<P>>` typed value via
-/// [`Self::from_planet_inertial`] (which preserves the dimensional
-/// SI coordinates exactly).
+/// **Per-planet system instantiation.** The Bevy adapter systems that
+/// read or write `TranslationalStateC<P>` (gravity, atmosphere, drag,
+/// SRP, integration, frame-switch, derived states, mass-tree staging,
+/// kinematic and frame-attached propagation, etc.) are themselves
+/// generic over `<P: Planet>`. [`crate::JeodPlugin`] registers the
+/// `<jeod_sim::Earth>` instantiation at startup, preserving the
+/// single-planet pipeline for missions that don't need multi-planet
+/// integration. A multi-planet mission calls
+/// [`crate::register_planet_systems::<P>`](crate::register_planet_systems)
+/// once per *additional* planet to register the parallel system set
+/// for `<P>`. Each instantiation only matches entities whose
+/// Planet-flavored components carry the matching `<P>` tag, so the
+/// Earth and Mars systems run in parallel over disjoint entity sets.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque, Component)]
-pub struct TranslationalStateC(pub TranslationalStateTyped<PlanetInertial<SelfPlanet>>);
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct TranslationalStateC<P: Planet>(pub TranslationalStateTyped<PlanetInertial<P>>);
 
-impl TranslationalStateC {
+impl<P: Planet> Default for TranslationalStateC<P> {
+    #[inline]
+    fn default() -> Self {
+        Self(TranslationalStateTyped::default())
+    }
+}
+
+impl<P: Planet> TranslationalStateC<P> {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
-    /// Component. The caller asserts the values are in some planet's
-    /// inertial frame: for non-root-integrated bodies this is the
-    /// body's `IntegSourceC` planet; for root-integrated bodies the
-    /// integration frame is the simulation's [`RootInertial`] frame.
+    /// Component. The caller asserts the values are in `P`'s
+    /// planet-inertial frame: for non-root-integrated bodies this is
+    /// the body's `IntegSourceC` planet; for root-integrated bodies
+    /// the integration frame is the simulation's [`RootInertial`]
+    /// frame, which is numerically coincident with `PlanetInertial<P>`
+    /// for the central body but kind-distinct in the type system.
     ///
-    /// `RootInertial` is kind-distinct from `PlanetInertial<P>` in
-    /// `jeod_quantities` — they are not unifiable types even when
-    /// numerically coincident. In Earth-centered setups the runner
-    /// conventionally treats the root inertial frame as numerically
-    /// coincident with the central body's `PlanetInertial<Earth>`
-    /// frame, but the type system keeps the two markers distinct;
-    /// crossing between them is via the explicit integ-origin shift
-    /// at RF.10 shift sites, not type unification. The wildcard
-    /// `<SelfPlanet>` tag on this Component sidesteps that distinction
-    /// at storage time — every body's storage is tagged
-    /// `PlanetInertial<SelfPlanet>` regardless of integration frame.
-    /// Consumers then either apply the integ-origin shift to relabel
-    /// the phantom to `RootInertial` (gravity, solar beta, SRP, earth
-    /// lighting), or stay within the planet-inertial flavor and do a
-    /// wildcard → concrete-planet phantom relabel at the typed-kernel
-    /// boundary (drag, LVLH, geodetic). Atmosphere and orbital
-    /// elements stay within planet-inertial *without* any relabel —
-    /// atmosphere because it consumes raw `DVec3` via
-    /// `state.position.raw_si()`, orbital elements because its kernel
-    /// is planet-erased and produces `OrbitalElements<SelfPlanet>`
-    /// directly. See the type-level docstring's "Frame semantics"
-    /// section for the two-category breakdown.
+    /// Crossing between `RootInertial` and `PlanetInertial<P>` is via
+    /// the explicit integ-origin shift at RF.10 shift sites, not via
+    /// type unification.
     ///
     /// No runtime check is performed; the conversion is a zero-cost
     /// type-tag attachment via
     /// [`TranslationalStateTyped::from_untyped_unchecked`].
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
-        Self(TranslationalStateTyped::<PlanetInertial<SelfPlanet>>::from_untyped_unchecked(&state))
+        Self(TranslationalStateTyped::<PlanetInertial<P>>::from_untyped_unchecked(&state))
     }
 
     /// Witness-gated constructor: wrap an already-typed
     /// [`TranslationalStateTyped`] expressed in `P`'s planet-inertial
-    /// frame as the wildcard-tagged Component. The witness is the
-    /// caller's compile-time choice of `P` plus the typed phantoms on
-    /// the input — there is no untyped escape hatch in this signature.
-    /// The relabel from `<PlanetInertial<P>>` to
-    /// `<PlanetInertial<SelfPlanet>>` is a zero-cost reinterpretation
-    /// at the storage boundary; the underlying SI coordinates are
-    /// preserved exactly.
+    /// frame as the typed Component. The witness is the caller's
+    /// compile-time choice of `P` plus the typed phantoms on the
+    /// input — there is no untyped escape hatch in this signature.
     ///
     /// Mirrors the witness pattern used by
     /// [`BodyAttitude::from_jeod_quat_unchecked`](jeod_sim::BodyAttitude)
-    /// and the typed `from_typed_*` siblings in `jeod_sim::recipes` —
-    /// mission code that holds a typed `TranslationalStateTyped` in a
-    /// specific planet's inertial frame can attach it to an entity
-    /// without dropping the type information by way of the untyped
-    /// `TranslationalState` storage form.
+    /// and the typed `from_typed_*` siblings in `jeod_sim::recipes`.
     #[inline]
-    pub fn from_planet_inertial<P: Planet>(
-        state: TranslationalStateTyped<PlanetInertial<P>>,
-    ) -> Self {
-        // Zero-cost relabel: both sides serialize to the same SI
-        // base-unit `DVec3`s; only the phantom planet tag differs.
-        Self(TranslationalStateTyped {
-            position: Position::<PlanetInertial<SelfPlanet>>::from_raw_si(state.position.raw_si()),
-            velocity: Velocity::<PlanetInertial<SelfPlanet>>::from_raw_si(state.velocity.raw_si()),
-        })
+    pub fn from_planet_inertial(state: TranslationalStateTyped<PlanetInertial<P>>) -> Self {
+        Self(state)
     }
 
     /// Read this state typed in `P`'s planet-inertial frame.
     ///
-    /// Reads the wildcard-tagged storage and re-tags it with the
-    /// caller-chosen `P: Planet`. The witness is the caller's
-    /// compile-time choice — the function trusts that the entity's
-    /// runtime planet identity (its `IntegSourceC` source's planet)
-    /// matches `P`. Mission code that has already set up the world
-    /// with all bodies orbiting the same planet can pin the type
-    /// here to recover compile-time planet checking on downstream
-    /// arithmetic without dropping into raw `DVec3`. Bit-identical
-    /// numerics: only the phantom planet tag changes.
-    ///
-    /// For `P = SelfPlanet` the call is a no-op return of the stored
-    /// value.
+    /// The component already carries the concrete planet identity, so
+    /// this is a direct copy of the underlying typed value (no relabel
+    /// needed — the type tag matches what the caller asks for).
     #[inline]
-    pub fn as_planet_inertial<P: Planet>(&self) -> TranslationalStateTyped<PlanetInertial<P>> {
+    pub fn as_planet_inertial(&self) -> TranslationalStateTyped<PlanetInertial<P>> {
         TranslationalStateTyped {
             position: Position::<PlanetInertial<P>>::from_raw_si(self.0.position.raw_si()),
             velocity: Velocity::<PlanetInertial<P>>::from_raw_si(self.0.velocity.raw_si()),
@@ -200,7 +152,7 @@ impl TranslationalStateC {
     }
 }
 
-impl From<TranslationalState> for TranslationalStateC {
+impl<P: Planet> From<TranslationalState> for TranslationalStateC<P> {
     #[inline]
     fn from(state: TranslationalState) -> Self {
         Self::from_untyped(state)
@@ -209,8 +161,7 @@ impl From<TranslationalState> for TranslationalStateC {
 
 /// Rotational state (attitude quaternion + body-frame angular
 /// velocity / acceleration) for the body being integrated.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct RotationalStateC(pub RotationalStateTyped<SelfRef>);
 
 impl RotationalStateC {
@@ -240,8 +191,7 @@ impl From<RotationalState> for RotationalStateC {
 /// Body mass, center of mass, and inertia tensor (with cached
 /// inverses). Required on any entity that produces a force or torque
 /// requiring acceleration conversion.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct MassPropertiesC(pub MassPropertiesTyped<SelfRef>);
 
 impl MassPropertiesC {
@@ -267,8 +217,7 @@ impl From<MassProperties> for MassPropertiesC {
 /// Per-step gravitational acceleration accumulator, populated by
 /// `gravity_computation_system` and consumed by
 /// `force_collection_system`.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct GravityAccelerationC(pub GravityAccelerationTyped<RootInertial>);
 
 impl From<GravityAcceleration> for GravityAccelerationC {
@@ -281,8 +230,7 @@ impl From<GravityAcceleration> for GravityAccelerationC {
 /// Per-step accumulator of structure-frame forces / torques
 /// resolved into the inertial frame; consumed by the integration
 /// system.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct TotalForceC(pub TotalForceTyped<SelfRef, RootInertial>);
 
 impl From<TotalForce> for TotalForceC {
@@ -294,8 +242,7 @@ impl From<TotalForce> for TotalForceC {
 
 /// Linear and angular accelerations passed to the integrator each
 /// stage. Populated by `force_collection_system`.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct FrameDerivativesC(pub FrameDerivativesTyped<RootInertial, SelfRef>);
 
 impl From<FrameDerivatives> for FrameDerivativesC {
@@ -307,8 +254,7 @@ impl From<FrameDerivatives> for FrameDerivativesC {
 
 /// Per-body dynamics flags (translational on, rotational on, three-DOF
 /// override). Required on every dynamic body.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 #[require(FrameDerivativesC)]
 pub struct DynamicsConfigC(pub DynamicsConfig);
 
@@ -316,8 +262,7 @@ pub struct DynamicsConfigC(pub DynamicsConfig);
 ///
 /// When present on a dynamic body entity, the integration system dispatches
 /// to the specified method. When absent, `IntegratorType::Rk4` is used.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 
 /// Persistent Gauss-Jackson (Störmer-Cowell) integrator state.
@@ -325,8 +270,7 @@ pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 /// Required on entities using `IntegratorType::GaussJackson`. Created once
 /// with `GaussJacksonState::new(config)` and maintained across steps.
 /// When absent, `integration_system` will panic if `IntegratorTypeC` is GJ.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 
 /// Persistent Adams-Bashforth-Moulton 4 integrator state.
@@ -334,23 +278,20 @@ pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 /// Required on entities using `IntegratorType::Abm4`. Created once with
 /// `Abm4State::new()` and maintained across steps. When absent,
 /// `integration_system` will panic if `IntegratorTypeC` is `Abm4`.
-#[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Abm4StateC(pub jeod_sim::Abm4State);
 
 /// Per-body list of gravity controls keyed by source [`Entity`]. Each
 /// control selects the model (point-mass / spherical-harmonics) and
 /// which body it represents (central, third, etc.).
-#[derive(Component, Debug, Clone, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone)]
 #[require(GravityAccelerationC, TotalForceC)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 
 /// Gravity source attached to a planet entity (mu plus optional
 /// spherical-harmonics coefficients). Queried by gravity controls
 /// targeting this entity.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
 
 /// RootInertial-frame position of a gravity source.
@@ -364,8 +305,7 @@ pub struct GravitySourceC(pub GravitySource);
 /// Required on all gravity source entities. The gravity systems will panic
 /// if a source entity referenced by a `GravityControlsC` is missing this
 /// component.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct SourceInertialPositionC(pub Position<RootInertial>);
 
 /// RootInertial-frame velocity of a gravity source.
@@ -380,8 +320,7 @@ pub struct SourceInertialPositionC(pub Position<RootInertial>);
 /// the relativistic correction computation. Stored separately from
 /// `TranslationalStateC` to avoid Bevy query conflicts (the body's
 /// `TranslationalStateC` is already mutably queried by the integration system).
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct SourceInertialVelocityC(pub Velocity<RootInertial>);
 
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
@@ -389,8 +328,7 @@ pub struct SourceInertialVelocityC(pub Velocity<RootInertial>);
 /// Written by `aero_drag_system`.
 /// `force_collection_system` rotates force to inertial and torque to body
 /// via `StructuralTransformC`.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct AerodynamicForceC {
     /// Force in the body structural frame (N).
     pub force: DVec3,
@@ -405,8 +343,7 @@ pub struct AerodynamicForceC {
 /// Torque is always in the **structural** frame.
 /// Written by `flat_plate_srp_system`.
 /// `force_collection_system` rotates torque to body via `StructuralTransformC`.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct RadiationForceC {
     /// Force in the body structural frame (N).
     pub force: DVec3,
@@ -418,24 +355,26 @@ pub struct RadiationForceC {
 ///
 /// Written by the gravity torque system.
 /// Read by `force_collection_system` as `Option<&GravityTorqueC>`.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // JEOD_INV: AT.01 — active flag gates computation (presence of AtmosphericStateC = active)
 /// Atmospheric state at the vehicle's position.
 ///
-/// Wraps a typed `AtmosphereState<SelfPlanet>` whose `wind` field is
-/// `Velocity<PlanetInertial<SelfPlanet>>` — the planet identity for
-/// the atmosphere is determined at runtime by the planet entity carried
-/// in [`crate::AtmosphereModelR`]. Mission code that knows the planet
-/// at compile time can read the typed sibling
-/// `AtmosphereState<P>` directly off-component via the relabel boundary
-/// in `aero_drag_system`. Written by the atmosphere system; read by the
-/// aerodynamic drag system.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState<SelfPlanet>);
+/// Wraps a typed `AtmosphereState<P>` whose `wind` field is
+/// `Velocity<PlanetInertial<P>>`. Every call site must pin `P` explicitly
+/// — there is no fallback. Mission code with multiple planets in one
+/// `World` instantiates the type per planet. Written by the atmosphere
+/// system; read by the aerodynamic drag system.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct AtmosphericStateC<P: Planet>(pub jeod_sim::AtmosphereState<P>);
+
+impl<P: Planet> Default for AtmosphericStateC<P> {
+    #[inline]
+    fn default() -> Self {
+        Self(jeod_sim::AtmosphereState::default())
+    }
+}
 
 /// Typed structural→body rotation for a vehicle entity.
 ///
@@ -454,8 +393,7 @@ pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState<SelfPlanet>);
 /// - Rotate structural-frame torques to body frame
 // JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
 // JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct StructuralTransformC(pub FrameTransform<StructuralFrame<SelfRef>, BodyFrame<SelfRef>>);
 
 impl Default for StructuralTransformC {
@@ -468,18 +406,15 @@ impl Default for StructuralTransformC {
 ///
 /// Stores the rotation that maps inertial-frame vectors into the planet-fixed
 /// frame of the source. The `FrameTransform`'s phantom `<RootInertial,
-/// PlanetFixed<SelfPlanet>>` parameters encode the *direction* — `SelfPlanet`
-/// is the wildcard `Planet` marker indicating "this entity's planet"; the
-/// actual planet identity stays at the entity level via the existing
-/// `PlanetC` discriminator.
+/// PlanetFixed<P>>` parameters encode the *direction*. Every call site must
+/// pin `P` explicitly — there is no fallback.
 ///
 /// When present on a gravity source entity, `gravity_computation_system` and
 /// `integration_system` use this rotation instead of `DMat3::IDENTITY` to
 /// rotate the spacecraft position into the body-fixed frame before evaluating
 /// spherical-harmonic gravity.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
-pub struct PlanetFixedRotationC(pub FrameTransform<RootInertial, PlanetFixed<SelfPlanet>>);
+#[derive(Component, Debug, Clone, Copy)]
+pub struct PlanetFixedRotationC<P: Planet>(pub FrameTransform<RootInertial, PlanetFixed<P>>);
 
 /// Sidereal rotation rate (rad/s) used by `planet_fixed_rotation_system`
 /// to populate [`PlanetAngularVelocityC`] each step. Sourced from
@@ -489,8 +424,7 @@ pub struct PlanetFixedRotationC(pub FrameTransform<RootInertial, PlanetFixed<Sel
 /// Issue #71 item 1: without this, velocity composition through
 /// planet-fixed frames silently uses zero angular velocity, producing
 /// the wrong NED-relative or geodetic velocity.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct PlanetOmegaC(pub f64);
 
 /// Optional initial integration-frame source for a body (issue #71
@@ -511,36 +445,18 @@ pub struct PlanetOmegaC(pub f64);
 ///
 /// **Non-root semantics.** When `Some(...)`, the body's
 /// [`TranslationalStateC`] stores position/velocity in the source's
-/// inertial frame; the Component's `<PlanetInertial<SelfPlanet>>`
-/// phantom encodes the planet-inertial framing structurally, so
-/// arithmetic that mixes the body state with a `Position<RootInertial>`
+/// inertial frame; the Component's `<PlanetInertial<P>>` phantom
+/// encodes the planet-inertial framing structurally, so arithmetic
+/// that mixes the body state with a `Position<RootInertial>`
 /// gravity-source position no longer compiles without an explicit
-/// integration-origin shift (RF.10). Two relabel categories apply at
-/// consumer call sites and are independent (see
-/// [`TranslationalStateC`] for the full breakdown):
-///
-/// 1. **Integ-origin shift** (arithmetic — adds the origin offset and
-///    relabels `<PlanetInertial<SelfPlanet>>` → `<RootInertial>`).
-///    Required only by shift sites: `gravity_computation_system`, the
-///    SRP / solar-beta / earth-lighting systems. They lift the typed
-///    origin offset from
-///    [`crate::frame_param::FrameOrigin::origin_in_root`] and relabel
-///    via `from_raw_si` at the call site. Non-shift consumers
-///    (atmosphere, drag, LVLH, geodetic, orbital elements) skip this
-///    category — their physics stays in planet-inertial.
-/// 2. **Wildcard `<SelfPlanet>` → concrete `<P>` phantom relabel**
-///    (phantom-only, no arithmetic). Required wherever a typed kernel
-///    is parameterized over a concrete `PlanetInertial<P>` rather than
-///    the wildcard. Drag, LVLH, and geodetic still apply this relabel
-///    via `from_raw_si` at the typed-kernel boundary even though they
-///    skip category 1. Atmosphere and orbital elements skip it too:
-///    atmosphere feeds the kernel raw `DVec3` via
-///    `state.position.raw_si()`, and orbital elements drives the
-///    planet-erased `compute_orbital_elements` kernel, which returns
-///    `OrbitalElements<SelfPlanet>` matching the source state's tag
-///    directly.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+/// integration-origin shift (RF.10). Shift sites
+/// (`gravity_computation_system`, SRP / solar-beta / earth-lighting)
+/// lift the typed origin offset from
+/// [`crate::frame_param::FrameOrigin::origin_in_root`] and relabel
+/// `<PlanetInertial<P>>` → `<RootInertial>` at the call site.
+/// Non-shift consumers (atmosphere, drag, LVLH, geodetic, orbital
+/// elements) keep their physics in planet-inertial throughout.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct IntegSourceC(pub Option<Entity>);
 
 /// Distance-based integration-frame switches for a body (issue #71
@@ -554,8 +470,7 @@ pub struct IntegSourceC(pub Option<Entity>);
 /// [`crate::frame_switch_system`], which evaluates the predicates
 /// against [`crate::frame_param::RelativeFrameState`] and reparents
 /// the body's frame entity directly via Bevy `ChildOf`.
-#[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
 
 // ── Frames-as-entities components ──
@@ -583,8 +498,7 @@ pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
 /// infrastructure stage; later PRs in the sequence may carry typed
 /// `Position<P>` / `Velocity<P>` keyed off the parent frame entity's
 /// marker. Issue #277.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct FrameTransC {
     /// Position relative to parent frame, in parent-frame coordinates (m).
     pub position: DVec3,
@@ -597,8 +511,7 @@ pub struct FrameTransC {
 /// `t_parent_this`. Mirrors the rotation portion of
 /// [`jeod_sim::RefFrameRot`] minus `ang_vel_this`, which lives in
 /// [`FrameAngVelC`] for change-detection granularity. Issue #277.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct FrameRotC {
     /// Left-transformation quaternion (parent → this).
     pub q_parent_this: jeod_sim::JeodQuat,
@@ -621,8 +534,7 @@ impl Default for FrameRotC {
 /// pfix-rotation systems that only rewrite angular velocity (or body
 /// integration that only rewrites attitude) get fine-grained
 /// change-detection. Issue #277.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct FrameAngVelC(pub DVec3);
 
 // Marker components — mark the kind of frame an entity represents.
@@ -632,20 +544,17 @@ pub struct FrameAngVelC(pub DVec3);
 // `PlanetFixed`, `IntegrationFrame`, `RootInertial`).
 
 /// Marker: this entity is a root or planet inertial frame. Issue #277.
-#[derive(Component, Debug, Default, Clone, Copy, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Default, Clone, Copy)]
 pub struct InertialFrameMarker;
 
 /// Marker: this entity is a planet-fixed (pfix) frame, child of an
 /// inertial frame, rotating with the planet. Issue #277.
-#[derive(Component, Debug, Default, Clone, Copy, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Default, Clone, Copy)]
 pub struct PlanetFixedFrameMarker;
 
 /// Marker: this entity is a body's body-frame (composite_body in JEOD).
 /// Issue #277.
-#[derive(Component, Debug, Default, Clone, Copy, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Default, Clone, Copy)]
 pub struct BodyFrameMarker;
 
 /// Marker: this entity has been registered as an integration frame for
@@ -667,8 +576,7 @@ pub struct BodyFrameMarker;
 /// — they describe orthogonal properties of the frame. Issue #277.
 ///
 /// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
-#[derive(Component, Debug, Default, Clone, Copy, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Default, Clone, Copy)]
 pub struct IntegrationFrameMarker;
 
 /// Bidirectional handle linking a body / source / planet entity to its
@@ -680,8 +588,7 @@ pub struct IntegrationFrameMarker;
 /// the body's integration frame, the source's child frames, etc. The
 /// frame entity itself carries [`FrameTransC`] / [`FrameRotC`] /
 /// [`FrameAngVelC`] (the per-node state).
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct FrameEntityC(pub Entity);
 
 /// Frame entity for a source's planet-fixed (pfix) child frame.
@@ -692,8 +599,7 @@ pub struct FrameEntityC(pub Entity);
 /// `None` (in which case the underlying ECS entity is retained as
 /// [`RetiredPfixFrameEntityC`] for reuse on the next toggle back to a
 /// rotating model — see that component's docs).
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct PfixFrameEntityC(pub Entity);
 
 /// Hidden component that stashes a previously-spawned pfix *frame
@@ -713,8 +619,7 @@ pub struct PfixFrameEntityC(pub Entity);
 /// since [`crate::systems::register_pfix_frames_system`] filters by
 /// `Without<PfixFrameEntityC>` and unconditionally spawns a new
 /// entity for any source missing the public component.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct RetiredPfixFrameEntityC(pub Entity);
 
 /// Angular velocity of the planet-fixed frame relative to its inertial
@@ -722,12 +627,18 @@ pub struct RetiredPfixFrameEntityC(pub Entity);
 /// `planet_fixed_rotation_system` as `[0, 0, omega]` matching JEOD's
 /// `planet_rnp.cc`.
 ///
-/// The `AngularVelocity<PlanetFixed<SelfPlanet>>` phantom indicates "in
-/// the pfix frame of this entity's planet"; the planet identity stays
-/// at the entity level via [`PlanetC`].
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct PlanetAngularVelocityC(pub AngularVelocity<PlanetFixed<SelfPlanet>>);
+/// The `AngularVelocity<PlanetFixed<P>>` phantom indicates "in the
+/// pfix frame of planet `P`". Every call site must pin `P` explicitly
+/// — there is no fallback.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct PlanetAngularVelocityC<P: Planet>(pub AngularVelocity<PlanetFixed<P>>);
+
+impl<P: Planet> Default for PlanetAngularVelocityC<P> {
+    #[inline]
+    fn default() -> Self {
+        Self(AngularVelocity::<PlanetFixed<P>>::zero())
+    }
+}
 
 /// Declarative spec for a kinematically driven single-axis joint.
 ///
@@ -788,8 +699,7 @@ pub struct PlanetAngularVelocityC(pub AngularVelocity<PlanetFixed<SelfPlanet>>);
 /// `FrameRotC` / `FrameAngVelC` flow into the same
 /// [`crate::frame_param::RelativeFrameState`] consumers that read
 /// planet-fixed rotations.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(FrameTransC, FrameRotC, FrameAngVelC)]
 pub struct JointKinematicsC(pub jeod_sim::JointKinematicsSpec);
 
@@ -836,8 +746,7 @@ impl From<jeod_sim::JointKinematicsSpec> for JointKinematicsC {
 /// sinusoidal / closure (e.g., piecewise-linear angular splines) reaches
 /// for a custom system; the kinematic-only spec catalogue exposed here
 /// covers the periodic / loop-closing / multi-DOF cases.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(FrameTransC, FrameRotC, FrameAngVelC)]
 pub struct SinusoidalJointKinematicsC(pub jeod_sim::SinusoidalJointKinematicsSpec);
 
@@ -862,8 +771,7 @@ impl From<jeod_sim::SinusoidalJointKinematicsSpec> for SinusoidalJointKinematics
 /// Wraps [`jeod_sim::ClosureJointKinematicsSpec`] one-to-one and
 /// auto-inserts the frame-tree triplet via `#[require]`, matching
 /// [`JointKinematicsC`].
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(FrameTransC, FrameRotC, FrameAngVelC)]
 pub struct ClosureJointKinematicsC(pub jeod_sim::ClosureJointKinematicsSpec);
 
@@ -894,8 +802,7 @@ impl From<jeod_sim::ClosureJointKinematicsSpec> for ClosureJointKinematicsC {
 ///
 /// Wraps [`jeod_sim::MultiDofJointKinematicsSpec`] one-to-one and
 /// auto-inserts the frame-tree triplet via `#[require]`.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(FrameTransC, FrameRotC, FrameAngVelC)]
 pub struct MultiDofJointKinematicsC(pub jeod_sim::MultiDofJointKinematicsSpec);
 
@@ -920,8 +827,7 @@ impl From<jeod_sim::MultiDofJointKinematicsSpec> for MultiDofJointKinematicsC {
 /// (Vec collect + per-body f64 → typed boxing). Convenience constructors
 /// `from_untyped` / `From` impls are provided for callers building from
 /// the untyped struct.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 #[require(TidalDeltaC20C)]
 pub struct TidalConfigC(pub jeod_sim::TidalConfigTyped);
 
@@ -958,8 +864,7 @@ impl From<jeod_sim::TidalConfigTyped> for TidalConfigC {
 /// Wrapped as a [`Ratio`] (dimensionless) so the value carries unit
 /// metadata at the type level — matching `compute_delta_c20_typed`'s
 /// return type.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct TidalDeltaC20C(pub Ratio);
 
 // ── Interactions ──
@@ -972,9 +877,8 @@ pub struct TidalDeltaC20C(pub Ratio);
 /// `new` are provided for callers building from raw `f64` fields.
 ///
 /// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-#[require(AtmosphericStateC, AerodynamicForceC)]
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+#[require(AtmosphericStateC::<Earth>, AerodynamicForceC)]
 pub struct DragConfigC(pub DragConfigTyped);
 
 impl DragConfigC {
@@ -1013,8 +917,7 @@ impl From<DragConfigTyped> for DragConfigC {
 /// `integrate_temperatures` method) is shared with the `Simulation` runner.
 ///
 /// Auto-inserts [`RadiationForceC`] when added.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 #[require(RadiationForceC)]
 pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 
@@ -1023,8 +926,7 @@ pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 /// The shadow detection system queries all entities with this component
 /// and computes the illumination factor for SRP. Place on any planet
 /// entity along with `TranslationalStateC`.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct ShadowBodyC {
     /// Body radius (m) for conical shadow computation.
     pub radius: f64,
@@ -1036,8 +938,7 @@ pub struct ShadowBodyC {
 /// the `planet_fixed_rotation_system` dispatches to the correct rotation
 /// computation based on this value. When absent, `EarthRNP` is assumed
 /// for backward compatibility.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct RotationModelC(pub jeod_sim::RotationModel);
 
 /// Ephemeris body mapping for automatic position updates from DE4xx.
@@ -1045,8 +946,7 @@ pub struct RotationModelC(pub jeod_sim::RotationModel);
 /// When present on a gravity source entity, the `ephemeris_update_system`
 /// queries the `EphemerisR` resource each step to update the entity's
 /// `SourceInertialPositionC` (and optionally `TranslationalStateC`).
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct EphemerisBodyC {
     /// The body this source represents (e.g., `EphemerisBody::Sun`).
     pub target: jeod_sim::EphemerisBody,
@@ -1063,8 +963,7 @@ pub struct EphemerisBodyC {
 /// Writes to `RadiationForceC`.
 ///
 /// Auto-inserts [`RadiationForceC`] when added.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 #[require(RadiationForceC)]
 pub struct CannonballSrpC {
     /// Cross-section area * Cr (m²).
@@ -1076,13 +975,11 @@ pub struct CannonballSrpC {
 }
 
 /// Marker component for the Sun entity (used by SRP system to find Sun position).
-#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-#[reflect(opaque, Component)]
+#[derive(Component, Default, Clone, Copy, Debug)]
 pub struct SunMarker;
 
 /// Marker component for the Moon entity (used by earth lighting system).
-#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-#[reflect(opaque, Component)]
+#[derive(Component, Default, Clone, Copy, Debug)]
 pub struct MoonMarker;
 
 /// Marks an entity as the simulation's designated central body.
@@ -1099,15 +996,13 @@ pub struct MoonMarker;
 /// markers are not currently rejected, but `SourceMutator` panics on
 /// every call that targets a marked entity, so a well-behaved app
 /// attaches it once.
-#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-#[reflect(opaque, Component)]
+#[derive(Component, Default, Clone, Copy, Debug)]
 pub struct CentralSourceMarker;
 
 // ── Planet ──
 
 /// Bevy component wrapping `PlanetShape`.
-#[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct PlanetC(pub PlanetShape);
 
 // ── Derived State Configuration ──
@@ -1117,9 +1012,8 @@ pub struct PlanetC(pub PlanetShape);
 /// The `gravity_source` entity is queried for `GravitySourceC` to obtain `mu`.
 /// Presence of this component + `OrbitalElementsC` on an entity enables
 /// per-step orbital elements computation in `JeodSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
-#[require(OrbitalElementsC)]
+#[derive(Component, Debug, Clone, Copy)]
+#[require(OrbitalElementsC::<Earth>)]
 pub struct OrbitalElementsConfigC {
     /// Gravity source entity supplying `mu` for the conversion.
     pub gravity_source: Entity,
@@ -1129,8 +1023,7 @@ pub struct OrbitalElementsConfigC {
 ///
 /// Presence of this component + `EulerAnglesC` on an entity enables
 /// per-step Euler angle computation in `JeodSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 #[require(EulerAnglesC)]
 pub struct EulerAnglesConfigC {
     /// Euler-angle decomposition convention (e.g., 3-2-1 yaw/pitch/roll).
@@ -1143,8 +1036,7 @@ pub struct EulerAnglesConfigC {
 /// to obtain the rotation matrix and ellipsoid radii.
 /// Presence of this component + `GeodeticStateC` on an entity enables
 /// per-step geodetic computation in `JeodSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
     /// Planet entity supplying ellipsoid radii (`PlanetC`) and
@@ -1157,46 +1049,45 @@ pub struct GeodeticConfigC {
 /// Orbital elements computed each step.
 ///
 /// Written by `orbital_elements_system` for entities that also have
-/// `OrbitalElementsConfigC`.
-#[derive(Component, Debug, Clone, Default, Reflect)]
-#[reflect(opaque, Component)]
-pub struct OrbitalElementsC(
-    // Bevy components are runtime-keyed by source index, so the planet
-    // identity isn't statically known here — `SelfPlanet` is the
-    // boundary-only escape hatch for the registry-side path.
-    pub jeod_sim::OrbitalElements<jeod_sim::SelfPlanet>,
-);
+/// `OrbitalElementsConfigC`. Generic over the planet `P` whose
+/// gravitational parameter `mu` was used in the conversion. Every call
+/// site must pin `P` explicitly — there is no fallback.
+#[derive(Component, Debug, Clone)]
+pub struct OrbitalElementsC<P: Planet>(pub jeod_sim::OrbitalElements<P>);
+
+impl<P: Planet> Default for OrbitalElementsC<P> {
+    #[inline]
+    fn default() -> Self {
+        Self(jeod_sim::OrbitalElements::default())
+    }
+}
 
 /// Euler angles `[phi, theta, psi]` computed each step.
 ///
 /// Written by `euler_angles_system` for entities that also have
 /// `EulerAnglesConfigC`. Each component is a [`Angle`] (uom radian-backed
 /// scalar) so consumers don't have to remember the radian convention.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct EulerAnglesC(pub [Angle; 3]);
 
 /// LVLH (Local Vertical Local Horizontal) frame computed each step.
 ///
 /// Presence of this component alone enables computation — no separate
 /// config component needed (only requires translational state).
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct LvlhFrameC(pub jeod_sim::LvlhFrame);
 
 /// Geodetic state (latitude, longitude, altitude) computed each step.
 ///
 /// Written by `geodetic_system` for entities that also have `GeodeticConfigC`.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct GeodeticStateC(pub jeod_sim::GeodeticState);
 
 /// Solar beta angle (radians) computed each step.
 ///
 /// Presence of this component alone enables computation — requires a
 /// `SunMarker` entity to exist in the world.
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct SolarBetaC(pub f64);
 
 /// Configuration for Earth lighting (eclipse/albedo) computation.
@@ -1204,8 +1095,7 @@ pub struct SolarBetaC(pub f64);
 /// Requires `SunMarker` and `MoonMarker` entities to exist in the world.
 /// Presence of this component + `EarthLightingStateC` on an entity enables
 /// per-step earth lighting computation in `JeodSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 #[require(EarthLightingStateC)]
 pub struct EarthLightingConfigC {
     /// Earth equatorial radius (m).
@@ -1220,8 +1110,7 @@ pub struct EarthLightingConfigC {
 ///
 /// Written by `earth_lighting_system` for entities that also have
 /// `EarthLightingConfigC`.
-#[derive(Component, Debug, Clone, Default, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Default)]
 pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 
 // ── External Loads ──
@@ -1232,8 +1121,7 @@ pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 /// Matches `SimBody.external_force` in `jeod_sim::Simulation`.
 ///
 /// Mutate between steps to implement time-scheduled force injection.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct ExternalForceC(pub jeod_sim::Force<RootInertial>);
 
 /// External torque in the **body** frame.
@@ -1242,8 +1130,7 @@ pub struct ExternalForceC(pub jeod_sim::Force<RootInertial>);
 /// Matches `SimBody.external_torque` in `jeod_sim::Simulation`.
 ///
 /// Mutate between steps to implement time-scheduled torque injection.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // ── Mass Tree (Staging) ──
@@ -1253,8 +1140,7 @@ pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 /// Entities with this component participate in the mass tree. After
 /// attach/detach events are processed, the entity's [`MassPropertiesC`]
 /// is synced from the tree's composite properties.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct MassBodyIdC(pub jeod_sim::MassBodyId);
 
 /// ECS-native mass-tree relation: marks `Entity` carrying this component
@@ -1297,8 +1183,7 @@ pub struct MassBodyIdC(pub jeod_sim::MassBodyId);
 /// mass-tree origin — see [`MassPointRef`] for the Bevy port.
 // JEOD_INV: MA.08 — no cycle in mass tree (composite_mass_system asserts via post-order walk)
 // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention)
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct MassChildOf {
     /// Parent entity in the mass tree.
     pub parent: Entity,
@@ -1362,8 +1247,7 @@ impl MassChildOf {
 /// to that parent's mass (sensor mounts, station-keeping vehicles
 /// attached only via `attach_to_frame`). Mission code attaches it
 /// only when the frame entity also participates in the mass tree.
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct MassPointRef(pub Entity);
 
 /// Marker: this entity is a kinematic non-root node in a
@@ -1410,8 +1294,7 @@ pub struct MassPointRef(pub Entity);
 /// the now-self-integrated child).
 // JEOD_INV: DB.17 — only the root's TotalForce/FrameDerivatives drive the
 // integrator (children are kinematic, gated by this marker)
-#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct KinematicChildC;
 
 /// Message: attach a child body to a parent in the mass tree.
@@ -1564,6 +1447,5 @@ pub struct FrameDetachEvent {
 /// [`jeod_sim::DetachedSubtreeState`] (which owns the JEOD scalar-first
 /// left-multiply attitude convention via
 /// [`jeod_sim::BodyAttitude<jeod_sim::SelfRef>`](jeod_sim::BodyAttitude)).
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque, Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct DetachedSubtreeStateC(pub jeod_sim::DetachedSubtreeState);

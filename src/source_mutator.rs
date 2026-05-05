@@ -49,6 +49,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
+use jeod_sim::Planet;
 
 use crate::components::{
     CentralSourceMarker, FrameEntityC, FrameRotC, FrameTransC, GravitySourceC, PfixFrameEntityC,
@@ -196,7 +197,7 @@ impl SourceReader<'_, '_> {
 /// marker — same outcome as `jeod_runner`'s root-source rejection,
 /// just opt-in.
 #[derive(SystemParam)]
-pub struct SourceMutator<'w, 's> {
+pub struct SourceMutator<'w, 's, P: Planet> {
     /// Commands for auto-inserting [`SourceInertialVelocityC`] on
     /// sources that lack it when [`Self::set_source_state`] is called.
     commands: Commands<'w, 's>,
@@ -215,12 +216,12 @@ pub struct SourceMutator<'w, 's> {
     frame_rots: Query<'w, 's, &'static FrameRotC>,
     positions: Query<'w, 's, &'static mut SourceInertialPositionC, With<GravitySourceC>>,
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC, With<GravitySourceC>>,
-    translational: Query<'w, 's, &'static mut TranslationalStateC, With<GravitySourceC>>,
+    translational: Query<'w, 's, &'static mut TranslationalStateC<P>, With<GravitySourceC>>,
     central: Query<'w, 's, (), With<CentralSourceMarker>>,
     names: Query<'w, 's, &'static Name>,
 }
 
-impl SourceMutator<'_, '_> {
+impl<P: Planet> SourceMutator<'_, '_, P> {
     /// Get the source's frame entity. Mirrors
     /// `jeod_sim::source_state::source_frame_id` but returns a Bevy
     /// `Entity` — the post-PR4 replacement for the arena's
@@ -377,13 +378,15 @@ impl SourceMutator<'_, '_> {
                  consistent position across the source's components."
             )
         });
-        // `TranslationalStateC` stores
-        // `<PlanetInertial<SelfPlanet>>`; the user-supplied `typed_pos`
-        // above is `<RootInertial>` (the SourceMutator API frame).
-        // Relabel to the wildcard `SelfPlanet` tag at the storage
-        // boundary. Bit-identical numerics.
-        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+        // `TranslationalStateC<P>` stores `<PlanetInertial<P>>`; the
+        // user-supplied `typed_pos` above is `<RootInertial>` (the
+        // SourceMutator API frame). Relabel to the `<P>`-tagged
+        // planet-inertial frame at the storage boundary. Bit-identical
+        // numerics — only the phantom tag changes; the system
+        // instantiation's `<P>` parameter pins the storage convention.
+        let pos_si = typed_pos.raw_si();
+        // allowed: source-mutator boundary, RootInertial → PlanetInertial<P> relabel
+        ts.0.position = jeod_sim::Position::<jeod_sim::PlanetInertial<P>>::from_raw_si(pos_si);
     }
 
     /// Set the inertial position and velocity of `source`. Mirrors
@@ -461,15 +464,16 @@ impl SourceMutator<'_, '_> {
                  consistent state across the source's components."
             )
         });
-        // `TranslationalStateC` stores
-        // `<PlanetInertial<SelfPlanet>>`; the user-supplied
-        // `typed_pos` / `typed_vel` are `<RootInertial>`. Relabel to
-        // the wildcard `SelfPlanet` tag at the storage boundary —
-        // bit-identical numerics.
-        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
-        ts.0.velocity = PiVel::from_raw_si(typed_vel.raw_si()); // allowed: same boundary as ts.0.position above
+        // `TranslationalStateC<P>` stores `<PlanetInertial<P>>`; the
+        // user-supplied `typed_pos` / `typed_vel` are `<RootInertial>`.
+        // Relabel to the `<P>`-tagged planet-inertial frame at the
+        // storage boundary — bit-identical numerics; the system
+        // instantiation's `<P>` parameter pins the storage convention.
+        ts.0.position =
+            jeod_sim::Position::<jeod_sim::PlanetInertial<P>>::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<P> relabel
+        let vel_si = typed_vel.raw_si();
+        // allowed: same boundary as ts.0.position above
+        ts.0.velocity = jeod_sim::Velocity::<jeod_sim::PlanetInertial<P>>::from_raw_si(vel_si);
     }
 
     fn assert_not_central(&self, source: Entity, method: &str) {

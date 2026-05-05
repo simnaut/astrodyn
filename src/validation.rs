@@ -15,13 +15,14 @@
 //! explicit integration-frame handle component to read.
 
 use bevy::prelude::*;
+use jeod_sim::Planet;
 
 use crate::components::{
     CannonballSrpC, DragConfigC, DynamicsConfigC, EarthLightingConfigC, EulerAnglesConfigC,
     FlatPlateConfigC, FrameAngVelC, FrameEntityC, FrameRotC, FrameSwitchesC, FrameTransC,
     GeodeticConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC,
-    MassPropertiesC, MoonMarker, OrbitalElementsConfigC, RotationalStateC, SolarBetaC, SunMarker,
-    TidalConfigC, TidalDeltaC20C, TranslationalStateC,
+    MassPropertiesC, MoonMarker, OrbitalElementsConfigC, PlanetFixedRotationC, RotationalStateC,
+    SolarBetaC, SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
 use crate::RootFrameEntityR;
 
@@ -79,6 +80,16 @@ pub(crate) fn is_root_equivalent_entity(
 /// bodies spawned later (staging, hot-attach, runtime spawn events) are
 /// validated on the tick following their insertion.
 ///
+/// Generic over `P: Planet` so each planet-tagged pipeline gets its own
+/// validator. `JeodPlugin::build` registers `<jeod_sim::Earth>` (preserving
+/// single-planet-Earth behavior); `register_planet_systems::<P>` registers
+/// the additional instance for multi-planet missions. Each instantiation
+/// queries `Option<&TranslationalStateC<P>>` and
+/// `Option<&PlanetFixedRotationC<P>>` so per-planet trans-state and
+/// tidal-rotation checks fire on the matching planet only — a body tagged
+/// `<Mars>` is validated by the `<Mars>` registration, not silently passed
+/// by an Earth-pinned validator.
+///
 /// Two scopes participate:
 ///
 /// * **Global state checks** (Sun/Moon marker counts, tidal-config pairing
@@ -86,7 +97,10 @@ pub(crate) fn is_root_equivalent_entity(
 ///   and `tidal_sources` queries, so they re-evaluate the entire world's
 ///   marker/source set on every trigger. Adding a stray second
 ///   `SunMarker` mid-mission is therefore caught the next tick a body
-///   with `GravityControlsC` is added.
+///   with `GravityControlsC` is added. In multi-planet configs these
+///   global checks run once per registered planet — wasteful but
+///   idempotent (each pass evaluates the same world state and reaches
+///   the same conclusion).
 /// * **Per-body invariant checks** (SRP mutual exclusion, the full
 ///   `jeod_sim::validate_body` pass, gravity-control `check_validity`
 ///   auto-corrections) iterate the `Added`-filtered `bodies` query, so
@@ -102,7 +116,7 @@ pub(crate) fn is_root_equivalent_entity(
 /// Panics with a descriptive message for any violated invariant.
 // JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn validate_jeod_invariants(
+pub fn validate_jeod_invariants<P: Planet>(
     mut bodies: Query<
         (
             Entity,
@@ -111,7 +125,7 @@ pub fn validate_jeod_invariants(
             Option<&GravityAccelerationC>,
             Option<&MassPropertiesC>,
             Option<&RotationalStateC>,
-            Option<&TranslationalStateC>,
+            Option<&TranslationalStateC<P>>,
             Option<&FlatPlateConfigC>,
         ),
         Added<GravityControlsC>,
@@ -121,7 +135,7 @@ pub fn validate_jeod_invariants(
         Entity,
         &TidalConfigC,
         Option<&TidalDeltaC20C>,
-        Option<&crate::components::PlanetFixedRotationC>,
+        Option<&PlanetFixedRotationC<P>>,
     )>,
     srp_exclusion: Query<Entity, With<CannonballSrpC>>,
     derived_state_markers: Query<(
@@ -130,7 +144,7 @@ pub fn validate_jeod_invariants(
         Option<&EarthLightingConfigC>,
         Option<&SunMarker>,
         Option<&MoonMarker>,
-        Option<&TranslationalStateC>,
+        Option<&TranslationalStateC<P>>,
     )>,
     // Frame-tree state for non-root validation. Mirrors
     // `Simulation::validate()`'s frame-switch + non-root checks

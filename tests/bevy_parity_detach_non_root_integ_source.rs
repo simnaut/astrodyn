@@ -135,11 +135,11 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -159,7 +159,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(parent_mass()),
             MassBodyIdC(id_parent),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
@@ -173,7 +173,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(child_mass()),
             MassBodyIdC(id_child),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
@@ -191,7 +191,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     // frame entity's `FrameTransC`).
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, moon_velocity);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -227,14 +227,14 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     // handler will derive the child from.
     let parent_pre_detach_pos_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .position
         .raw_si();
     let parent_pre_detach_vel_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .velocity
@@ -308,14 +308,14 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     // equals `expected_root_vel - moon_velocity`.
     let synced_pos_integ = app
         .world()
-        .get::<TranslationalStateC>(child_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
         .unwrap()
         .0
         .position
         .raw_si();
     let synced_vel_integ = app
         .world()
-        .get::<TranslationalStateC>(child_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
         .unwrap()
         .0
         .velocity

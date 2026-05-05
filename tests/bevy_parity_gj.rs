@@ -46,7 +46,7 @@ fn step_bevy(app: &mut App, n: usize, dt: f64) {
 
 fn read_trans(world: &World, entity: Entity) -> TranslationalState {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .unwrap()
         .0
         .to_untyped()
@@ -116,7 +116,7 @@ fn run_gj_parity(
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -124,7 +124,7 @@ fn run_gj_parity(
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),

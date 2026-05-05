@@ -79,7 +79,7 @@ fn vehicle_mass() -> MassProperties {
 fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
 
     let cfg = VehicleBuilder::new()
@@ -204,7 +204,7 @@ fn planet_fixed_rotation_panics_on_stale_pfix_frame_entity() {
     // will spawn a pfix frame entity for this source.
     let earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     // Force EarthRNP explicitly so the rotated branch (not the None
     // branch) is exercised on the next tick.

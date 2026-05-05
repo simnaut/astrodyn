@@ -69,7 +69,7 @@ fn build_two_body_app(
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -88,7 +88,7 @@ fn build_two_body_app(
         .spawn((
             Name::new("VehicleA"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(trans_a),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_a),
             MassPropertiesC::from(MassProperties::new(1000.0)),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -103,7 +103,7 @@ fn build_two_body_app(
         .spawn((
             Name::new("VehicleB"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(trans_b),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_b),
             MassPropertiesC::from(MassProperties::new(500.0)),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -228,7 +228,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
     let trans = TranslationalState {
@@ -241,7 +241,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
             .spawn((
                 Name::new(name.to_string()),
                 DynamicsConfigC::default(),
-                TranslationalStateC::from(trans),
+                TranslationalStateC::<jeod_sim::Earth>::from(trans),
                 MassPropertiesC::from(MassProperties::new(mass)),
                 GravityControlsC(GravityControls {
                     controls: vec![GravityControl::new_spherical(planet, false)],

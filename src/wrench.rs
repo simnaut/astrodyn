@@ -1298,7 +1298,7 @@ mod tests {
         // Earth point-mass source.
         let earth = app
             .world_mut()
-            .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+            .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
             .id();
 
         // Parent: a 3-DOF point-mass orbital body at ISS-like
@@ -1331,7 +1331,7 @@ mod tests {
         // does not move it.)
         let parent_pos = app
             .world()
-            .get::<crate::TranslationalStateC>(parent)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(parent)
             .unwrap()
             .0
             .to_untyped()
@@ -1345,7 +1345,7 @@ mod tests {
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                crate::TranslationalStateC::from(TranslationalState {
+                crate::TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: parent_pos,
                     velocity: DVec3::ZERO,
                 }),
@@ -1377,7 +1377,7 @@ mod tests {
         // step.
         let child_pos = app
             .world()
-            .get::<crate::TranslationalStateC>(child)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(child)
             .unwrap()
             .0
             .to_untyped()
@@ -1397,7 +1397,7 @@ mod tests {
         // integration system.
         let parent_pos_after = app
             .world()
-            .get::<crate::TranslationalStateC>(parent)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(parent)
             .unwrap()
             .0
             .to_untyped()
@@ -1448,7 +1448,7 @@ mod tests {
         // Sun ~1 AU along +x. Pure inertial position; no gravity / mass.
         app.world_mut().spawn((
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: DVec3::new(1.496e11, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
@@ -1466,7 +1466,7 @@ mod tests {
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::from(TranslationalState {
+                TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1507,7 +1507,7 @@ mod tests {
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::from(TranslationalState {
+                TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1539,8 +1539,10 @@ mod tests {
             Update,
             (
                 composite_mass_system,
-                crate::systems::flat_plate_srp_system.after(composite_mass_system),
-                force_collection_system.after(crate::systems::flat_plate_srp_system),
+                crate::systems::flat_plate_srp_system::<jeod_sim::Earth>
+                    .after(composite_mass_system),
+                force_collection_system
+                    .after(crate::systems::flat_plate_srp_system::<jeod_sim::Earth>),
                 wrench_aggregation_system.after(force_collection_system),
             ),
         );
@@ -1684,7 +1686,7 @@ mod tests {
                 ExternalTorqueC::default(),
                 IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
                 GaussJacksonStateC(primed_gj),
-                crate::TranslationalStateC::from(TranslationalState::default()),
+                crate::TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
             ))
             .id();
 

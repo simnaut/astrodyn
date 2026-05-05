@@ -85,7 +85,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -124,10 +124,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     println!("Vehicle mass: {:.0} kg", vehicle::iss_mass().value);
 }
 
+#[allow(clippy::type_complexity)]
 fn log_orbit(
     query: Query<(
         &Name,
-        &TranslationalStateC,
+        &TranslationalStateC<jeod_sim::Earth>,
         Option<&GravityAccelerationC>,
         Option<&TotalForceC>,
     )>,

@@ -43,6 +43,7 @@ bevy_jeod = "0.1"
 use bevy::prelude::*;
 use bevy_jeod::prelude::*;
 use bevy_jeod::recipes::{earth, orbital_elements, vehicle};
+use jeod_sim::Earth;
 
 fn setup(mut commands: Commands) {
     let earth_recipe = earth::point_mass();
@@ -51,7 +52,7 @@ fn setup(mut commands: Commands) {
         .spawn((
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<Earth>::default(),
         ))
         .id();
 

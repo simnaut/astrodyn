@@ -417,7 +417,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
         Update,
         (
             composite_mass_system,
-            bevy_jeod::staging_system.after(composite_mass_system),
+            bevy_jeod::staging_system::<jeod_sim::Earth>.after(composite_mass_system),
         ),
     );
 

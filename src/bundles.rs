@@ -5,7 +5,7 @@
 //! components directly.
 
 use bevy::prelude::*;
-use jeod_sim::{FrameTransform, GravityModel, GravitySource, PlanetConfig};
+use jeod_sim::{FrameTransform, GravityModel, GravitySource, Planet, PlanetConfig};
 
 use crate::components::*;
 
@@ -21,11 +21,11 @@ use crate::components::*;
 /// use jeod_sim::EARTH;
 ///
 /// let mut world = World::new();
-/// let earth = world.spawn(PlanetBundle::point_mass("Earth", &EARTH)).id();
+/// let earth = world.spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH)).id();
 /// assert!(world.get_entity(earth).is_ok());
 /// ```
 #[derive(Bundle)]
-pub struct PlanetBundle {
+pub struct PlanetBundle<P: Planet> {
     /// Bevy `Name` used for debug output.
     pub name: Name,
     /// Gravity source (point-mass or spherical-harmonics).
@@ -33,23 +33,23 @@ pub struct PlanetBundle {
     /// RootInertial-frame position of the source (m).
     pub position: SourceInertialPositionC,
     /// Translational state used by per-step systems.
-    pub trans: TranslationalStateC,
+    pub trans: TranslationalStateC<P>,
     /// `T_inertial→pfix` rotation, updated each step by
     /// `planet_fixed_rotation_system` per the chosen [`RotationModelC`].
-    pub rotation: PlanetFixedRotationC,
+    pub rotation: PlanetFixedRotationC<P>,
     /// Sidereal rotation rate sourced from [`PlanetConfig::omega`].
     /// Drives [`PlanetAngularVelocityC`] each step (issue #71 item 1).
     pub omega: PlanetOmegaC,
     /// Angular velocity of the pfix frame relative to inertial, in pfix
     /// coordinates. Written each step by `planet_fixed_rotation_system`.
-    pub ang_vel: PlanetAngularVelocityC,
+    pub ang_vel: PlanetAngularVelocityC<P>,
     /// Selector that drives [`Self::rotation`] each step.
     pub rotation_model: RotationModelC,
     /// Planet shape (radii, mu, flattening).
     pub shape: PlanetC,
 }
 
-impl PlanetBundle {
+impl<P: Planet> PlanetBundle<P> {
     /// Create a planet bundle from a [`PlanetConfig`] with a custom gravity source.
     ///
     /// Use this when you have spherical harmonics data or a custom mu.
@@ -58,11 +58,11 @@ impl PlanetBundle {
             name: Name::new(name.to_string()),
             source: GravitySourceC(source),
             position: SourceInertialPositionC::default(),
-            trans: TranslationalStateC::default(),
+            trans: TranslationalStateC::<P>::default(),
             // allowed: IDENTITY placeholder; planet_fixed_rotation_system overwrites on tick 1
-            rotation: PlanetFixedRotationC(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+            rotation: PlanetFixedRotationC::<P>(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
             omega: PlanetOmegaC(config.omega),
-            ang_vel: PlanetAngularVelocityC::default(),
+            ang_vel: PlanetAngularVelocityC::<P>::default(),
             rotation_model: RotationModelC(config.rotation_model),
             shape: PlanetC(config.shape),
         }
@@ -95,26 +95,30 @@ impl PlanetBundle {
 /// use jeod_sim::TranslationalState;
 ///
 /// let mut world = World::new();
-/// let sun = world.spawn(SunBundle::new(TranslationalState::default())).id();
+/// let sun = world.spawn(SunBundle::<jeod_sim::Earth>::new(TranslationalState::default())).id();
 /// assert!(world.get_entity(sun).is_ok());
 /// ```
 #[derive(Bundle)]
-pub struct SunBundle {
+pub struct SunBundle<P: Planet> {
     /// Bevy `Name`, defaults to `"Sun"`.
     pub name: Name,
     /// Discriminator queried by SRP / solar-beta / lighting systems.
     pub marker: SunMarker,
-    /// RootInertial position used by the same systems.
-    pub trans: TranslationalStateC,
+    /// Position used by SRP / solar-beta / lighting systems. Tagged
+    /// with the planet `<P>` whose body-side instantiation reads this
+    /// component (the systems mix body and Sun state at the type
+    /// level, so they must share a planet phantom — by convention the
+    /// simulation's central planet, which is `<P>`).
+    pub trans: TranslationalStateC<P>,
 }
 
-impl SunBundle {
+impl<P: Planet> SunBundle<P> {
     /// Build a Sun bundle from an inertial translational state.
     pub fn new(state: jeod_sim::TranslationalState) -> Self {
         Self {
             name: Name::new("Sun"),
             marker: SunMarker,
-            trans: TranslationalStateC::from(state),
+            trans: TranslationalStateC::<P>::from(state),
         }
     }
 }
@@ -131,26 +135,28 @@ impl SunBundle {
 /// use jeod_sim::TranslationalState;
 ///
 /// let mut world = World::new();
-/// let moon = world.spawn(MoonBundle::new(TranslationalState::default())).id();
+/// let moon = world.spawn(MoonBundle::<jeod_sim::Earth>::new(TranslationalState::default())).id();
 /// assert!(world.get_entity(moon).is_ok());
 /// ```
 #[derive(Bundle)]
-pub struct MoonBundle {
+pub struct MoonBundle<P: Planet> {
     /// Bevy `Name`, defaults to `"Moon"`.
     pub name: Name,
     /// Discriminator queried by the earth-lighting system.
     pub marker: MoonMarker,
-    /// RootInertial position used by the earth-lighting system.
-    pub trans: TranslationalStateC,
+    /// Position used by the earth-lighting system. Tagged with the
+    /// planet `<P>` whose body-side instantiation reads this component
+    /// (see `SunBundle` for the same convention rationale).
+    pub trans: TranslationalStateC<P>,
 }
 
-impl MoonBundle {
+impl<P: Planet> MoonBundle<P> {
     /// Build a Moon bundle from an inertial translational state.
     pub fn new(state: jeod_sim::TranslationalState) -> Self {
         Self {
             name: Name::new("Moon"),
             marker: MoonMarker,
-            trans: TranslationalStateC::from(state),
+            trans: TranslationalStateC::<P>::from(state),
         }
     }
 }

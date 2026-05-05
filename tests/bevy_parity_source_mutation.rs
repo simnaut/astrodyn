@@ -69,7 +69,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     // ── Bevy ──
     let mut app = build_app();
     app.world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH));
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH));
     // Spawn the Moon WITHOUT `SourceInertialVelocityC` so the test
     // exercises `SourceMutator::set_source_state`'s auto-insert path:
     // `PlanetBundle::point_mass` doesn't include the velocity
@@ -78,7 +78,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     // below confirms the component was inserted.
     let moon_entity = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
     // Force the Startup schedule to run once so register_source_frames_system fires.
     app.world_mut().run_schedule(Startup);
@@ -89,7 +89,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     // Run a one-shot system that uses SourceMutator.
     let id = app
         .world_mut()
-        .register_system(move |mut mutator: SourceMutator| {
+        .register_system(move |mut mutator: SourceMutator<jeod_sim::Earth>| {
             mutator.set_source_state(moon_entity, new_pos, new_vel);
         });
     app.world_mut().run_system(id).unwrap();
@@ -108,7 +108,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
         .raw_si();
     let bevy_trans = app
         .world()
-        .get::<TranslationalStateC>(moon_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(moon_entity)
         .unwrap()
         .0
         .to_untyped();
@@ -180,7 +180,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
     let earth = app
         .world_mut()
         .spawn((
-            PlanetBundle::point_mass("Earth", &EARTH),
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH),
             CentralSourceMarker,
         ))
         .id();
@@ -192,7 +192,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
 
     let id = app
         .world_mut()
-        .register_system(move |mut mutator: SourceMutator| {
+        .register_system(move |mut mutator: SourceMutator<jeod_sim::Earth>| {
             mutator.set_source_position(earth, DVec3::new(1.0, 2.0, 3.0));
         });
     let _ = app.world_mut().run_system(id);
@@ -207,7 +207,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_state() {
     let earth = app
         .world_mut()
         .spawn((
-            PlanetBundle::point_mass("Earth", &EARTH),
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH),
             CentralSourceMarker,
         ))
         .id();
@@ -215,7 +215,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_state() {
 
     let id = app
         .world_mut()
-        .register_system(move |mut mutator: SourceMutator| {
+        .register_system(move |mut mutator: SourceMutator<jeod_sim::Earth>| {
             mutator.set_source_state(earth, DVec3::new(1.0, 2.0, 3.0), DVec3::ZERO);
         });
     let _ = app.world_mut().run_system(id);

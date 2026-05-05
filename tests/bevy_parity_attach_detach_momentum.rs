@@ -74,7 +74,7 @@ fn build_two_body_world(
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(parent_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -85,7 +85,7 @@ fn build_two_body_world(
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(child_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -106,7 +106,7 @@ fn step(app: &mut App, n: usize, dt: f64) {
 
 fn read_position(world: &World, entity: Entity) -> DVec3 {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .position
@@ -115,7 +115,7 @@ fn read_position(world: &World, entity: Entity) -> DVec3 {
 
 fn read_velocity(world: &World, entity: Entity) -> DVec3 {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .velocity
@@ -1084,7 +1084,7 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
     // `RelativeFrameState` returns).
     let child_trans_post = app
         .world()
-        .get::<TranslationalStateC>(child_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
         .expect("child still has TranslationalStateC post-attach")
         .0
         .to_untyped();
@@ -1227,7 +1227,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_a_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_a_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1244,7 +1244,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_b_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_b_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1256,7 +1256,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -1268,7 +1268,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -1582,7 +1582,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_a_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_a_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1599,7 +1599,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_b_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_b_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1611,7 +1611,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -1623,7 +1623,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -1830,7 +1830,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1846,7 +1846,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -1862,7 +1862,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: child_root_relative_pos,
                 velocity: DVec3::new(0.0, 7600.0, 0.0),
             }),
@@ -1908,10 +1908,10 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
                 velocity: DVec3::new(0.0, 7600.0, 0.0),
             });
         let mut child_trans = world
-            .get_mut::<TranslationalStateC>(child_entity)
+            .get_mut::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
             .expect("child still has TranslationalStateC");
         child_trans.0.position =
-            jeod_sim::Position::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_raw_si(
+            jeod_sim::Position::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_raw_si(
                 child_source_relative_pos,
             );
     }
@@ -2025,7 +2025,7 @@ fn bevy_detached_body_skips_force_pipeline() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -2034,7 +2034,7 @@ fn bevy_detached_body_skips_force_pipeline() {
         .spawn((
             Name::new("Body"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(initial_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans),
             RotationalStateC::default(),
             MassPropertiesC::from(body_mass),
             MassBodyIdC(id_body),
@@ -2724,7 +2724,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_a_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_a_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -2741,7 +2741,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_b_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_b_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -2752,7 +2752,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(parent_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -2764,7 +2764,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(child_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3011,7 +3011,7 @@ fn bevy_attach_root_equivalent_parents_succeed() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -3023,7 +3023,7 @@ fn bevy_attach_root_equivalent_parents_succeed() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3038,7 +3038,7 @@ fn bevy_attach_root_equivalent_parents_succeed() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3146,7 +3146,7 @@ fn bevy_attach_malformed_frame_node_panics() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3157,7 +3157,7 @@ fn bevy_attach_malformed_frame_node_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3247,7 +3247,7 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3258,7 +3258,7 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3374,7 +3374,7 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3385,7 +3385,7 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3600,7 +3600,7 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3611,7 +3611,7 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3707,7 +3707,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3718,7 +3718,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3757,7 +3757,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
     // absent) is observed by the fence — running `FixedUpdate`
     // would re-register the child first.
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -3823,7 +3823,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3908,7 +3908,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -3919,7 +3919,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -3942,7 +3942,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
     );
     app.world_mut()
         .entity_mut(child_entity)
-        .remove::<TranslationalStateC>();
+        .remove::<TranslationalStateC<jeod_sim::Earth>>();
 
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
@@ -3955,7 +3955,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -4052,7 +4052,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -4087,7 +4087,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -4160,7 +4160,7 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 
     let composite_mass = read_mass(app.world(), parent_entity);
