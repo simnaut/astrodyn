@@ -1050,4 +1050,162 @@ mod tests {
         sim.step()
             .expect("step until propagate_kinematic_state runs");
     }
+
+    /// Post-integration ordering regression: the post-integration
+    /// sweep in `step::mod::step_internal` must run
+    /// `propagate_frame_attached_state(&body_integ_origins_post)`
+    /// **before** `propagate_kinematic_state(&body_integ_origins_post)`.
+    ///
+    /// Same root-cause shape as the pre-integration fix: a
+    /// frame-attached body that is also a mass-tree root with a
+    /// kinematic descendant needs its parent-frame-derived state in
+    /// place before the kinematic walk reads `body.trans` as the seed.
+    ///
+    /// The bug is observable when the parent reference frame's state
+    /// **changes during integration** — the frame-attach walk runs
+    /// before integration with an old parent-frame state, the
+    /// integrator advances something the parent frame depends on, and
+    /// the post-integration walks must re-derive in the new parent
+    /// state. We construct that condition by attaching body B to
+    /// body A's *body frame* (`SimBody.body_frame_id`): A integrates
+    /// freely under its own dynamics, advancing its body_frame_id's
+    /// inertial state from t to t+dt during integration. B is
+    /// frame-attached to A's body frame and is itself a mass-tree
+    /// root with a kinematic child C.
+    ///
+    /// - Correct order: post-integration frame-attach re-derives B
+    ///   from A(t+dt), then the kinematic walk seeds from B's new
+    ///   body.trans and writes C consistently. Final B and C both
+    ///   reflect A(t+dt).
+    /// - Inverted order: post-integration kinematic walk seeds from
+    ///   B's body.trans left over from the *pre-integration*
+    ///   frame-attach sweep (built from A(t)), writes C from that
+    ///   stale seed; then frame-attach updates B from A(t+dt).
+    ///   Final B reflects A(t+dt) but C reflects A(t) — the two
+    ///   diverge by A's per-step translation, which for an ISS-LEO
+    ///   orbiter is ~7.6 km/s · dt ≈ 760 m for dt = 0.1 s, many
+    ///   orders of magnitude above the 1e-6 m tolerance.
+    #[test]
+    fn frame_attached_root_propagates_before_kinematic_child_post_integration() {
+        let mut builder = Mission::iss_leo().into_builder();
+        builder.dt = 0.1;
+        let mut sim = builder.build().expect("Mission::iss_leo must validate");
+
+        // Body 0 (the iss_leo orbiter) integrates freely under its own
+        // gravity. Its body_frame_id is the parent frame for the
+        // frame-attached body B below — A's integration produces the
+        // mid-step state change that surfaces the ordering bug.
+        let body_a_frame_id = sim.bodies[0].body_frame_id;
+
+        // Body B: 6-DOF, mass-tree root, will be frame-attached to A's
+        // body frame. Spawned at zero state because the frame-attach
+        // walk overwrites it every tick.
+        let body_b_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(10.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(body_b_idx, "body_b");
+
+        // Body C: kinematic child of B. Identity link rotation, fixed
+        // structural offset in B's parent frame.
+        let link_offset = DVec3::new(0.0, 100.0, 0.0);
+        let body_c_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(body_c_idx, "body_c");
+        sim.attach(body_c_idx, body_b_idx, link_offset, DMat3::IDENTITY);
+        sim.mark_kinematic_only(body_c_idx);
+
+        // Pre-step once so all frame-tree state is populated before the
+        // attach (some downstream init paths only stabilise after the
+        // first tick). The attach captures an offset in A's body frame
+        // — non-zero so `body.trans` of B observably differs between
+        // A(t) and A(t+dt).
+        sim.step().expect("seed step before frame-attach");
+        let attach_offset_in_a = DVec3::new(50.0, 0.0, 0.0);
+        sim.attach_to_frame(
+            body_b_idx,
+            body_a_frame_id,
+            attach_offset_in_a,
+            DMat3::IDENTITY,
+        );
+
+        // One tick exercises the full post-integration sweep:
+        // body A integrates (its body_frame_id state advances), then
+        // `propagate_frame_attached_state(&body_integ_origins_post)`
+        // re-derives B from A's new state, then
+        // `propagate_kinematic_state(&body_integ_origins_post)` writes
+        // C. The ordering is what this test guards.
+        sim.step().expect("post-attach step");
+
+        // The invariant: with the correct ordering, the *kinematic
+        // child C tracks B*. Specifically, the inertial offset from B
+        // to C must remain at its initial composed value across the
+        // step. With the inverted ordering, B reflects A(t+dt) while
+        // C reflects A(t), so the offset C - B is corrupted by A's
+        // per-step translation. We verify the invariant by computing
+        // the offset (C_pos - B_pos) before and after the step and
+        // requiring it to stay constant.
+        //
+        // Why the offset is the right probe: both walks (kinematic
+        // and frame-attach) consume the same upstream A-frame state
+        // and produce B and C from a rigid composition. The offset
+        // C - B is independent of A; if both walks see the same A
+        // they output a consistent offset, and if they see different
+        // A's the offset varies by exactly the difference. The
+        // inverted-order bug puts ~7.6 km/s · 0.1 s ≈ 760 m on the
+        // offset; the correct order leaves it bit-stable up to
+        // floating-point round-off in the link composition.
+
+        // Snapshot the offset from the pre-integration sweep — both
+        // walks ran in their pre-integration form before integration,
+        // so this offset is the "consistent both walks see same A"
+        // baseline.
+        // (We skipped capturing this earlier; instead, run the step
+        // once, then re-run a second step and compare the offset
+        // across the two; if both steps' walks are consistent the
+        // offset is identical, otherwise the per-step gap surfaces.)
+
+        let post_b = sim.body(body_b_idx);
+        let post_c = sim.body(body_c_idx);
+        let offset_after_step1 = post_c.trans.position - post_b.trans.position;
+
+        // Run a second step. With correct ordering both steps produce
+        // the same C - B offset (rigid attach is time-independent).
+        // With inverted ordering the offset is corrupted by A's
+        // per-step translation — and that translation grows step-on-
+        // step, so the two snapshots disagree.
+        sim.step().expect("second post-attach step");
+        let post_b2 = sim.body(body_b_idx);
+        let post_c2 = sim.body(body_c_idx);
+        let offset_after_step2 = post_c2.trans.position - post_b2.trans.position;
+
+        let drift = (offset_after_step2 - offset_after_step1).length();
+        assert!(
+            drift < 1e-6,
+            "C - B offset must be tick-invariant when B is frame-attached and C \
+             is its kinematic child. Step 1 offset: {offset_after_step1:?}; \
+             step 2 offset: {offset_after_step2:?}; |drift| = {drift:.3e} m. If \
+             the post-integration order regressed (kinematic walk before \
+             frame-attach propagation), C would reflect B's *pre-integration* \
+             state (built from A(t)) while B itself would reflect A(t+dt) — the \
+             offset would shift each tick by A's per-step translation (~hundreds \
+             of meters for an ISS-LEO orbiter at dt=0.1 s).",
+        );
+
+        // Sanity: the offset itself must be non-zero (otherwise the
+        // test is vacuous; a zero offset would survive both orderings).
+        assert!(
+            offset_after_step1.length() > 1.0,
+            "test setup error: C - B offset must be non-trivial for the \
+             ordering bug to be observable, got {offset_after_step1:?}"
+        );
+    }
 }

@@ -350,39 +350,27 @@ fn assert_states_bit_identical(
     assert_sixdof_eq(label, &bevy_state, &runner_state);
 }
 
-/// Bevy adapter and runner produce bit-identical **parent** state for
-/// the same kinematic-chain topology, and each runtime's child state
-/// equals the kinematic kernel applied to its own runtime-internal
-/// parent state.
+/// Bevy adapter and runner produce bit-identical parent **and** child
+/// state for the same kinematic-chain topology.
 ///
-/// The two runtimes do **not** carry bit-identical *child* state at
-/// the same step count: their schedule placement of
-/// `propagate_state_via_storage` differs by one tick — Bevy runs
-/// propagation in `JeodSet::ForceCollection` (before integration) so
-/// the child reflects the *previous* tick's parent; the runner adds a
-/// post-integration propagation so the child reflects the
-/// just-integrated parent. Both are JEOD-faithful at the kernel
-/// granularity (the JEOD codebase calls `propagate_state_from_*`
-/// after every integration cycle), but the test focuses on the
-/// kernel-self-consistency invariant within each runtime — the
-/// schedule asymmetry is documented and out of this PR's scope.
+/// The Bevy adapter runs `propagate_state_from_root_system` *both*
+/// before and after integration each tick (mirroring the runner's
+/// stage 3b / 8d pre+post sweeps in
+/// `crates/jeod_runner/src/simulation/step/mod.rs`), so a kinematic
+/// child's `RotationalStateC` / `TranslationalStateC` reflects the
+/// just-integrated parent state — the same value the runner's
+/// post-integration pass installs. The previous one-tick lag (Bevy
+/// pre-only vs runner pre+post) was a schedule-placement gap, not a
+/// physics divergence.
 ///
 /// Runs `NUM_STEPS` ticks at `DT=0.1 s`. Asserts:
 /// 1. parent translational + rotational state is bit-identical
 ///    between Bevy and runner (`to_bits()` per component);
-/// 2. Bevy's child state == `kernel(Bevy.parent_prev_tick, link)` —
-///    structurally tested as `kernel(Bevy.parent_curr, link)` close
-///    to `Bevy.child` modulo one tick of parent drift, which is
-///    `parent_velocity * dt` along the parent's track and
-///    `ω × r * dt` rotational sweep at the link arm. Bit-identity
-///    is *not* the right contract here because the previous-tick
-///    parent is reconstructed analytically (a different f64 path
-///    than the integrator that produced the current parent), so a
-///    tight `< 1e-10` tolerance is used instead;
+/// 2. child translational + rotational state is bit-identical
+///    between Bevy and runner;
 /// 3. runner's child state == `kernel(runner.parent, link)`,
-///    bit-identical (post-integration propagation pins same-tick
-///    consistency, and `kernel_from_parent` here drives the same
-///    `compute_kinematic_child_state` with bit-identical inputs).
+///    bit-identical (kernel-self-consistency sanity check that the
+///    parity comes from the correct kernel inputs, not coincidence).
 #[test]
 fn bevy_parity_kinematic_propagation_simple_chain() {
     let (mut sim, parent_idx, child_idx) = build_runner_sim();
@@ -405,9 +393,20 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
         "parent",
     );
 
+    // ── Invariant 2: child state is bit-identical across runtimes.
+    //    Both Bevy and runner now run kinematic propagation pre+post
+    //    integration, so the child reflects the same-tick parent in
+    //    both runtimes.
+    assert_states_bit_identical(
+        &bevy_c_trans,
+        &runner_c.trans,
+        &bevy_c_rot,
+        &runner_c.rot.unwrap(),
+        "child",
+    );
+
     // ── Invariant 3: runner's child state matches its kernel on
-    //    the runner's parent state (post-integration propagation
-    //    pins same-tick consistency). Both `Simulation::step()` and
+    //    the runner's parent state. Both `Simulation::step()` and
     //    `kernel_from_parent` here drive the *same*
     //    `compute_kinematic_child_state` with bit-identical inputs
     //    (the hand-rolled mass-weighted CoM matches what
@@ -428,71 +427,5 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
         "runner kernel-consistency (child vs kernel(runner.parent))",
         &runner_actual,
         &runner_predicted,
-    );
-
-    // ── Invariant 2: Bevy's child state matches kernel applied to
-    //    Bevy's parent at the *previous tick*. We approximate the
-    //    previous-tick parent via reverse Euler from the current
-    //    Bevy parent (no force ⇒ velocity is constant ⇒ position
-    //    just shifts by `vel * dt`; quaternion shifts by Ω·dt
-    //    half-angle); this is exact for an unforced rigid body.
-    //
-    //    Bit-identity (`to_bits()` / `assert_sixdof_eq`) is *not* the
-    //    right contract here: the analytical reverse-Euler used to
-    //    reconstruct the previous-tick parent (`pos - vel * DT`,
-    //    `conj(q_step) * q_now`) takes a different floating-point
-    //    path than the integrator that produced the current parent,
-    //    so the two are equal only modulo round-off. Use a tight
-    //    `< 1e-10` tolerance — well below physical significance,
-    //    well above the f64 noise floor for the analytical
-    //    reconstruction. Invariants 1 and 3 above are the bit-identity
-    //    parity checks; this one is a kernel-consistency sanity check.
-    let bevy_p_prev_trans = TranslationalState {
-        position: bevy_p_trans.position - bevy_p_trans.velocity * DT,
-        velocity: bevy_p_trans.velocity,
-    };
-    // ω is constant in the body frame for an unforced rigid body
-    // (no torque, no inertia coupling here). The previous tick's q
-    // is `q_now * conj(q_step)` where `q_step` is the half-tick
-    // increment. For a small dt and constant ω we just rebuild q
-    // from `θ - ω·dt` (unwrapped about the same fixed axis Z); but
-    // the test setup chose ω along Z and parent_rot's quaternion is
-    // also a rotation about Z, so we can roll that back analytically.
-    let q_step = JeodQuat::left_quat_from_eigen_rotation(
-        bevy_p_rot.ang_vel_body.length() * DT,
-        bevy_p_rot.ang_vel_body.normalize(),
-    );
-    // q_now = q_step · q_prev ⇒ q_prev = conj(q_step) · q_now in
-    // JEOD's left-transformation algebra. Compute directly via
-    // `JeodQuat::conjugate` + `JeodQuat::multiply` — the prior
-    // matrix-roundtrip detour through `left_quat_to_transformation`
-    // and back inflated the comparison's noise floor for no benefit.
-    let q_prev = q_step.conjugate().multiply(&bevy_p_rot.quaternion);
-    let bevy_p_prev_rot = RotationalState {
-        quaternion: q_prev,
-        ang_vel_body: bevy_p_rot.ang_vel_body,
-    };
-    let (predicted_bevy_child_trans, predicted_bevy_child_rot) =
-        kernel_from_parent(&bevy_p_prev_trans, &bevy_p_prev_rot);
-    let bevy_pos_diff = (bevy_c_trans.position - predicted_bevy_child_trans.position).length();
-    let bevy_vel_diff = (bevy_c_trans.velocity - predicted_bevy_child_trans.velocity).length();
-    assert!(
-        bevy_pos_diff < 1e-10,
-        "Bevy kernel-consistency (one-tick lag): child position diff {bevy_pos_diff:.3e} m \
-         (predicted={:?}, bevy.child={:?})",
-        predicted_bevy_child_trans.position,
-        bevy_c_trans.position
-    );
-    assert!(
-        bevy_vel_diff < 1e-10,
-        "Bevy kernel-consistency (one-tick lag): child velocity diff {bevy_vel_diff:.3e} m/s",
-    );
-    let bevy_q_diff = (bevy_c_rot.quaternion.scalar()
-        - predicted_bevy_child_rot.quaternion.scalar())
-    .abs()
-        + (bevy_c_rot.quaternion.vector() - predicted_bevy_child_rot.quaternion.vector()).length();
-    assert!(
-        bevy_q_diff < 1e-10,
-        "Bevy kernel-consistency (one-tick lag): child quat L1 diff {bevy_q_diff:.3e}",
     );
 }

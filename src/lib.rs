@@ -5,6 +5,7 @@
 pub mod body_action;
 pub mod bundles;
 pub mod components;
+pub mod frame_attach_system;
 pub mod frame_param;
 pub mod kinematic_propagation;
 pub mod mass_tree;
@@ -22,7 +23,13 @@ pub use body_action::{
 };
 pub use bundles::*;
 pub use components::*;
-pub use kinematic_propagation::propagate_state_from_root_system;
+pub use frame_attach_system::{
+    frame_attach_system, propagate_frame_attached_state_post_integration_system,
+    propagate_frame_attached_state_system,
+};
+pub use kinematic_propagation::{
+    propagate_state_from_root_post_integration_system, propagate_state_from_root_system,
+};
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
 pub use source_mutator::{SourceMutator, SourceReader};
@@ -225,6 +232,8 @@ impl Plugin for JeodPlugin {
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
+        app.add_message::<FrameAttachEvent>();
+        app.add_message::<FrameDetachEvent>();
         // Body-action lifecycle: callers add / remove
         // body-action requests through this single message type or
         // through `BodyActionCommandsExt` on `Commands`. The intake
@@ -513,6 +522,35 @@ impl Plugin for JeodPlugin {
                 systems::sinusoidal_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::closure_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::multi_dof_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                // Frame-attached body attach/detach event processing
+                // (port of `Simulation::attach_to_frame` /
+                // `detach_from_frame`). Pinned between
+                // `JeodSet::EphemerisUpdate` and `JeodSet::Environment`
+                // so the propagation pass below sees freshly-processed
+                // events on the same tick they were dispatched. Runner
+                // counterpart: events are applied before stage 3a in
+                // `Simulation::step_internal`.
+                frame_attach_system::frame_attach_system
+                    .after(JeodSet::EphemerisUpdate)
+                    .before(JeodSet::Environment),
+                // Frame-attached body kinematic propagation. Derives
+                // every `FrameAttachedC` body's `TranslationalStateC`
+                // / `RotationalStateC` from its parent frame entity's
+                // current state composed with the captured offset.
+                // Pinned before `JeodSet::Environment` so gravity /
+                // atmosphere see the freshly-derived parent-frame
+                // composition rather than a one-tick-stale body state,
+                // and before `JeodSet::Interaction` so drag / SRP /
+                // gravity-torque also read the post-composition state.
+                // Mirrors stage 3a of the runner's
+                // `Simulation::step_internal` in
+                // `crates/jeod_runner/src/simulation/step/mod.rs`.
+                // Runs after `frame_attach_system` so freshly-attached
+                // bodies pick up the parent-frame composition the same
+                // tick they were attached.
+                frame_attach_system::propagate_frame_attached_state_system
+                    .after(frame_attach_system::frame_attach_system)
+                    .before(JeodSet::Environment),
                 // Body-action lifecycle: drain `BodyActionEvent`
                 // (`Add` / `Remove` variants) into `BodyActionsR`,
                 // then apply every ready action. Runs before
@@ -563,32 +601,43 @@ impl Plugin for JeodPlugin {
                     .after(body_action::body_action_intake_system)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
-                // Force collection and integration
-                systems::force_collection_system.in_set(JeodSet::ForceCollection),
-                // Kinematic state propagation: walks MassChildOf
-                // chains pre-order from each root and overwrites
-                // every kinematic child's RotationalStateC /
-                // TranslationalStateC with the parent's state
+                // Pre-integration kinematic state propagation: walks
+                // MassChildOf chains pre-order from each root and
+                // overwrites every kinematic child's `RotationalStateC`
+                // / `TranslationalStateC` with the parent's state
                 // composed with the link's `t_parent_child` rotation
                 // and offset. Mirrors JEOD
-                // `DynBody::propagate_state_from_structure`. Runs
-                // before `wrench_aggregation_system` so the wrench
-                // walk's per-entity `T_inertial_struct` is correct
-                // for every chain member. Fast-path no-op when no
-                // entity carries MassChildOf.
+                // `DynBody::propagate_state_from_structure` and the
+                // runner's stage 3b. Pinned before
+                // `JeodSet::Environment` so kinematic children inherit
+                // the freshly-derived root state before gravity /
+                // atmosphere read body state, and after the
+                // frame-attached propagation so a frame-attached
+                // mass-tree root has its parent-frame-derived state
+                // available before the kinematic walk reads it (a
+                // body that is both a frame-attach target and a
+                // mass-tree root would otherwise hand its kinematic
+                // descendants a stale pre-frame-attach root state).
+                // Fast-path no-op when no entity carries `MassChildOf`.
                 kinematic_propagation::propagate_state_from_root_system
-                    .in_set(JeodSet::ForceCollection)
-                    .after(systems::force_collection_system),
+                    .after(frame_attach_system::propagate_frame_attached_state_system)
+                    .before(JeodSet::Environment),
+                // Force collection and integration
+                systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Composite-rigid-body wrench aggregation: walk
                 // MassChildOf chains leaves → root and accumulate
                 // each child's force/torque (and parallel-axis cross
                 // term) into the root's TotalForceC. Non-root children
                 // are zeroed so the existing integration_system does
-                // not double-count them. Fast-path no-op when no
-                // entity carries MassChildOf.
+                // not double-count them. Reads the kinematic-propagated
+                // child states written by the pre-Environment
+                // `propagate_state_from_root_system` pass, so the
+                // per-entity `T_inertial_struct` is correct for every
+                // chain member. Fast-path no-op when no entity carries
+                // MassChildOf.
                 wrench::wrench_aggregation_system
                     .in_set(JeodSet::ForceCollection)
-                    .after(kinematic_propagation::propagate_state_from_root_system),
+                    .after(systems::force_collection_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into
                 // its frame entity's `FrameTransC` so frame-switch
@@ -603,6 +652,54 @@ impl Plugin for JeodPlugin {
                 systems::frame_switch_system
                     .in_set(JeodSet::Integration)
                     .after(systems::sync_body_to_frame_system),
+                // Post-integration frame-attached body propagation.
+                // Symmetric to the pre-integration sweep above: the
+                // integrator just produced fresh source-body state and
+                // `frame_switch_system` may have rewritten frame-tree
+                // state mid-step, so re-derive every `FrameAttachedC`
+                // body's `TranslationalStateC` / `RotationalStateC` so
+                // `JeodSet::DerivedState` consumers
+                // (`orbital_elements_system`, `geodetic_system`,
+                // `lvlh_system`, `solar_beta_system`,
+                // `earth_lighting_system`) observe the parent
+                // reference frame's *current* state rather than a
+                // one-tick-stale composition.
+                //
+                // Mirrors stage 8c of the runner's
+                // `Simulation::step_internal` in
+                // `crates/jeod_runner/src/simulation/step/mod.rs`.
+                // Must run *before* the post-integration kinematic
+                // walk below: a frame-attached body that is also a
+                // mass-tree root would otherwise hand its kinematic
+                // descendants a stale pre-frame-attach root state —
+                // same constraint as the pre-integration ordering,
+                // applied to the post-integration sweep.
+                frame_attach_system::propagate_frame_attached_state_post_integration_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::frame_switch_system),
+                // Post-integration kinematic state propagation
+                // (root → leaves). The integrator just produced fresh
+                // root-body state; rerun the kinematic walk so every
+                // non-root child's `RotationalStateC` /
+                // `TranslationalStateC` reflects the same-tick parent
+                // state. Mirrors JEOD's
+                // `DynBody::propagate_state_from_structure` invocation
+                // at the end of every integration cycle and the
+                // runner's stage 8d post-integration sweep.
+                kinematic_propagation::propagate_state_from_root_post_integration_system
+                    .in_set(JeodSet::Integration)
+                    .after(
+                        frame_attach_system::propagate_frame_attached_state_post_integration_system,
+                    ),
+            ),
+        );
+        // Third `add_systems` call: derived-state systems live here only
+        // to stay within Bevy's 20-tuple `IntoSystem` limit on the
+        // second block. Set membership pins them to `JeodSet::DerivedState`
+        // regardless of which `add_systems` call carries them.
+        app.add_systems(
+            FixedUpdate,
+            (
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),
                 systems::euler_angles_system.in_set(JeodSet::DerivedState),

@@ -238,6 +238,21 @@ impl Simulation {
                 if body.kinematic_only {
                     continue;
                 }
+                // JEOD_INV: DB.21 — frame-attached bodies do not
+                // integrate. JEOD's `DynBody::integrate` at
+                // `models/dynamics/dyn_body/src/dyn_body_integration.cc:309-333`
+                // skips both the translational and rotational
+                // integrators when `frame_attach.isAttached()` and
+                // instead resets the body's state to the parent
+                // frame's state + offset. The pre- and
+                // post-integration `propagate_frame_attached_state`
+                // sweeps in `step::mod` do the equivalent state reset
+                // for us; here we simply skip the integrator so it
+                // doesn't stomp the kinematic value with a
+                // force-driven update.
+                if body.frame_attach.is_some() {
+                    continue;
+                }
                 let stage_inputs_and_order = body
                     .flat_plate_state
                     .as_ref()
@@ -465,6 +480,19 @@ impl Simulation {
                  contact forces require an integrated state for every participant. \
                  Either clear `kinematic_only` on every contact-coupled body, or \
                  detach the kinematic child before registering contact pairs."
+            );
+            // Frame-attached bodies have no integrator to feed contact
+            // forces back through; they are kinematically driven by
+            // the parent frame. Surface a fail-loud diagnostic
+            // matching the kinematic_only assertion above.
+            assert!(
+                self.bodies.iter().all(|b| b.frame_attach.is_none()),
+                "contact-coupled path is incompatible with frame-attached bodies: \
+                 contact forces require an integrated state for every participant, \
+                 but the contact-coupled kernel integrates ALL bodies in the sim — \
+                 so any frame-attached body present is a misconfiguration. Call \
+                 `Simulation::detach_from_frame(body_idx)` on every frame-attached \
+                 body before stepping (or unregister the contact pairs)."
             );
             assert!(
                 self.bodies

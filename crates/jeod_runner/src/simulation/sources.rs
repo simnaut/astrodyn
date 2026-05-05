@@ -219,6 +219,44 @@ impl Simulation {
         sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx)
     }
 
+    /// Get the inertial-frame [`FrameId`] for a gravity source.
+    ///
+    /// Useful for `Simulation::attach_to_frame(body_idx, parent_frame_id, …)`
+    /// callers that want to attach a body to (e.g.) Earth's inertial frame.
+    /// For the central body this returns the simulation's root frame.
+    pub fn source_inertial_frame_id(&self, source_idx: usize) -> FrameId {
+        let len = self.source_frame_ids.len();
+        self.source_frame_ids
+            .get(source_idx)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source_inertial_frame_id: source index {source_idx} out of \
+                     range; {len} source(s) configured"
+                )
+            })
+            .inertial
+    }
+
+    /// Get the planet-fixed [`FrameId`] for a gravity source. Returns
+    /// `None` if the source has no rotation model (no pfix frame).
+    ///
+    /// The companion to [`source_inertial_frame_id`](Self::source_inertial_frame_id)
+    /// for the rotating-frame attachment use case (JEOD's
+    /// `attach_to_frame("Earth.pfix")` pattern from
+    /// `verif/SIM_dyncomp/SET_test/RUN_attach_to_ref_frame/input.py`).
+    pub fn source_pfix_frame_id(&self, source_idx: usize) -> Option<FrameId> {
+        let len = self.source_frame_ids.len();
+        self.source_frame_ids
+            .get(source_idx)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source_pfix_frame_id: source index {source_idx} out of \
+                     range; {len} source(s) configured"
+                )
+            })
+            .pfix
+    }
+
     /// Get mutable access to a source's tidal configuration.
     pub fn source_tidal_config_mut(
         &mut self,
