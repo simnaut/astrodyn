@@ -7,9 +7,10 @@
 //! parameterizations: Keplerian orbital elements, LVLH-relative state, or
 //! NED (North-East-Down) relative state.
 
+use crate::rotational::RotationalState;
 use crate::state::{TranslationalState, TranslationalStateTyped};
 use glam::{DMat3, DVec3};
-use jeod_math::{mat3_from_rows, GeodeticState, OrbitalElements};
+use jeod_math::{mat3_from_rows, GeodeticState, JeodQuat, OrbitalElements};
 use jeod_quantities::dims::GravParam;
 use jeod_quantities::ext::Vec3Ext;
 use jeod_quantities::frame::RootInertial;
@@ -265,6 +266,152 @@ pub fn init_from_lvlh(
     let velocity = ref_velocity + t_lvlh_to_inertial * lvlh_vel;
 
     TranslationalState { position, velocity }
+}
+
+/// Frame in which the user-supplied LVLH-relative angular velocity is expressed.
+///
+/// JEOD `DynBodyInit::ang_velocity` is interpreted via two flags
+/// (`reverse_sense`, `rate_in_parent`); for `DynBodyInitLvlhRotState` the
+/// only sane combinations reduce to "ang vel of body wrt LVLH, expressed
+/// in body frame" (`rate_in_parent = false`) or "...expressed in LVLH"
+/// (`rate_in_parent = true`). The `reverse_sense` flag is irrelevant to
+/// the LVLH-rot init in JEOD's own verif tests; we expose only the
+/// `rate_in_parent` choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LvlhAngularVelocityFrame {
+    /// User input is the angular velocity of the body wrt the LVLH frame,
+    /// expressed in the body frame (rad/s). Default — matches JEOD
+    /// `rate_in_parent = false`.
+    #[default]
+    Body,
+    /// User input is the angular velocity of the body wrt the LVLH frame,
+    /// expressed in the LVLH frame (rad/s). JEOD `rate_in_parent = true`.
+    Lvlh,
+}
+
+/// Initialize rotational state from an LVLH-relative attitude + angular velocity.
+///
+/// Port of JEOD `DynBodyInitLvlhRotState::initialize` /
+/// `DynBodyInitLvlhState::apply` /
+/// `DynBodyInit::apply_user_inputs` for the rotational sub-state
+/// (`set_items = Att | Rate`). See
+/// `models/dynamics/body_action/src/dyn_body_init_lvlh_rot_state.cc`,
+/// `dyn_body_init_lvlh_state.cc`, and the rotational branches of
+/// `dyn_body_init.cc:273-328`.
+///
+/// The LVLH frame is constructed from the reference orbit
+/// (`ref_position`, `ref_velocity`) in the central body's planet-inertial
+/// frame, then composed with the user-supplied LVLH→body attitude /
+/// LVLH-relative angular velocity to produce the body's
+/// inertial→body attitude and the body-frame angular velocity of the body
+/// wrt the inertial frame.
+///
+/// The composition follows JEOD's `RefFrameState::incr_left` (with `A` =
+/// inertial, `B` = LVLH, `C` = body):
+///
+/// ```text
+/// Q_inertial_body         = Q_lvlh_body * Q_inertial_lvlh
+/// w_inertial_body_in_body = T_lvlh_body * w_inertial_lvlh_in_lvlh
+///                         + w_lvlh_body_in_body
+/// ```
+///
+/// where `Q_lvlh_body` is the user-supplied attitude (LVLH-frame attitude
+/// of the body) — composed with `Q_inertial_lvlh` via quaternion
+/// multiplication — and `T_lvlh_body` is the equivalent rotation matrix
+/// derived from `Q_lvlh_body`, used to project the LVLH-frame angular
+/// velocity into the body frame. `w_lvlh_body_in_body` is the
+/// user-supplied LVLH-relative angular velocity already expressed in the
+/// body frame (when the user supplies it in the LVLH frame, the same
+/// `T_lvlh_body` matrix lifts it into the body frame first — see
+/// `ang_vel_frame` below).
+///
+/// # Arguments
+/// * `q_lvlh_body` - LVLH→body attitude quaternion (scalar-first,
+///   left-transformation, JEOD convention). Renormalized once at function
+///   entry; both the returned attitude and the angular-velocity
+///   composition use the renormalized form so a slightly-off-unit input
+///   cannot produce a returned attitude / ang-vel pair that disagree on
+///   the body axes.
+/// * `ang_vel_lvlh_to_body` - Angular velocity of the body wrt the LVLH
+///   frame (rad/s), expressed per `ang_vel_frame`.
+/// * `ang_vel_frame` - Coordinate frame of `ang_vel_lvlh_to_body`.
+/// * `ref_position` - Reference orbit position in the planet-inertial
+///   frame (m).
+/// * `ref_velocity` - Reference orbit velocity in the planet-inertial
+///   frame (m/s).
+// JEOD_INV: BA.11 — LVLH-rot init composes inertial→LVLH (from reference
+// orbit) with LVLH→body (user input) per RefFrameState::incr_left, then
+// projects the LVLH-frame ang vel into the body frame and adds the
+// LVLH-body ang vel.
+pub fn init_rot_from_lvlh(
+    q_lvlh_body: JeodQuat,
+    ang_vel_lvlh_to_body: DVec3,
+    ang_vel_frame: LvlhAngularVelocityFrame,
+    ref_position: DVec3,
+    ref_velocity: DVec3,
+) -> RotationalState {
+    // Renormalize the user-supplied LVLH→body attitude once at the entry
+    // and use the renormalized value as the canonical input for both the
+    // returned attitude and the `T_lvlh_body` matrix that drives the
+    // angular-velocity composition. If the caller supplies a
+    // slightly-off-unit quaternion (which this function explicitly
+    // tolerates), `left_quat_to_transformation()` would otherwise produce
+    // a scaled / skewed matrix and the returned `ang_vel_body` would no
+    // longer match the rotation defined by the returned attitude — the
+    // attitude and ang-vel outputs must describe the same body axes.
+    let mut q_lvlh_body = q_lvlh_body;
+    q_lvlh_body.normalize();
+
+    // Reference-orbit LVLH frame (typed input, raw f64 inputs at the
+    // boundary). Earth here is the documented assumption — the LVLH
+    // construction is planet-agnostic so this matches the existing
+    // `init_from_lvlh` translational sibling.
+    use jeod_quantities::frame::{Earth, PlanetInertial};
+    let lvlh = jeod_math::LvlhFrame::compute(
+        ref_position.m_at::<PlanetInertial<Earth>>(),
+        ref_velocity.m_per_s_at::<PlanetInertial<Earth>>(),
+    );
+
+    // Inertial→LVLH attitude as a JEOD scalar-first left quaternion.
+    let q_inertial_lvlh = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
+
+    // Inertial→body attitude: composition order matches
+    // RefFrameState::incr_left line 270 (`Q_A:C = Q_B:C * Q_A:B`),
+    // i.e. post-multiply the (already renormalized) LVLH→body by the
+    // LVLH frame's inertial→LVLH.
+    let q_inertial_body = q_lvlh_body.multiply(&q_inertial_lvlh);
+
+    // T_lvlh_body matrix derived from the renormalized quaternion. Used
+    // both to lift a parent-frame-expressed `ang_vel_lvlh_to_body` into
+    // the body frame *and* to project the LVLH frame's inertial-relative
+    // ang vel into the body frame — both must use the same matrix that
+    // matches the returned attitude.
+    let t_lvlh_body = q_lvlh_body.left_quat_to_transformation();
+
+    // Angular velocity of the body wrt LVLH, expressed in the body frame.
+    // JEOD `apply_user_inputs` lines 304-315: when `rate_in_parent` is
+    // set, transform the parent-frame-expressed ang vel through
+    // `T_parent_this` (LVLH→body); otherwise the user already provided
+    // it in the body frame.
+    let ang_vel_lvlh_to_body_in_body = match ang_vel_frame {
+        LvlhAngularVelocityFrame::Body => ang_vel_lvlh_to_body,
+        LvlhAngularVelocityFrame::Lvlh => t_lvlh_body * ang_vel_lvlh_to_body,
+    };
+
+    // Angular velocity of the LVLH frame wrt inertial, expressed in the
+    // body frame: T_lvlh_body * w_inertial_lvlh_in_lvlh (the
+    // `T_B:C * w_A:B` term from the `incr_left` formula).
+    let ang_vel_inertial_lvlh_in_body = t_lvlh_body * lvlh.ang_vel_this;
+
+    // Final body-frame angular velocity:
+    //   w_inertial_body_in_body = T_lvlh_body * w_inertial_lvlh_in_lvlh
+    //                           + w_lvlh_body_in_body
+    let ang_vel_body = ang_vel_inertial_lvlh_in_body + ang_vel_lvlh_to_body_in_body;
+
+    RotationalState {
+        quaternion: q_inertial_body,
+        ang_vel_body,
+    }
 }
 
 /// Initialize translational state from NED (North-East-Down) position and velocity.
@@ -873,5 +1020,288 @@ mod tests {
 
         assert_eq!(typed.position.raw_si(), untyped.position);
         assert_eq!(typed.velocity.raw_si(), untyped.velocity);
+    }
+
+    // =======================================================================
+    // LVLH-relative rotational init
+    // =======================================================================
+
+    /// Build the same LVLH frame the kernel sees, for use in test
+    /// expectations. Matches `init_from_lvlh`'s typed entry.
+    fn lvlh_frame_at(ref_pos: DVec3, ref_vel: DVec3) -> jeod_math::LvlhFrame {
+        use jeod_quantities::frame::{Earth, PlanetInertial};
+        jeod_math::LvlhFrame::compute(
+            ref_pos.m_at::<PlanetInertial<Earth>>(),
+            ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
+        )
+    }
+
+    #[test]
+    fn lvlh_rot_identity_attitude_zero_rate_recovers_lvlh_frame() {
+        // Identity LVLH→body attitude with zero LVLH-relative angular
+        // velocity must yield the LVLH frame's own attitude / angular
+        // velocity wrt inertial: Q_inertial_body = Q_inertial_lvlh, and
+        // w_body = w_inertial_lvlh_in_lvlh = [0, -wmag, 0].
+        let r = EARTH_R_EQ + 400_000.0;
+        let v = (EARTH_MU / r).sqrt();
+        let inc = 51.6_f64.to_radians();
+        let ref_pos = DVec3::new(r, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, v * inc.cos(), v * inc.sin());
+
+        let lvlh = lvlh_frame_at(ref_pos, ref_vel);
+        let expected_q = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
+
+        let state = init_rot_from_lvlh(
+            JeodQuat::identity(),
+            DVec3::ZERO,
+            LvlhAngularVelocityFrame::Body,
+            ref_pos,
+            ref_vel,
+        );
+
+        // Compare quaternion components (canonical hemisphere is enforced
+        // by `normalize`, so the sign convention matches).
+        let dq: f64 = (0..4)
+            .map(|i| {
+                let a = state.quaternion.data[i];
+                let b = expected_q.data[i];
+                (a - b).powi(2)
+            })
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            dq < 1e-14,
+            "identity LVLH→body should match LVLH frame quaternion exactly: dq = {dq}"
+        );
+
+        // Body-frame angular velocity must be the LVLH frame's own
+        // angular velocity (in LVLH coords, since identity LVLH→body
+        // means body axes == LVLH axes).
+        let ang_err = (state.ang_vel_body - lvlh.ang_vel_this).length();
+        assert!(
+            ang_err < 1e-14,
+            "identity LVLH→body should recover LVLH ang vel: err = {ang_err}"
+        );
+    }
+
+    #[test]
+    fn lvlh_rot_inverse_rate_zeros_inertial_ang_vel() {
+        // If the user supplies w_lvlh_body_in_lvlh = -w_inertial_lvlh_in_lvlh,
+        // the body is non-rotating wrt inertial: w_inertial_body_in_body = 0.
+        // Use identity LVLH→body so the LVLH-coord ang vel maps directly
+        // into the body frame.
+        let r = EARTH_R_EQ + 400_000.0;
+        let v = (EARTH_MU / r).sqrt();
+        let ref_pos = DVec3::new(r, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, v, 0.0);
+
+        let lvlh = lvlh_frame_at(ref_pos, ref_vel);
+        // w_lvlh_body = -w_inertial_lvlh: cancels exactly.
+        let cancel = -lvlh.ang_vel_this;
+
+        let state = init_rot_from_lvlh(
+            JeodQuat::identity(),
+            cancel,
+            LvlhAngularVelocityFrame::Lvlh,
+            ref_pos,
+            ref_vel,
+        );
+
+        let mag = state.ang_vel_body.length();
+        assert!(
+            mag < 1e-14,
+            "cancelling LVLH-relative rate should null inertial ang vel: |w| = {mag}"
+        );
+    }
+
+    #[test]
+    fn lvlh_rot_nontrivial_attitude_round_trips() {
+        // With a non-trivial LVLH→body rotation (60° about an arbitrary
+        // axis), recover the user input by composing
+        // Q_inertial_body * Q_inertial_lvlh^conj and comparing.
+        let r = EARTH_R_EQ + 400_000.0;
+        let v = (EARTH_MU / r).sqrt();
+        let inc = 28.5_f64.to_radians();
+        let ref_pos = DVec3::new(r * 0.6, r * 0.8, 0.0);
+        let ref_vel = DVec3::new(-v * 0.8 * inc.cos(), v * 0.6 * inc.cos(), v * inc.sin());
+
+        // Non-trivial axis-angle attitude: 1.2 rad about a non-axis-
+        // aligned direction.
+        let axis = DVec3::new(1.0, 2.0, 3.0).normalize();
+        let q_lvlh_body = JeodQuat::left_quat_from_eigen_rotation(1.2, axis);
+
+        // Non-trivial body-frame LVLH-relative angular velocity (rad/s).
+        let w_lvlh_body_in_body = DVec3::new(0.01, -0.02, 0.03);
+
+        let state = init_rot_from_lvlh(
+            q_lvlh_body,
+            w_lvlh_body_in_body,
+            LvlhAngularVelocityFrame::Body,
+            ref_pos,
+            ref_vel,
+        );
+
+        // Recover Q_lvlh_body = Q_inertial_body * conj(Q_inertial_lvlh).
+        let lvlh = lvlh_frame_at(ref_pos, ref_vel);
+        let q_inertial_lvlh = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
+        let mut recovered = state.quaternion.multiply(&q_inertial_lvlh.conjugate());
+        recovered.normalize();
+        // Compare with the user input (also normalized to canonical
+        // hemisphere by `left_quat_from_eigen_rotation`).
+        let dq: f64 = (0..4)
+            .map(|i| {
+                let a = recovered.data[i];
+                let b = q_lvlh_body.data[i];
+                (a - b).powi(2)
+            })
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            dq < 1e-12,
+            "recovered Q_lvlh_body should match input: dq = {dq}, recovered = {:?}, input = {:?}",
+            recovered.data,
+            q_lvlh_body.data
+        );
+
+        // Recover w_lvlh_body_in_body =
+        //   w_inertial_body_in_body - T_lvlh_body * w_inertial_lvlh_in_lvlh
+        let t_lvlh_body = q_lvlh_body.left_quat_to_transformation();
+        let recovered_rate = state.ang_vel_body - t_lvlh_body * lvlh.ang_vel_this;
+        let rate_err = (recovered_rate - w_lvlh_body_in_body).length();
+        assert!(
+            rate_err < 1e-14,
+            "recovered LVLH-relative rate should match input: err = {rate_err}"
+        );
+    }
+
+    #[test]
+    fn lvlh_rot_body_vs_lvlh_rate_frame_agree_when_rotated_back() {
+        // The two `LvlhAngularVelocityFrame` choices must agree when the
+        // user rotates the LVLH-frame input by T_lvlh_body before calling
+        // with `Body`.
+        let r = EARTH_R_EQ + 400_000.0;
+        let v = (EARTH_MU / r).sqrt();
+        let ref_pos = DVec3::new(r, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, v, 0.0);
+
+        let axis = DVec3::new(0.0, 0.0, 1.0);
+        let q_lvlh_body = JeodQuat::left_quat_from_eigen_rotation(0.5, axis);
+
+        let w_in_lvlh = DVec3::new(0.001, -0.002, 0.003);
+        let t_lvlh_body = q_lvlh_body.left_quat_to_transformation();
+        let w_in_body = t_lvlh_body * w_in_lvlh;
+
+        let s_lvlh = init_rot_from_lvlh(
+            q_lvlh_body,
+            w_in_lvlh,
+            LvlhAngularVelocityFrame::Lvlh,
+            ref_pos,
+            ref_vel,
+        );
+        let s_body = init_rot_from_lvlh(
+            q_lvlh_body,
+            w_in_body,
+            LvlhAngularVelocityFrame::Body,
+            ref_pos,
+            ref_vel,
+        );
+
+        let dq: f64 = (0..4)
+            .map(|i| {
+                let a = s_lvlh.quaternion.data[i];
+                let b = s_body.quaternion.data[i];
+                (a - b).powi(2)
+            })
+            .sum::<f64>()
+            .sqrt();
+        assert!(dq < 1e-14, "quaternion mismatch across rate-frame: {dq}");
+        let dw = (s_lvlh.ang_vel_body - s_body.ang_vel_body).length();
+        assert!(dw < 1e-14, "ang vel mismatch across rate-frame: {dw}");
+    }
+
+    #[test]
+    fn lvlh_rot_renormalizes_off_unit_input_consistently() {
+        // A slightly-off-unit input quaternion must be renormalized once
+        // at the entry of `init_rot_from_lvlh`, with the renormalized
+        // value used for *both* the returned attitude and the
+        // `T_lvlh_body` matrix that lifts the LVLH-frame ang vel into
+        // the body frame. The test feeds an off-unit input and the
+        // pre-normalized equivalent and asserts both forms produce the
+        // same `RotationalState` — pinning the consistency property
+        // (without renormalizing first, the off-unit input would drive
+        // a scaled `T_lvlh_body` matrix and the returned ang vel would
+        // not match the renormalized attitude).
+        let r = EARTH_R_EQ + 400_000.0;
+        let v = (EARTH_MU / r).sqrt();
+        let inc = 51.6_f64.to_radians();
+        let ref_pos = DVec3::new(r, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, v * inc.cos(), v * inc.sin());
+
+        // Non-trivial LVLH→body: 30° around an oblique axis.
+        let axis = DVec3::new(1.0, 2.0, 3.0).normalize();
+        let q_unit = JeodQuat::left_quat_from_eigen_rotation(0.5, axis);
+
+        // Off-unit copy: scale every component by 1.001 so |q|² ≈ 1.002,
+        // i.e. ~0.1% off unit length — well outside the
+        // `left_quat_to_transformation` tolerance for an exact match
+        // but inside what `JeodQuat::normalize` accepts.
+        let mut q_off = q_unit;
+        for d in q_off.data.iter_mut() {
+            *d *= 1.001;
+        }
+
+        // LVLH-frame angular velocity, exercising the Lvlh branch (the
+        // branch where the unrenormalized quaternion previously drove
+        // an inconsistent matrix).
+        let w_in_lvlh = DVec3::new(0.001, -0.002, 0.003);
+
+        let s_unit = init_rot_from_lvlh(
+            q_unit,
+            w_in_lvlh,
+            LvlhAngularVelocityFrame::Lvlh,
+            ref_pos,
+            ref_vel,
+        );
+        let s_off = init_rot_from_lvlh(
+            q_off,
+            w_in_lvlh,
+            LvlhAngularVelocityFrame::Lvlh,
+            ref_pos,
+            ref_vel,
+        );
+
+        let dq: f64 = (0..4)
+            .map(|i| (s_unit.quaternion.data[i] - s_off.quaternion.data[i]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            dq < 1e-14,
+            "off-unit input must produce the same attitude as the pre-normalized input: dq = {dq}"
+        );
+        let dw = (s_unit.ang_vel_body - s_off.ang_vel_body).length();
+        assert!(
+            dw < 1e-14,
+            "off-unit input must produce the same ang vel as the pre-normalized input: dw = {dw}"
+        );
+
+        // Independent cross-check: build the expected ang vel from the
+        // renormalized quaternion's matrix directly, and confirm the
+        // function's result agrees. This pins the ang-vel formula to
+        // the renormalized matrix specifically (an implementation that
+        // used the raw input matrix would fail this even though the two
+        // calls above produce equal output by sheer coincidence).
+        let lvlh = lvlh_frame_at(ref_pos, ref_vel);
+        let t_lvlh_body_unit = q_unit.left_quat_to_transformation();
+        let expected_w = t_lvlh_body_unit * lvlh.ang_vel_this + t_lvlh_body_unit * w_in_lvlh;
+        let err_unit = (s_unit.ang_vel_body - expected_w).length();
+        let err_off = (s_off.ang_vel_body - expected_w).length();
+        assert!(
+            err_unit < 1e-14,
+            "ang vel must match the renormalized-matrix formula (unit input): err = {err_unit}"
+        );
+        assert!(
+            err_off < 1e-14,
+            "ang vel must match the renormalized-matrix formula (off-unit input): err = {err_off}"
+        );
     }
 }
