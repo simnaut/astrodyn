@@ -398,7 +398,7 @@ impl Simulation {
         //    even though the underlying tree edge runs from `parent`
         //    to the subject's existing root.
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
-        // JEOD_INV: BA.11 — runner dispatches every public attach through the
+        // JEOD_INV: BA.12 — runner dispatches every public attach through the
         // reroot-aware kernel so chained-attach scenarios pick the JEOD
         // `dyn_body_attach.cc:521-567` path automatically.
         let _attached_root = tree.attach_with_reroot(child_id, parent_id, offset, t_parent_child);
