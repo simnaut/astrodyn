@@ -19,16 +19,18 @@ use uom::si::length::meter;
 
 /// Relative state between two bodies.
 ///
-/// Position/velocity are of `subject` relative to `reference`. When the
-/// reference carries a [`RotationalState`], they are rotated into the
-/// reference body frame (matching JEOD convention `S_{ref:subj}`); when
-/// the reference has no rotational state, they remain in the inertial
-/// frame. That runtime-conditional frame choice prevents a single
-/// compile-time phantom from covering both branches losslessly — the
-/// position/velocity fields therefore stay raw `DVec3`, with the
-/// caller responsible for tracking which branch fired (typically by
-/// the presence/absence of the reference rotational state at the call
-/// site).
+/// Position/velocity of `subject` relative to `reference` live on
+/// [`Self::trans`], whose [`RelativeTranslation`] sum type encodes the
+/// runtime-conditional frame choice in the type system: when the
+/// reference carries a [`RotationalState`] the values are rotated into
+/// the reference body frame ([`RelativeTranslation::BodyFrame`],
+/// matching JEOD convention `S_{ref:subj}`); when the reference has no
+/// rotational state they remain in the inertial frame
+/// ([`RelativeTranslation::Inertial`]). A single compile-time phantom
+/// cannot losslessly cover both branches, so the variant tag — set by
+/// the producer based on whether `ref_rot` is `Some`/`None` — is what
+/// downstream consumers pattern-match on to retrieve typed
+/// `Position<F>` / `Velocity<F>` values for the right frame.
 ///
 /// The angular kinematics are typed: [`Self::ang_vel`] is in the
 /// subject body frame. The quaternion is the relative attitude
@@ -37,14 +39,10 @@ use uom::si::length::meter;
 /// reference-body-to-subject-body rotation.
 #[derive(Debug, Clone)]
 pub struct RelativeState {
-    /// Position of subject relative to reference. Frame is
-    /// runtime-conditional (see struct docs): reference body frame
-    /// when the reference has a rotational state; otherwise inertial.
-    pub position: DVec3,
-    /// Velocity of subject relative to reference. Frame matches
-    /// [`Self::position`] — reference body frame when the reference
-    /// carries a rotational state, otherwise inertial.
-    pub velocity: DVec3,
+    /// Translational state of subject relative to reference. The
+    /// variant identifies the frame the values live in — see
+    /// [`RelativeTranslation`] for the branch contract.
+    pub trans: RelativeTranslation,
     /// Relative quaternion: reference body frame → subject body frame.
     pub quaternion: DQuat,
     /// Angular velocity of subject relative to reference, in the
@@ -54,6 +52,115 @@ pub struct RelativeState {
     /// per-entity adapter (Bevy or runner) keeps it as a `SelfRef`
     /// wildcard rather than minting a typed `<V>` parameter.
     pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<SelfRef>>,
+}
+
+/// Frame-tagged translational state inside a [`RelativeState`].
+///
+/// The [`compute_relative_state`] producer chooses the variant based on
+/// the runtime presence of the reference's rotational state — JEOD's
+/// `decr_left` convention rotates into the reference body frame iff a
+/// rotational state is available, and otherwise leaves the difference
+/// in the inertial frame. Encoding the choice as a sum-typed variant
+/// lets each variant carry a distinct phantom-tagged
+/// [`Position`]/[`Velocity`] pair, so a consumer that mixes a
+/// body-frame value with a root-inertial value is a compile error.
+///
+/// Pattern-match to read:
+///
+/// ```ignore
+/// match rel.trans {
+///     RelativeTranslation::BodyFrame { position, velocity } => { /* typed body-frame */ }
+///     RelativeTranslation::Inertial  { position, velocity } => { /* typed root-inertial */ }
+/// }
+/// ```
+///
+/// For consumers that just want the raw `DVec3` (e.g. CSV-reference
+/// distance metrics in Tier 3 tests where both branches are valid
+/// inputs to the same scalar `length()`), [`Self::position_raw`] and
+/// [`Self::velocity_raw`] return the underlying SI vector without
+/// committing to a phantom — they're the deliberate escape hatch for
+/// branch-agnostic numerical consumers.
+///
+/// # Compile-time frame guard
+///
+/// The body-frame variant carries a [`Position<BodyFrame<SelfRef>>`]
+/// while the inertial variant carries a [`Position<RootInertial>`].
+/// Adding (or otherwise mixing without a deliberate `FrameTransform`)
+/// the two phantoms is a compile error. The doctest below documents
+/// the guard and is consumed by `cargo test --doc` as a `compile_fail`
+/// rustdoc test; if the body-frame and inertial-frame `Position`
+/// types ever became compatible, this test would start passing and
+/// fail the doctest.
+///
+/// ```compile_fail
+/// use jeod_quantities::ext::Vec3Ext;
+/// use jeod_quantities::frame::{BodyFrame, RootInertial, SelfRef};
+/// use glam::DVec3;
+///
+/// let body_frame_pos = DVec3::ZERO.m_at::<BodyFrame<SelfRef>>();
+/// let inertial_pos   = DVec3::ZERO.m_at::<RootInertial>();
+/// // The two phantoms are kind-distinct — addition requires either
+/// // matching frames or an explicit `FrameTransform`. The compiler
+/// // refuses this expression at the type level:
+/// let _ = body_frame_pos + inertial_pos;
+/// ```
+#[derive(Debug, Clone)]
+pub enum RelativeTranslation {
+    /// Reference rotational state was present: position/velocity are
+    /// rotated into the reference body frame (JEOD `S_{ref:subj}`).
+    /// `BodyFrame<SelfRef>` matches the [`RelativeState::ang_vel`]
+    /// convention — wildcard subject-vehicle phantom because the
+    /// producer doesn't know the subject identity statically.
+    BodyFrame {
+        /// Position of subject relative to reference, expressed in the
+        /// reference body frame.
+        position: Position<BodyFrame<SelfRef>>,
+        /// Velocity of subject relative to reference, expressed in the
+        /// reference body frame, with the JEOD Coriolis correction
+        /// applied (`v - ω_ref × r`).
+        velocity: Velocity<BodyFrame<SelfRef>>,
+    },
+    /// Reference rotational state was absent: position/velocity are
+    /// the raw inertial-frame difference. The `RootInertial` phantom
+    /// is the simulation's root inertial frame — for body-state
+    /// inputs read from an integration-frame storage slot the
+    /// convention rests on the call site (the producer cannot know
+    /// statically that the inputs are root-inertial vs. some
+    /// `PlanetInertial<P>` integration frame). Mission code that
+    /// holds typed inputs should use the typed sibling API path
+    /// rather than feeding raw `DVec3` here.
+    Inertial {
+        /// Position of subject relative to reference, in the inertial
+        /// frame.
+        position: Position<RootInertial>,
+        /// Velocity of subject relative to reference, in the inertial
+        /// frame.
+        velocity: Velocity<RootInertial>,
+    },
+}
+
+impl RelativeTranslation {
+    /// Raw position vector in whichever frame the variant carries.
+    ///
+    /// Provided for branch-agnostic numerical consumers (e.g. scalar
+    /// distance metrics). Frame-aware consumers should pattern-match
+    /// on the variant to obtain the typed [`Position<F>`] and route
+    /// it through the typed boundary.
+    pub fn position_raw(&self) -> DVec3 {
+        match self {
+            Self::BodyFrame { position, .. } => position.raw_si(),
+            Self::Inertial { position, .. } => position.raw_si(),
+        }
+    }
+
+    /// Raw velocity vector in whichever frame the variant carries.
+    /// Companion to [`Self::position_raw`].
+    pub fn velocity_raw(&self) -> DVec3 {
+        match self {
+            Self::BodyFrame { velocity, .. } => velocity.raw_si(),
+            Self::Inertial { velocity, .. } => velocity.raw_si(),
+        }
+    }
 }
 
 /// Relative state expressed in the LVLH frame of the reference vehicle.
@@ -212,14 +319,29 @@ pub fn compute_relative_state(
 
     // Rotate into reference body frame if rotational state available.
     // T_ref transforms from inertial (parent) to reference body frame.
-    let (position, velocity, t_ref_opt) = if let Some(r_ref) = ref_rot {
+    // The `RelativeTranslation` variant tag tracks which branch fired,
+    // so consumers (which previously needed the convention-only struct
+    // doc to know the frame) now read the frame at the type level.
+    let (trans, t_ref_opt) = if let Some(r_ref) = ref_rot {
         let t_ref = r_ref.quaternion.left_quat_to_transformation();
         let pos = t_ref * rel_pos_inertial;
         // Coriolis correction: v_{ref:subj} = T * Δv - ω_ref × pos
         let vel = t_ref * rel_vel_inertial - r_ref.ang_vel_body.cross(pos);
-        (pos, vel, Some(t_ref))
+        (
+            RelativeTranslation::BodyFrame {
+                position: pos.m_at::<BodyFrame<SelfRef>>(),
+                velocity: vel.m_per_s_at::<BodyFrame<SelfRef>>(),
+            },
+            Some(t_ref),
+        )
     } else {
-        (rel_pos_inertial, rel_vel_inertial, None)
+        (
+            RelativeTranslation::Inertial {
+                position: rel_pos_inertial.m_at::<RootInertial>(),
+                velocity: rel_vel_inertial.m_per_s_at::<RootInertial>(),
+            },
+            None,
+        )
     };
 
     // Relative attitude and angular velocity
@@ -242,8 +364,7 @@ pub fn compute_relative_state(
     };
 
     RelativeState {
-        position,
-        velocity,
+        trans,
         quaternion,
         // The producer's `rel_ang_vel` is computed in the subject body
         // frame (per the JEOD convention documented above); attach the
@@ -525,5 +646,63 @@ mod tests {
             typed.position;
         let _: Velocity<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
             typed.velocity;
+    }
+
+    /// `compute_relative_state` produces the [`RelativeTranslation`]
+    /// variant that matches the runtime presence of the reference's
+    /// rotational state — `Some(...)` lands in `BodyFrame`, `None`
+    /// lands in `Inertial`. The bound type-level annotations on the
+    /// destructured `position`/`velocity` are the structural guard:
+    /// if the producer ever flipped the variant convention, the
+    /// `let _: Position<…> = …` lines would refuse to compile.
+    #[test]
+    fn relative_state_variant_matches_reference_rotation() {
+        use jeod_math::JeodQuat;
+        use jeod_quantities::frame::RootInertial;
+
+        let trans_a = crate::TranslationalState {
+            position: DVec3::new(6_778_137.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7668.56, 0.0),
+        };
+        let trans_b = crate::TranslationalState {
+            position: DVec3::new(6_778_237.0, 100.0, -50.0),
+            velocity: DVec3::new(0.01, 7668.55, 0.005),
+        };
+        let rot_a = RotationalState {
+            quaternion: {
+                let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+                q.normalize();
+                q
+            },
+            ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
+        };
+
+        // Some reference rotation → BodyFrame variant, with the typed
+        // `Position<BodyFrame<SelfRef>>` recovered by destructure.
+        let with_rot = compute_relative_state(&trans_a, Some(&rot_a), &trans_b, None);
+        let RelativeTranslation::BodyFrame { position, velocity } = with_rot.trans else {
+            panic!("Some reference rotation must yield BodyFrame variant");
+        };
+        let _: Position<BodyFrame<SelfRef>> = position;
+        let _: jeod_quantities::aliases::Velocity<BodyFrame<SelfRef>> = velocity;
+
+        // None reference rotation → Inertial variant, with typed
+        // `Position<RootInertial>` recovered by destructure.
+        let no_rot = compute_relative_state(&trans_a, None, &trans_b, None);
+        let RelativeTranslation::Inertial { position, velocity } = no_rot.trans else {
+            panic!("None reference rotation must yield Inertial variant");
+        };
+        let _: Position<RootInertial> = position;
+        let _: jeod_quantities::aliases::Velocity<RootInertial> = velocity;
+
+        // The branch-agnostic raw escape hatches return the same
+        // bit-identical `DVec3` regardless of variant — useful for
+        // numerical consumers (e.g. scalar `length()` distance
+        // metrics) that don't care about the frame label.
+        let no_rot_again = compute_relative_state(&trans_a, None, &trans_b, None);
+        let raw_pos = no_rot_again.trans.position_raw();
+        let raw_vel = no_rot_again.trans.velocity_raw();
+        assert_eq!(raw_pos, trans_b.position - trans_a.position);
+        assert_eq!(raw_vel, trans_b.velocity - trans_a.velocity);
     }
 }

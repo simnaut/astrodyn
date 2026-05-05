@@ -432,7 +432,18 @@ fn tier3_sim_relative_state_consistency() {
         .left_quat_to_transformation();
     let rel_pos_inertial = b.trans.position - a.trans.position;
     let expected_pos = t_ref * rel_pos_inertial;
-    let pos_err = (rel.position - expected_pos).length();
+    // Both bodies have `Some` rotation here, so the producer takes
+    // the body-frame branch. Pattern match locks down the contract:
+    // a future regression that flipped the branch would not silently
+    // pass — the destructure would refuse to compile.
+    let jeod_sim::RelativeTranslation::BodyFrame {
+        position: rel_pos,
+        velocity: rel_vel,
+    } = rel.trans
+    else {
+        panic!("Some reference rotation must yield RelativeTranslation::BodyFrame");
+    };
+    let pos_err = (rel_pos.raw_si() - expected_pos).length();
     assert!(
         pos_err < 1e-10,
         "relative position error {pos_err:.4e} m exceeds 1e-10"
@@ -441,7 +452,7 @@ fn tier3_sim_relative_state_consistency() {
     let rel_vel_inertial = b.trans.velocity - a.trans.velocity;
     let omega_ref = a.rot.as_ref().unwrap().ang_vel_body;
     let expected_vel = t_ref * rel_vel_inertial - omega_ref.cross(expected_pos);
-    let vel_err = (rel.velocity - expected_vel).length();
+    let vel_err = (rel_vel.raw_si() - expected_vel).length();
     assert!(
         vel_err < 1e-10,
         "relative velocity error {vel_err:.4e} m/s exceeds 1e-10"
