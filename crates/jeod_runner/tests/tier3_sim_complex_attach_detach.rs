@@ -708,15 +708,6 @@ fn tier3_sim_complex_attach_detach_rerooting_topology() {
     let (mut sim, v1, v2, v3) = build_sim();
     let dt = sim.dt;
 
-    // Convenience: composite mass on a body, reading from the live
-    // mass tree (the authoritative source after every attach/detach).
-    let composite_mass = |sim: &Simulation, idx: usize| sim.body(idx).trans;
-    // Use the public output's mass via VehicleOutput — but the VehicleOutput
-    // doesn't expose mass directly; reach into mass-tree via the stored body id
-    // through `subtree_composite_inertial`'s sibling. Simplest: read by
-    // direct accessor on Simulation.
-    let _ = composite_mass; // silence unused
-
     // Drive the runner through the complex run's event schedule. We
     // step in coarse chunks (no per-CSV-row comparison here — trajectory
     // is covered by the dedicated pre_attach_trajectory test above and
