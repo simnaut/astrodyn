@@ -212,27 +212,55 @@ fn run_relative_parity(
     assert_sixdof_eq(&format!("Bevy vs Sim A ({label})"), &bevy_a, &sim_a_state);
     assert_sixdof_eq(&format!("Bevy vs Sim B ({label})"), &bevy_b, &sim_b_state);
 
-    // Assert relative state is bit-identical. The angular-velocity
-    // field is typed `AngularVelocity<BodyFrame<SelfRef>>` (the producer
-    // attaches the phantom at the boundary in `compute_relative_state`,
-    // crates/jeod_sim/src/derived.rs:251). A regression in that wrapping
-    // — e.g. dropping the `.rad_per_s_at::<…>()` lift, or rewrapping the
-    // wrong DVec3 — would silently change the bit pattern, so this
-    // covers `ang_vel` per component alongside position / velocity.
+    // Assert relative state is bit-identical. Position / velocity are
+    // typed via `RelativeTranslation` — both sides pass `Some(rot)`
+    // for the reference, so the producer must land in the
+    // `BodyFrame` variant on both paths. The destructure lets us
+    // compare the typed `Position<BodyFrame<SelfRef>>` fields
+    // through `.raw_si()`, *and* serves as the structural guard
+    // against a future regression that flipped the variant choice on
+    // one path (the parity check would still pass on the raw bits
+    // but the destructure would refuse to compile / panic-mismatch).
+    //
+    // Angular-velocity is unconditionally typed
+    // `AngularVelocity<BodyFrame<SelfRef>>` (see the producer
+    // boundary in `crates/jeod_sim/src/derived.rs`). A regression in
+    // that wrapping — e.g. dropping the `.rad_per_s_at::<…>()` lift,
+    // or rewrapping the wrong `DVec3` — would silently change the
+    // bit pattern, so this covers `ang_vel` per component alongside
+    // position / velocity.
+    let jeod_sim::RelativeTranslation::BodyFrame {
+        position: bevy_pos,
+        velocity: bevy_vel,
+    } = bevy_rel.trans
+    else {
+        panic!("Some reference rotation must yield RelativeTranslation::BodyFrame (Bevy)");
+    };
+    let jeod_sim::RelativeTranslation::BodyFrame {
+        position: sim_pos,
+        velocity: sim_vel,
+    } = sim_rel.trans
+    else {
+        panic!("Some reference rotation must yield RelativeTranslation::BodyFrame (Sim)");
+    };
+    let bevy_pos = bevy_pos.raw_si();
+    let bevy_vel = bevy_vel.raw_si();
+    let sim_pos = sim_pos.raw_si();
+    let sim_vel = sim_vel.raw_si();
     let bevy_ang_vel = bevy_rel.ang_vel.raw_si();
     let sim_ang_vel = sim_rel.ang_vel.raw_si();
     for i in 0..3 {
         assert_bits_eq(
             &format!("Bevy vs Sim rel ({label})"),
             &format!("rel_pos[{i}]"),
-            bevy_rel.position[i],
-            sim_rel.position[i],
+            bevy_pos[i],
+            sim_pos[i],
         );
         assert_bits_eq(
             &format!("Bevy vs Sim rel ({label})"),
             &format!("rel_vel[{i}]"),
-            bevy_rel.velocity[i],
-            sim_rel.velocity[i],
+            bevy_vel[i],
+            sim_vel[i],
         );
         assert_bits_eq(
             &format!("Bevy vs Sim rel ({label})"),
