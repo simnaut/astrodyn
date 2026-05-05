@@ -813,6 +813,99 @@ impl From<jeod_sim::JointKinematicsSpec> for JointKinematicsC {
     }
 }
 
+/// Declarative spec for a kinematically driven single-axis joint whose
+/// angle is a sinusoidal function of time
+/// (`θ(t) = offset + amplitude · sin(ω · t + phase)`).
+///
+/// Sibling component to [`JointKinematicsC`] for the periodic-articulation
+/// case — solar-array dither, antenna scan, gimbal sweep — that the
+/// constant-rate spec cannot express. The driving system writes the
+/// same [`FrameRotC`] / [`FrameAngVelC`] storage as
+/// [`JointKinematicsC`], so a downstream consumer that walks the
+/// frame tree sees a uniform rotation snapshot regardless of which
+/// kinematic style drives the joint.
+///
+/// The `#[require]` triplet matches [`JointKinematicsC`] so spawning a
+/// joint frame entity carrying this component automatically materializes
+/// the [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] frame-tree
+/// triplet, so `RelativeFrameState` walks across the joint remain
+/// well-defined.
+///
+/// Wraps [`jeod_sim::SinusoidalJointKinematicsSpec`] one-to-one. Mission
+/// code that needs richer kinematic styles than constant-rate /
+/// sinusoidal / closure (e.g., piecewise-linear angular splines) reaches
+/// for a custom system; the kinematic-only spec catalogue exposed here
+/// covers the periodic / loop-closing / multi-DOF cases.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+#[require(FrameTransC, FrameRotC, FrameAngVelC)]
+pub struct SinusoidalJointKinematicsC(pub jeod_sim::SinusoidalJointKinematicsSpec);
+
+impl From<jeod_sim::SinusoidalJointKinematicsSpec> for SinusoidalJointKinematicsC {
+    #[inline]
+    fn from(spec: jeod_sim::SinusoidalJointKinematicsSpec) -> Self {
+        Self(spec)
+    }
+}
+
+/// Declarative spec for a *closure* joint — one pinned to a fixed
+/// rotation about a single axis with no time dependence.
+///
+/// The kinematic-only degenerate case useful for closing kinematic
+/// loops where one joint's pose is constrained at declaration time
+/// rather than driven through `θ(t)`. The system writes a constant
+/// `FrameRotC` and zero `FrameAngVelC` every tick, so the joint
+/// frame's contribution to a `RelativeFrameState` walk is the same
+/// every step (cheap; the per-tick reassignment is the same value
+/// each time).
+///
+/// Wraps [`jeod_sim::ClosureJointKinematicsSpec`] one-to-one and
+/// auto-inserts the frame-tree triplet via `#[require]`, matching
+/// [`JointKinematicsC`].
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+#[require(FrameTransC, FrameRotC, FrameAngVelC)]
+pub struct ClosureJointKinematicsC(pub jeod_sim::ClosureJointKinematicsSpec);
+
+impl From<jeod_sim::ClosureJointKinematicsSpec> for ClosureJointKinematicsC {
+    #[inline]
+    fn from(spec: jeod_sim::ClosureJointKinematicsSpec) -> Self {
+        Self(spec)
+    }
+}
+
+/// Declarative spec for a multi-DOF kinematic joint — up to
+/// [`jeod_sim::MAX_MULTI_DOF_AXES`] single-axis stages composed into
+/// one chain.
+///
+/// Each stage is a `SingleDofKinematics` variant
+/// (`ConstantRate`/`Sinusoidal`/`Closure`) that rotates about its
+/// declared axis in the *intermediate frame produced by the
+/// preceding stages*. Stages must be a contiguous prefix of the
+/// fixed-size axes array; the kernel asserts this.
+///
+/// The semantic equivalence is deliberate: a multi-DOF joint with N
+/// stages on a single entity produces the same `(rotation, angular
+/// velocity)` snapshot as a chain of N single-DOF joint entities
+/// linked by `ChildOf`. Mission code picks whichever shape is more
+/// ergonomic — a long arm benefits from N entities (each with its
+/// own name + frame-tree slot for inspection); a tightly-coupled 2-3
+/// DOF gimbal benefits from one entity.
+///
+/// Wraps [`jeod_sim::MultiDofJointKinematicsSpec`] one-to-one and
+/// auto-inserts the frame-tree triplet via `#[require]`.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+#[require(FrameTransC, FrameRotC, FrameAngVelC)]
+pub struct MultiDofJointKinematicsC(pub jeod_sim::MultiDofJointKinematicsSpec);
+
+impl From<jeod_sim::MultiDofJointKinematicsSpec> for MultiDofJointKinematicsC {
+    #[inline]
+    fn from(spec: jeod_sim::MultiDofJointKinematicsSpec) -> Self {
+        Self(spec)
+    }
+}
+
 /// Tidal configuration for a gravity source entity.
 ///
 /// When present on a gravity source entity alongside `PlanetFixedRotationC`,

@@ -76,7 +76,14 @@ pub use frame_attach::{derive_frame_attached_state, FrameAttachInputs};
 pub use gauss_jackson::config::GaussJacksonConfig;
 pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
-pub use kinematic_joint::{evaluate as evaluate_joint_kinematics, JointKinematicsSpec};
+pub use kinematic_joint::{
+    evaluate as evaluate_joint_kinematics, evaluate_closure as evaluate_closure_kinematics,
+    evaluate_model as evaluate_joint_kinematics_model,
+    evaluate_multi_dof as evaluate_multi_dof_kinematics,
+    evaluate_sinusoidal as evaluate_sinusoidal_kinematics, ClosureJointKinematicsSpec,
+    JointKinematicsModel, JointKinematicsSpec, MultiDofJointKinematicsSpec, SingleDofKinematics,
+    SinusoidalJointKinematicsSpec, MAX_MULTI_DOF_AXES,
+};
 pub use kinematic_propagation::{
     compute_kinematic_child_state, compute_kinematic_child_state_dquat,
     compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,

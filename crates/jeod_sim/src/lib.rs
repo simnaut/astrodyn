@@ -95,7 +95,12 @@ pub use interactions::{
     GroundContactPairEval, ThermalIntegrationOrder,
 };
 pub use jeod_dynamics::kinematic_joint::{
-    evaluate as evaluate_joint_kinematics, JointKinematicsSpec, AXIS_NORM_TOL,
+    evaluate as evaluate_joint_kinematics, evaluate_closure as evaluate_closure_kinematics,
+    evaluate_model as evaluate_joint_kinematics_model,
+    evaluate_multi_dof as evaluate_multi_dof_kinematics,
+    evaluate_sinusoidal as evaluate_sinusoidal_kinematics, ClosureJointKinematicsSpec,
+    JointKinematicsModel, JointKinematicsSpec, MultiDofJointKinematicsSpec, SingleDofKinematics,
+    SinusoidalJointKinematicsSpec, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
