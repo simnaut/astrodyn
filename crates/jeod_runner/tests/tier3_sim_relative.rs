@@ -11,7 +11,8 @@ use jeod_math::JeodQuat;
 use jeod_runner::Simulation;
 use jeod_sim::VehicleConfig;
 use jeod_sim::{
-    compute_relative_state, MassProperties, RotationalState, SimulationTime, TranslationalState,
+    compute_relative_state, MassProperties, RotationalState, SelfRef, SimulationTime,
+    TranslationalState,
 };
 
 /// SIM_Relative CSV record. Mirrors the full column layout; not every
@@ -125,7 +126,12 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     {
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
+        let rel = compute_relative_state::<SelfRef, SelfRef>(
+            &b.trans,
+            b.rot.as_ref(),
+            &a.trans,
+            a.rot.as_ref(),
+        );
         // Scenario fixtures cover both branches of `RelativeTranslation`
         // (with/without reference rotational state), so the metric
         // reads through `position_raw`/`velocity_raw` to stay
@@ -144,7 +150,12 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         let a = sim.body(0);
         let b = sim.body(1);
 
-        let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
+        let rel = compute_relative_state::<SelfRef, SelfRef>(
+            &b.trans,
+            b.rot.as_ref(),
+            &a.trans,
+            a.rot.as_ref(),
+        );
 
         let pos_err = (rel.trans.position_raw() - rec.jeod_rel_pos).length();
         let vel_err = (rel.trans.velocity_raw() - rec.jeod_rel_vel).length();
