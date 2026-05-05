@@ -407,7 +407,7 @@ impl Plugin for JeodPlugin {
                 // ephemeris / pfix consumers live) preserves the
                 // "validate before consumers" intent without racing
                 // the frame-tree wiring.
-                validation::validate_jeod_invariants
+                validation::validate_jeod_invariants::<jeod_sim::Earth>
                     .after(systems::register_body_frames_system::<jeod_sim::Earth>)
                     .before(JeodSet::EphemerisUpdate),
                 // After ephemeris_update_system writes new source
@@ -784,6 +784,17 @@ pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
                 .before(JeodSet::EphemerisUpdate),
             systems::register_body_frames_system::<P>
                 .after(systems::register_pfix_frames_system::<P>)
+                .before(JeodSet::EphemerisUpdate),
+            // Per-planet validator instantiation. Mirrors the schedule
+            // slot of the Earth registration in `JeodPlugin::build`:
+            // after `register_body_frames_system::<P>` so the body's
+            // `FrameEntityC` parent chain is wired (the frame-switch
+            // and non-root-integ checks walk it), before
+            // `JeodSet::EphemerisUpdate` so consumers of validated
+            // state see the post-validation gravity-control
+            // auto-corrections.
+            validation::validate_jeod_invariants::<P>
+                .after(systems::register_body_frames_system::<P>)
                 .before(JeodSet::EphemerisUpdate),
             systems::sync_source_to_frame_system::<P>
                 .in_set(JeodSet::EphemerisUpdate)

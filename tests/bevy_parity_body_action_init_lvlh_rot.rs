@@ -67,7 +67,7 @@ fn build_app() -> (App, Entity) {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
     let _ = earth;
@@ -78,7 +78,7 @@ fn build_app() -> (App, Entity) {
             // Placeholder translational state — `InitLvlhRot` only
             // touches the rotational component; the trans state is
             // unused by the action and irrelevant to the assertion.
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
             // Placeholder rotational state we expect the action to
             // overwrite on `update`.
             RotationalStateC::from(RotationalState::default()),

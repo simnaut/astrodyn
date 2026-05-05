@@ -2056,15 +2056,29 @@ pub fn integration_system<P: Planet>(
         // Helper: resolve a source's effective velocity from the
         // typed `SourceInertialVelocityC` (which is
         // `Velocity<RootInertial>` — planet-agnostic). Sources that
-        // lack this component (e.g. a stationary point-mass spawned
-        // without an explicit velocity) coast at zero velocity.
-        // Ephemeris-driven sources (Sun / Moon via SunBundle /
-        // MoonBundle) carry `SourceInertialVelocityC` directly, so
-        // there is no need to read their `TranslationalStateC<P>`
-        // fallback — and the planet-tag mismatch the fallback would
-        // otherwise introduce (Sun's typed state is not in
-        // `PlanetInertial<P>` for the body's `P`) is structurally
-        // avoided.
+        // lack this component coast at zero velocity within the step.
+        //
+        // `SourceInertialVelocityC` is opt-in: `PlanetBundle`,
+        // `SunBundle`, and `MoonBundle` do not insert it, and
+        // `ephemeris_update_system` only writes through it when it is
+        // already present (it does not auto-insert from
+        // `EphemerisBodyC`). Callers who want a moving source for
+        // per-stage gravity interpolation or relativistic source
+        // resolution must attach `SourceInertialVelocityC` explicitly.
+        //
+        // No `TranslationalStateC<P>` fallback is offered here. The
+        // `<P>` instantiation runs gravity-computation in
+        // `PlanetInertial<P>` for the body's planet, and a Sun /
+        // ephemeris source's `TranslationalStateC<P>` carries that
+        // body-side `<P>` tag (per `SunBundle` / `MoonBundle`'s
+        // construction-time convention) — so the velocity it stores
+        // is "Sun's velocity tagged as the central planet's inertial
+        // frame," which has no well-defined source-motion meaning.
+        // Treating the source as stationary when no
+        // `SourceInertialVelocityC` is present matches
+        // `sync_source_to_frame_system`'s precedence: explicit
+        // velocity component first, otherwise treat as no source-
+        // motion contribution to the per-step kernel.
         let source_vel = |v: Option<&SourceInertialVelocityC>| -> DVec3 {
             v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO)
         };
