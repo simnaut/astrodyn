@@ -536,6 +536,37 @@ impl Simulation {
         self.bodies[idx].external_torque = torque;
     }
 
+    /// Set the externally applied force in the body's structural frame
+    /// (N).
+    ///
+    /// Mirrors JEOD's `Force` model
+    /// (`models/dynamics/dyn_body/include/force.hh`): the force vector
+    /// is expressed in the structural frame of the body it acts on, and
+    /// rotated to inertial at force-collection time using the body's
+    /// current attitude. This is what the Tier 3
+    /// `SIM_verif_attach_detach` `RUN_compute_child_derivative` Trick
+    /// `add_read` snippets actually toggle (`veh1.force.force = […]`
+    /// in `input.py`).
+    ///
+    /// The previous inertial-frame
+    /// [`set_body_external_force`](Self::set_body_external_force) entry
+    /// point is preserved for callers that already produce
+    /// inertial-frame contributions (custom thrusters, debugging, etc.);
+    /// the two contribute additively at force collection.
+    pub fn set_body_external_force_struct(&mut self, idx: usize, force_struct: DVec3) {
+        self.bodies[idx].external_force_struct = force_struct;
+    }
+
+    /// Set the externally applied torque in the body's structural frame
+    /// (N·m).
+    ///
+    /// Mirrors JEOD's `Torque` model. Rotated to body frame at force
+    /// collection via the body's structural-to-body transform; companion
+    /// to [`set_body_external_force_struct`](Self::set_body_external_force_struct).
+    pub fn set_body_external_torque_struct(&mut self, idx: usize, torque_struct: DVec3) {
+        self.bodies[idx].external_torque_struct = torque_struct;
+    }
+
     /// Set a body's translational position (inertial frame, m).
     ///
     /// Used for prescribed-motion tests where position is set externally

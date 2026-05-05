@@ -7,15 +7,20 @@
 
 use glam::{DMat3, DVec3};
 
+use jeod_dynamics::wrench::Wrench;
+use jeod_dynamics::MassBodyId;
 use jeod_sim::forces::collect_and_resolve_forces;
 use jeod_sim::frame_orchestration::{evaluate_and_apply_frame_switch, FrameSwitchTargetMissing};
 use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
-    evaluate_contact_pair, evaluate_ground_contact_pair, integrate_body_coupled, CoupledStageEval,
-    GravityControls, IntegOrigin, IntegrationFrame, MassProperties, Phase, Position,
-    RadiationForce, RotationalState, TranslationalState, TranslationalStateTyped, Velocity,
+    aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
+    integrate_body_coupled, CoupledStageEval, EdgeGeometry, GravityControls, IntegOrigin,
+    IntegrationFrame, MassProperties, MassStorage, Phase, Position, RadiationForce,
+    RotationalState, TranslationalState, TranslationalStateTyped, Velocity,
 };
+
+use std::collections::HashMap;
 
 use super::super::types::{ContactPairConfig, GroundContactPairConfig};
 use super::super::Simulation;
@@ -57,7 +62,53 @@ impl Simulation {
                     body.frame_derivs.rot_accel += mass.inverse_inertia * body.external_torque;
                 }
             }
+
+            // Struct-frame external force/torque: rotate to inertial /
+            // body using the body's current attitude. Mirrors JEOD's
+            // `dyn_body_collect.cc:219-221` where `extern_forc_inrtl =
+            // T_inertial_struct^T · extern_forc_struct`. JEOD recomputes
+            // this at every derivative call (each RK4 stage); we evaluate
+            // once at force collection — the per-stage drift is
+            // `O(ω · dt)` per step on the inertial-frame magnitude, which
+            // is negligible for the Tier 3 step sizes
+            // `SIM_verif_attach_detach` exercises.
+            // JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+            if body.external_force_struct != DVec3::ZERO
+                || body.external_torque_struct != DVec3::ZERO
+            {
+                let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
+                    r.quaternion.left_quat_to_transformation()
+                });
+                let t_inertial_struct =
+                    jeod_sim::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
+                let force_inertial = t_inertial_struct.transpose() * body.external_force_struct;
+                let torque_body = body.t_struct_body * body.external_torque_struct;
+                body.total_force.force += force_inertial;
+                body.total_force.torque += torque_body;
+                if let Some(mass) = &body.mass {
+                    if force_inertial != DVec3::ZERO {
+                        body.frame_derivs.trans_accel += force_inertial * mass.inverse_mass;
+                    }
+                    if torque_body != DVec3::ZERO {
+                        body.frame_derivs.rot_accel += mass.inverse_inertia * torque_body;
+                    }
+                }
+            }
         }
+
+        // ── 7b. Wrench aggregation ──
+        // When the mass tree contains any non-root nodes, walk every
+        // chain leaves → root and sum each child's `(force, torque)`
+        // into the chain's integration root. After this pass, only the
+        // root node's `total_force` / `frame_derivs` carries the
+        // composite-rigid-body wrench; non-root nodes are zeroed so
+        // their (skipped) integration step does not double-count their
+        // own contribution. Mirrors JEOD's
+        // `DynBody::collect_forces_and_torques` walk in
+        // `models/dynamics/dyn_body/src/dyn_body_collect.cc:128-202`.
+        // JEOD_INV: DB.16 — child forces propagated to parent recursively
+        // JEOD_INV: DB.17 — only the root's TotalForce/FrameDerivatives carry the whole-composite total
+        self.aggregate_chain_wrenches();
 
         // ── 8. Integration ──
         // Gravity (including relativistic corrections) is recomputed at each
@@ -818,5 +869,171 @@ impl Simulation {
         }
 
         Ok(())
+    }
+
+    /// Walk the live mass tree from leaves to roots and accumulate each
+    /// child node's `(force, torque)` into the chain's integration root.
+    ///
+    /// After this pass:
+    ///
+    /// - The integrated **root** of every chain carries the
+    ///   composite-rigid-body wrench of the whole subtree on its
+    ///   `total_force` / `frame_derivs` accumulators (force in inertial,
+    ///   torque in body frame — same shape `collect_and_resolve_forces`
+    ///   produces).
+    /// - Every **non-root** chain member has its `total_force` and
+    ///   `frame_derivs` zeroed so the per-body integration loop (which
+    ///   already skips kinematic children) does not see stale values
+    ///   for downstream accessors.
+    ///
+    /// No-ops when there is no mass tree, no chains (every node is a
+    /// root), or no non-root nodes — the per-body force collection
+    /// output is already correct for those configurations.
+    ///
+    /// JEOD precedent: `DynBody::collect_forces_and_torques`
+    /// (`models/dynamics/dyn_body/src/dyn_body_collect.cc:128-202`).
+    /// The structural-frame parallel-axis math lives in
+    /// [`jeod_sim::aggregate_wrenches_via_storage`]; this method is the
+    /// runner-side glue that builds the per-edge geometry from the live
+    /// `MassTree` and flips between inertial / structural / body frames
+    /// at the entry / exit boundaries.
+    fn aggregate_chain_wrenches(&mut self) {
+        let Some(tree) = self.mass_tree.as_ref() else {
+            return;
+        };
+        if tree.node_count() == 0 {
+            return;
+        }
+        // Fast path: no chains in the tree (every node is a root) — the
+        // per-body force collection is already final.
+        let any_non_root = (0..tree.node_count()).any(|raw| {
+            let id: MassBodyId = raw;
+            tree.parent(id).is_some()
+        });
+        if !any_non_root {
+            return;
+        }
+
+        // Map each tree node → SimBody index (only nodes registered as
+        // bodies contribute / consume wrenches; tree-only nodes
+        // contribute zero and absorb zero, matching JEOD's behaviour
+        // for child mass-only sub-bodies).
+        let mut sim_body_for_id: HashMap<MassBodyId, usize> = HashMap::new();
+        for (idx, body) in self.bodies.iter().enumerate() {
+            if let Some(id) = body.mass_body_id {
+                sim_body_for_id.insert(id, idx);
+            }
+        }
+
+        // Build per-node wrenches in the node's **own structural frame**.
+        // JEOD walks in structural so the per-link `t_parent_child^T`
+        // rotation correctly composes child→parent transformations and
+        // the parallel-axis arm `pcm_to_ccm` (in parent struct) lands a
+        // parent-struct torque from a parent-struct force.
+        //
+        // Conversion at this boundary is the same composition
+        // `force_collection_system` already uses for the root:
+        //   T_inertial_struct = T_struct_body^T · T_inertial_body
+        //   force_struct  = T_inertial_struct · force_inertial
+        //   torque_struct = T_struct_body^T · torque_body
+        // The defaults (`T_struct_body = I`, `T_inertial_body = I` from
+        // an absent `RotationalState`) collapse every transform to
+        // identity — bit-exact with the previous inertial-frame walk for
+        // single-body / identity-attitude chains.
+        let mut wrenches: HashMap<MassBodyId, Wrench> = HashMap::new();
+        for (id, &idx) in &sim_body_for_id {
+            let body = &self.bodies[idx];
+            let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
+                r.quaternion.left_quat_to_transformation()
+            });
+            let t_inertial_struct =
+                jeod_sim::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
+            let force_struct = t_inertial_struct * body.total_force.force;
+            let torque_struct = body.t_struct_body.transpose() * body.total_force.torque;
+            wrenches.insert(*id, Wrench::new(force_struct, torque_struct));
+        }
+
+        // Build per-edge geometry from each non-root node's
+        // `composite_wrt_pstr` and the parent's `composite_properties`
+        // — the same arithmetic
+        // [`jeod_sim::edge_geometry_from_composites`] does, but read
+        // directly from the live `MassTree` (which already keeps these
+        // up to date through every attach / detach via
+        // `recompute_composites`). JEOD `dyn_body_collect.cc:181`.
+        let mut edges: HashMap<MassBodyId, EdgeGeometry> = HashMap::new();
+        for raw in 0..tree.node_count() {
+            let id: MassBodyId = raw;
+            let Some(parent_id) = tree.parent(id) else {
+                continue;
+            };
+            let child = tree.get(id);
+            let parent = tree.get(parent_id);
+            let pcm_to_ccm =
+                child.composite_wrt_pstr.position - parent.composite_properties.position;
+            edges.insert(
+                id,
+                EdgeGeometry {
+                    pcm_to_ccm,
+                    t_parent_child: child.composite_wrt_pstr.t_parent_this,
+                },
+            );
+        }
+
+        // Aggregate. Returns one entry per tree root with the chain's
+        // wrench in the root's structural frame.
+        let aggregated = aggregate_wrenches_via_storage(tree, &wrenches, &edges);
+
+        // Identify roots (cheap scan; matches `tree.roots()` semantics
+        // without re-borrowing the tree mutably here).
+        let mut roots: HashMap<MassBodyId, ()> = HashMap::new();
+        for raw in 0..tree.node_count() {
+            let id: MassBodyId = raw;
+            if tree.parent(id).is_none() {
+                roots.insert(id, ());
+            }
+        }
+
+        // Writeback. Roots: aggregated struct-frame wrench → inertial
+        // force, body torque, plus refreshed `frame_derivs`. Non-roots:
+        // zero, so any downstream consumer reading them sees the
+        // post-aggregation invariant.
+        for (id, idx) in sim_body_for_id {
+            let body = &mut self.bodies[idx];
+            if roots.contains_key(&id) {
+                let agg = aggregated.get(&id).copied().unwrap_or_else(Wrench::zero);
+                let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
+                    r.quaternion.left_quat_to_transformation()
+                });
+                let t_inertial_struct =
+                    jeod_sim::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
+                let force_inertial = t_inertial_struct.transpose() * agg.force;
+                let torque_body = body.t_struct_body * agg.torque;
+                body.total_force.force = force_inertial;
+                body.total_force.torque = torque_body;
+                if let Some(mass) = &body.mass {
+                    body.frame_derivs.trans_accel =
+                        body.gravity_accel.grav_accel + force_inertial * mass.inverse_mass;
+                    if let Some(rot) = body.rot.as_ref() {
+                        // Refresh rotational dynamics with the
+                        // aggregated body-frame torque. Matches
+                        // `compute_frame_derivatives` for the
+                        // rotational arm only.
+                        let h_body = mass.inertia * rot.ang_vel_body;
+                        let euler = rot.ang_vel_body.cross(h_body);
+                        body.frame_derivs.rot_accel = mass.inverse_inertia * (torque_body - euler);
+                    } else {
+                        body.frame_derivs.rot_accel = DVec3::ZERO;
+                    }
+                } else {
+                    body.frame_derivs.trans_accel = body.gravity_accel.grav_accel;
+                    body.frame_derivs.rot_accel = DVec3::ZERO;
+                }
+            } else {
+                body.total_force.force = DVec3::ZERO;
+                body.total_force.torque = DVec3::ZERO;
+                body.frame_derivs.trans_accel = DVec3::ZERO;
+                body.frame_derivs.rot_accel = DVec3::ZERO;
+            }
+        }
     }
 }
