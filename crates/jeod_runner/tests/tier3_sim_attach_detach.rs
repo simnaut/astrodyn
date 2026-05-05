@@ -20,12 +20,26 @@
 //!   After t=20 the run does frame-only operations (no mass changes), so
 //!   composite masses stay at their base values.
 //!
-//! - **RUN_complex_attach_detach** and **RUN_compute_child_derivative** are
-//!   deliberately **not** validated end-to-end here — they exercise chained
-//!   attachments (`veh1 → veh2 → veh3`) whose root-propagation semantics
-//!   (`MassBody::attach_to` automatically re-roots the attaching body's
-//!   tree) are not yet implemented in our port. The CSVs are still generated
-//!   for future use and sanity-checked at t=0.
+//! - **RUN_complex_attach_detach**: veh1→veh2 at t=10, veh1→veh3 at
+//!   t=32.777 (chained: re-roots veh2 under veh3 because veh1 is
+//!   already attached to veh2 — JEOD's
+//!   `dyn_body_attach.cc::attach_child` 521→567 path; ported as
+//!   [`MassTree::attach_with_reroot`]), veh1↔veh2 detach at t=50,
+//!   veh1→veh2 re-attach at t=55. Composite masses across the
+//!   topology timeline are validated at every CSV row through the
+//!   end of the run.
+//!
+//! - **RUN_compute_child_derivative**: the chained attaches at t=1
+//!   (veh1→veh2) and t=2 (veh1→veh3) fire the same re-rooting code
+//!   path. After the second attach all three vehicles share v3's
+//!   composite. veh1 ↔ veh3 detach at t=15 then re-detach at t=45
+//!   (the input.py issues two `veh1.detach_from_3` events; the
+//!   second is a no-op in JEOD because veh1 is no longer rooted
+//!   under veh3 — JEOD's `BodyDetachSpecific::apply` warns and
+//!   returns false). The composite-mass timeline is validated end to
+//!   end here too.
+//!
+//! [`MassTree::attach_with_reroot`]: jeod_dynamics::MassTree::attach_with_reroot
 
 use jeod_dynamics::{MassProperties, MassTree};
 
@@ -231,24 +245,199 @@ fn tier3_sim_attach_detach_simple() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Sanity-only checks for complex / child_derivative runs
+// RUN_complex_attach_detach
 // ════════════════════════════════════════════════════════════════════
 
-/// Verify the CSV for the complex run is present and has correct t=0 state.
-/// Full mass-tree validation is deferred — `attach_to` auto-reroots the
-/// attaching body's root, which our `MassTree::attach` does not yet model.
-// non-recipe: t=0 sanity check on the same placeholder mass tree as
-// `tier3_sim_attach_detach_simple`.
+/// JEOD event times from `SET_test/RUN_complex_attach_detach/input.py`:
+///   t=10.0:    `veh1.attach_to_2.active = True`
+///                — root subject; tree shape `v2{v1}`.
+///   t=32.777:  `veh1.attach_to_3.active = True`
+///                — chained: re-roots veh2 (veh1's existing root) under
+///                  veh3 (`MassTree::attach_with_reroot`). New tree
+///                  shape `v3{v2{v1}}`.
+///   t=50.0:    `veh1.detach_from_2.active = True`
+///                — direct `MassTree::detach(v1)`.
+///   t=55.0:    `veh1.attach_to_2b.active = True`
+///                — chained: subject (v1) is a fresh tree root, but
+///                  parent (v2) is interior to v3's tree, so the
+///                  topology adds v1 under v2 inside v3's tree.
+///                  No re-rooting (subject is a root); the destination
+///                  is the chained one.
+///   t=60.0:    `veh1.detach_from_3.active = True`
+///                — JEOD's `BodyDetachSpecific::apply` routes through
+///                  `dyn_detach_from->remove_mass_body(*mass_subject)`
+///                  in `dyn_body_detach.cc:165-234`, which walks up
+///                  from `v1.mass.links` to find the immediate child
+///                  of `v3.mass` (i.e. v2), notices v2 has a DynBody
+///                  owner, and re-routes to `v3.detach(v2_dynbody)`.
+///                  Net effect on the mass tree: the v3 ↔ v2 edge is
+///                  cut — `MassTree::detach(v2)`.
+const COMPLEX_ATTACH_V1_V2_TIME: f64 = 10.0;
+const COMPLEX_RECHAIN_V1_V3_TIME: f64 = 32.777;
+const COMPLEX_DETACH_V1_FROM_V2_TIME: f64 = 50.0;
+const COMPLEX_REATTACH_V1_V2_TIME: f64 = 55.0;
+const COMPLEX_DETACH_FROM_V3_TIME: f64 = 60.0;
+
+/// Cross-validate the composite-mass timeline of
+/// `RUN_complex_attach_detach` end to end. The signal is:
+///
+/// | window           | expected (m1, m2, m3)             |
+/// |------------------|-----------------------------------|
+/// | `[0, 10)`        | (1, 2, 3) — three free roots      |
+/// | `[10, 32.777)`   | (1, 3, 3) — v1 attached to v2     |
+/// | `[32.777, 50)`   | (1, 3, 6) — v2 re-rooted under v3 |
+/// | `[50, 55)`       | (1, 2, 5) — v1 detached from v2   |
+/// | `[55, 60)`       | (1, 3, 6) — v1 re-attached to v2  |
+/// | `[60, 65]`       | (1, 3, 3) — v3 ↔ v2 edge cut      |
+// non-recipe: SIM_verif_attach_detach exercises a placeholder mass
+// tree. Apollo / ISS recipes don't apply.
 #[test]
-fn tier3_sim_attach_detach_complex_t0() {
+fn tier3_sim_attach_detach_complex() {
     let rows = load_csv("attach_detach_complex_attach_detach.csv");
-    assert_masses(&rows[0], 1.0, 2.0, 3.0);
+    let t0 = &rows[0];
+    let mut max_err = assert_masses(t0, 1.0, 2.0, 3.0);
+
+    let (mut tree, v1, v2, v3) = build_three_vehicles();
+    let mut attach_v1_v2_fired = false;
+    let mut rechain_v1_v3_fired = false;
+    let mut detach_v1_v2_fired = false;
+    let mut reattach_v1_v2_fired = false;
+    let mut detach_from_v3_fired = false;
+
+    for row in &rows {
+        // Apply each scheduled event at the row whose timestamp first
+        // satisfies `row.time >= event_time` — JEOD's
+        // `trick.add_read(t, ...)` semantics fire each action exactly
+        // once at the event time, before the next CSV log cycle.
+        if !attach_v1_v2_fired && row.time >= COMPLEX_ATTACH_V1_V2_TIME {
+            tree.attach_with_reroot(v1, v2, glam::DVec3::ZERO, glam::DMat3::IDENTITY);
+            attach_v1_v2_fired = true;
+        }
+        if !rechain_v1_v3_fired && row.time >= COMPLEX_RECHAIN_V1_V3_TIME {
+            // Subject (v1) is already a child of v2; the kernel re-
+            // roots v2 under v3. Geometric offset is irrelevant for
+            // the composite-mass signal.
+            tree.attach_with_reroot(v1, v3, glam::DVec3::ZERO, glam::DMat3::IDENTITY);
+            rechain_v1_v3_fired = true;
+        }
+        if !detach_v1_v2_fired && row.time >= COMPLEX_DETACH_V1_FROM_V2_TIME {
+            tree.detach(v1);
+            detach_v1_v2_fired = true;
+        }
+        if !reattach_v1_v2_fired && row.time >= COMPLEX_REATTACH_V1_V2_TIME {
+            tree.attach_with_reroot(v1, v2, glam::DVec3::ZERO, glam::DMat3::IDENTITY);
+            reattach_v1_v2_fired = true;
+        }
+        if !detach_from_v3_fired && row.time >= COMPLEX_DETACH_FROM_V3_TIME {
+            // JEOD `remove_mass_body(v1.mass)` walks up from v1 to
+            // find the immediate child of v3 (v2 — v1 is two levels
+            // under v3 here), notices v2 has a DynBody owner, and
+            // routes through `v3.detach(v2_dynbody)`. The mass-tree
+            // outcome is `MassTree::detach(v2)`.
+            tree.detach(v2);
+            detach_from_v3_fired = true;
+        }
+
+        let m1 = tree.get(v1).composite_properties.mass;
+        let m2 = tree.get(v2).composite_properties.mass;
+        let m3 = tree.get(v3).composite_properties.mass;
+        max_err = max_err.max(assert_masses(row, m1, m2, m3));
+    }
+
+    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
+        "tier3_sim_attach_detach_complex",
+        &[],
+        &[],
+    );
+    report.add_extra("composite_mass_max_err", max_err, "kg");
+    report.write();
 }
 
-/// Same sanity check for the compute_child_derivative run.
-// non-recipe: same placeholder mass tree as the simple/complex runs.
+// ════════════════════════════════════════════════════════════════════
+// RUN_compute_child_derivative
+// ════════════════════════════════════════════════════════════════════
+
+/// JEOD event times from
+/// `SET_test/RUN_compute_child_derivative/input.py`:
+///   t=1:  `veh1.attach_to_2.active = True`
+///   t=2:  `veh1.attach_to_3.active = True` (chained reroot of v2 under v3)
+///   t=15: `veh1.detach_from_3.active = True`
+///           — same `remove_mass_body` re-route as the complex run
+///             at t=60. Walks v1 → ... → immediate child of v3 (v2),
+///             v2 has a DynBody owner, so it routes through
+///             `v3.detach(v2_dynbody)`. Mass-tree effect:
+///             `MassTree::detach(v2)`.
+///   t=45: `veh1.detach_from_3.active = True` (a *second* time)
+///           — by t=45 v2 is no longer in v3's tree (the t=15 event
+///             cut that edge) and v1's mass-body tree path no longer
+///             contains v3 at all. JEOD's `remove_mass_body` walks up
+///             from v1 looking for the immediate child of v3, fails,
+///             and the action `MessageHandler::inform`s + returns
+///             without mutating the tree. Mass-tree effect: no-op.
+const CHILD_DERIV_ATTACH_V1_V2_TIME: f64 = 1.0;
+const CHILD_DERIV_RECHAIN_V1_V3_TIME: f64 = 2.0;
+const CHILD_DERIV_DETACH_FROM_V3_TIME_FIRST: f64 = 15.0;
+const CHILD_DERIV_DETACH_FROM_V3_TIME_SECOND: f64 = 45.0;
+
+/// Cross-validate the composite-mass timeline of
+/// `RUN_compute_child_derivative` end to end. Same signal shape as
+/// the complex run, with a different schedule:
+///
+/// | window           | expected (m1, m2, m3)             |
+/// |------------------|-----------------------------------|
+/// | `[0, 1)`         | (1, 2, 3) — three free roots      |
+/// | `[1, 2)`         | (1, 3, 3) — v1 attached to v2     |
+/// | `[2, 15)`        | (1, 3, 6) — v2 re-rooted under v3 |
+/// | `[15, 65]`       | (1, 3, 3) — v3 ↔ v2 edge cut      |
+// non-recipe: SIM_verif_attach_detach placeholder mass tree.
 #[test]
-fn tier3_sim_attach_detach_child_derivative_t0() {
+fn tier3_sim_attach_detach_child_derivative() {
     let rows = load_csv("attach_detach_child_deriv_attach_detach.csv");
-    assert_masses(&rows[0], 1.0, 2.0, 3.0);
+    let mut max_err = assert_masses(&rows[0], 1.0, 2.0, 3.0);
+
+    let (mut tree, v1, v2, v3) = build_three_vehicles();
+    let mut attach_v1_v2_fired = false;
+    let mut rechain_v1_v3_fired = false;
+    let mut detach_first_fired = false;
+    let mut detach_second_fired = false;
+
+    for row in &rows {
+        if !attach_v1_v2_fired && row.time >= CHILD_DERIV_ATTACH_V1_V2_TIME {
+            tree.attach_with_reroot(v1, v2, glam::DVec3::ZERO, glam::DMat3::IDENTITY);
+            attach_v1_v2_fired = true;
+        }
+        if !rechain_v1_v3_fired && row.time >= CHILD_DERIV_RECHAIN_V1_V3_TIME {
+            tree.attach_with_reroot(v1, v3, glam::DVec3::ZERO, glam::DMat3::IDENTITY);
+            rechain_v1_v3_fired = true;
+        }
+        if !detach_first_fired && row.time >= CHILD_DERIV_DETACH_FROM_V3_TIME_FIRST {
+            tree.detach(v2);
+            detach_first_fired = true;
+        }
+        if !detach_second_fired && row.time >= CHILD_DERIV_DETACH_FROM_V3_TIME_SECOND {
+            // JEOD remove_mass_body no-op when the requested
+            // attachment doesn't exist any more — see comment on
+            // `CHILD_DERIV_DETACH_FROM_V3_TIME_SECOND`.
+            //
+            // We deliberately *don't* call `tree.detach(v2)` here
+            // (panics when v2 has no parent). The flag flip is
+            // sufficient to assert the absence of a mass-tree
+            // mutation: composite masses must remain (1, 3, 3) post-
+            // event, which the row-by-row assertion below verifies.
+            detach_second_fired = true;
+        }
+
+        let m1 = tree.get(v1).composite_properties.mass;
+        let m2 = tree.get(v2).composite_properties.mass;
+        let m3 = tree.get(v3).composite_properties.mass;
+        max_err = max_err.max(assert_masses(row, m1, m2, m3));
+    }
+
+    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
+        "tier3_sim_attach_detach_child_derivative",
+        &[],
+        &[],
+    );
+    report.add_extra("composite_mass_max_err", max_err, "kg");
+    report.write();
 }

@@ -167,6 +167,190 @@ impl MassTree {
         out
     }
 
+    /// Every body in `id`'s subtree, **including `id` itself**, in a
+    /// breadth-first order.
+    ///
+    /// Used by attach/detach call sites that need to know the full set
+    /// of bodies whose integrator state goes stale on a topology change
+    /// — e.g. when re-rooting a non-root subject (JEOD's chained-attach
+    /// `attach_to_3` while already attached to veh2), every body in the
+    /// subject's old subtree changes parent-composite and must be
+    /// flagged dirty (JEOD_INV: IG.37).
+    pub fn subtree_ids(&self, id: MassBodyId) -> Vec<MassBodyId> {
+        let mut out = Vec::new();
+        let mut queue = vec![id];
+        while let Some(node) = queue.pop() {
+            out.push(node);
+            for &c in &self.children[node] {
+                queue.push(c);
+            }
+        }
+        out
+    }
+
+    /// Walk up from `id` to the root of its tree, returning the root id.
+    /// Returns `id` itself when `id` has no parent.
+    ///
+    /// Mirrors JEOD `MassBody::get_root_body_internal()`
+    /// (`models/dynamics/mass/src/mass.cc`), which the JEOD attach
+    /// machinery calls before attaching a non-root child to a new
+    /// parent (`mass_attach.cc:506-567`'s `attach_child`): the actual
+    /// thing that re-roots is the *root* of the subject's existing
+    /// tree, not the subject itself.
+    pub fn root_of(&self, id: MassBodyId) -> MassBodyId {
+        let mut cur = id;
+        while let Some(p) = self.parent[cur] {
+            cur = p;
+        }
+        cur
+    }
+
+    /// Compose the geometric struct-frame chain from `root_id` down to
+    /// `descendant_id`, returning a [`MassPointState`] that holds the
+    /// position of the descendant's structural origin **in the root's
+    /// structural frame** plus the rotation **from the root's structural
+    /// frame to the descendant's structural frame**.
+    ///
+    /// `descendant_id` must be a descendant of `root_id` (or equal to
+    /// it). Walks the parent chain via [`Self::parent`]; each link's
+    /// [`MassBody::structure_point`] holds that node's struct-origin
+    /// offset in its parent struct frame plus the rotation from parent
+    /// struct to this struct.
+    ///
+    /// Mirrors JEOD `MassPoint::compute_state_wrt_pred`
+    /// (`models/dynamics/mass/src/mass_point_state.cc`), specialised to
+    /// the structural-frame chain that backs [`Self::attach_with_reroot`].
+    /// Pure geometry — no kinematics, no time, no ω — exactly what
+    /// JEOD's `dyn_body_attach.cc:553-567` reroot path uses.
+    ///
+    /// # Panics
+    /// Panics if `descendant_id` is not a descendant of `root_id`.
+    pub fn struct_chain_to_root(
+        &self,
+        root_id: MassBodyId,
+        descendant_id: MassBodyId,
+    ) -> MassPointState {
+        // Build the path from descendant up to root (exclusive of root).
+        let mut chain = Vec::<MassBodyId>::new();
+        let mut cur = descendant_id;
+        while cur != root_id {
+            chain.push(cur);
+            cur = self.parent[cur].unwrap_or_else(|| {
+                panic!(
+                    "struct_chain_to_root: body {} (\"{}\") is not a descendant of {} (\"{}\")",
+                    descendant_id,
+                    self.nodes[descendant_id].name,
+                    root_id,
+                    self.nodes[root_id].name,
+                )
+            });
+        }
+        // chain now lists descendant, ..., immediate_child_of_root (in
+        // descendant→root order). Reverse so we walk root→descendant.
+        chain.reverse();
+
+        // Compose: walk down from root, accumulating a single
+        // (position, t_parent_this) pair that maps root struct → current
+        // struct.
+        let mut pos = DVec3::ZERO;
+        let mut t = DMat3::IDENTITY;
+        for &node in &chain {
+            let sp = &self.nodes[node].structure_point;
+            // current_struct_position_in_root = current + t.transpose() * node.position
+            //   where `t` is currently `T_root_to_parent` and `node.position`
+            //   is the node's struct origin in its parent struct frame.
+            pos += t.transpose() * sp.position;
+            // T_root_to_node = T_parent_to_node · T_root_to_parent
+            t = sp.t_parent_this * t;
+        }
+        MassPointState {
+            position: pos,
+            t_parent_this: t,
+        }
+    }
+
+    /// Attach `child_id` (or its current root) to `parent_id`. When
+    /// `child_id` is itself a root the call is bit-identical to
+    /// [`Self::attach`]; when `child_id` already has a parent in the
+    /// tree this method **re-roots** the subject's existing subtree
+    /// under `parent_id`, mirroring JEOD's
+    /// `DynBody::attach_child(...)` semantics
+    /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:506-567`).
+    ///
+    /// `offset` and `t_parent_child` are specified in the **subject
+    /// child's** structural frame — i.e. the same coordinates a JEOD
+    /// caller passes to `BodyAttachAligned veh1.attach_to_2`. When the
+    /// subject is non-root, the method recomputes the equivalent
+    /// `(offset_root_in_parent_struct, T_parent_to_root_struct)` so
+    /// that the subject's structural frame ends up where the caller
+    /// asked, even though the underlying tree edge runs from
+    /// `parent_id` to `root_of(child_id)`.
+    ///
+    /// Returns the [`MassBodyId`] that actually became the new child of
+    /// `parent_id` in the tree. For the root-subject case that's
+    /// `child_id`; for the reroot case it's `root_of(child_id)`.
+    ///
+    /// # Panics
+    /// Panics if `parent_id` is itself in the subject's existing
+    /// subtree (which would create a cycle), or if `parent_id`'s tree
+    /// is the same tree the subject already lives in (JEOD warns and
+    /// no-ops in that case; we panic-loud for symmetry with the cycle
+    /// check on `attach`).
+    // JEOD_INV: BA.08 — chained attach re-roots the subject's existing tree under the new parent
+    pub fn attach_with_reroot(
+        &mut self,
+        child_id: MassBodyId,
+        parent_id: MassBodyId,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) -> MassBodyId {
+        // Subject case A: child is itself a root → no reroot needed,
+        // delegate to the plain `attach` (which handles the cycle and
+        // self-attach checks already).
+        if self.parent[child_id].is_none() {
+            self.attach(child_id, parent_id, offset, t_parent_child);
+            return child_id;
+        }
+
+        // Subject case B: child already has a parent → walk to its
+        // existing root, recompute the offset/transform so the
+        // *root's* structural frame goes where the subject child's
+        // would have gone, and attach the root.
+        let child_root = self.root_of(child_id);
+        assert_ne!(
+            child_root,
+            parent_id,
+            "attach_with_reroot: subject body {} (\"{}\") is already in the same tree as \
+             parent {} (\"{}\") (shared root {} \"{}\") — JEOD `attach_validate_parent` \
+             warns and no-ops; this port panics fail-loud per CLAUDE.md.",
+            child_id,
+            self.nodes[child_id].name,
+            parent_id,
+            self.nodes[parent_id].name,
+            child_root,
+            self.nodes[child_root].name,
+        );
+
+        // Composed geometry: subject_struct_wrt_root_struct.
+        let subj_in_root = self.struct_chain_to_root(child_root, child_id);
+        // T_pstr_to_rstr = (T_root_to_subj)^T · T_pstr_to_subj
+        // (JEOD `dyn_body_attach.cc:559`:
+        //   `Matrix3x3::product_left_transpose(child_struct_wrt_root_struct.T_parent_this,
+        //                                       T_pstr_to_cstr,
+        //                                       T_pstr_to_rstr)`).
+        let t_pstr_to_rstr = subj_in_root.t_parent_this.transpose() * t_parent_child;
+        // xyz_rstr_wrt_pstr = xyz_cstr_wrt_pstr - T_pstr_to_rstr^T · subj_origin_in_root
+        // (JEOD `dyn_body_attach.cc:562`:
+        //   `Vector3::transform_transpose_decr(T_pstr_to_rstr,
+        //                                       child_struct_wrt_root_struct.position,
+        //                                       xyz_rstr_wrt_pstr)`
+        //  i.e. xyz_rstr_wrt_pstr -= T_pstr_to_rstr^T · subj_in_root.position).
+        let xyz_rstr_wrt_pstr = offset - t_pstr_to_rstr.transpose() * subj_in_root.position;
+
+        self.attach(child_root, parent_id, xyz_rstr_wrt_pstr, t_pstr_to_rstr);
+        child_root
+    }
+
     // -- construction -------------------------------------------------------
 
     /// Add a disconnected body (no parent, no children).
@@ -1326,6 +1510,223 @@ mod tests {
             parent_inertia,
             1e-12,
             "parent inertia restored after detach",
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // root_of / struct_chain_to_root / attach_with_reroot
+    // -----------------------------------------------------------------------
+
+    /// `root_of` on a root returns itself; on a deeper descendant it
+    /// walks up to the tree root.
+    #[test]
+    fn root_of_walks_to_tree_root() {
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        // root case
+        assert_eq!(tree.root_of(a), a);
+        // chain a → b → c (we attach b under a, then c under b → so root is a)
+        tree.attach(b, a, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.attach(c, b, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        assert_eq!(tree.root_of(c), a);
+        assert_eq!(tree.root_of(b), a);
+        assert_eq!(tree.root_of(a), a);
+    }
+
+    /// `struct_chain_to_root` composes per-link offsets in struct
+    /// frames. Single link: identity rotation, the result is just
+    /// `child.structure_point.position`.
+    #[test]
+    fn struct_chain_single_link_is_structure_point() {
+        let mut tree = MassTree::new();
+        let p = tree.add_root("p".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        tree.attach(c, p, DVec3::new(2.0, 3.0, 4.0), DMat3::IDENTITY);
+        let chain = tree.struct_chain_to_root(p, c);
+        assert_vec3_close(
+            chain.position,
+            DVec3::new(2.0, 3.0, 4.0),
+            1e-12,
+            "single-link offset",
+        );
+        assert_mat3_close(
+            chain.t_parent_this,
+            DMat3::IDENTITY,
+            1e-12,
+            "single-link rotation identity",
+        );
+    }
+
+    /// Two rotated links: validate the struct-frame composition is in
+    /// agreement with the attach geometry.
+    #[test]
+    fn struct_chain_two_links_with_rotation() {
+        // Build a → b → c. Each link is offset by +x in the parent
+        // struct frame, with a 90° rotation about Z so the child's
+        // struct +x aligns with the parent's +y.
+        let r_z90 = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        tree.attach(b, a, DVec3::new(1.0, 0.0, 0.0), r_z90);
+        tree.attach(c, b, DVec3::new(1.0, 0.0, 0.0), r_z90);
+
+        let chain = tree.struct_chain_to_root(a, c);
+        // Walk root → a → b → c manually:
+        //   root start: pos=0, t=I.
+        //   step b: pos += t.transpose() * (1,0,0) = (1,0,0); t = r_z90.
+        //   step c: pos += t.transpose() * (1,0,0) = (1,0,0) + r_z90^T·(1,0,0)
+        //                 = (1,0,0) + (0,-1,0) = (1,-1,0).  Wait — r_z90^T·x = (0,-1,0)?
+        //   r_z90 maps parent-struct +x axis → +y axis (column 0 = (0,1,0)).
+        //   r_z90^T maps the b-struct +x axis back into a-struct: r_z90^T = r_z(-90°), so
+        //   r_z90^T·(1,0,0) = (0,-1,0). After step c: pos = (1,0,0) + (0,-1,0) = (1,-1,0).
+        //   Hmm — that doesn't match the geometric intuition; let me redo.
+        //   Actually: pos in *root* frame after step b = root start (0) + T_root_to_root^T · b.position.
+        //   Initially t = T_root_to_a = I (we're walking root=a → ... → c). After step b,
+        //   we add t.transpose() * b.structure_point.position where t is *currently* T_root_to_a = I,
+        //   so we add (1,0,0). Then update t = b.structure_point.t_parent_this · t = r_z90·I = r_z90.
+        //   t now is T_a_to_b = r_z90. For step c: add t.transpose() · c.structure_point.position.
+        //   t.transpose() = r_z90^T = r_z(-90°). r_z(-90°) · (1,0,0) = (0,-1,0).
+        //   So pos after c = (1,0,0) + (0,-1,0) = (1,-1,0).
+        // Final t = r_z90 · r_z90 = r_z(180°) (note: composition is c.t · b.t, but our
+        // formula has `t = sp.t_parent_this * t`, so after c it's r_z90 * r_z90 = R_z(180°)).
+        let r_z180 = r_z90 * r_z90;
+        assert_mat3_close(chain.t_parent_this, r_z180, 1e-12, "T_root_to_c");
+        assert_vec3_close(
+            chain.position,
+            DVec3::new(1.0, -1.0, 0.0),
+            1e-12,
+            "pos_c_in_a",
+        );
+    }
+
+    /// Reroot path bit-identical to the plain `attach` path when the
+    /// subject is itself a root.
+    #[test]
+    fn attach_with_reroot_root_subject_matches_attach() {
+        let mut tree_a = MassTree::new();
+        let p_a = tree_a.add_root("p".into(), MassProperties::new(2.0));
+        let c_a = tree_a.add_root("c".into(), MassProperties::new(3.0));
+        tree_a.attach(c_a, p_a, DVec3::new(1.0, 2.0, 3.0), DMat3::IDENTITY);
+
+        let mut tree_b = MassTree::new();
+        let p_b = tree_b.add_root("p".into(), MassProperties::new(2.0));
+        let c_b = tree_b.add_root("c".into(), MassProperties::new(3.0));
+        let attached =
+            tree_b.attach_with_reroot(c_b, p_b, DVec3::new(1.0, 2.0, 3.0), DMat3::IDENTITY);
+
+        assert_eq!(attached, c_b, "root-subject reroot returns child unchanged");
+        // Composite mass / center-of-mass invariant — both trees should
+        // produce identical composite_properties on the parent.
+        let mp_a = tree_a.get(p_a).composite_properties;
+        let mp_b = tree_b.get(p_b).composite_properties;
+        assert_eq!(mp_a.mass, mp_b.mass);
+        assert_vec3_close(mp_a.position, mp_b.position, 1e-12, "composite CoM matches");
+    }
+
+    /// Chained-attach reroot: build (a ← b), then call
+    /// `attach_with_reroot(b, c)`. JEOD semantics: since b already has a
+    /// parent (a is its root), the *root* (a) gets rerooted under c, so
+    /// post-call the tree shape is (c ← a ← b), and a's geometric
+    /// placement under c is chosen so b's struct frame ends up where the
+    /// caller asked for.
+    ///
+    /// Concretely: a hosts b via offset = (1, 0, 0) (identity rotation).
+    /// We then call attach_with_reroot(b, c, offset=(5, 0, 0), I) — i.e.
+    /// "place b's struct origin at +5 along c's +x axis". Post-reroot
+    /// a's struct origin should be at (4, 0, 0) in c's struct (since
+    /// b is at (1, 0, 0) in a's struct, so a's origin is at (5-1, 0, 0)
+    /// in c's struct — both rotations are identity).
+    #[test]
+    fn attach_with_reroot_chained_subject() {
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(2.0));
+        let b = tree.add_root("b".into(), MassProperties::new(3.0));
+        let c = tree.add_root("c".into(), MassProperties::new(4.0));
+        // Build a's tree first.
+        tree.attach(b, a, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        assert_eq!(tree.root_of(b), a);
+        assert_eq!(tree.root_of(a), a);
+
+        // Reroot b under c: subject is b (non-root), JEOD logic auto-
+        // attaches a (b's root) instead.
+        let attached = tree.attach_with_reroot(b, c, DVec3::new(5.0, 0.0, 0.0), DMat3::IDENTITY);
+        assert_eq!(attached, a, "reroot returns the subject's existing root");
+
+        // Topology: c is now the root, a sits under c, b sits under a.
+        assert_eq!(tree.parent(a), Some(c));
+        assert_eq!(tree.parent(b), Some(a));
+        assert_eq!(tree.root_of(b), c);
+        assert_eq!(tree.root_of(a), c);
+        assert_eq!(tree.root_of(c), c);
+
+        // Geometry: a's struct origin in c's struct is (4, 0, 0) so
+        // b's struct (still at +1 in a's struct) lands at (5, 0, 0) in
+        // c's struct, matching the user's intent.
+        let chain_to_b = tree.struct_chain_to_root(c, b);
+        assert_vec3_close(
+            chain_to_b.position,
+            DVec3::new(5.0, 0.0, 0.0),
+            1e-12,
+            "subject b ends up where the caller asked, in c's struct frame",
+        );
+        assert_mat3_close(
+            chain_to_b.t_parent_this,
+            DMat3::IDENTITY,
+            1e-12,
+            "identity-rotation chain composes to identity",
+        );
+
+        // Composite mass on c is the sum of all three.
+        let mp_c = tree.get(c).composite_properties;
+        assert_eq!(mp_c.mass, 9.0, "c's composite is a + b + c");
+    }
+
+    /// Reroot must preserve the user-requested geometry under
+    /// **rotated** existing-tree links: build (a ← b) where b sits at
+    /// (1,0,0) in a with a 90° rotation, then reroot b under c with the
+    /// user asking for b's struct at (3, 0, 0) in c. The recomputed
+    /// edge (a under c) must take a's rotation into account so b's
+    /// struct still lands at (3,0,0) when composed.
+    #[test]
+    fn attach_with_reroot_preserves_subject_geometry_under_rotation() {
+        let r_z90 = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        tree.attach(b, a, DVec3::new(1.0, 0.0, 0.0), r_z90);
+
+        // User asks for b's struct at (3, 0, 0) in c, with identity
+        // rotation between c struct and b struct.
+        let user_offset = DVec3::new(3.0, 0.0, 0.0);
+        let user_t_pc_subject = DMat3::IDENTITY;
+        let _ = tree.attach_with_reroot(b, c, user_offset, user_t_pc_subject);
+
+        // After reroot, walk c → a → b geometrically and confirm.
+        let chain = tree.struct_chain_to_root(c, b);
+        assert_vec3_close(
+            chain.position,
+            user_offset,
+            1e-12,
+            "subject ends up at the user-requested offset in new root struct",
+        );
+        assert_mat3_close(
+            chain.t_parent_this,
+            user_t_pc_subject,
+            1e-12,
+            "subject ends up with the user-requested rotation in new root struct",
         );
     }
 }
