@@ -213,14 +213,14 @@ fn bevy_parity_attach_non_root_integ_source_lift_and_lower() {
     let child_pre_vel_integ = child_initial_trans().velocity;
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
 
     // Run the staging system once via FixedUpdate.
@@ -357,14 +357,14 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
     // branch must re-stamp the parent's `DetachedSubtreeStateC` with
     // the merged composite in root-inertial.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     app.world_mut().run_schedule(FixedUpdate);
 
