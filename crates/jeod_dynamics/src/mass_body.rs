@@ -167,22 +167,25 @@ impl MassTree {
         out
     }
 
-    /// Every body in `id`'s subtree, **including `id` itself**, in a
-    /// breadth-first order.
+    /// Every body in `id`'s subtree, **including `id` itself**, in
+    /// unspecified order (current implementation is depth-first via a
+    /// LIFO `Vec`).
     ///
     /// Used by attach/detach call sites that need to know the full set
     /// of bodies whose integrator state goes stale on a topology change
     /// — e.g. when re-rooting a non-root subject (JEOD's chained-attach
     /// `attach_to_3` while already attached to veh2), every body in the
     /// subject's old subtree changes parent-composite and must be
-    /// flagged dirty (JEOD_INV: IG.37).
+    /// flagged dirty (JEOD_INV: IG.37). All current callers consume the
+    /// result as a set (sort+dedup, or `HashSet`-style membership), so
+    /// the traversal order is not part of the public contract.
     pub fn subtree_ids(&self, id: MassBodyId) -> Vec<MassBodyId> {
         let mut out = Vec::new();
-        let mut queue = vec![id];
-        while let Some(node) = queue.pop() {
+        let mut stack = vec![id];
+        while let Some(node) = stack.pop() {
             out.push(node);
             for &c in &self.children[node] {
-                queue.push(c);
+                stack.push(c);
             }
         }
         out
@@ -277,10 +280,13 @@ impl MassTree {
     /// `DynBody::attach_child(...)` semantics
     /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:506-567`).
     ///
-    /// `offset` and `t_parent_child` are specified in the **subject
-    /// child's** structural frame — i.e. the same coordinates a JEOD
-    /// caller passes to `BodyAttachAligned veh1.attach_to_2`. When the
-    /// subject is non-root, the method recomputes the equivalent
+    /// `offset` is the subject child's structural-frame origin
+    /// expressed in the **parent's** structural frame, and
+    /// `t_parent_child` is the parent→child structural-frame rotation
+    /// — i.e. the same coordinates [`Self::attach`] takes, and the
+    /// same `(offset, T_pstr_to_cstr)` pair JEOD's `BodyAttachAligned
+    /// veh1.attach_to_2` resolves to. When the subject is non-root,
+    /// the method recomputes the equivalent
     /// `(offset_root_in_parent_struct, T_parent_to_root_struct)` so
     /// that the subject's structural frame ends up where the caller
     /// asked, even though the underlying tree edge runs from

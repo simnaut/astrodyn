@@ -552,11 +552,18 @@ impl Simulation {
             // builder-driven topology declarations don't bake
             // kinematic-only flags into bodies whose initial state
             // the user expects to be honoured verbatim.
-            let subject_descendants: Vec<jeod_dynamics::MassBodyId> = self
+            // Set rather than `Vec` so the membership check inside the
+            // body loop is O(1) instead of O(n_descendants); attach is
+            // a hot path on larger trees (chained docking, multi-stage
+            // separation) where the subject subtree may be O(10) bodies
+            // and the runner may carry O(10²) sim bodies.
+            let subject_descendants: std::collections::HashSet<jeod_dynamics::MassBodyId> = self
                 .mass_tree
                 .as_ref()
                 .expect("attach: mass tree dropped between mutate and auto-flag")
-                .subtree_ids(subject_root_id);
+                .subtree_ids(subject_root_id)
+                .into_iter()
+                .collect();
             for body in self.bodies.iter_mut() {
                 if let Some(id) = body.mass_body_id {
                     if subject_descendants.contains(&id) && body.rot.is_some() {
