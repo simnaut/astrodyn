@@ -66,7 +66,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 60.0,
                 normal: DVec3::X,
-                position: DVec3::new(2.0, 0.0, 0.0),
+                position: DVec3::new(2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -75,7 +76,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 60.0,
                 normal: -DVec3::Y,
-                position: DVec3::new(0.0, -2.0, 0.0),
+                position: DVec3::new(0.0, -2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -84,7 +86,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 60.0,
                 normal: -DVec3::X,
-                position: DVec3::new(-2.0, 0.0, 0.0),
+                position: DVec3::new(-2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -93,7 +96,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 60.0,
                 normal: DVec3::Y,
-                position: DVec3::new(0.0, 2.0, 0.0),
+                position: DVec3::new(0.0, 2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -102,7 +106,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 16.0,
                 normal: DVec3::Z,
-                position: DVec3::new(0.0, 0.0, 7.5),
+                position: DVec3::new(0.0, 0.0, 7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -111,7 +116,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 16.0,
                 normal: -DVec3::Z,
-                position: DVec3::new(0.0, 0.0, -7.5),
+                position: DVec3::new(0.0, 0.0, -7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,

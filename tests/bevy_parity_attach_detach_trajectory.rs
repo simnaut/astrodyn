@@ -436,7 +436,9 @@ fn bevy_parity_attach_detach_trajectory_simple() {
                 .write(AttachEvent {
                     child: b_v1,
                     parent: b_v2,
-                    offset,
+                    offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                        offset,
+                    ),
                     t_parent_child: t_pc,
                 });
             attach_fired = true;

@@ -7,7 +7,7 @@
 
 use glam::{DMat3, DVec3};
 
-use jeod_sim::{IntegOrigin, Position, RadiationForce, RootInertial};
+use jeod_sim::{IntegOrigin, Position, RadiationForce, RootInertial, Vec3Ext};
 
 use super::super::Simulation;
 
@@ -127,7 +127,18 @@ impl Simulation {
                             })
                             .unwrap_or(1.0);
 
-                        let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
+                        // `mass.position` is the CoM in the vehicle's
+                        // structural frame (raw `DVec3`). Re-tag at
+                        // the boundary into the typed structural-
+                        // frame phantom for the SRP kernel inputs;
+                        // the kernel re-extracts the raw DVec3 via
+                        // `.raw_si()` for in-frame arithmetic.
+                        let center_grav_struct = body
+                            .mass
+                            .as_ref()
+                            .map_or(DVec3::ZERO, |m| m.position)
+                            .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>();
+                        let center_grav = center_grav_struct.raw_si();
 
                         // Kinematic children skip the standard
                         // integrator (`integrate.rs` continues past
@@ -197,7 +208,7 @@ impl Simulation {
                                     // - sun_position` as DVec3-DVec3.
                                     sun_position: sun_position_typed,
                                     illum_factor,
-                                    center_grav,
+                                    center_grav: center_grav_struct,
                                 });
                                 // `radiation_force` is left None here; Stage 8
                                 // writes a representative final-stage value so
