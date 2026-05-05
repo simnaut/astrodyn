@@ -2883,16 +2883,44 @@ fn body_integ_origin_in_root_lazy(
     frame_origin: &FrameOrigin,
 ) -> (Position<RootInertial>, Velocity<RootInertial>) {
     // Resolve the body's integ-frame entity (parent of its
-    // `FrameEntityC` in the frame-tree). `None` means the body is
-    // root-integrated by convention — no shift needed.
-    let integ_frame_entity =
-        body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
-    let Some(integ_e) = integ_frame_entity else {
+    // `FrameEntityC` in the frame-tree). Two legitimate paths return
+    // a zero origin without consulting the frame tree:
+    //
+    //   * `body_frame.is_none()` — the body has no `FrameEntityC` at
+    //     all (minimal-test shape with no `JeodPlugin`); root-
+    //     integrated by convention.
+    //
+    // A body that *does* carry `FrameEntityC` but whose frame entity
+    // has no `ChildOf` parent is malformed: every frame entity must
+    // be parented in the frame tree (under the root frame entity for
+    // root-integrated bodies, or under a planet's inertial frame
+    // entity for planet-integrated bodies). Treating that corruption
+    // as "root-integrated" would silently feed planet-relative coords
+    // into a kernel that composes in root-inertial — exactly the
+    // failure mode the rest of the staging path rejects loudly.
+    let Some(fe) = body_frame else {
         return (
             Position::<RootInertial>::zero(),
             Velocity::<RootInertial>::zero(),
         );
     };
+    let integ_e = parents
+        .get(fe.0)
+        .map(|child_of| child_of.parent())
+        .unwrap_or_else(|err| {
+            panic!(
+                "malformed frame tree: body's FrameEntityC ({:?}) has no ChildOf parent \
+                 ({err:?}). Every body frame entity must be parented under either the root \
+                 frame entity (root-integrated) or a planet's inertial frame entity \
+                 (planet-integrated). Detached or freshly reparented bodies must restore \
+                 the ChildOf edge before the next staging/step; treating this as \
+                 root-integrated would feed planet-relative coordinates into a \
+                 root-inertial kernel and silently corrupt the merged composite by the \
+                 missing integ-frame's full root-inertial state. Likely cause: an attach \
+                 or detach handler dropped the frame-tree reparent step.",
+                fe.0,
+            )
+        });
     // The body has a registered frame entity. Without the root entity
     // we cannot tell whether `integ_e == root` (root-integrated, safe
     // zero shift) or `integ_e != root` (non-root, load-bearing shift).
@@ -2909,7 +2937,7 @@ fn body_integ_origin_in_root_lazy(
              root-inertial (staging_system, step_detached_system). If your test \
              intentionally omits JeodPlugin, also omit FrameEntityC from the body \
              (root-integrated bodies skip this path entirely).",
-            body_frame.map(|fe| fe.0)
+            fe.0,
         )
     });
     if integ_e == root {
