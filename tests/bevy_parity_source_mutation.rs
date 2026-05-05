@@ -108,7 +108,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
         .raw_si();
     let bevy_trans = app
         .world()
-        .get::<TranslationalStateC>(moon_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(moon_entity)
         .unwrap()
         .0
         .to_untyped();

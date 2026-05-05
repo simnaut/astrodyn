@@ -157,7 +157,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
 
     let bevy_trans = app
         .world()
-        .get::<TranslationalStateC>(vehicle)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .to_untyped();
@@ -352,7 +352,7 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
 
     let bevy_trans = app
         .world()
-        .get::<TranslationalStateC>(vehicle)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .to_untyped();

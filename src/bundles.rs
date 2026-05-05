@@ -33,16 +33,16 @@ pub struct PlanetBundle {
     /// RootInertial-frame position of the source (m).
     pub position: SourceInertialPositionC,
     /// Translational state used by per-step systems.
-    pub trans: TranslationalStateC,
+    pub trans: TranslationalStateC<jeod_sim::Earth>,
     /// `T_inertial→pfix` rotation, updated each step by
     /// `planet_fixed_rotation_system` per the chosen [`RotationModelC`].
-    pub rotation: PlanetFixedRotationC,
+    pub rotation: PlanetFixedRotationC<jeod_sim::Earth>,
     /// Sidereal rotation rate sourced from [`PlanetConfig::omega`].
     /// Drives [`PlanetAngularVelocityC`] each step (issue #71 item 1).
     pub omega: PlanetOmegaC,
     /// Angular velocity of the pfix frame relative to inertial, in pfix
     /// coordinates. Written each step by `planet_fixed_rotation_system`.
-    pub ang_vel: PlanetAngularVelocityC,
+    pub ang_vel: PlanetAngularVelocityC<jeod_sim::Earth>,
     /// Selector that drives [`Self::rotation`] each step.
     pub rotation_model: RotationModelC,
     /// Planet shape (radii, mu, flattening).
@@ -107,7 +107,7 @@ pub struct SunBundle {
     /// Discriminator queried by SRP / solar-beta / lighting systems.
     pub marker: SunMarker,
     /// RootInertial position used by the same systems.
-    pub trans: TranslationalStateC,
+    pub trans: TranslationalStateC<jeod_sim::Earth>,
 }
 
 impl SunBundle {
@@ -143,7 +143,7 @@ pub struct MoonBundle {
     /// Discriminator queried by the earth-lighting system.
     pub marker: MoonMarker,
     /// RootInertial position used by the earth-lighting system.
-    pub trans: TranslationalStateC,
+    pub trans: TranslationalStateC<jeod_sim::Earth>,
 }
 
 impl MoonBundle {

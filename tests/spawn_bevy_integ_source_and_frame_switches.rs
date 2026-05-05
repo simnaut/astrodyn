@@ -411,7 +411,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),

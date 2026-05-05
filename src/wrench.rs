@@ -1330,7 +1330,7 @@ mod tests {
         // does not move it.)
         let parent_pos = app
             .world()
-            .get::<crate::TranslationalStateC>(parent)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(parent)
             .unwrap()
             .0
             .to_untyped()
@@ -1376,7 +1376,7 @@ mod tests {
         // step.
         let child_pos = app
             .world()
-            .get::<crate::TranslationalStateC>(child)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(child)
             .unwrap()
             .0
             .to_untyped()
@@ -1396,7 +1396,7 @@ mod tests {
         // integration system.
         let parent_pos_after = app
             .world()
-            .get::<crate::TranslationalStateC>(parent)
+            .get::<crate::TranslationalStateC<jeod_sim::Earth>>(parent)
             .unwrap()
             .0
             .to_untyped()

@@ -111,7 +111,7 @@ pub fn validate_jeod_invariants(
             Option<&GravityAccelerationC>,
             Option<&MassPropertiesC>,
             Option<&RotationalStateC>,
-            Option<&TranslationalStateC>,
+            Option<&TranslationalStateC<jeod_sim::Earth>>,
             Option<&FlatPlateConfigC>,
         ),
         Added<GravityControlsC>,
@@ -121,7 +121,7 @@ pub fn validate_jeod_invariants(
         Entity,
         &TidalConfigC,
         Option<&TidalDeltaC20C>,
-        Option<&crate::components::PlanetFixedRotationC>,
+        Option<&crate::components::PlanetFixedRotationC<jeod_sim::Earth>>,
     )>,
     srp_exclusion: Query<Entity, With<CannonballSrpC>>,
     derived_state_markers: Query<(
@@ -130,7 +130,7 @@ pub fn validate_jeod_invariants(
         Option<&EarthLightingConfigC>,
         Option<&SunMarker>,
         Option<&MoonMarker>,
-        Option<&TranslationalStateC>,
+        Option<&TranslationalStateC<jeod_sim::Earth>>,
     )>,
     // Frame-tree state for non-root validation. Mirrors
     // `Simulation::validate()`'s frame-switch + non-root checks

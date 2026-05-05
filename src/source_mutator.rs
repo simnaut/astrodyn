@@ -215,7 +215,8 @@ pub struct SourceMutator<'w, 's> {
     frame_rots: Query<'w, 's, &'static FrameRotC>,
     positions: Query<'w, 's, &'static mut SourceInertialPositionC, With<GravitySourceC>>,
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC, With<GravitySourceC>>,
-    translational: Query<'w, 's, &'static mut TranslationalStateC, With<GravitySourceC>>,
+    translational:
+        Query<'w, 's, &'static mut TranslationalStateC<jeod_sim::Earth>, With<GravitySourceC>>,
     central: Query<'w, 's, (), With<CentralSourceMarker>>,
     names: Query<'w, 's, &'static Name>,
 }

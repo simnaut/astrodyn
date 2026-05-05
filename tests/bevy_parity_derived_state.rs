@@ -83,7 +83,7 @@ fn tier3_bevy_derived_states() {
     let bevy_state = read_sixdof(app.world(), vehicle);
     let bevy_oe = app
         .world()
-        .get::<OrbitalElementsC>(vehicle)
+        .get::<OrbitalElementsC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .clone();
@@ -345,7 +345,7 @@ fn tier3_bevy_eccentric_derived_states() {
     let bevy_state = read_sixdof(app.world(), vehicle);
     let bevy_oe = app
         .world()
-        .get::<OrbitalElementsC>(vehicle)
+        .get::<OrbitalElementsC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .clone();
@@ -974,7 +974,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     step_bevy_dt(&mut app, 1, tiny_dt);
     let bevy_oe = app
         .world()
-        .get::<OrbitalElementsC>(vehicle)
+        .get::<OrbitalElementsC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .clone();
@@ -1096,7 +1096,7 @@ fn tier3_bevy_orbelem() {
     step_bevy(&mut app, NUM_STEPS);
     let bevy_oe = app
         .world()
-        .get::<OrbitalElementsC>(vehicle)
+        .get::<OrbitalElementsC<jeod_sim::Earth>>(vehicle)
         .unwrap()
         .0
         .clone();

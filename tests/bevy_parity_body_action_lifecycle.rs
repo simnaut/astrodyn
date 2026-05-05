@@ -193,7 +193,7 @@ fn read_mass(app: &App, vehicle: Entity) -> f64 {
 fn read_trans(app: &App, vehicle: Entity) -> TranslationalState {
     app.world()
         .entity(vehicle)
-        .get::<TranslationalStateC>()
+        .get::<TranslationalStateC<jeod_sim::Earth>>()
         .expect("translational state present")
         .0
         .to_untyped()

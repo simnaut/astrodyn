@@ -41,7 +41,7 @@ fn step_bevy(app: &mut App, n: usize) {
 fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
         trans: world
-            .get::<TranslationalStateC>(entity)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
             .unwrap()
             .0
             .to_untyped(),
@@ -55,7 +55,7 @@ fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
 
 fn read_trans(world: &World, entity: Entity) -> TranslationalState {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .unwrap()
         .0
         .to_untyped()

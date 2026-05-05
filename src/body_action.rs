@@ -344,7 +344,7 @@ pub fn body_action_system(
     mut queue: ResMut<BodyActionsR>,
     mut bodies: Query<
         (
-            Option<&mut TranslationalStateC>,
+            Option<&mut TranslationalStateC<jeod_sim::Earth>>,
             Option<&mut RotationalStateC>,
             Option<&mut MassPropertiesC>,
             Option<&mut GaussJacksonStateC>,
@@ -740,7 +740,7 @@ mod tests {
         let trans = app
             .world()
             .entity(entity)
-            .get::<TranslationalStateC>()
+            .get::<TranslationalStateC<jeod_sim::Earth>>()
             .expect("trans state present")
             .0
             .to_untyped();

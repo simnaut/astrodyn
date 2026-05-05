@@ -247,7 +247,7 @@ fn read_bevy_state(
 ) {
     let p_trans = app
         .world()
-        .get::<TranslationalStateC>(parent)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent)
         .unwrap()
         .0
         .to_untyped();
@@ -259,7 +259,7 @@ fn read_bevy_state(
         .to_untyped();
     let c_trans = app
         .world()
-        .get::<TranslationalStateC>(child)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(child)
         .unwrap()
         .0
         .to_untyped();

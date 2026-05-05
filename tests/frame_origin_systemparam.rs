@@ -179,7 +179,7 @@ fn after_diff_mission_code_shape_compiles() {
     fn read_body_origin_in_root(
         origin: FrameOrigin,
         root: Res<RootFrameEntityR>,
-        bodies: Query<&FrameEntityC, With<TranslationalStateC>>,
+        bodies: Query<&FrameEntityC, With<TranslationalStateC<jeod_sim::Earth>>>,
     ) {
         for body_e in &bodies {
             let (_pos, _vel): (Position<RootInertial>, Velocity<RootInertial>) =

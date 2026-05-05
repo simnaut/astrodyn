@@ -72,16 +72,15 @@ use jeod_sim::{
 ///
 /// # `<P: Planet>` parametrization
 ///
-/// The component is generic over the planet marker `P`, defaulting
-/// to [`Earth`] for the single-planet case used by the Bevy plugin's
-/// pre-registered systems. Mission code that needs multiple planets
-/// in a single `World` (e.g. a Mars-orbit chief plus an Earth-orbit
-/// deputy) instantiates `TranslationalStateC<Mars>` and
+/// The component is generic over the planet marker `P`. Every call site
+/// must pin `P` explicitly — there is no fallback. Mission code that needs
+/// multiple planets in a single `World` (e.g. a Mars-orbit chief plus an
+/// Earth-orbit deputy) instantiates `TranslationalStateC<Mars>` and
 /// `TranslationalStateC<Earth>` as distinct component types — Bevy
 /// queries discriminate them at the type level.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct TranslationalStateC<P: Planet = Earth>(pub TranslationalStateTyped<PlanetInertial<P>>);
+pub struct TranslationalStateC<P: Planet>(pub TranslationalStateTyped<PlanetInertial<P>>);
 
 impl<P: Planet> Default for TranslationalStateC<P> {
     #[inline]
@@ -349,13 +348,12 @@ pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 /// Atmospheric state at the vehicle's position.
 ///
 /// Wraps a typed `AtmosphereState<P>` whose `wind` field is
-/// `Velocity<PlanetInertial<P>>`. `P` defaults to [`Earth`] for the
-/// single-planet pre-registered Bevy plugin path; mission code with
-/// multiple planets in one `World` instantiates the type per planet.
-/// Written by the atmosphere system; read by the aerodynamic drag
-/// system.
+/// `Velocity<PlanetInertial<P>>`. Every call site must pin `P` explicitly
+/// — there is no fallback. Mission code with multiple planets in one
+/// `World` instantiates the type per planet. Written by the atmosphere
+/// system; read by the aerodynamic drag system.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct AtmosphericStateC<P: Planet = Earth>(pub jeod_sim::AtmosphereState<P>);
+pub struct AtmosphericStateC<P: Planet>(pub jeod_sim::AtmosphereState<P>);
 
 impl<P: Planet> Default for AtmosphericStateC<P> {
     #[inline]
@@ -394,17 +392,15 @@ impl Default for StructuralTransformC {
 ///
 /// Stores the rotation that maps inertial-frame vectors into the planet-fixed
 /// frame of the source. The `FrameTransform`'s phantom `<RootInertial,
-/// PlanetFixed<P>>` parameters encode the *direction*; `P` defaults to
-/// [`Earth`] for the single-planet pre-registered Bevy plugin path.
+/// PlanetFixed<P>>` parameters encode the *direction*. Every call site must
+/// pin `P` explicitly — there is no fallback.
 ///
 /// When present on a gravity source entity, `gravity_computation_system` and
 /// `integration_system` use this rotation instead of `DMat3::IDENTITY` to
 /// rotate the spacecraft position into the body-fixed frame before evaluating
 /// spherical-harmonic gravity.
 #[derive(Component, Debug, Clone, Copy)]
-pub struct PlanetFixedRotationC<P: Planet = Earth>(
-    pub FrameTransform<RootInertial, PlanetFixed<P>>,
-);
+pub struct PlanetFixedRotationC<P: Planet>(pub FrameTransform<RootInertial, PlanetFixed<P>>);
 
 /// Sidereal rotation rate (rad/s) used by `planet_fixed_rotation_system`
 /// to populate [`PlanetAngularVelocityC`] each step. Sourced from
@@ -618,10 +614,10 @@ pub struct RetiredPfixFrameEntityC(pub Entity);
 /// `planet_rnp.cc`.
 ///
 /// The `AngularVelocity<PlanetFixed<P>>` phantom indicates "in the
-/// pfix frame of planet `P`"; `P` defaults to [`Earth`] for the
-/// single-planet pre-registered Bevy plugin path.
+/// pfix frame of planet `P`". Every call site must pin `P` explicitly
+/// — there is no fallback.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct PlanetAngularVelocityC<P: Planet = Earth>(pub AngularVelocity<PlanetFixed<P>>);
+pub struct PlanetAngularVelocityC<P: Planet>(pub AngularVelocity<PlanetFixed<P>>);
 
 impl<P: Planet> Default for PlanetAngularVelocityC<P> {
     #[inline]
@@ -868,7 +864,7 @@ pub struct TidalDeltaC20C(pub Ratio);
 ///
 /// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-#[require(AtmosphericStateC, AerodynamicForceC)]
+#[require(AtmosphericStateC::<Earth>, AerodynamicForceC)]
 pub struct DragConfigC(pub DragConfigTyped);
 
 impl DragConfigC {
@@ -1003,7 +999,7 @@ pub struct PlanetC(pub PlanetShape);
 /// Presence of this component + `OrbitalElementsC` on an entity enables
 /// per-step orbital elements computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
-#[require(OrbitalElementsC)]
+#[require(OrbitalElementsC::<Earth>)]
 pub struct OrbitalElementsConfigC {
     /// Gravity source entity supplying `mu` for the conversion.
     pub gravity_source: Entity,
@@ -1040,10 +1036,10 @@ pub struct GeodeticConfigC {
 ///
 /// Written by `orbital_elements_system` for entities that also have
 /// `OrbitalElementsConfigC`. Generic over the planet `P` whose
-/// gravitational parameter `mu` was used in the conversion; defaults
-/// to [`Earth`] for the single-planet pre-registered Bevy plugin path.
+/// gravitational parameter `mu` was used in the conversion. Every call
+/// site must pin `P` explicitly — there is no fallback.
 #[derive(Component, Debug, Clone)]
-pub struct OrbitalElementsC<P: Planet = Earth>(pub jeod_sim::OrbitalElements<P>);
+pub struct OrbitalElementsC<P: Planet>(pub jeod_sim::OrbitalElements<P>);
 
 impl<P: Planet> Default for OrbitalElementsC<P> {
     #[inline]

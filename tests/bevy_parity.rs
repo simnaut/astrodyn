@@ -113,7 +113,9 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
     }
 
     let world = app.world();
-    let trans = world.get::<TranslationalStateC>(vehicle).unwrap();
+    let trans = world
+        .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
+        .unwrap();
     let rot = world.get::<RotationalStateC>(vehicle).unwrap();
     SixDofState {
         trans: trans.0.to_untyped(),

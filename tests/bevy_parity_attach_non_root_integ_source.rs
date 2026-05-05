@@ -263,14 +263,14 @@ fn bevy_parity_attach_non_root_integ_source_lift_and_lower() {
 
     let post_pos_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .position
         .raw_si();
     let post_vel_integ = app
         .world()
-        .get::<TranslationalStateC>(parent_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(parent_entity)
         .unwrap()
         .0
         .velocity

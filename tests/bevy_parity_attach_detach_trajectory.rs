@@ -334,7 +334,7 @@ fn step_bevy(app: &mut App) {
 fn read_bevy_state(app: &App, entity: Entity) -> SixDofState {
     let trans = app
         .world()
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .to_untyped();

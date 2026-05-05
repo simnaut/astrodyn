@@ -63,7 +63,7 @@ pub fn register_source_frames_system(
             &SourceInertialPositionC,
             Option<&SourceInertialVelocityC>,
             Option<&RotationModelC>,
-            Option<&PlanetFixedRotationC>,
+            Option<&PlanetFixedRotationC<jeod_sim::Earth>>,
         ),
         (With<GravitySourceC>, Without<FrameEntityC>),
     >,
@@ -173,7 +173,7 @@ pub fn register_pfix_frames_system(
         ),
         (
             With<GravitySourceC>,
-            With<PlanetFixedRotationC>,
+            With<PlanetFixedRotationC<jeod_sim::Earth>>,
             Without<PfixFrameEntityC>,
         ),
     >,
@@ -310,7 +310,7 @@ pub fn sync_source_to_frame_system(
         &FrameEntityC,
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
-        Option<&TranslationalStateC>,
+        Option<&TranslationalStateC<jeod_sim::Earth>>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
 ) {
@@ -377,7 +377,7 @@ pub fn register_body_frames_system(
         (
             Entity,
             Option<&Name>,
-            &TranslationalStateC,
+            &TranslationalStateC<jeod_sim::Earth>,
             Option<&IntegSourceC>,
             // Wire the frame-side `MassPointRef` back-pointer at
             // body-frame registration time for any entity that also
@@ -391,7 +391,7 @@ pub fn register_body_frames_system(
             Has<MassPropertiesC>,
         ),
         (
-            With<TranslationalStateC>,
+            With<TranslationalStateC<jeod_sim::Earth>>,
             With<DynamicsConfigC>,
             Without<FrameEntityC>,
         ),
@@ -659,7 +659,7 @@ pub fn on_source_pfix_frame_entity_despawn(
 /// frame entity is updated by `sync_source_to_frame_system` from the
 /// source-side state instead.
 pub fn sync_body_to_frame_system(
-    bodies: Query<(&TranslationalStateC, &FrameEntityC), With<DynamicsConfigC>>,
+    bodies: Query<(&TranslationalStateC<jeod_sim::Earth>, &FrameEntityC), With<DynamicsConfigC>>,
     mut frame_states: Query<&mut FrameTransC>,
 ) {
     for (trans, frame_entity) in &bodies {
@@ -728,7 +728,7 @@ pub fn frame_switch_system(
     rel: RelativeFrameState,
     mut bodies: Query<(
         Entity,
-        &mut TranslationalStateC,
+        &mut TranslationalStateC<jeod_sim::Earth>,
         &FrameEntityC,
         &mut FrameSwitchesC,
         &mut GravityControlsC,
@@ -936,10 +936,10 @@ pub fn planet_fixed_rotation_system(
     ephemeris: Option<Res<crate::EphemerisR>>,
     mut query: Query<(
         Entity,
-        &mut PlanetFixedRotationC,
+        &mut PlanetFixedRotationC<jeod_sim::Earth>,
         Option<&RotationModelC>,
         Option<&PlanetOmegaC>,
-        Option<&mut PlanetAngularVelocityC>,
+        Option<&mut PlanetAngularVelocityC<jeod_sim::Earth>>,
         Option<&PfixFrameEntityC>,
     )>,
     mut frame_rots: Query<&mut FrameRotC>,
@@ -1643,7 +1643,11 @@ pub fn register_joint_kinematics_exclusivity_hooks(app: &mut App) {
 /// Sources without `TidalConfigC` keep their default `TidalDeltaC20C::default()`
 /// (a zero-valued [`jeod_sim::Ratio`]).
 pub fn tidal_update_system(
-    mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
+    mut query: Query<(
+        &TidalConfigC,
+        &PlanetFixedRotationC<jeod_sim::Earth>,
+        &mut TidalDeltaC20C,
+    )>,
 ) {
     for (config, rotation, mut delta) in &mut query {
         // `TidalConfigC` already wraps `TidalConfigTyped` — the dimensional
@@ -1665,6 +1669,7 @@ pub fn tidal_update_system(
 /// Sun/Moon entities used by SRP, solar beta, and earth lighting systems).
 ///
 /// Placed in `JeodSet::EphemerisUpdate`.
+#[allow(clippy::type_complexity)]
 pub fn ephemeris_update_system(
     ephemeris: Option<Res<crate::EphemerisR>>,
     sim_time: Res<SimulationTimeR>,
@@ -1672,7 +1677,7 @@ pub fn ephemeris_update_system(
         &EphemerisBodyC,
         &mut SourceInertialPositionC,
         Option<&mut SourceInertialVelocityC>,
-        Option<&mut TranslationalStateC>,
+        Option<&mut TranslationalStateC<jeod_sim::Earth>>,
     )>,
 ) {
     let Some(eph) = ephemeris else {
@@ -1932,7 +1937,7 @@ pub fn integration_system(
         (
             Entity,
             &DynamicsConfigC,
-            &mut TranslationalStateC,
+            &mut TranslationalStateC<jeod_sim::Earth>,
             Option<&mut RotationalStateC>,
             Option<&MassPropertiesC>,
             &GravityControlsC,
@@ -1954,7 +1959,7 @@ pub fn integration_system(
     sources: Query<
         (
             &GravitySourceC,
-            Option<&PlanetFixedRotationC>,
+            Option<&PlanetFixedRotationC<jeod_sim::Earth>>,
             &SourceInertialPositionC,
             Option<&SourceInertialVelocityC>,
             Option<&TidalDeltaC20C>,
@@ -1962,7 +1967,7 @@ pub fn integration_system(
             // Fallback velocity source for ephemeris-driven sources (Sun /
             // Moon via SunBundle / MoonBundle) that don't carry
             // SourceInertialVelocityC.
-            Option<&TranslationalStateC>,
+            Option<&TranslationalStateC<jeod_sim::Earth>>,
         ),
         // Static disjointness vs. the `bodies` query's `&mut
         // TranslationalStateC`: no integrated body is also a gravity
@@ -2034,12 +2039,13 @@ pub fn integration_system(
         // SunBundle/MoonBundle, which include `TranslationalStateC`
         // but not `SourceInertialVelocityC`) get treated as stationary
         // at every RK sub-stage.
-        let source_vel =
-            |v: Option<&SourceInertialVelocityC>, ts: Option<&TranslationalStateC>| -> DVec3 {
-                v.map(|v| v.0.raw_si())
-                    .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
-                    .unwrap_or(DVec3::ZERO)
-            };
+        let source_vel = |v: Option<&SourceInertialVelocityC>,
+                          ts: Option<&TranslationalStateC<jeod_sim::Earth>>|
+         -> DVec3 {
+            v.map(|v| v.0.raw_si())
+                .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
+                .unwrap_or(DVec3::ZERO)
+        };
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             typed_abs_pos,
@@ -2425,7 +2431,7 @@ pub fn gravity_computation_system(
     mut bodies: Query<
         (
             Entity,
-            &TranslationalStateC,
+            &TranslationalStateC<jeod_sim::Earth>,
             &GravityControlsC,
             &mut GravityAccelerationC,
             Option<&FrameEntityC>,
@@ -2434,14 +2440,14 @@ pub fn gravity_computation_system(
     >,
     sources: Query<(
         &GravitySourceC,
-        Option<&PlanetFixedRotationC>,
+        Option<&PlanetFixedRotationC<jeod_sim::Earth>>,
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
         // Fallback velocity source for ephemeris-driven sources that
         // don't carry SourceInertialVelocityC.
-        Option<&TranslationalStateC>,
+        Option<&TranslationalStateC<jeod_sim::Earth>>,
     )>,
 ) {
     for (entity, state, controls, mut accel, body_frame) in &mut bodies {
@@ -2542,8 +2548,11 @@ pub fn gravity_computation_system(
 pub fn atmosphere_update_system(
     atmos_model: Option<Res<AtmosphereModelR>>,
     sim_time: Option<Res<SimulationTimeR>>,
-    planet_query: Query<&PlanetFixedRotationC>,
-    mut query: Query<(&TranslationalStateC, &mut AtmosphericStateC)>,
+    planet_query: Query<&PlanetFixedRotationC<jeod_sim::Earth>>,
+    mut query: Query<(
+        &TranslationalStateC<jeod_sim::Earth>,
+        &mut AtmosphericStateC<jeod_sim::Earth>,
+    )>,
 ) {
     // JEOD_INV: AT.02 — early return if no atmosphere model resource
     let Some(model) = atmos_model else {
@@ -2602,8 +2611,8 @@ pub fn aero_drag_system(
     mut query: Query<
         (
             &DragConfigC,
-            &AtmosphericStateC,
-            &TranslationalStateC,
+            &AtmosphericStateC<jeod_sim::Earth>,
+            &TranslationalStateC<jeod_sim::Earth>,
             &RotationalStateC,
             Option<&StructuralTransformC>,
             &mut AerodynamicForceC,
@@ -2675,7 +2684,10 @@ pub fn gravity_torque_system(
 fn compute_illum_factor(
     vehicle_pos: DVec3,
     sun_pos: DVec3,
-    shadow_bodies: &Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
+    shadow_bodies: &Query<
+        (&TranslationalStateC<jeod_sim::Earth>, &ShadowBodyC),
+        Without<SunMarker>,
+    >,
 ) -> f64 {
     let mut illum = 1.0_f64;
     for (body_state, shadow) in shadow_bodies.iter() {
@@ -2698,9 +2710,9 @@ fn compute_illum_factor(
 /// Placed in `JeodSet::DerivedState`.
 pub fn orbital_elements_system(
     mut query: Query<(
-        &TranslationalStateC,
+        &TranslationalStateC<jeod_sim::Earth>,
         &OrbitalElementsConfigC,
-        &mut OrbitalElementsC,
+        &mut OrbitalElementsC<jeod_sim::Earth>,
     )>,
     sources: Query<&GravitySourceC>,
 ) {
@@ -2755,7 +2767,7 @@ pub fn euler_angles_system(
 /// Presence of `LvlhFrameC` alone enables computation (no separate config needed).
 ///
 /// Placed in `JeodSet::DerivedState`.
-pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
+pub fn lvlh_system(mut query: Query<(&TranslationalStateC<jeod_sim::Earth>, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
         // Typed throughout — `TranslationalStateC` carries
         // `PlanetInertial<SelfPlanet>` on the Bevy adapter. LVLH stays
@@ -2778,8 +2790,12 @@ pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
 ///
 /// Placed in `JeodSet::DerivedState`.
 pub fn geodetic_system(
-    mut query: Query<(&TranslationalStateC, &GeodeticConfigC, &mut GeodeticStateC)>,
-    planets: Query<(&PlanetFixedRotationC, &PlanetC)>,
+    mut query: Query<(
+        &TranslationalStateC<jeod_sim::Earth>,
+        &GeodeticConfigC,
+        &mut GeodeticStateC,
+    )>,
+    planets: Query<(&PlanetFixedRotationC<jeod_sim::Earth>, &PlanetC)>,
 ) {
     for (state, config, mut geodetic) in &mut query {
         let Ok((rot, planet)) = planets.get(config.planet) else {
@@ -2950,10 +2966,14 @@ pub fn solar_beta_system(
     root_frame_entity: Res<crate::RootFrameEntityR>,
     parents: Query<&ChildOf>,
     mut query: Query<
-        (&TranslationalStateC, Option<&FrameEntityC>, &mut SolarBetaC),
+        (
+            &TranslationalStateC<jeod_sim::Earth>,
+            Option<&FrameEntityC>,
+            &mut SolarBetaC,
+        ),
         Without<SunMarker>,
     >,
-    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
+    sun_query: Query<&TranslationalStateC<jeod_sim::Earth>, With<SunMarker>>,
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
@@ -3011,15 +3031,15 @@ pub fn earth_lighting_system(
     parents: Query<&ChildOf>,
     mut query: Query<
         (
-            &TranslationalStateC,
+            &TranslationalStateC<jeod_sim::Earth>,
             Option<&FrameEntityC>,
             &EarthLightingConfigC,
             &mut EarthLightingStateC,
         ),
         (Without<SunMarker>, Without<MoonMarker>),
     >,
-    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
-    moon_query: Query<&TranslationalStateC, With<MoonMarker>>,
+    sun_query: Query<&TranslationalStateC<jeod_sim::Earth>, With<SunMarker>>,
+    moon_query: Query<&TranslationalStateC<jeod_sim::Earth>, With<MoonMarker>>,
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
@@ -3130,7 +3150,7 @@ pub fn flat_plate_srp_system(
     mut query: Query<
         (
             &mut FlatPlateConfigC,
-            &TranslationalStateC,
+            &TranslationalStateC<jeod_sim::Earth>,
             Option<&RotationalStateC>,
             Option<&MassPropertiesC>,
             Option<&StructuralTransformC>,
@@ -3160,8 +3180,8 @@ pub fn flat_plate_srp_system(
             Without<CannonballSrpC>,
         ),
     >,
-    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
-    shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
+    sun_query: Query<&TranslationalStateC<jeod_sim::Earth>, With<SunMarker>>,
+    shadow_bodies: Query<(&TranslationalStateC<jeod_sim::Earth>, &ShadowBodyC), Without<SunMarker>>,
     time: Res<Time<Fixed>>,
 ) {
     // Drop stale state for any kinematic-child SRP body. Runs first
@@ -3329,7 +3349,7 @@ pub fn cannonball_srp_system(
     mut query: Query<
         (
             &CannonballSrpC,
-            &TranslationalStateC,
+            &TranslationalStateC<jeod_sim::Earth>,
             Option<&FrameEntityC>,
             &mut RadiationForceC,
         ),
@@ -3339,8 +3359,8 @@ pub fn cannonball_srp_system(
             Without<crate::DetachedSubtreeStateC>,
         ),
     >,
-    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
-    shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
+    sun_query: Query<&TranslationalStateC<jeod_sim::Earth>, With<SunMarker>>,
+    shadow_bodies: Query<(&TranslationalStateC<jeod_sim::Earth>, &ShadowBodyC), Without<SunMarker>>,
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
@@ -3452,7 +3472,7 @@ pub fn staging_system(
         Entity,
         &crate::MassBodyIdC,
         &mut MassPropertiesC,
-        Option<&mut TranslationalStateC>,
+        Option<&mut TranslationalStateC<jeod_sim::Earth>>,
         Option<&mut RotationalStateC>,
     )>,
     body_frames: Query<&FrameEntityC>,
@@ -3490,7 +3510,7 @@ pub fn staging_system(
     //     incomplete state" (`dyn_body_attach.cc:131-135`).
     eligibility: Query<(
         Has<DynamicsConfigC>,
-        Has<TranslationalStateC>,
+        Has<TranslationalStateC<jeod_sim::Earth>>,
         Has<RotationalStateC>,
     )>,
     // Frame-state query needed by `is_root_equivalent_entity` so the
@@ -4718,14 +4738,14 @@ pub fn staging_system(
 /// JEOD_INV: DB.21 — only unattached bodies integrate; detached subtrees
 /// drift ballistically here while the integrator targets the integrated
 /// body.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn step_detached_system(
     time: Res<Time<Fixed>>,
     sim_time: Res<SimulationTimeR>,
     mut detached: Query<(
         Entity,
         &mut crate::DetachedSubtreeStateC,
-        Option<&mut TranslationalStateC>,
+        Option<&mut TranslationalStateC<jeod_sim::Earth>>,
         Option<&mut RotationalStateC>,
     )>,
     body_frames: Query<&FrameEntityC>,

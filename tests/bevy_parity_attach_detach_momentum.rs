@@ -106,7 +106,7 @@ fn step(app: &mut App, n: usize, dt: f64) {
 
 fn read_position(world: &World, entity: Entity) -> DVec3 {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .position
@@ -115,7 +115,7 @@ fn read_position(world: &World, entity: Entity) -> DVec3 {
 
 fn read_velocity(world: &World, entity: Entity) -> DVec3 {
     world
-        .get::<TranslationalStateC>(entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(entity)
         .expect("entity has TranslationalStateC")
         .0
         .velocity
@@ -1072,7 +1072,7 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
     // `RelativeFrameState` returns).
     let child_trans_post = app
         .world()
-        .get::<TranslationalStateC>(child_entity)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
         .expect("child still has TranslationalStateC post-attach")
         .0
         .to_untyped();
@@ -1420,7 +1420,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
                 velocity: DVec3::new(0.0, 7600.0, 0.0),
             });
         let mut child_trans = world
-            .get_mut::<TranslationalStateC>(child_entity)
+            .get_mut::<TranslationalStateC<jeod_sim::Earth>>(child_entity)
             .expect("child still has TranslationalStateC");
         child_trans.0.position =
             jeod_sim::Position::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_raw_si(
@@ -3121,7 +3121,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
     );
     app.world_mut()
         .entity_mut(child_entity)
-        .remove::<TranslationalStateC>();
+        .remove::<TranslationalStateC<jeod_sim::Earth>>();
 
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()

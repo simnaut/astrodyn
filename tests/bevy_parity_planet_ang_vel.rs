@@ -110,7 +110,7 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -141,7 +141,7 @@ fn tier3_bevy_planet_ang_vel_mars_iau() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -168,7 +168,7 @@ fn tier3_bevy_planet_ang_vel_moon_iau() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -221,7 +221,7 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();
@@ -409,7 +409,7 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
 
     let bevy_ang_vel = app
         .world()
-        .get::<PlanetAngularVelocityC>(planet)
+        .get::<PlanetAngularVelocityC<jeod_sim::Earth>>(planet)
         .unwrap()
         .0
         .raw_si();

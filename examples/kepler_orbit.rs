@@ -154,7 +154,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 }
 
 fn print_state(
-    query: Query<(&Name, &TranslationalStateC)>,
+    query: Query<(&Name, &TranslationalStateC<jeod_sim::Earth>)>,
     mut counter: ResMut<StepCounter>,
     max_steps: Res<MaxSteps>,
     mut exit: MessageWriter<AppExit>,

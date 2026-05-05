@@ -119,8 +119,14 @@ pub fn propagate_state_from_root_system(
     // view of the same components — without it Bevy's borrow checker
     // would refuse the conflicting access (`B0001`).
     mut state_qs: ParamSet<(
-        Query<(&RotationalStateC, &TranslationalStateC)>,
-        Query<(&mut RotationalStateC, &mut TranslationalStateC), With<KinematicChildC>>,
+        Query<(&RotationalStateC, &TranslationalStateC<jeod_sim::Earth>)>,
+        Query<
+            (
+                &mut RotationalStateC,
+                &mut TranslationalStateC<jeod_sim::Earth>,
+            ),
+            With<KinematicChildC>,
+        >,
     )>,
 ) {
     // 1. Fast path: no MassChildOf edges → nothing to propagate.
@@ -385,7 +391,10 @@ mod tests {
         app.update();
 
         let child_rot = app.world().get::<RotationalStateC>(child).unwrap();
-        let child_trans = app.world().get::<TranslationalStateC>(child).unwrap();
+        let child_trans = app
+            .world()
+            .get::<TranslationalStateC<jeod_sim::Earth>>(child)
+            .unwrap();
 
         // Expected: T_inertial_body_child = T_pc · T_inertial_body_parent
         let parent_t_ib = parent_q.left_quat_to_transformation();
@@ -517,7 +526,10 @@ mod tests {
         app.update();
 
         let leaf_rot = app.world().get::<RotationalStateC>(leaf).unwrap();
-        let leaf_trans = app.world().get::<TranslationalStateC>(leaf).unwrap();
+        let leaf_trans = app
+            .world()
+            .get::<TranslationalStateC<jeod_sim::Earth>>(leaf)
+            .unwrap();
 
         // T_leaf = T_pc · T_pc (60° about Z).
         let expected_leaf_t = t_pc * t_pc;
@@ -549,7 +561,7 @@ mod tests {
         // Mid is between them — same expectation.
         let mid_pos = app
             .world()
-            .get::<TranslationalStateC>(mid)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(mid)
             .unwrap()
             .0
             .position

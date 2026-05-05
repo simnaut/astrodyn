@@ -179,7 +179,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -305,7 +305,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -422,7 +422,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
@@ -787,7 +787,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     let bevy_state = SixDofState {
         trans: app
             .world()
-            .get::<TranslationalStateC>(vehicle)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(vehicle)
             .unwrap()
             .0
             .to_untyped(),
