@@ -300,6 +300,18 @@ impl Simulation {
         self.bodies[idx].output()
     }
 
+    /// Mass-tree id of the body at index `idx`, or `None` if the body
+    /// was added without a mass-tree registration (e.g. a fixed
+    /// gravity source). Test code that needs to read live mass-tree
+    /// state for assertions on composite mass / parent topology after
+    /// runtime attach/detach uses this to translate the body index it
+    /// holds into the [`MassBodyId`] the [`MassTree`] indexes by.
+    ///
+    /// [`MassTree`]: jeod_dynamics::MassTree
+    pub fn body_mass_id(&self, idx: usize) -> Option<MassBodyId> {
+        self.bodies[idx].mass_body_id
+    }
+
     /// Adjust an integrated body's `trans` from a `core_body` inertial
     /// state to the corresponding `composite_body` inertial state,
     /// using the current mass tree's `core_wrt_composite` offset.

@@ -3446,10 +3446,42 @@ pub fn cannonball_srp_system<P: Planet>(
 ///    `models/dynamics/dyn_body/src/dyn_body_attach.cc`) to derive the
 ///    merged composite-body inertial state — preserves linear momentum
 ///    about the integration-frame origin and angular momentum about
-///    the new combined CoM,
+///    the new combined CoM. When the parent and child resolve to
+///    different integration-frame entities (post root-equivalence
+///    fold), each body's pre-attach state is lifted to root inertial
+///    via its own `IntegOrigin` before the kernel call so the
+///    cross-body composition arithmetic operates on a single inertial
+///    frame, and the merged composite is lowered back through the
+///    parent's integ origin for the writeback,
 /// 4. writes the merged state back into the parent entity's
 ///    [`crate::TranslationalStateC`] / [`crate::RotationalStateC`],
-/// 5. removes [`crate::DetachedSubtreeStateC`] from the child entity if
+/// 5. for the cross-integration-frame case, reparents the child's
+///    body-frame entity (and every kinematic descendant of the child
+///    in the mass tree) under the parent's integ-frame entity via
+///    `commands.entity(...).insert(ChildOf(...))`, mirroring JEOD's
+///    `dyn_body_attach.cc::attach_establish_links` →
+///    `dyn_body_integration.cc::set_integ_frame` recursion. JEOD's
+///    `set_integ_frame` itself "does not update state"
+///    (`dyn_body_integration.cc:85-86`) — JEOD relies on the
+///    immediately-following `propagate_state()` call inside
+///    `attach_update_properties` to refill descendants' parent-relative
+///    storage from the merged root. Our adapter has no equivalent
+///    same-call propagation: the next tick's
+///    [`propagate_state_from_root_system`](crate::propagate_state_from_root_system)
+///    walk runs many systems later, and the
+///    `TranslationalStateC`-is-already-integ-frame-relative contract
+///    (`register_body_frames_system`) would otherwise leave every
+///    descendant's stored numerics inconsistent with the freshly
+///    reparented frame-tree topology for the staging → propagate
+///    window. Each reparented descendant's `TranslationalStateC` and
+///    body-frame `FrameTransC` are therefore shifted in-place by
+///    `(old_integ_origin - new_integ_origin)` (root-inertial
+///    coordinates) during this same staging tick — same physical
+///    pose, just relabeled into the new integration frame's
+///    coordinates. `frame_switch_system` does the symmetric
+///    pair (reparent + state rewrite) for its own distance-triggered
+///    switches; this is the cross-integ-frame attach analogue,
+/// 6. removes [`crate::DetachedSubtreeStateC`] from the child entity if
 ///    it was previously detached (the captured ballistic state is now
 ///    consumed by the combine).
 ///
@@ -3560,6 +3592,24 @@ pub fn staging_system<P: Planet>(
         Option<&mut GaussJacksonStateC>,
         Option<&mut Abm4StateC>,
     )>,
+    // `frame_origin` performs the per-body root-inertial lift required by
+    // the cross-integration-frame attach path. The merge kernel composes
+    // parent and child state through `omega × r` and
+    // `T_inertial_struct.transpose()` shifts — both arithmetic-valid only
+    // when both bodies' translational state lives in the same inertial
+    // frame. The pre-attach states are lifted to root inertial via each
+    // body's `IntegOrigin` (mirrors the runner's `mass_tree::attach_inner`
+    // RF.10 shift site), the kernel runs in root coordinates, and the
+    // merged result is lowered through the parent's `IntegOrigin` for
+    // writeback into `TranslationalStateC`'s integration-frame storage.
+    // The lift is identically zero only for root-integrated bodies; for
+    // any body integrating in a non-root `PlanetInertial<P>` the lift is
+    // non-zero. The same-integ-frame case is a no-op in *physical* terms
+    // (parent and child share an `IntegOrigin`, so the post-lift kernel
+    // arithmetic matches what the pre-lift integ-frame arithmetic would
+    // have produced — the per-body shifts cancel in any inter-body
+    // difference the kernel forms), but `frame_origin` is still consulted
+    // for both bodies in that case rather than short-circuited.
     frame_origin: FrameOrigin,
     root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
@@ -3642,6 +3692,92 @@ pub fn staging_system<P: Planet>(
         // correct value next tick (rather than overwriting the merged
         // state with the stale pre-attach `DetachedSubtreeStateC`).
         parent_was_detached: bool,
+        // Cross-integration-frame attach metadata. `Some` when the
+        // parent and child resolve to different integ-frame entities
+        // (post root-equivalence fold). When set, the merge kernel
+        // is run in root-inertial coordinates: the pre-attach states
+        // are lifted through `parent_integ_origin_pos/vel` and
+        // `child_integ_origin_pos/vel` on input, and the merged
+        // composite is lowered back through the parent's integ
+        // origin on writeback so the parent's `TranslationalStateC`
+        // continues to store integration-frame coordinates. This
+        // mirrors `jeod_runner::Simulation::attach_inner`'s lift /
+        // lower around `combine_states_at_attach`. JEOD source
+        // reference: `dyn_body_attach.cc::attach_establish_links` →
+        // `dyn_body_integration.cc::set_integ_frame`.
+        cross_integ: Option<CrossIntegFrameWork>,
+    }
+
+    // Cross-integration-frame attach metadata. Captured before the
+    // mass tree is mutated so the integ-origin lifts at the kernel
+    // boundary observe the *pre-attach* origins (the post-attach root
+    // is the parent's root, so the lower step uses the parent's
+    // origin, but the seed-time lifts use the per-body pre-attach
+    // origins).
+    struct CrossIntegFrameWork {
+        // Parent's integ-frame entity position + velocity in
+        // root-inertial coordinates. Zero when the parent is integrated
+        // in root (the body-frame entity is `ChildOf(root)`); for any
+        // body integrating in `PlanetInertial<P>` the shift is the only
+        // thing that keeps the per-descendant numerical-rewrite below
+        // from silently mixing coordinates across distinct integration
+        // frames. RF.10 shift site, mirrors `mass_tree::attach_inner`'s
+        // `body_integ_origins`-based shift. The seed-time root-inertial
+        // lift consumed by `stage_attach_combine` is performed up-front
+        // at `AttachWork` construction (parent_position_integ +
+        // parent_integ_origin_pos), so the kernel-input lift uses the
+        // `AttachWork` field directly and these fields are needed only
+        // for the descendant numerical-rewrite step below.
+        parent_integ_origin_pos: glam::DVec3,
+        parent_integ_origin_vel: glam::DVec3,
+        // The new integ-frame entity for the child + every kinematic
+        // descendant of the child in the mass tree. Per JEOD's
+        // `dyn_body_integration.cc::set_integ_frame` (lines 64-117)
+        // this reparent recurses into `dyn_children` so all
+        // descendants follow the child onto the parent's integ frame.
+        // The corresponding Bevy `commands.entity(...).insert(ChildOf(...))`
+        // calls are issued by the writeback loop after the kernel
+        // runs, so the deferred-Commands flush sees a consistent
+        // post-merge frame tree.
+        new_parent_frame_entity: Entity,
+        // Per-entity reparent work: the body-frame entity to reparent
+        // under `new_parent_frame_entity`, the owning body entity, and
+        // the body's pre-attach integ-frame origin in root-inertial
+        // coordinates. Resolved before the kernel call so the reparent
+        // (and the matching numerical rewrite of `TranslationalStateC`
+        // / `FrameTransC`, see writeback loop below) can be issued as a
+        // single batch alongside the merged-state writeback. Includes
+        // the child plus every mass-tree descendant of the child that
+        // has a registered `FrameEntityC` (mass-only descendants
+        // without a frame node are skipped — they have no frame-tree
+        // node to reparent and no `TranslationalStateC` consumer
+        // inside the staging→propagate window to corrupt).
+        reparent_entries: Vec<CrossIntegReparentEntry>,
+    }
+
+    // Per-entity payload for the cross-integ-frame reparent loop.
+    // Each entry pairs a body-frame entity with its owning body entity
+    // plus the pre-attach integ-frame origin in root-inertial
+    // coordinates, enough to numerically rewrite the body's
+    // `TranslationalStateC` (and the body-frame entity's
+    // `FrameTransC`) so the stored coordinates remain consistent with
+    // the frame-tree's interpretation after the reparent (per
+    // `register_body_frames_system`'s docstring: the body's
+    // `TranslationalStateC` is interpreted as already in integ-frame
+    // coordinates, where "integ frame" is the body-frame entity's
+    // current `ChildOf` parent). Without this rewrite, consumers
+    // running between `staging_system` and the next
+    // `propagate_state_from_root_system` (the entire `Interaction`
+    // set: `aero_drag_system`, `gravity_torque_system`, the SRP
+    // systems, plus `force_collection_system`) read the body's
+    // pre-attach numerical state through the post-attach frame-tree
+    // topology and silently mix coordinates across distinct integ
+    // frames.
+    struct CrossIntegReparentEntry {
+        body_entity: Entity,
+        body_frame_entity: Entity,
+        old_integ_origin_pos: glam::DVec3,
+        old_integ_origin_vel: glam::DVec3,
     }
 
     let mut attach_work: Vec<AttachWork> = Vec::new();
@@ -3657,6 +3793,21 @@ pub fn staging_system<P: Planet>(
     // a batch of attaches doesn't pay the rebuild cost N times.
     let known_source_frames: std::collections::HashSet<Entity> =
         source_frames.iter().map(|fe| fe.0).collect();
+
+    // One-shot mass-body-id → entity map built from a single pass over
+    // the `bodies` query. The cross-integ-frame attach branch
+    // (descendant subtree walk) and the detach handler both need
+    // id-keyed entity lookups; without a shared map each event would
+    // re-scan `bodies` once per descendant, giving an `O(subtree_size
+    // × body_count)` cost per attach and an `O(body_count)` cost per
+    // detach inside the per-event loops. Building the map once amortizes
+    // both into a single `O(body_count)` scan plus `O(1)` membership
+    // tests, matching the runner's `id_to_entity`-style indexed
+    // lookups.
+    let id_to_entity: std::collections::HashMap<jeod_sim::MassBodyId, Entity> = bodies
+        .iter()
+        .map(|(e, body_id, _, _, _)| (body_id.0, e))
+        .collect();
 
     for evt in attach_events.read() {
         // Look up child + parent. Fail-loud per CLAUDE.md if either
@@ -4019,6 +4170,13 @@ pub fn staging_system<P: Planet>(
             }
         }
 
+        // Cross-integration-frame attach metadata, computed below
+        // when both bodies resolved frame entities and the post-fold
+        // parents differ. Stays `None` for the same-integ-frame case
+        // (the common one) so the writeback loop bypasses the lift /
+        // lower / reparent code paths bit-identically.
+        let mut cross_integ: Option<CrossIntegFrameWork> = None;
+
         if let (Some(parent_orig), Some(child_orig)) = (parent_orig, child_orig) {
             // Step 2: legality is decided against the *original*
             // parent — never the root-equivalent fold. An arbitrary
@@ -4085,22 +4243,199 @@ pub fn staging_system<P: Planet>(
                 let parent_frame = fold_root_equivalent(parent_orig);
                 let child_frame = fold_root_equivalent(child_orig);
 
-                assert!(
-                    parent_frame == child_frame,
-                    "AttachEvent: parent {:?} and child {:?} live in different integration frames \
-                     (parent integ-frame entity {:?}; child integ-frame entity {:?}). \
-                     Cross-integration-frame attach is not yet supported — the child's frame \
-                     entity must be reparented under the parent's integ frame (matching JEOD's \
-                     `set_integ_frame` reparent-and-reset-integrators behaviour) before the \
-                     merge proceeds. Either align the two bodies' integ frames (e.g. fire a \
-                     frame switch on the child first, or align their IntegSourceC at spawn) \
-                     before firing the AttachEvent, or wait for the planned frame-entity \
-                     reparent implementation.",
-                    evt.parent,
-                    evt.child,
-                    parent_frame,
-                    child_frame,
-                );
+                if parent_frame != child_frame {
+                    // Cross-integration-frame attach. Mirrors JEOD's
+                    // `dyn_body_attach.cc::attach_establish_links`
+                    // calling `set_integ_frame(*(dyn_parent->get_integ_frame()))`
+                    // when the child's integ frame differs from the
+                    // parent's. The merged body will integrate in the
+                    // parent's frame post-attach — the runner's
+                    // `mass_tree::attach_inner` keeps the same
+                    // post-attach invariant (the merged composite is
+                    // written back into the integrated tree root).
+                    //
+                    // Compute each body's pre-attach integ-frame
+                    // origin in root-inertial coordinates. The lift
+                    // is identically zero for any body whose folded
+                    // integ frame is root (`parent_frame == root_e` /
+                    // `child_frame == root_e`), so for the asymmetric
+                    // case "parent in root + child in
+                    // PlanetInertial<P>" only the child carries a
+                    // non-zero shift; for the symmetric case "parent
+                    // in PlanetInertial<P> + child in PlanetInertial<Q>"
+                    // both lifts are non-zero and distinct. Note that
+                    // `parent_frame`/`child_frame` are the *folded*
+                    // values (root-equivalent topology mapped onto
+                    // `root_e`); the unfolded `parent_orig` /
+                    // `child_orig` may name a registered source frame
+                    // that is itself root-equivalent.
+                    let resolve_integ_origin = |frame: Entity| -> (glam::DVec3, glam::DVec3) {
+                        if frame == root_e {
+                            (glam::DVec3::ZERO, glam::DVec3::ZERO)
+                        } else {
+                            let (p, v) = frame_origin.origin_in_root(root_e, frame);
+                            (p.raw_si(), v.raw_si())
+                        }
+                    };
+                    let (parent_integ_origin_pos, parent_integ_origin_vel) =
+                        resolve_integ_origin(parent_frame);
+
+                    // Walk the child's mass-tree subtree (inclusive)
+                    // and resolve a body-frame entity for each
+                    // descendant. Mirrors JEOD's `set_integ_frame`
+                    // recursing into `dyn_children`. Mass-only
+                    // descendants (no `FrameEntityC`) are skipped —
+                    // they have no frame-tree node to reparent.
+                    //
+                    // The walk uses the *pre-attach* mass tree: the
+                    // child has not been linked to the parent yet, so
+                    // walking from `child_id` collects the original
+                    // child subtree (i.e. every body that was a
+                    // descendant of the child before the attach
+                    // mutation).
+                    //
+                    // Per descendant we also capture the body's old
+                    // integ-frame origin in root-inertial coordinates
+                    // (the body-frame entity's current `ChildOf`
+                    // parent's frame state). The numerical rewrite at
+                    // the reparent site uses this to shift the body's
+                    // stored `TranslationalStateC` from old-frame to
+                    // new-frame coordinates without arithmetically
+                    // mixing the two; without it, consumers in the
+                    // staging → propagate window read pre-attach
+                    // numerics through post-attach topology.
+                    let mut reparent_entries: Vec<CrossIntegReparentEntry> = Vec::new();
+                    let mut subtree: Vec<jeod_sim::MassBodyId> = vec![child_id];
+                    let mut idx = 0;
+                    while idx < subtree.len() {
+                        let id = subtree[idx];
+                        for child in tree.children(id) {
+                            subtree.push(*child);
+                        }
+                        idx += 1;
+                    }
+                    for id in subtree {
+                        // O(1) id → entity lookup via the shared map
+                        // built once at the top of `staging_system`,
+                        // mirroring the runner's `id_to_entity`. A
+                        // linear `bodies.iter()` scan per id would be
+                        // O(subtree_size × body_count) per attach.
+                        if let Some(&entity) = id_to_entity.get(&id) {
+                            // A descendant can legitimately lack a
+                            // body-frame entity *only* when it is a
+                            // pure mass-only node — i.e. it has no
+                            // `DynamicsConfigC` / `TranslationalStateC`
+                            // and therefore no integ-frame
+                            // interpretation to keep in sync with the
+                            // post-attach topology. A descendant that
+                            // *does* carry those components but is
+                            // missing `FrameEntityC` is the same
+                            // registration-race state we already
+                            // fail-loud on for the attach participants
+                            // (lines above, mirroring
+                            // `attach_validate_child`). Skipping it
+                            // would silently leave that body's stored
+                            // `TranslationalStateC` interpreted under
+                            // the pre-attach integ frame for every
+                            // staging→propagate consumer in the same
+                            // tick, so surface the misconfiguration
+                            // here rather than letting the stale
+                            // numerics propagate.
+                            let fe = body_frames.get(entity).ok();
+                            let body_frame_entity = match fe {
+                                Some(fe) => fe.0,
+                                None => {
+                                    let (has_dyn_cfg, has_trans, _has_rot) =
+                                        eligibility.get(entity).unwrap_or((false, false, false));
+                                    assert!(
+                                        !(has_dyn_cfg && has_trans),
+                                        "staging_system: cross-integ-frame attach: \
+                                         descendant body {entity:?} carries DynamicsConfigC \
+                                         and TranslationalStateC (dynamic body) but has no \
+                                         FrameEntityC — registration race vs \
+                                         register_body_frames_system. The cross-integ-frame \
+                                         reparent would otherwise leave this descendant's \
+                                         stored TranslationalStateC interpreted under the \
+                                         pre-attach integ frame while every other body in \
+                                         the subtree gets shifted into the new frame, \
+                                         silently mixing coordinates across distinct \
+                                         integration frames. Spawn the body with a \
+                                         registered IntegSourceC (or under the root frame) \
+                                         and ensure register_body_frames_system has run \
+                                         before firing the AttachEvent."
+                                    );
+                                    continue;
+                                }
+                            };
+                            // Resolve this descendant's pre-attach
+                            // integ-frame origin from its
+                            // body-frame entity's current `ChildOf`
+                            // parent (the live integ-frame source
+                            // of truth, same fold rule used above
+                            // for the child/parent equality check).
+                            let descendant_integ_frame = parents
+                                .get(body_frame_entity)
+                                .unwrap_or_else(|err| {
+                                    panic!(
+                                        "staging_system: cross-integ-frame attach: \
+                                         descendant body {entity:?} body-frame entity \
+                                         {body_frame_entity:?} has no ChildOf parent \
+                                         ({err:?}). Every body-frame entity must be \
+                                         parented under its integration frame entity \
+                                         (set by register_body_frames_system)."
+                                    )
+                                })
+                                .parent();
+                            let descendant_integ_frame_folded =
+                                if crate::validation::is_root_equivalent_entity(
+                                    descendant_integ_frame,
+                                    root_e,
+                                    &parents,
+                                    &frame_states,
+                                ) {
+                                    root_e
+                                } else {
+                                    descendant_integ_frame
+                                };
+                            let (old_pos, old_vel) = if descendant_integ_frame_folded == root_e {
+                                (glam::DVec3::ZERO, glam::DVec3::ZERO)
+                            } else {
+                                let (p, v) =
+                                    frame_origin.origin_in_root(root_e, descendant_integ_frame);
+                                (p.raw_si(), v.raw_si())
+                            };
+                            reparent_entries.push(CrossIntegReparentEntry {
+                                body_entity: entity,
+                                body_frame_entity,
+                                old_integ_origin_pos: old_pos,
+                                old_integ_origin_vel: old_vel,
+                            });
+                        }
+                    }
+
+                    // Resolve the new parent frame entity: in the
+                    // root-equivalent case (parent's integ-frame
+                    // entity folded onto `root_e` for the equality
+                    // check above), the actual reparent target must
+                    // be the *unfolded* parent frame entity — the
+                    // child's body-frame entity becomes
+                    // `ChildOf(parent_orig)`, mirroring exactly what
+                    // `register_body_frames_system` would have done
+                    // for a body spawned with the parent's
+                    // `IntegSourceC`. Reparenting onto the folded
+                    // root entity directly would bypass the central
+                    // body's frame entity and silently break any
+                    // consumer that walks the body's `ChildOf` chain
+                    // expecting a registered source.
+                    let new_parent_frame_entity = parent_orig;
+
+                    cross_integ = Some(CrossIntegFrameWork {
+                        parent_integ_origin_pos,
+                        parent_integ_origin_vel,
+                        new_parent_frame_entity,
+                        reparent_entries,
+                    });
+                }
             }
         }
 
@@ -4196,6 +4531,7 @@ pub fn staging_system<P: Planet>(
             parent_integ_origin_vel,
             child_was_detached,
             parent_was_detached,
+            cross_integ,
         });
 
         // `tree.attach` takes raw structural-frame DVec3; drop the
@@ -4222,15 +4558,9 @@ pub fn staging_system<P: Planet>(
     }
     let mut parent_shifts: Vec<(jeod_sim::MassBodyId, ParentShift)> = Vec::new();
 
-    // Build a one-shot id → entity map by scanning the bodies query.
-    // The detach handler needs to look up the tree root's entity from
-    // its `MassBodyId` so it can read the parent's composite-body
-    // inertial state — runner's `detach_subtree` indexes
-    // `self.bodies` directly; ECS-side we reconstruct the mapping.
-    let id_to_entity: std::collections::HashMap<jeod_sim::MassBodyId, Entity> = bodies
-        .iter()
-        .map(|(e, body_id, _, _, _)| (body_id.0, e))
-        .collect();
+    // The mass-body-id → entity map built at the top of this system
+    // (above the attach loop) is reused here. Mirrors the runner's
+    // `detach_subtree` which indexes `self.bodies` by id directly.
 
     for evt in detach_events.read() {
         let (_, child_body_id, _, _, _) = bodies.get(evt.child).unwrap_or_else(|_| {
@@ -4493,16 +4823,43 @@ pub fn staging_system<P: Planet>(
     //
     // JEOD_INV: DB.13 — state propagation across attached subtrees: only the
     // root carries the integrated composite-body state; child sub-trees ride
-    // it via the MassChildOf / mass-tree composition (not yet propagated
-    // through derived frames; see #198 frame-attached body integration).
-    // JEOD_INV: DB.14 — integration-frame switch on attach: the combined
-    // body integrates in the parent's frame; here we update the parent's
-    // composite_body state; frame-side switching belongs to #280.
+    // it via the MassChildOf / mass-tree composition.
+    // JEOD_INV: DB.14 — integration-frame switch on attach: when the
+    // child's pre-attach integ frame differs from the parent's, the
+    // child's body-frame entity (and every kinematic descendant) is
+    // reparented under the parent's integ-frame entity here, mirroring
+    // JEOD's `dyn_body_attach.cc::attach_establish_links` calling
+    // `set_integ_frame(*(dyn_parent->get_integ_frame()))` and the
+    // recursive `dyn_body_integration.cc::set_integ_frame` walk over
+    // `core_body`/`composite_body`/`structure` + `dyn_children`. The
+    // integrator-state reset (JEOD's `reset_integrators()`) is handled
+    // independently below via the `affected_ids` IG.37 walk.
     // JEOD_INV: DB.21 — only unattached bodies integrate: after attach the
     // detached-subtree-state is removed from the child so it stops drifting
     // ballistically; the integrated body's state is the merged composite.
+    // JEOD_INV: RF.10 — cross-integration-frame attach is a kernel-input
+    // shift site. The combine kernel does cross-body composition
+    // (`omega × r`, `T_inertial_struct.transpose()`) which is only
+    // arithmetic-valid when both bodies' state lives in the same
+    // inertial frame. Lift each body to root inertial via its
+    // pre-attach integ origin on input, then lower the merged
+    // composite back through the parent's integ origin on writeback so
+    // the parent's `TranslationalStateC` continues to hold
+    // integration-frame coordinates. Mirrors
+    // `jeod_runner::Simulation::attach_inner`. For the same-integ-frame
+    // case both lifts are identically zero so the kernel call and
+    // writeback collapse to the previous bit-identical behaviour.
     for work in &attach_work {
         let combined_mass = tree.get(work.parent_id).composite_properties;
+
+        // The kernel runs in root-inertial coordinates: `work.parent_position`
+        // and `work.child_position` were already lifted from each body's
+        // pre-attach integration frame through its own `IntegOrigin` at the
+        // construction site above (`parent_position_integ +
+        // parent_integ_origin_pos`). For root-integrated bodies the lift is
+        // identically zero and the kernel input collapses bit-identically to
+        // the integ-frame value. Mirrors `jeod_runner::Simulation::attach`'s
+        // seed-time lift through `body_integ_origins`.
         let merged = jeod_sim::stage_attach_combine(jeod_sim::StageAttachInputs {
             parent_position: work.parent_position,
             parent_velocity: work.parent_velocity,
@@ -4518,6 +4875,18 @@ pub fn staging_system<P: Planet>(
             child_mass: work.child_mass,
             combined_mass,
         });
+
+        // Lower the merged composite through the parent's integ
+        // origin so the writeback into `TranslationalStateC` lands in
+        // the parent's integration-frame coordinates. The parent's
+        // integ frame is the new integ frame for the merged body — in
+        // the runner this corresponds to writing the merged composite
+        // back into the integrated tree root's `body.trans` (the
+        // parent IS the tree root post-attach). For the
+        // same-integ-frame case `parent_integ_origin_pos/vel` are
+        // zero and the subtraction is bit-identically a no-op.
+        let merged_position = merged.position - work.parent_integ_origin_pos;
+        let merged_velocity = merged.velocity - work.parent_integ_origin_vel;
 
         if let Ok((_, _, _, mut trans, mut rot)) = bodies.get_mut(work.parent_entity) {
             if let Some(ref mut t) = trans {
@@ -4542,8 +4911,8 @@ pub fn staging_system<P: Planet>(
                     // From<TranslationalState> impl on TranslationalStateC.
                     jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<P>>::from_untyped_unchecked(
                         &jeod_sim::TranslationalState {
-                            position: merged.position - work.parent_integ_origin_pos,
-                            velocity: merged.velocity - work.parent_integ_origin_vel,
+                            position: merged_position,
+                            velocity: merged_velocity,
                         },
                     );
             }
@@ -4561,6 +4930,188 @@ pub fn staging_system<P: Planet>(
                         ang_vel_body: merged.ang_vel_body,
                     },
                 );
+            }
+        }
+
+        // Reparent the child's body-frame entity (and every kinematic
+        // descendant of the child in the mass tree) under the
+        // parent's integ-frame entity, AND numerically rewrite the
+        // body's stored translational state into the new
+        // integ-frame's coordinates so the staged values stay
+        // consistent with the frame-tree's post-reparent
+        // interpretation. Mirrors JEOD's
+        // `dyn_body_integration.cc::set_integ_frame` recursion over
+        // `core_body`/`composite_body`/`structure` + `dyn_children`.
+        //
+        // Why both steps run together: per
+        // `register_body_frames_system`'s docstring the body's
+        // `TranslationalStateC` is interpreted as already in
+        // integ-frame coordinates, where "integ frame" is the
+        // body-frame entity's current `ChildOf` parent. After the
+        // reparent the body-frame entity's parent has changed, so
+        // the stored numerical value must be shifted by
+        // `(old_integ_origin - new_integ_origin)` (root-inertial
+        // coordinates) to keep this contract. Skipping the rewrite
+        // would let consumers running between this system and the
+        // next `propagate_state_from_root_system` (the entire
+        // `JeodSet::Interaction` set — `aero_drag_system`,
+        // `gravity_torque_system`, the SRP systems — plus
+        // `force_collection_system` at the top of
+        // `JeodSet::ForceCollection`) read pre-attach numerics
+        // through post-attach topology and silently mix coordinates
+        // across distinct integ frames. `frame_switch_system` does
+        // the symmetric pair (reparent + state rewrite) for its own
+        // distance-triggered frame transitions; this is the
+        // cross-integ-frame attach analogue.
+        //
+        // The reparent itself is issued through deferred Commands so
+        // the post-merge frame tree is consistent on the next system
+        // flush. The matching `FrameTransC` rewrite goes through
+        // `Commands::insert` in the same call so both land on the
+        // same flush boundary. The body's `TranslationalStateC`
+        // rewrite goes through the existing `&mut TranslationalStateC`
+        // borrow on the `bodies` query — taking it from a fresh
+        // `bodies.get_mut(...)` lookup keyed on the descendant's
+        // body entity. After this same-tick rewrite,
+        // `propagate_state_from_root_system` (later this tick) will
+        // re-derive every kinematic child's `TranslationalStateC` /
+        // `RotationalStateC` from the parent's freshly-merged
+        // composite-body state composed through the `MassChildOf`
+        // link, overwriting the staged value. The intermediate
+        // rewrite is what keeps the staging → propagate window
+        // arithmetic-correct.
+        //
+        // Rotational state is intentionally NOT rewritten here:
+        // every legitimate integ-frame entity is non-rotating (root
+        // inertial or `PlanetInertial<P>` — both are inertial and
+        // co-aligned with root inertial axes by the frame-tree's
+        // construction), so the body's attitude expressed
+        // `parent → body` is identical in the old and new integ
+        // frames. A rotating integ frame would require an
+        // attitude/`ang_vel` rewrite analogous to the position /
+        // velocity rewrite below; that case is structurally rejected
+        // upstream by the cross-integ-frame fence (every legal
+        // integ-frame entity is the root or a registered gravity
+        // source, none of which are rotating).
+        // JEOD_INV: DB.14, JEOD_INV: RF.10, JEOD_INV: RF.11 — child
+        // frame-tree reparent following the integ-frame switch +
+        // matching numerical state rewrite.
+        if let Some(ci) = work.cross_integ.as_ref() {
+            for entry in &ci.reparent_entries {
+                let shift_pos = entry.old_integ_origin_pos - ci.parent_integ_origin_pos;
+                let shift_vel = entry.old_integ_origin_vel - ci.parent_integ_origin_vel;
+
+                // Reparent the body-frame entity and rewrite its
+                // `FrameTransC` into the new parent frame's
+                // coordinates in the same Commands batch so the
+                // post-flush frame tree is internally consistent
+                // (the stored `position`/`velocity` are
+                // `parent-frame-relative` per `FrameTransC`'s
+                // docstring; switching the parent without rewriting
+                // the stored value would produce a discontinuity
+                // exactly equal to `(old_origin - new_origin)` on
+                // any frame-tree walk that goes through this entity).
+                //
+                // The `FrameTransC` write here is load-bearing for
+                // the staging → integration window: `staging_system`
+                // is ordered `.after(JeodSet::Environment).before(
+                // JeodSet::Interaction)`, so within the attach tick
+                // every consumer that reads frame state via
+                // `RelativeFrameState` *after* staging — the
+                // `JeodSet::Interaction` set (drag, SRP,
+                // gravity-torque), `force_collection_system` /
+                // `wrench_aggregation_system` in
+                // `JeodSet::ForceCollection`, and `integration_system`
+                // in `JeodSet::Integration` — sees this value.
+                // `JeodSet::Environment` already ran for this tick
+                // and operated on pre-attach `FrameTransC`; the
+                // attach physics applies starting at the next
+                // Environment pass (tick N+1). After integration,
+                // `sync_body_to_frame_system` overwrites
+                // `FrameTransC` from the freshly-updated
+                // `TranslationalStateC`, so the late-tick value is
+                // re-derived. Both writes carry the same physical
+                // pose (the staging-time value comes from the
+                // already-rewritten pre-integration state; the
+                // post-integration value comes from the integrated
+                // state), so the apparent "double write" produces a
+                // single consistent trajectory. The Commands /
+                // immediate-mutation split is dictated by
+                // `frame_states` / `FrameOrigin` already holding a
+                // shared read borrow on `FrameTransC`; making the
+                // write immediate would require a `ParamSet` split
+                // that doesn't pay back its complexity. Bevy 0.18's
+                // `auto_insert_apply_deferred` (default-on) flushes
+                // this `Commands` batch at the
+                // `staging_system → JeodSet::Interaction` set
+                // boundary, given `staging_system.before(
+                // JeodSet::Interaction)`, so the deferred write is
+                // observed by every post-staging consumer above
+                // without a manual `ApplyDeferred`.
+                let new_frame_trans_pos = frame_states.get(entry.body_frame_entity).map_or_else(
+                    |_| {
+                        // Defensive default: a body-frame entity
+                        // without `FrameTransC` cannot exist in
+                        // production (`register_body_frames_system`
+                        // always inserts the triplet), but the
+                        // query type signature still returns a
+                        // `Result`. Falling back to identity here
+                        // would corrupt the post-reparent state
+                        // for any consumer that finds the entity;
+                        // surface the misconfiguration loudly
+                        // instead. Mirrors `sync_body_to_frame_system`'s
+                        // unwrap_or_else panic for the same
+                        // FrameTransC invariant.
+                        panic!(
+                            "staging_system: cross-integ-frame attach: body-frame \
+                                 entity {fe:?} has no FrameTransC. Every body-frame \
+                                 entity must be alive with FrameTransC attached \
+                                 (spawned by register_body_frames_system).",
+                            fe = entry.body_frame_entity,
+                        )
+                    },
+                    |(t, _, _)| FrameTransC {
+                        position: t.position + shift_pos,
+                        velocity: t.velocity + shift_vel,
+                    },
+                );
+                commands
+                    .entity(entry.body_frame_entity)
+                    .insert(ChildOf(ci.new_parent_frame_entity))
+                    .insert(new_frame_trans_pos);
+
+                // Rewrite the body's `TranslationalStateC` so the
+                // typed integ-frame storage holds the new-frame
+                // coordinates. Skips the parent's body entity — the
+                // parent's `TranslationalStateC` was already written
+                // above with the merged composite in
+                // `parent_integ_origin`-relative coordinates, and
+                // adding the shift again here would double-count it.
+                // (The parent itself is never in `reparent_entries`
+                // — that list is the *child's* subtree, the parent's
+                // body-frame entity is the reparent *target*, not a
+                // payload.)
+                if let Ok((_, _, _, Some(mut t), _)) = bodies.get_mut(entry.body_entity) {
+                    let old = t.0.to_untyped();
+                    t.0 =
+                        // allowed: cross-integ-frame numerical rewrite
+                        // boundary; same typed↔untyped re-wrap pattern
+                        // as the merged-composite writeback above.
+                        // The shift is a pure translation between two
+                        // inertial integ frames (planet-inertial
+                        // origins differ but axes are co-aligned), so
+                        // the post-shift value is still in
+                        // integration-frame coordinates with the
+                        // `<PlanetInertial<SelfPlanet>>` wildcard tag
+                        // — bit-identical phantom relabel to the
+                        // original storage type.
+                        jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                            &jeod_sim::TranslationalState {
+                                position: old.position + shift_pos,
+                                velocity: old.velocity + shift_vel,
+                            },
+                        );
+                }
             }
         }
 
