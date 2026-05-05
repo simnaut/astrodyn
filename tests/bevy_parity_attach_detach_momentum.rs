@@ -1443,6 +1443,285 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
     );
 }
 
+/// **Cross-integ-frame attach: child's stored coordinates land in
+/// the new integ frame within the staging tick.**
+///
+/// `register_body_frames_system`'s docstring fixes the storage
+/// contract: a body's `TranslationalStateC` is interpreted as already
+/// in integ-frame coordinates, where "integ frame" is the body-frame
+/// entity's current `ChildOf` parent. The cross-integ-frame attach
+/// branch in `staging_system` reparents the child's body-frame
+/// entity under the parent's integ-frame entity — that flips the
+/// "integ frame" interpretation from old to new — so the stored
+/// numerics must shift by `(old_origin - new_origin)` in
+/// root-inertial coordinates to remain consistent. Without that
+/// shift, every consumer that reads the child's stored state
+/// between `staging_system` and the next
+/// `propagate_state_from_root_system` (the entire `Interaction` set
+/// — drag, gravity-torque, SRP — plus `force_collection_system` at
+/// the top of `ForceCollection`) reads pre-attach numerics through
+/// post-attach topology and silently mixes coordinates across
+/// distinct integration frames.
+///
+/// This test pins that the rewrite happens by reading the child's
+/// stored state through TWO independent channels after a single
+/// step that drains the attach event:
+///
+/// * **`TranslationalStateC` as integ-frame coords**: with
+///   `RootFrameEntityR` placed under source A's integ frame,
+///   `child.position + source_a_origin == merged_root_position +
+///   link_offset_in_root` post-step. A regression that skipped the
+///   numerical rewrite would produce
+///   `child.position + source_a_origin == old_root_position +
+///   link_offset_in_root - (source_a - source_b)` ≠ the merged
+///   value, off by `~|source_a - source_b|` ≈ 2.5e8 m, four orders of
+///   magnitude wider than the propagation tolerance below.
+///
+/// * **`FrameTransC` on the child's body-frame entity**: the
+///   reparent + state rewrite go through the same `Commands::insert`
+///   batch in `staging_system`, so post-flush
+///   `FrameTransC.position` reflects the child's pre-attach state
+///   shifted into the new parent frame's coordinates. The frame
+///   tree's `RelativeFrameState` walk reads `FrameTransC` directly,
+///   so the child's `RelativeFrameState::position(root,
+///   child_frame_entity)` must equal the absolute root-inertial
+///   position of the child's body. The same regression would put
+///   the child's body-frame `FrameTransC` at its pre-attach value
+///   in the wrong parent's coordinates, producing the same large
+///   discrepancy under the walk.
+///
+/// The test deliberately uses sources with non-zero, distinct
+/// inertial positions — both shifts are large and asymmetric, so
+/// the regression scale dominates any f64-rounding noise.
+#[test]
+fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
+    let parent_mass = MassProperties::with_inertia(
+        1000.0,
+        DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        500.0,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(0.0, 7e6, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7600.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let mu = 3.986004415e14_f64;
+    let source_a_pos = DVec3::new(1.0e8, 0.0, 0.0);
+    let source_b_pos = DVec3::new(0.0, 2.5e8, 0.0);
+    let source_a = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceA"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_a_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_a_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+    let source_b = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceB"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_b_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_b_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source_a)),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(Some(source_b)),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // The child's pre-attach absolute root-inertial position. The
+    // attach event itself is a topology change at a frozen instant
+    // — the child's physical location in space does not move when
+    // the integ-frame interpretation flips from source B to source
+    // A. So the post-attach root-inertial position of the child's
+    // body is its pre-attach absolute value, plus at most one
+    // tick's velocity drift from the integrator advancing the
+    // (merged) parent under no-force kinematics. The staging-time
+    // rewrite must produce stored coords whose interpretation
+    // through the new integ frame round-trips to this same
+    // root-inertial value.
+    let child_pre_attach_root_position = child_trans.position + source_b_pos;
+    let child_pre_attach_root_velocity = child_trans.velocity;
+
+    // Fire the cross-integ-frame attach.
+    let offset = DVec3::ZERO;
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // ── Channel 1: child's TranslationalStateC, interpreted as
+    //    new-integ-frame-relative per `register_body_frames_system`. ──
+    //
+    // Root-inertial absolute position = `stored + new_integ_origin`.
+    // After the staging-time rewrite, the stored value is the
+    // pre-attach value shifted by `(old_origin - new_origin)`, so
+    // this round-trips to the child's pre-attach absolute root
+    // position. On the SAME tick as the attach, the wrench system
+    // hasn't yet inserted `KinematicChildC` (it runs *after* the
+    // first propagate pass), so propagate skips the marker-gated
+    // writeback and the child's `TranslationalStateC` keeps the
+    // staging-time-rewritten value through the rest of the tick.
+    // A regression that skipped the staging-time rewrite would
+    // leave `stored == old-frame value`, so reading via
+    // `stored + new_origin` would land at
+    // `old-frame value + new_origin = pre-attach absolute -
+    // (old_origin - new_origin)` — off by ~|source_a - source_b|
+    // ≈ 2.7e8 m, four orders larger than the f64-rounding
+    // tolerance below.
+    let child_post_position_in_new_frame = read_position(app.world(), child_entity);
+    let child_abs_position = child_post_position_in_new_frame + source_a_pos;
+    let pos_err_root = (child_abs_position - child_pre_attach_root_position).length();
+    assert!(
+        pos_err_root < 1e-6,
+        "post-attach child position (interpreted as new-integ-frame coords): got root \
+         absolute {child_abs_position:?} vs expected {expected:?}. A regression that skipped \
+         the staging-time numerical rewrite would land off by ~{regression_scale:.3e} m.",
+        expected = child_pre_attach_root_position,
+        regression_scale = (source_a_pos - source_b_pos).length(),
+    );
+
+    let child_post_velocity_in_new_frame = read_velocity(app.world(), child_entity);
+    let vel_err_root = (child_post_velocity_in_new_frame - child_pre_attach_root_velocity).length();
+    assert!(
+        vel_err_root < 1e-9,
+        "post-attach child velocity (interpreted as new-integ-frame coords, both source \
+         frames stationary so the lift contributes zero velocity offset): got \
+         {child_post_velocity_in_new_frame:?} vs expected {expected:?}. A regression that \
+         skipped the staging-time rewrite would leave the velocity in the old frame's \
+         numerical convention.",
+        expected = child_pre_attach_root_velocity,
+    );
+
+    // ── Channel 2: child's body-frame entity FrameTransC under
+    //    the new parent (the reparent target). Read via
+    //    `RelativeFrameState::position(root, child_frame_entity)`
+    //    so the walk goes through the post-reparent topology. ──
+    //
+    // This consumer doesn't use `TranslationalStateC` at all; it
+    // walks the frame tree directly. Without the staging-time
+    // `FrameTransC` rewrite the child's frame entity would still
+    // hold its pre-attach value (in source B's coordinates) but
+    // be parented under source A's frame entity, producing a
+    // discontinuity ≈ |source_a - source_b| in the absolute
+    // position. After the rewrite, the FrameTransC has been
+    // shifted into source A's coordinates so the walk reproduces
+    // the post-step body position. `sync_body_to_frame_system`
+    // (in `Integration`, after staging) re-syncs `FrameTransC`
+    // from the (still-rewritten) `TranslationalStateC` later in
+    // the same tick, so the round-trip stays consistent.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    let child_abs_via_walk = app
+        .world_mut()
+        .run_system_cached_with(
+            move |In((root, frame)): In<(Entity, Entity)>, rel: RelativeFrameState| {
+                rel.position(root, frame)
+            },
+            (root_e, child_frame_entity),
+        )
+        .expect("RelativeFrameState position lookup");
+    let walk_err = (child_abs_via_walk - child_pre_attach_root_position).length();
+    assert!(
+        walk_err < 1e-6,
+        "post-attach child absolute position via RelativeFrameState walk: got \
+         {child_abs_via_walk:?} vs expected {expected:?}. A regression that skipped the \
+         staging-time FrameTransC rewrite would walk through a ChildOf-mismatched \
+         FrameTransC, off by ~{regression_scale:.3e} m.",
+        expected = child_pre_attach_root_position,
+        regression_scale = (source_a_pos - source_b_pos).length(),
+    );
+
+    // Sanity: the body-frame entity is structurally under the new
+    // parent (the actual cross-integ-frame reparent target), not
+    // its pre-attach integ frame.
+    let source_a_frame = app
+        .world()
+        .get::<FrameEntityC>(source_a)
+        .expect("source A registered FrameEntityC")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child body-frame has ChildOf post-attach")
+            .parent(),
+        source_a_frame,
+        "post-attach: child body-frame entity must be reparented under source A's frame entity \
+         (the parent's integ frame, JEOD set_integ_frame semantics)",
+    );
+}
+
 /// **Same-integ-frame attach after a frame switch: must NOT panic.**
 ///
 /// `frame_switch_system` mutates a body's `ChildOf` parent on every
