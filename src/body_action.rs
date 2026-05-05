@@ -114,9 +114,12 @@
 //! before any consumer in `EphemerisUpdate` / `Environment` /
 //! `Interaction` reads them.
 
+use std::any::TypeId;
+use std::marker::PhantomData;
+
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
-use jeod_sim::BodyAction;
+use jeod_sim::{BodyAction, Planet};
 
 use crate::components::{
     Abm4StateC, DynamicsConfigC, GaussJacksonStateC, MassPropertiesC, RotationalStateC,
@@ -154,9 +157,19 @@ pub(crate) struct PendingBodyAction {
 /// that ordering — independent `MessageId` sequences cannot be
 /// merged across types.
 ///
-/// Convenience constructors [`Self::add`] / [`Self::remove`] keep
-/// call sites short. The Bevy adapter further provides
-/// [`BodyActionCommandsExt`] on `Commands` for the same vocabulary.
+/// # Planet routing
+///
+/// Each `Add` carries a `planet` [`TypeId`] tag identifying which
+/// planet's [`BodyActionsR<P>`] queue should receive the pending
+/// action. The Earth-shorthand constructor [`Self::add`] hard-codes
+/// `P = jeod_sim::Earth`; multi-planet missions targeting another
+/// planet pipeline call [`Self::add_for::<P>`] (or the matching
+/// [`BodyActionCommandsExt::add_body_action_for::<P>`] on `Commands`).
+/// `Remove` is planet-agnostic — every per-planet intake system
+/// observes the cancel on the same tick and drops any matching
+/// pending entry from its own queue, mirroring JEOD's
+/// `DynManager::remove_body_action` which walks the single global
+/// `body_actions` list with no planet filter.
 ///
 /// # Example
 /// ```
@@ -196,12 +209,24 @@ pub enum BodyActionEvent {
         action: BodyAction,
         /// Optional name; required for later removal.
         name: Option<String>,
+        /// `TypeId` of the planet whose [`BodyActionsR<P>`] queue
+        /// should receive this pending entry. Filled by the
+        /// per-planet constructors ([`Self::add`] for Earth,
+        /// [`Self::add_for::<P>`] for an explicit planet); per-planet
+        /// intake systems read this tag to claim only the entries
+        /// they own.
+        planet: TypeId,
     },
     /// Mirror of `DynManager::remove_body_action(const std::string&)`:
     /// drop *every* still-pending action with this name. Matches
     /// JEOD's linear-scan-by-name behaviour (`dyn_manager.cc:211`),
     /// generalised so two unresolved adds with the same name both
-    /// drop in one remove.
+    /// drop in one remove. The cancel fans out across every
+    /// per-planet [`BodyActionsR<P>`] queue (the per-planet intake
+    /// systems each observe it independently), so a name-based
+    /// remove from Earth-orbit code reaches a Mars-tagged add on the
+    /// same name even when the calling system holds no `<P>`
+    /// witness.
     Remove {
         /// Name to cancel.
         name: String,
@@ -209,13 +234,38 @@ pub enum BodyActionEvent {
 }
 
 impl BodyActionEvent {
-    /// Construct a [`BodyActionEvent::Add`].
+    /// Construct a [`BodyActionEvent::Add`] tagged for the
+    /// `jeod_sim::Earth` queue. Earth-only missions (the dominant
+    /// case in this codebase) keep the existing call shape; non-Earth
+    /// missions use [`Self::add_for::<P>`] to pin a different
+    /// planet's [`BodyActionsR<P>`] queue.
     #[inline]
     pub fn add(entity: Entity, action: BodyAction, name: Option<&str>) -> Self {
+        Self::add_for::<jeod_sim::Earth>(entity, action, name)
+    }
+
+    /// Construct a [`BodyActionEvent::Add`] tagged for the planet
+    /// `P`'s [`BodyActionsR<P>`] queue. The `<P>` witness routes the
+    /// pending entry to the per-planet intake system registered by
+    /// [`crate::register_planet_systems::<P>`] (or by
+    /// [`crate::JeodPlugin`] for `P = jeod_sim::Earth`).
+    ///
+    /// A translational `BodyAction` requires the subject entity to
+    /// carry a matching `TranslationalStateC<P>` slot — a queue
+    /// instance for `<Mars>` only matches entities the planet-`<Mars>`
+    /// system pipeline integrates. Mass-only / rotation-only actions
+    /// still pin `<P>` for routing (the apply system mutates the
+    /// planet-agnostic `MassPropertiesC` / `RotationalStateC` after
+    /// dequeuing) but the choice of `<P>` should match the body's
+    /// integration planet so a single planet's apply pass covers all
+    /// of that body's pending actions.
+    #[inline]
+    pub fn add_for<P: Planet>(entity: Entity, action: BodyAction, name: Option<&str>) -> Self {
         BodyActionEvent::Add {
             entity,
             action,
             name: name.map(|n| n.to_string()),
+            planet: TypeId::of::<P>(),
         }
     }
 
@@ -228,22 +278,56 @@ impl BodyActionEvent {
     }
 }
 
-/// Bevy `Resource` holding all pending body actions, in insertion
-/// order.
+/// Bevy `Resource` holding all pending body actions for planet `P`,
+/// in insertion order.
 ///
-/// Inserted by [`crate::JeodPlugin`]. Mission code does not need to
-/// touch this resource directly — send a [`BodyActionEvent`] or
-/// use [`BodyActionCommandsExt`] instead.
+/// One queue exists per planet `<P>` registered with the plugin:
+/// [`crate::JeodPlugin`] inserts `BodyActionsR<jeod_sim::Earth>`, and
+/// [`crate::register_planet_systems::<P>`] inserts the matching
+/// `BodyActionsR<P>` for any additional planet. Mission code does
+/// not need to touch this resource directly — send a
+/// [`BodyActionEvent`] (with [`BodyActionEvent::add`] for Earth or
+/// [`BodyActionEvent::add_for::<P>`] for another planet) or use
+/// [`BodyActionCommandsExt`] instead.
 ///
 /// JEOD analog: `DynManager::body_actions` (a `std::vector<BodyAction
-/// *>` walked once per `perform_actions` pass).
-#[derive(Resource, Default, Debug)]
-pub struct BodyActionsR {
+/// *>` walked once per `perform_actions` pass). JEOD has a single
+/// global list because every JEOD `DynBody` integrates against the
+/// same singleton dyn-manager-owned planet; the Bevy adapter
+/// partitions by `<P>` so a Mars-orbit chief and an Earth-orbit
+/// deputy in the same `World` route through disjoint queues.
+#[derive(Resource, Debug)]
+pub struct BodyActionsR<P: Planet> {
     /// FIFO queue of pending actions.
     pub(crate) pending: Vec<PendingBodyAction>,
+    /// Phantom carries the planet witness so `BodyActionsR<Earth>`
+    /// and `BodyActionsR<Mars>` are distinct resource types and
+    /// Bevy's resource registry partitions them by `<P>`.
+    _planet: PhantomData<fn() -> P>,
 }
 
-/// Drains [`BodyActionEvent`]s into [`BodyActionsR`].
+impl<P: Planet> Default for BodyActionsR<P> {
+    fn default() -> Self {
+        Self {
+            pending: Vec::new(),
+            _planet: PhantomData,
+        }
+    }
+}
+
+/// Drains the [`BodyActionEvent`]s tagged for planet `P` into the
+/// matching [`BodyActionsR<P>`] queue.
+///
+/// Each per-planet intake instantiation gets its own
+/// `Local<MessageCursor<BodyActionEvent>>`, so two planet pipelines
+/// reading the shared message buffer never miss or double-consume a
+/// message. `Add` entries whose `planet` `TypeId` does not match
+/// `<P>` are skipped — the matching planet's intake system claims
+/// them. `Remove` is fan-out: every per-planet intake observes the
+/// cancel and drops any matching pending entry from its own queue,
+/// so a name-based remove from any code path reaches every
+/// `BodyActionsR<P>` on the same tick (mirrors JEOD's single global
+/// `body_actions` walk in `DynManager::remove_body_action`).
 ///
 /// Runs strictly before [`body_action_system`] each tick so that an
 /// `add → remove → add` sequence within one tick collapses to a
@@ -253,17 +337,23 @@ pub struct BodyActionsR {
 /// unified [`BodyActionEvent`] enum's `MessageReader` walks the
 /// add/remove operations in the order their `MessageWriter`s wrote
 /// them.
-pub fn body_action_intake_system(
+pub fn body_action_intake_system<P: Planet>(
     mut messages: bevy::ecs::message::MessageReader<BodyActionEvent>,
-    mut queue: ResMut<BodyActionsR>,
+    mut queue: ResMut<BodyActionsR<P>>,
 ) {
+    let this_planet = TypeId::of::<P>();
     for msg in messages.read() {
         match msg {
             BodyActionEvent::Add {
                 entity,
                 action,
                 name,
+                planet,
             } => {
+                if *planet != this_planet {
+                    // Different planet's queue owns this entry.
+                    continue;
+                }
                 queue.pending.push(PendingBodyAction {
                     entity: *entity,
                     action: action.clone(),
@@ -282,6 +372,11 @@ pub fn body_action_intake_system(
                 // non-empty `name`, a strict generalisation of JEOD's
                 // first-match-and-erase loop (covered by
                 // `tests::remove_drops_all_pending_with_matching_name`).
+                // The cancel is planet-agnostic: every per-planet
+                // intake walks its own `BodyActionsR<P>`.pending and
+                // drops matching entries, so a remove from a system
+                // that holds no `<P>` witness still reaches a
+                // Mars-tagged add on the same name.
                 if name.is_empty() {
                     continue;
                 }
@@ -340,11 +435,11 @@ pub fn body_action_intake_system(
 /// applied to a wrong-type entity is a misconfiguration, not a
 /// silently-skipped operation.
 #[allow(clippy::type_complexity)]
-pub fn body_action_system(
-    mut queue: ResMut<BodyActionsR>,
+pub fn body_action_system<P: Planet>(
+    mut queue: ResMut<BodyActionsR<P>>,
     mut bodies: Query<
         (
-            Option<&mut TranslationalStateC<jeod_sim::Earth>>,
+            Option<&mut TranslationalStateC<P>>,
             Option<&mut RotationalStateC>,
             Option<&mut MassPropertiesC>,
             Option<&mut GaussJacksonStateC>,
@@ -398,21 +493,21 @@ pub fn body_action_system(
                 .as_deref_mut()
                 .unwrap_or_else(|| {
                     panic!(
-                        "BodyAction targets translational state on entity {:?} (action_name={:?}) \
-                         but the entity has no `TranslationalStateC<jeod_sim::Earth>` slot. \
-                         The queued-action path is currently Earth-only: this system writes \
-                         through `Query<Option<&mut TranslationalStateC<jeod_sim::Earth>>>`. \
-                         Two valid options: \
-                         (a) if the body integrates against Earth, ensure `TranslationalStateC::<jeod_sim::Earth>` \
-                         is inserted on the entity before queuing the action (spawn via \
-                         `VehicleConfig::spawn_bevy` does this automatically); \
-                         (b) for non-Earth integration sources, do not queue a translational \
-                         BodyAction — instead mutate `Query<&mut TranslationalStateC<P>>` \
-                         directly with the same untyped state, since the queue does not yet \
-                         carry a `<P>` tag. Adding a `TranslationalStateC::<jeod_sim::Earth>` slot \
-                         to a non-Earth body is *not* a valid workaround — it would silently \
-                         land the action in the wrong planet's storage.",
-                        action.entity, action.name,
+                        "BodyAction targets translational state on entity {entity:?} (action_name={name:?}) \
+                         but the entity has no `TranslationalStateC<{planet}>` slot, and this apply pass \
+                         only mutates `<{planet}>`-tagged storage (the action was routed to \
+                         `BodyActionsR<{planet}>` by its planet tag in `BodyActionEvent::Add::planet`). \
+                         Two fixes: \
+                         (a) if the body's integration planet really is `{planet}`, spawn it with \
+                         `TranslationalStateC::<{planet}>` (`VehicleConfig::spawn_bevy::<{planet}>` is \
+                         the canonical entry point); \
+                         (b) if the body integrates against another planet `Q`, queue the action via \
+                         `BodyActionEvent::add_for::<Q>` (or `BodyActionCommandsExt::add_body_action_for::<Q>`) \
+                         so it lands in `BodyActionsR<Q>` and the matching `body_action_system::<Q>` \
+                         pass mutates `TranslationalStateC<Q>` instead. Adding a wrong-planet \
+                         translational slot to the entity is not a valid workaround — it would \
+                         silently land the action in the wrong planet's storage.",
+                        entity = action.entity, name = action.name, planet = std::any::type_name::<P>(),
                     )
                 });
             // allowed: action-fire boundary — `BodyAction::apply_translational` returns the
@@ -522,8 +617,10 @@ pub fn body_action_system(
 /// direct `MessageWriter<BodyActionEvent>` (or the
 /// [`add_body_action_via`] helper): writer-based sends are immediate.
 pub trait BodyActionCommandsExt {
-    /// Queue a [`BodyAction`] against `entity`. Equivalent to
-    /// sending a [`BodyActionEvent::Add`].
+    /// Queue a [`BodyAction`] against `entity` for the
+    /// `jeod_sim::Earth` queue. Equivalent to sending a
+    /// `BodyActionEvent::Add` constructed via [`BodyActionEvent::add`].
+    /// Non-Earth missions use [`Self::add_body_action_for::<P>`].
     ///
     /// # Timing
     ///
@@ -542,8 +639,22 @@ pub trait BodyActionCommandsExt {
     ///   before intake walks the message buffer.
     fn add_body_action(&mut self, entity: Entity, action: BodyAction, name: Option<&str>);
 
+    /// Queue a [`BodyAction`] against `entity` for planet `P`'s
+    /// [`BodyActionsR<P>`] queue. Equivalent to sending a
+    /// `BodyActionEvent::Add` constructed via
+    /// [`BodyActionEvent::add_for::<P>`]. Same `Commands::queue`
+    /// timing as [`add_body_action`](Self::add_body_action).
+    fn add_body_action_for<P: Planet>(
+        &mut self,
+        entity: Entity,
+        action: BodyAction,
+        name: Option<&str>,
+    );
+
     /// Cancel every pending body action whose name matches `name`.
-    /// Equivalent to sending a [`BodyActionEvent::Remove`].
+    /// Equivalent to sending a [`BodyActionEvent::Remove`]. The
+    /// cancel is planet-agnostic — every per-planet
+    /// [`BodyActionsR<P>`] queue observes it on the same tick.
     ///
     /// Same `Commands::queue` deferral applies as
     /// [`add_body_action`](Self::add_body_action): the
@@ -557,6 +668,15 @@ pub trait BodyActionCommandsExt {
 
 impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
     fn add_body_action(&mut self, entity: Entity, action: BodyAction, name: Option<&str>) {
+        self.add_body_action_for::<jeod_sim::Earth>(entity, action, name);
+    }
+
+    fn add_body_action_for<P: Planet>(
+        &mut self,
+        entity: Entity,
+        action: BodyAction,
+        name: Option<&str>,
+    ) {
         let name = name.map(|n| n.to_string());
         self.queue(move |world: &mut World| {
             let mut writer = world.resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>();
@@ -564,6 +684,7 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
                 entity,
                 action,
                 name,
+                planet: TypeId::of::<P>(),
             });
         });
     }
@@ -618,10 +739,20 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_message::<BodyActionEvent>();
-        app.init_resource::<BodyActionsR>();
+        // The unit tests in this module exercise the Earth-tagged
+        // queue path. Per-planet `BodyActionsR<P>` registration in
+        // production lives in `JeodPlugin::build` (Earth) and
+        // `register_planet_systems::<P>` (other planets); here we
+        // wire the Earth instantiation manually to keep the unit
+        // tests free of the full plugin scaffolding.
+        app.init_resource::<BodyActionsR<jeod_sim::Earth>>();
         app.add_systems(
             Update,
-            (body_action_intake_system, body_action_system).chain(),
+            (
+                body_action_intake_system::<jeod_sim::Earth>,
+                body_action_system::<jeod_sim::Earth>,
+            )
+                .chain(),
         );
         app
     }

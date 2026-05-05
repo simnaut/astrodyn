@@ -236,11 +236,14 @@ impl Plugin for JeodPlugin {
         app.add_message::<FrameDetachEvent>();
         // Body-action lifecycle: callers add / remove
         // body-action requests through this single message type or
-        // through `BodyActionCommandsExt` on `Commands`. The intake
-        // system drains it into `BodyActionsR`; the apply system
-        // walks the resource and mutates ready actions' subjects.
+        // through `BodyActionCommandsExt` on `Commands`. The
+        // per-planet intake system drains the matching tagged adds
+        // into `BodyActionsR<P>`; the per-planet apply system walks
+        // that resource and mutates ready actions' subjects. Earth's
+        // queue is registered here for single-planet missions;
+        // additional planets call `register_planet_systems::<P>`.
         app.add_message::<body_action::BodyActionEvent>();
-        app.init_resource::<body_action::BodyActionsR>();
+        app.init_resource::<body_action::BodyActionsR<jeod_sim::Earth>>();
 
         // ── Systems ──
         // Source-frame registration runs at Startup to spawn the ECS
@@ -587,7 +590,7 @@ impl Plugin for JeodPlugin {
                 //
                 // Lives in this second `add_systems` to stay within
                 // Bevy's 20-tuple `IntoSystem` limit.
-                body_action::body_action_intake_system
+                body_action::body_action_intake_system::<jeod_sim::Earth>
                     .after(JeodSet::TimeUpdate)
                     .after(systems::sync_body_mass_point_ref_system)
                     .before(systems::mass_update_system)
@@ -603,9 +606,9 @@ impl Plugin for JeodPlugin {
                 // `body_action_system` — without this explicit ordering
                 // Bevy is free to schedule the two in either order and
                 // a same-tick mass propagation would be a coin flip.
-                body_action::body_action_system
+                body_action::body_action_system::<jeod_sim::Earth>
                     .after(JeodSet::TimeUpdate)
-                    .after(body_action::body_action_intake_system)
+                    .after(body_action::body_action_intake_system::<jeod_sim::Earth>)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Pre-integration kinematic state propagation: walks
@@ -756,6 +759,18 @@ impl Plugin for JeodPlugin {
 /// in `JeodPlugin::build` — this helper is the structural single
 /// source of truth for the per-planet system set.
 pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
+    // Per-planet body-action queue: the unified `BodyActionEvent`
+    // message buffer fans out to one `BodyActionsR<P>` per registered
+    // planet. The matching `body_action_intake_system::<P>` claims
+    // only the entries whose `Add::planet` `TypeId` matches `P`;
+    // remaining `Add`s land in another planet's queue, and `Remove`s
+    // fan out across every queue (a name-based cancel from any code
+    // path reaches a Mars-tagged add even when the calling system
+    // holds no `<P>` witness). `init_resource` is idempotent — a
+    // mission re-registering Earth via `register_planet_systems::<Earth>`
+    // (already wired by `JeodPlugin::build`) does not double-init the
+    // queue.
+    app.init_resource::<body_action::BodyActionsR<P>>();
     app.add_systems(
         Startup,
         (
@@ -823,6 +838,26 @@ pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
     app.add_systems(
         FixedUpdate,
         (
+            // Per-planet body-action intake + apply. Mirrors the
+            // Earth registration in `JeodPlugin::build`: intake runs
+            // after `JeodSet::TimeUpdate` and after the mass-point-ref
+            // sync, before `mass_update_system` and
+            // `JeodSet::EphemerisUpdate`; apply chains after intake
+            // with the same surrounding ordering. The two systems
+            // partition by `<P>` (the intake claims only `Add`
+            // messages whose `planet` `TypeId` matches `P`; the apply
+            // walks `BodyActionsR<P>`), so multiple planet
+            // pipelines never fight for the same pending entry.
+            body_action::body_action_intake_system::<P>
+                .after(JeodSet::TimeUpdate)
+                .after(systems::sync_body_mass_point_ref_system)
+                .before(systems::mass_update_system)
+                .before(JeodSet::EphemerisUpdate),
+            body_action::body_action_system::<P>
+                .after(JeodSet::TimeUpdate)
+                .after(body_action::body_action_intake_system::<P>)
+                .before(systems::mass_update_system)
+                .before(JeodSet::EphemerisUpdate),
             frame_attach_system::frame_attach_system::<P>
                 .after(JeodSet::EphemerisUpdate)
                 .before(JeodSet::Environment),
@@ -885,19 +920,21 @@ pub fn register_planet_systems<P: jeod_sim::Planet>(app: &mut App) {
 ///         .rk4()
 ///         .gravity(GravityControl::new_spherical(0_usize, false))
 ///         .build();
-///     cfg.spawn_bevy(&mut commands, &[earth]);
+///     cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth]);
 /// });
 /// app.update();
 /// ```
 pub trait VehicleConfigBevyExt {
     /// Spawn a Bevy entity carrying the core components implied by this
-    /// vehicle configuration.
+    /// vehicle configuration, with the translational-state slot tagged
+    /// for planet `P`.
     ///
-    /// Currently inserts: translational state, optional rotational state,
-    /// optional mass properties, dynamics config, gravity controls,
-    /// integrator type, structural transform, optional external force /
-    /// torque, and (when `compute_gravity_gradient`) a default gravity
-    /// torque component. `source_entities` resolves each `usize` index in
+    /// Currently inserts: translational state (as
+    /// `TranslationalStateC<P>`), optional rotational state, optional
+    /// mass properties, dynamics config, gravity controls, integrator
+    /// type, structural transform, optional external force / torque,
+    /// and (when `compute_gravity_gradient`) a default gravity torque
+    /// component. `source_entities` resolves each `usize` index in
     /// `gravity_controls` to the corresponding ECS [`Entity`].
     ///
     /// Also wires `integ_source` (translated to
@@ -912,40 +949,26 @@ pub trait VehicleConfigBevyExt {
     /// lighting). These are tracked for future expansion of
     /// `spawn_bevy`.
     ///
-    /// # Planet pinning
+    /// # Planet selection
     ///
-    /// This convenience helper currently inserts the translational-state
-    /// slot as `TranslationalStateC<jeod_sim::Earth>` regardless of which
-    /// planet pipeline the body is intended to integrate against.
-    /// `VehicleConfig.trans` is the ECS-agnostic untyped
-    /// [`jeod_sim::TranslationalState`] (no planet tag), and the spawn-side
-    /// witness for `<P>` is not yet plumbed through this helper.
-    ///
-    /// Consequence: `cfg.spawn_bevy(&mut commands, &[mars_entity])` will
-    /// spawn a body with an `<Earth>`-tagged translational slot even if the
-    /// only registered planet pipeline is
-    /// `register_planet_systems::<jeod_sim::Mars>(...)`. The
-    /// planet-generic consumer systems (`atmosphere_*`,
-    /// `lvlh_derived_state_*`, `geodetic_*`, `orbital_elements_*`) gate on
-    /// `TranslationalStateC<P>` and would silently skip the body.
-    ///
-    /// For non-Earth integration sources, do **not** rely on `spawn_bevy`'s
-    /// translational insert. Instead, either:
-    ///
-    /// - spawn the entity manually with the correct
-    ///   `TranslationalStateC::<P>(jeod_sim::TranslationalStateTyped::from_untyped_unchecked(&state))`
-    ///   slot, or
-    /// - call `spawn_bevy` and immediately `commands.entity(id).remove::<TranslationalStateC<jeod_sim::Earth>>()`
-    ///   followed by `commands.entity(id).insert(TranslationalStateC::<P>(...))`,
-    ///   mutating through `Query<&mut TranslationalStateC<P>>` for any
-    ///   subsequent state changes. Queued translational `BodyAction`s are
-    ///   currently Earth-only for the same reason — see the panic
-    ///   diagnostic in `body_action_system`.
-    ///
-    /// The queue-side / spawn-side refactor that lifts this restriction
-    /// (parameterizing the translational insert by `<P>` and giving
-    /// `BodyActionsR` a planet tag) is tracked in
-    /// [issue #330](https://github.com/simnaut/bevy_jeod/issues/330).
+    /// `<P>` selects the planet whose [`PlanetInertial`](jeod_sim::PlanetInertial)
+    /// frame the body integrates in. A single-planet Earth mission
+    /// pins `cfg.spawn_bevy::<jeod_sim::Earth>(...)`; a Mars-orbit
+    /// constellation pins `cfg.spawn_bevy::<jeod_sim::Mars>(...)` and
+    /// must also have called
+    /// [`register_planet_systems::<jeod_sim::Mars>`] so the matching
+    /// per-planet system pipeline is wired. The inserted
+    /// `TranslationalStateC<P>` carries the same untyped
+    /// [`jeod_sim::TranslationalState`] (the configuration-time
+    /// builder is planet-agnostic on the data side); the witness for
+    /// `<P>` lives in the call-site turbofish, not in the builder.
+    /// Queued translational `BodyAction`s for this body must be
+    /// routed to the `<P>` queue via
+    /// [`crate::body_action::BodyActionEvent::add_for::<P>`] (or the
+    /// matching
+    /// [`crate::body_action::BodyActionCommandsExt::add_body_action_for::<P>`])
+    /// so the `body_action_system::<P>` apply pass mutates the same
+    /// `TranslationalStateC<P>` slot this helper inserts.
     ///
     /// # Panics
     ///
@@ -960,7 +983,11 @@ pub trait VehicleConfigBevyExt {
     /// caller to spawn all gravity sources before invoking `spawn_bevy`.
     ///
     /// Returns the spawned vehicle entity ID.
-    fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity;
+    fn spawn_bevy<P: jeod_sim::Planet>(
+        self,
+        commands: &mut Commands,
+        source_entities: &[Entity],
+    ) -> Entity;
 }
 
 /// Resolve a `usize` source index against the caller-supplied entity
@@ -981,7 +1008,11 @@ fn resolve_source_entity(source_entities: &[Entity], idx: usize, what: &str) -> 
 }
 
 impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
-    fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity {
+    fn spawn_bevy<P: jeod_sim::Planet>(
+        self,
+        commands: &mut Commands,
+        source_entities: &[Entity],
+    ) -> Entity {
         // Translate `GravityControls<usize>` to `GravityControls<Entity>` by
         // retagging the source identifier on each control via the
         // `GravityControl::retag_source` helper. The field list lives in
@@ -1007,7 +1038,7 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         };
 
         let mut entity = commands.spawn((
-            components::TranslationalStateC::<jeod_sim::Earth>::from(self.trans),
+            components::TranslationalStateC::<P>::from(self.trans),
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
             components::IntegratorTypeC(self.integrator),
