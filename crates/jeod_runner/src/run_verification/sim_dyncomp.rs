@@ -17,11 +17,14 @@ use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
-    EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState,
-    SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
+    default_leap_second_table, AtmosphereConfig, AtmosphereModel, BodyAction, DragConfig,
+    Ephemeris, EphemerisBody, EulerSequence, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, JeodQuat, LvlhAngularVelocityFrame, MassProperties,
+    MetAtmosphere, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
+    TranslationalState, VehicleConfig, EARTH,
 };
+use uom::si::angle::degree;
+use uom::si::f64::Angle;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -172,6 +175,162 @@ pub fn run2_6dof() -> VerificationCase {
         tolerances: Tolerances {
             position_m: [1.37e-6, 2.154e-6, 1.826e-6],
             velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [2.619e-18, 1.367e-18, 7.969e-19],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: None,
+    }
+}
+
+// ── RUN_2 with InitLvlhRot post-init propagation ───────────────────────────
+//
+// Cross-validates both the `BodyAction::InitLvlhRot` initializer and
+// the rotational integrator against the existing
+// `dyncomp_run2_state.csv` reference. Where the sibling `run2_6dof`
+// reads the t=0 quaternion straight off the reference CSV, this
+// scenario reads the JEOD `Modified_data/state.py` Yaw-Pitch-Roll
+// Euler triple + LVLH-relative angular velocity, runs them through
+// `BodyAction::InitLvlhRot.apply_rotational()` (which delegates to
+// the shipped `init_rot_from_lvlh` kernel), and uses the result as
+// the initial rotational state. The reference CSV is suitable
+// because every SIM_dyncomp run already initializes its rotational
+// state through `set_orientation_lvlh`, which calls
+// `DynBodyInitLvlhRotState` upstream — see
+// `verif/SIM_dyncomp/Modified_data/state.py:set_orientation_lvlh`.
+
+/// Yaw-Pitch-Roll (ZYX) Euler triple from a JEOD `state.py` LVLH-init
+/// function name, converted to a JEOD scalar-first left-transformation
+/// quaternion via [`jeod_math::compute_quaternion_from_euler_angles_typed`].
+///
+/// Maps the source's `trick.Orientation.<sequence>` string to the
+/// matching [`EulerSequence`]. Only the sequences that appear in
+/// SIM_dyncomp `Modified_data/state.py` are wired today; an unknown
+/// sequence panics with a fail-loudly diagnostic rather than silently
+/// substituting a default.
+fn lvlh_init_from_state_py(
+    state_py: &std::path::Path,
+    function_name: &str,
+) -> (JeodQuat, DVec3, LvlhAngularVelocityFrame) {
+    let lvlh = jeod_test_data::lvlh_init_data::load_lvlh_init_function(state_py, function_name);
+    let sequence = match lvlh.euler_sequence.as_str() {
+        // JEOD `trick.Orientation.Yaw_Pitch_Roll = 5`, ZYX axis order.
+        // models/utils/orientation/include/orientation.hh:130
+        "Yaw_Pitch_Roll" => EulerSequence::ZYX,
+        other => panic!(
+            "lvlh_init_from_state_py: unsupported euler sequence {other:?} in {} \
+             (function {function_name}); add a mapping in sim_dyncomp.rs",
+            state_py.display()
+        ),
+    };
+    let angles = [
+        Angle::new::<degree>(lvlh.euler_angles_deg[0]),
+        Angle::new::<degree>(lvlh.euler_angles_deg[1]),
+        Angle::new::<degree>(lvlh.euler_angles_deg[2]),
+    ];
+    let q_lvlh_body =
+        jeod_math::compute_quaternion_from_euler_angles_typed(angles, sequence).inner();
+    let ang_vel = DVec3::from_array(lvlh.ang_velocity);
+    // SIM_dyncomp `set_orientation_lvlh` does not set `rate_in_parent`,
+    // so JEOD's default `rate_in_parent = false` applies — the
+    // user-supplied ang_velocity is in the body frame.
+    (q_lvlh_body, ang_vel, LvlhAngularVelocityFrame::Body)
+}
+
+/// `RotationalState` reproduced by running `BodyAction::InitLvlhRot`
+/// from JEOD source data (`Modified_data/state.py`) — *not* from the
+/// reference CSV's t=0 quaternion. Exercises the LVLH-rot-init path
+/// end-to-end through the public `BodyAction` API.
+fn init_lvlh_rot_state(state_py: &std::path::Path) -> RotationalState {
+    let trans = jeod_test_data::lvlh_init_data::load_trans_init_function(
+        state_py,
+        "set_trans_init_typical",
+    );
+    let (q_lvlh_body, ang_vel_lvlh_to_body, ang_vel_frame) =
+        lvlh_init_from_state_py(state_py, "set_orientation_lvlh");
+    let action = BodyAction::InitLvlhRot {
+        q_lvlh_body,
+        ang_vel_lvlh_to_body,
+        ang_vel_frame,
+        reference_position: DVec3::from_array(trans.position),
+        reference_velocity: DVec3::from_array(trans.velocity),
+    };
+    action.apply_rotational().expect(
+        "BodyAction::InitLvlhRot.apply_rotational must yield Some(RotationalState); \
+         the variant is rotational by construction",
+    )
+}
+
+/// Builder: same point-mass 6-DOF sim as `build_run2_6dof`, but the
+/// initial *rotational* state is computed by
+/// `BodyAction::InitLvlhRot` applied to the JEOD `state.py` Euler
+/// triple + LVLH-relative ang velocity instead of being read from
+/// the reference CSV's t=0 quaternion. The translational state is
+/// also taken from `state.py:set_trans_init_typical`, since that's
+/// the same JEOD source that produced the CSV's t=0 position /
+/// velocity row — keeping both halves on the source-Python path
+/// avoids any reliance on the reference output.
+fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mass_props = iss_mass_properties();
+    let state_py = sim_dir.join("Modified_data/state.py");
+
+    let trans = jeod_test_data::lvlh_init_data::load_trans_init_function(
+        &state_py,
+        "set_trans_init_typical",
+    );
+    let trans_state = TranslationalState {
+        position: DVec3::from_array(trans.position),
+        velocity: DVec3::from_array(trans.velocity),
+    };
+    let rot_state = init_lvlh_rot_state(&state_py);
+
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, dt);
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    sb.add_body(VehicleConfig {
+        trans: trans_state,
+        rot: Some(rot_state),
+        mass: Some(mass_props),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+/// SIM_dyncomp RUN_2 — InitLvlhRot post-init propagation.
+///
+/// The initial rotational state is computed by our
+/// `BodyAction::InitLvlhRot` from the JEOD `Modified_data/state.py`
+/// Yaw-Pitch-Roll Euler triple `[0, -11.6, 0]` deg + zero LVLH-frame
+/// angular velocity, then the simulation propagates 8 hours under
+/// point-mass gravity. The propagated trajectory is compared against
+/// the existing `dyncomp_run2_state.csv` reference (whose t=0 row
+/// JEOD itself produced through `DynBodyInitLvlhRotState`), so the
+/// assertion exercises *both* the LVLH-rot-init kernel *and* the
+/// rotational integrator under SIM_dyncomp's mass properties.
+pub fn run2_lvlh_rot_init_propagation() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run2_lvlh_rot_init_propagation",
+        scenario: build_run2_lvlh_rot_init,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run2_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            // Tolerances are 5% above the observed max errors on
+            // a clean run, per the standard CLAUDE.md policy. They
+            // come out essentially identical to `run2_6dof`'s
+            // baseline because the propagator path is the same and
+            // the InitLvlhRot kernel reproduces the JEOD-side
+            // quaternion to floating-point precision; the tiny
+            // residuals are integration-step round-off, not
+            // initialization error.
+            position_m: [1.37e-6, 2.154e-6, 1.826e-6],
+            velocity_m_s: [1.446e-9, 2.388e-9, 1.814e-9],
             quat_angle_rad: 4.426e-8,
             ang_vel_rad_s: [2.619e-18, 1.367e-18, 7.969e-19],
             extras: &[],
