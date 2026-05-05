@@ -3629,7 +3629,21 @@ pub fn staging_system(
     // integ-frame storage (`TranslationalStateC` is integ-frame).
     struct AttachWork {
         parent_entity: Entity,
-        child_entity: Entity,
+        // The body whose tree is being re-rooted under `parent`. Equals
+        // `child_entity` for the simple root-subject case; for
+        // chained-attach (subject already has a parent in the mass
+        // tree) this is the subject's existing tree-root entity, which
+        // is what actually gets reparented under the new parent. The
+        // child-side snapshot fields below are read from this entity,
+        // not `child_entity`, so the combine kernel sees the subject
+        // root's integrator-written composite-body state.
+        subject_root_entity: Entity,
+        subject_root_id: jeod_sim::MassBodyId,
+        // True iff this AttachEvent triggers a re-rooting reparent —
+        // i.e. `subject_root_entity != child_entity`. Drives the
+        // `MassChildOf` insert on the subject root and the
+        // post-mutation auto-flag of the rerooted subtree.
+        is_chained_attach: bool,
         parent_id: jeod_sim::MassBodyId,
         // Pre-attach snapshot for the kernel — lifted to root-inertial.
         parent_position: glam::DVec3,
@@ -3782,7 +3796,7 @@ pub fn staging_system(
     for evt in attach_events.read() {
         // Look up child + parent. Fail-loud per CLAUDE.md if either
         // entity is not a mass-tree body.
-        let (_, child_body_id, child_mass_c, child_trans, child_rot) =
+        let (_, child_body_id, _child_mass_c, _child_trans, _child_rot) =
             bodies.get(evt.child).unwrap_or_else(|_| {
                 panic!(
                     "AttachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
@@ -3791,12 +3805,82 @@ pub fn staging_system(
                 )
             });
         let child_id = child_body_id.0;
-        let child_mass: jeod_sim::MassProperties = child_mass_c.0.to_untyped();
-        let (child_position_integ, child_velocity_integ) = child_trans
+
+        // Resolve the **subject root** — the body whose tree is actually
+        // being re-rooted under `parent`. For the simple root-subject
+        // case (subject is itself a tree root, no existing parent edge
+        // in the mass tree), `subject_root_id == child_id` and the
+        // snapshot below reads state from the child entity directly.
+        // For the chained-attach case (subject already has a parent in
+        // the mass tree) the subject's existing tree root is what
+        // actually moves under `parent`; the kernel
+        // `MassTree::attach_with_reroot` calls
+        // `attach(child_root, parent_id, ...)` with a recomputed offset
+        // and rotation so the subject's struct frame still ends up
+        // where the caller asked, even though the underlying tree edge
+        // runs from `parent` to the subject's existing root. Mirrors
+        // JEOD `DynBody::attach_child` (`dyn_body_attach.cc:521`):
+        //   `child_root = child.get_root_body_internal();`
+        // and the subsequent `child_root->attach_establish_links(*this)`
+        // branch when `child_root != &child`.
+        //
+        // The runner-side dispatch in
+        // `jeod_runner::Simulation::attach_inner` resolves a separate
+        // `subject_root_idx` for the same reason — the
+        // momentum-conservation combine kernel needs the subject root's
+        // integrator-written composite-body state, not the immediate
+        // child's (which is stale or zero for an interior body).
+        // JEOD_INV: BA.12 — chained attach re-roots the subject's existing tree under the new parent.
+        let subject_root_id = tree.root_of(child_id);
+        let is_chained_attach = subject_root_id != child_id;
+        let subject_root_entity = if is_chained_attach {
+            *id_to_entity.get(&subject_root_id).unwrap_or_else(|| {
+                panic!(
+                    "AttachEvent.child = {:?} (mass id {:?}): subject root \
+                     {subject_root_id:?} for the rerooted subtree has no entity in the bodies \
+                     query — every mass-tree node must be spawned with `MassBodyIdC` before \
+                     any AttachEvent references it. The chained-attach reroot path needs to \
+                     read the subject root's composite-body state for the momentum-conservation \
+                     combine and reparent its `MassChildOf` Relations under the new parent; \
+                     missing the entity here would silently break either step.",
+                    evt.child, child_id,
+                )
+            })
+        } else {
+            evt.child
+        };
+
+        // Read the subject root's state (== child's state in the
+        // root-subject case). The combine kernel reads this as the
+        // child-side of the merge; for the reroot case the subject root
+        // carries the integrated state of the whole pre-reroot subtree,
+        // which is the right composite to merge with the parent-side
+        // root (mirrors `jeod_runner::Simulation::attach_inner`).
+        let (_, subject_root_body_id, subject_root_mass_c, subject_root_trans, subject_root_rot) =
+            bodies.get(subject_root_entity).unwrap_or_else(|_| {
+                panic!(
+                    "AttachEvent.child = {:?}: subject root entity {subject_root_entity:?} \
+                     is not a mass body — entity is missing MassBodyIdC and/or \
+                     MassPropertiesC. The mass tree's `root_of(child_id)` returned a node \
+                     whose backing entity does not satisfy the bodies query.",
+                    evt.child,
+                )
+            });
+        // Sanity: the root walker's id and the entity's MassBodyIdC must agree.
+        assert_eq!(
+            subject_root_body_id.0, subject_root_id,
+            "subject root entity {:?} carries MassBodyIdC({:?}) but the mass tree's \
+             root_of(child_id={:?}) returned {:?}. The id_to_entity map and the arena \
+             tree are out of sync — every entity carrying MassBodyIdC must be reachable \
+             via id_to_entity at the same id.",
+            subject_root_entity, subject_root_body_id.0, child_id, subject_root_id,
+        );
+        let child_mass: jeod_sim::MassProperties = subject_root_mass_c.0.to_untyped();
+        let (child_position_integ, child_velocity_integ) = subject_root_trans
             .as_ref()
             .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
             .unwrap_or((glam::DVec3::ZERO, glam::DVec3::ZERO));
-        let (child_quaternion, child_ang_vel_body) = child_rot
+        let (child_quaternion, child_ang_vel_body) = subject_root_rot
             .as_ref()
             .map(|r| {
                 let untyped = r.0.to_untyped();
@@ -4442,7 +4526,12 @@ pub fn staging_system(
             );
         let parent_integ_origin_pos = parent_integ_origin_pos_typed.raw_si();
         let parent_integ_origin_vel = parent_integ_origin_vel_typed.raw_si();
-        let child_body_frame_capture = body_frames.get(evt.child).ok();
+        // Read the subject root's integ-frame origin (== child's origin
+        // in the root-subject case) — the subject root carries the
+        // integrated state of the whole pre-reroot subtree, so its own
+        // integ-frame origin is the right shift to lift its trans state
+        // to root-inertial for the combine kernel.
+        let child_body_frame_capture = body_frames.get(subject_root_entity).ok();
         let (child_integ_origin_pos_typed, child_integ_origin_vel_typed) =
             body_integ_origin_in_root_lazy(
                 child_body_frame_capture,
@@ -4470,20 +4559,74 @@ pub fn staging_system(
             &parent_t_inertial_to_body,
         );
 
-        // The bodies whose composite mass changes are the child plus
-        // every ancestor of the new parent in the pre-attach tree
+        // The bodies whose composite mass changes are the subject root
+        // (== child for the simple case, the subject's existing tree
+        // root for the chained-attach case) plus every ancestor of the
+        // new parent in the pre-attach tree
         // (`MassTree::recompute_composites` walks the entire forest
         // post-order, so any ancestor of the new parent is touched).
-        // Capture the chain BEFORE mutating the tree.
-        affected_ids.push(child_id);
+        // For the chained-attach reroot path the subject's *whole*
+        // pre-reroot subtree (`subject_root` + every descendant) ends
+        // up under `parent`, and `recompute_composites` walks both the
+        // new combined tree and the old tree's former root chain — the
+        // conservative set is therefore subject_root + descendants +
+        // parent's ancestor chain. Including the descendants matters
+        // because, post-reroot, those bodies are kinematic children of
+        // the merged tree's root and any GJ/ABM4 history they carried
+        // (they were interior nodes in the subject tree and may have
+        // been integrated standalone before the original attach) is
+        // now stale topology-wise. Mirrors the runner-side dispatch in
+        // `jeod_runner::Simulation::attach_inner`.
+        // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+        affected_ids.push(subject_root_id);
         affected_ids.extend(tree.ancestors_inclusive(parent_id));
+        if is_chained_attach {
+            // Reject cross-integ-frame attach while chained: the
+            // cross-integ-frame branch above resolves a single child
+            // entity (and its descendants) for the frame-entity
+            // reparent walk, but the actual rerooted subtree is the
+            // subject root + its descendants — a different entity set.
+            // Plumbing the cross-integ-frame numerical rewrite through
+            // the rerooted subtree is its own surgery (chained reroot
+            // changes which bodies need the lift/lower), and JEOD's
+            // `dyn_body_attach.cc::attach_child` reroot path does not
+            // exercise cross-integ-frame attaches in any of the
+            // verification sims we currently port. Surface the
+            // unsupported combination loudly here rather than letting
+            // the lift/lower walk silently leave coordinates in the
+            // wrong frame.
+            assert!(
+                cross_integ.is_none(),
+                "AttachEvent: chained-attach (re-rooting) combined with cross-integration-frame \
+                 attach is not yet supported. The subject root {subject_root_entity:?} (mass id \
+                 {subject_root_id:?}) is being reparented under {:?} but the parent and child \
+                 also live in different integration frames. Either align the two bodies' \
+                 integration frames before the chained attach (e.g. via a frame switch), or \
+                 detach the subject from its current parent before the cross-integ-frame attach \
+                 so the simple root-subject path runs.",
+                evt.parent,
+            );
+            affected_ids.extend(tree.subtree_ids(subject_root_id));
+        }
 
-        let child_was_detached = detached_q.contains(evt.child);
+        // `child_was_detached` / `parent_was_detached` track whether
+        // the two integrated tree roots about to be merged were
+        // free-flying ballistic subtrees pre-attach (carrying
+        // `DetachedSubtreeStateC`). For the simple root-subject case
+        // the child IS the subject root, so reading from
+        // `subject_root_entity` is bit-identical to reading from
+        // `evt.child`; for the chained-attach case the subject's
+        // existing tree root is the integrated free-flier (the
+        // immediate child is interior to its own subtree and never
+        // carries `DetachedSubtreeStateC` by the same DB.21 contract).
+        let child_was_detached = detached_q.contains(subject_root_entity);
         let parent_was_detached = detached_q.contains(evt.parent);
 
         attach_work.push(AttachWork {
             parent_entity: evt.parent,
-            child_entity: evt.child,
+            subject_root_entity,
+            subject_root_id,
+            is_chained_attach,
             parent_id,
             parent_position,
             parent_velocity,
@@ -4504,11 +4647,20 @@ pub fn staging_system(
             cross_integ,
         });
 
-        // `tree.attach` takes raw structural-frame DVec3; drop the
-        // typed phantom at this kernel boundary. The typed
+        // `tree.attach_with_reroot` takes raw structural-frame DVec3;
+        // drop the typed phantom at this kernel boundary. The typed
         // `AttachEvent.offset` field guards the structural-frame
-        // contract at the writer site.
-        tree.attach(child_id, parent_id, evt.offset.raw_si(), evt.t_parent_child);
+        // contract at the writer site. The reroot-aware kernel handles
+        // both the simple root-subject case (bit-identical to plain
+        // `attach`) and the chained-attach case (recomputes geometry
+        // and reparents the subject's existing tree root under
+        // `parent_id`). Mirrors JEOD `dyn_body_attach.cc:521-567`'s
+        // `attach_child` path.
+        // JEOD_INV: BA.12 — Bevy adapter dispatches every attach through
+        // the reroot-aware kernel so chained-attach scenarios pick the
+        // JEOD `dyn_body_attach.cc:521-567` path automatically.
+        let _attached_root =
+            tree.attach_with_reroot(child_id, parent_id, evt.offset.raw_si(), evt.t_parent_child);
     }
 
     // Per-detach post-mutation work: tree_root entity whose
@@ -5087,10 +5239,150 @@ pub fn staging_system(
 
         if work.child_was_detached {
             // Re-attach consumes the captured ballistic state — the
-            // child is no longer free-flying.
+            // free-flying integrated tree root is no longer ballistic.
+            // For the simple root-subject case `subject_root_entity ==
+            // child_entity`; for the chained-attach case the subject's
+            // existing tree root is the integrated free-flier carrying
+            // `DetachedSubtreeStateC`, which is the entity we tracked
+            // in `child_was_detached` above.
             commands
-                .entity(work.child_entity)
+                .entity(work.subject_root_entity)
                 .remove::<crate::DetachedSubtreeStateC>();
+        }
+
+        if work.is_chained_attach {
+            // Fail-loud on a 3-DOF body anywhere in the rerooted
+            // subtree. The kinematic walk
+            // (`propagate_state_from_root_system`) derives both
+            // `TranslationalStateC` and `RotationalStateC` from the
+            // integrating root, so any attached (non-root) body must
+            // be 6-DOF. A 3-DOF body in the rerooted subtree would no
+            // longer be the integrated tree root *and* could not be
+            // derived by the kinematic walk (the walk reads the body's
+            // existing `RotationalStateC` to compose attitude); its
+            // stored `TranslationalStateC` would silently go stale
+            // post-reroot. Surface this at the attach site that
+            // introduced the configuration rather than letting a
+            // confusing "non-kinematic ancestor" diagnostic fire on
+            // the first post-reroot step. Mirrors the runner's
+            // `attach_inner` reroot-path 3-DOF check
+            // (`crates/jeod_runner/src/simulation/mass_tree.rs`).
+            // JEOD `dyn_body_attach.cc::attach_validate_child` rejects
+            // partial state with the same intent; we apply the
+            // analogous rejection per Bevy adapter semantics.
+            for id in tree.subtree_ids(work.subject_root_id) {
+                if let Some(&entity) = id_to_entity.get(&id) {
+                    let (_has_dyn_cfg, _has_trans, has_rot) =
+                        eligibility.get(entity).unwrap_or((false, false, false));
+                    // Mass-only entities (no DynamicsConfigC /
+                    // TranslationalStateC, no RotationalStateC) are
+                    // legitimate JEOD `MassBody`-without-`DynBody`
+                    // configuration and don't participate in the
+                    // kinematic walk — they have no `TranslationalStateC`
+                    // to go stale. The 3-DOF concern is specifically
+                    // about a dynamic body (carries DynamicsConfigC +
+                    // TranslationalStateC) that lacks RotationalStateC.
+                    let body_frame = body_frames.get(entity).ok();
+                    if body_frame.is_some() {
+                        assert!(
+                            has_rot,
+                            "AttachEvent: chained-attach reroot: dynamic body {entity:?} \
+                             (mass id {id:?}) is in the rerooted subtree under \
+                             subject_root {subject:?} (mass id {subject_id:?}) but has no \
+                             RotationalStateC. Kinematic propagation derives both \
+                             TranslationalStateC and RotationalStateC from the integrating \
+                             root, so any attached (non-root) body must be 6-DOF — a 3-DOF \
+                             body's state would go stale post-attach. Make this body 6-DOF \
+                             by inserting RotationalStateC before the chained attach, or \
+                             restructure the topology so this body never becomes a non-root \
+                             member of the merged tree.",
+                            subject = work.subject_root_entity,
+                            subject_id = work.subject_root_id,
+                        );
+                    }
+                }
+            }
+
+            // Reparent the rerooted subtree's `MassChildOf` Relations
+            // so the ECS-native composition path
+            // (`composite_mass_system`, `wrench_aggregation_system`,
+            // `propagate_state_from_root_system`) sees the same shape
+            // the arena tree just landed via
+            // `tree.attach_with_reroot(...)`.
+            //
+            // The walk is over `tree.subtree_ids(subject_root)` and
+            // touches:
+            //
+            //   * **The subject root.** Pre-reroot it was a tree root
+            //     with no `MassChildOf`; post-reroot it must carry
+            //     `MassChildOf(parent=new_parent)` with the
+            //     JEOD-recomputed (offset, t_parent_child) pair. The
+            //     recomputed pair is what `attach_with_reroot` stamped
+            //     into the arena's `structure_point[subject_root]`,
+            //     so we read it back from the tree to keep the ECS
+            //     side bit-identical to the arena.
+            //
+            //   * **Every descendant.** Pre-reroot a descendant may
+            //     have no `MassChildOf` (the simple-attach path
+            //     doesn't auto-insert one — mission code retains
+            //     explicit control). Post-reroot, the kinematic walk
+            //     and the wrench aggregation must derive the
+            //     descendant's state from the new tree root, which
+            //     requires the entire chain of `MassChildOf` edges to
+            //     be intact. We synthesize each descendant's
+            //     `MassChildOf` from the arena's
+            //     `parent[descendant]` + `structure_point[descendant]`
+            //     so the ECS path observes exactly the same edge the
+            //     arena tree already has.
+            //
+            // This is the auto-promote-to-kinematic semantics on the
+            // Bevy side: `wrench_aggregation_system` walks every
+            // `MassChildOf` chain after staging and inserts
+            // `KinematicChildC` on every non-root entity it visits.
+            // Mission code does NOT need to manually mark the
+            // rerooted subtree's bodies as kinematic — the marker
+            // emerges from the reparented chain on the next pass
+            // through the schedule. Matches the runner-side
+            // `Simulation::attach_inner`'s explicit
+            // `body.kinematic_only = true` auto-flag for the rerooted
+            // subtree, just expressed through the ECS relation rather
+            // than a per-body bool.
+            // JEOD_INV: BA.12 — chained attach re-roots the subject's existing tree under the new parent.
+            for id in tree.subtree_ids(work.subject_root_id) {
+                let entity = match id_to_entity.get(&id) {
+                    Some(&e) => e,
+                    None => continue,
+                };
+                let arena_parent_id = tree.parent(id).expect(
+                    "subtree_ids(subject_root) is the post-reroot subtree; the \
+                             subject root now has `parent_entity` and every descendant has \
+                             its in-subtree arena parent — both branches must yield Some(_)",
+                );
+                let arena_parent_entity = match id_to_entity.get(&arena_parent_id) {
+                    Some(&e) => e,
+                    None => continue,
+                };
+                // Read the offset / rotation from the arena's
+                // `structure_point` so the ECS-side `MassChildOf`
+                // matches the arena tree edge bit-identically.
+                // Post-reroot, `tree.get(subject_root).structure_point`
+                // is the JEOD-recomputed pair the kernel just stamped
+                // (matches the (`rerooted_child_offset`,
+                // `rerooted_child_t_parent_child`) we computed
+                // pre-mutation from the same formulas), and every
+                // descendant's `structure_point` is unchanged from its
+                // pre-reroot value (the reroot only changes the
+                // parent of `subject_root`, not its descendants'
+                // edges).
+                let sp = tree.get(id).structure_point;
+                commands
+                    .entity(entity)
+                    .insert(crate::MassChildOf::with_rotation(
+                        arena_parent_entity,
+                        sp.position,
+                        sp.t_parent_this,
+                    ));
+            }
         }
 
         if work.parent_was_detached {
