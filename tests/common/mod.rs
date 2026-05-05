@@ -307,12 +307,14 @@ pub fn assert_lighting_body_eq(
     b: &jeod_sim::LightingBody,
 ) {
     assert_bits_eq(label, &format!("{prefix}.radius"), a.radius, b.radius);
+    let a_pos = a.position.raw_si();
+    let b_pos = b.position.raw_si();
     for i in 0..3 {
         assert_bits_eq(
             label,
             &format!("{prefix}.position[{i}]"),
-            a.position[i],
-            b.position[i],
+            a_pos[i],
+            b_pos[i],
         );
     }
     assert_bits_eq(label, &format!("{prefix}.distance"), a.distance, b.distance);

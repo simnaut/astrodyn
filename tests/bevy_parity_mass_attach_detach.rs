@@ -466,7 +466,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
     app.world_mut().write_message(AttachEvent {
         child: child_entity,
         parent: parent_entity,
-        offset,
+        offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
         t_parent_child: DMat3::IDENTITY,
     });
     // Add the ECS-native MassChildOf relation too, so on the next

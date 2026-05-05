@@ -10,7 +10,7 @@ use jeod_interactions::{
     FlatPlateThermal,
 };
 use jeod_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
-use jeod_quantities::frame::{BodyFrame, RootInertial, Vehicle};
+use jeod_quantities::frame::{BodyFrame, RootInertial, SelfRef, StructuralFrame, Vehicle};
 use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
@@ -93,8 +93,15 @@ pub struct FlatPlateStageInputs {
     /// shadow in SIM_3_ORBIT; third-body frames are not propagated
     /// between RK4 stages within JEOD either).
     pub illum_factor: f64,
-    /// Center of gravity in structural frame.
-    pub center_grav: DVec3,
+    /// Center of gravity in the vehicle's structural frame. Typed
+    /// against the same `SelfRef`-wildcarded `StructuralFrame` as
+    /// [`FlatPlate.position`](jeod_interactions::FlatPlate) so the
+    /// two structural-frame inputs to the SRP torque kernel
+    /// (`crot_to_cp = plate.position − center_grav`) cannot
+    /// accidentally be mixed with an inertial-frame value at the
+    /// type level. The `SelfRef` wildcard mirrors the per-entity
+    /// adapter pattern documented on `FlatPlate`.
+    pub center_grav: Position<StructuralFrame<SelfRef>>,
 }
 
 /// Which integrator drives plate temperatures, and at what scheduling

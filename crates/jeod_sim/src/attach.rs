@@ -322,8 +322,8 @@ mod tests {
         let q = JeodQuat::identity();
         let omega = DVec3::new(0.001, -0.002, 0.0011);
         let captured = stage_detach_capture(pos, vel, q, omega);
-        assert_eq!(captured.composite_position, pos);
-        assert_eq!(captured.composite_velocity, vel);
+        assert_eq!(captured.composite_position.raw_si(), pos);
+        assert_eq!(captured.composite_velocity.raw_si(), vel);
         assert_eq!(captured.composite_ang_vel_body, omega);
     }
 
@@ -339,8 +339,8 @@ mod tests {
         let mut captured = stage_detach_capture(pos, vel, q, omega);
         let dt = 60.0;
         captured.step_ballistic(dt);
-        assert!((captured.composite_position - (pos + vel * dt)).length() < 1e-9);
-        assert!((captured.composite_velocity - vel).length() < 1e-9);
+        assert!((captured.composite_position.raw_si() - (pos + vel * dt)).length() < 1e-9);
+        assert!((captured.composite_velocity.raw_si() - vel).length() < 1e-9);
         assert!((captured.composite_ang_vel_body - omega).length() < 1e-9);
     }
 

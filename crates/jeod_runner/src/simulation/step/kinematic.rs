@@ -375,7 +375,7 @@ mod tests {
     use glam::{DMat3, DVec3};
     use jeod_sim::{
         recipes::Mission, GravityControls, JeodQuat, MassProperties, RotationalState,
-        TranslationalState, VehicleConfig,
+        TranslationalState, Vec3Ext, VehicleConfig,
     };
 
     /// Two-body chain (root + 1 kinematic child) with a non-identity
@@ -925,7 +925,7 @@ mod tests {
             FlatPlate {
                 area: 10.0,
                 normal: -DVec3::X,
-                position: DVec3::ZERO,
+                position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             FlatPlateParams {
                 albedo: 0.3,

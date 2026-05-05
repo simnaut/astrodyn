@@ -39,6 +39,7 @@
 
 pub mod atmosphere;
 pub mod attach;
+pub mod body_action;
 pub mod derived;
 pub mod forces;
 pub mod frame_orchestration;
@@ -67,12 +68,13 @@ pub use atmosphere::{
 pub use attach::{
     stage_attach_combine, stage_detach_capture, StageAttachInputs, StageAttachOutputs,
 };
+pub use body_action::{BodyAction, OrbitalElementSet};
 pub use derived::{
     compute_body_euler_angles, compute_body_euler_angles_typed, compute_body_geodetic,
     compute_body_geodetic_typed, compute_body_lvlh_frame, compute_body_lvlh_frame_typed,
     compute_body_solar_beta, compute_body_solar_beta_typed, compute_lvlh_relative_state,
-    compute_orbital_elements, compute_orbital_elements_typed, compute_relative_state,
-    LvlhRelativeState, RelativeState,
+    compute_lvlh_relative_state_typed, compute_orbital_elements, compute_orbital_elements_typed,
+    compute_relative_state, LvlhRelativeState, RelativeState,
 };
 pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use frame_orchestration::{

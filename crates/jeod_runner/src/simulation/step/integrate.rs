@@ -348,7 +348,11 @@ impl Simulation {
                                 &stage_thermal.t_pow4_cached,
                                 flux_struct_hat,
                                 stage_flux_mag,
-                                srp_inputs.center_grav,
+                                // The kernel works in raw `DVec3` for
+                                // structural-frame arithmetic; the
+                                // typed field on `FlatPlateStageInputs`
+                                // is the storage-time guard.
+                                srp_inputs.center_grav.raw_si(),
                                 srp_inputs.illum_factor,
                             );
                             let srp_force_inertial =

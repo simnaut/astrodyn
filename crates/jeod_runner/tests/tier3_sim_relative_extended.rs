@@ -24,8 +24,9 @@
 use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
-    compute_lvlh_relative_state, compute_relative_state, GravityControl, GravityControls,
-    GravityModel, GravitySource, SimulationTime, TranslationalState,
+    compute_lvlh_relative_state_typed, compute_relative_state, Earth, GravityControl,
+    GravityControls, GravityModel, GravitySource, PlanetInertial, SimulationTime,
+    TranslationalState, Vec3Ext,
 };
 use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 
@@ -131,18 +132,21 @@ fn tier3_relative_two_coorbiting_vehicles() {
         max_sep = max_sep.max(sep);
         min_sep = min_sep.min(sep);
 
-        let rel = compute_lvlh_relative_state(
-            chief.trans.position,
-            chief.trans.velocity,
-            deputy.trans.position,
-            deputy.trans.velocity,
+        // Earth-centered point-mass sim: the integration frame for
+        // both bodies is `<PlanetInertial<Earth>>`; tag at the call
+        // site to satisfy the typed entry's planet-inertial contract.
+        let rel = compute_lvlh_relative_state_typed(
+            chief.trans.position.m_at::<PlanetInertial<Earth>>(),
+            chief.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
+            deputy.trans.position.m_at::<PlanetInertial<Earth>>(),
+            deputy.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
         );
         // LVLH: X ≈ along-track, Y ≈ -orbit-normal, Z ≈ -radial.
         // For co-orbiting bodies, the along-track component dominates and
         // the in-plane/out-of-plane excursions stay small.
-        max_lvlh_x = max_lvlh_x.max(rel.position.x.abs());
-        max_lvlh_yz = max_lvlh_yz
-            .max((rel.position.y * rel.position.y + rel.position.z * rel.position.z).sqrt());
+        let rel_pos = rel.position.raw_si();
+        max_lvlh_x = max_lvlh_x.max(rel_pos.x.abs());
+        max_lvlh_yz = max_lvlh_yz.max((rel_pos.y * rel_pos.y + rel_pos.z * rel_pos.z).sqrt());
     }
 
     // RootInertial separation stays very close to the 100 m initial chord.
