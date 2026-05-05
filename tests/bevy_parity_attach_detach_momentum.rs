@@ -952,13 +952,25 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
 /// blindly into the attach handler would fail loudly.
 ///
 /// **Out of scope for this regression**: the cross-integration-frame
-/// case (parent and child carrying different `IntegSourceC` values).
-/// JEOD's `attach_establish_links` does call `set_integ_frame` to
-/// reparent the child's frame tree in that case, but our
-/// `staging_system` does not yet implement the matching reparent or
-/// coordinate rewrite, and `frame_switch_system` is purely
-/// distance-driven and does not react to `AttachEvent`. That gap is
-/// tracked separately and exercised by a companion regression below.
+/// case (parent and child carrying different `IntegSourceC` values),
+/// where JEOD's `attach_establish_links` *does* call `set_integ_frame`
+/// to reparent the child's frame tree under the parent's integ frame.
+/// Our `staging_system` implements the matching reparent — and (unlike
+/// JEOD's reparent-only `set_integ_frame`) also rewrites each
+/// reparented body's stored `TranslationalStateC` / `FrameTransC` by
+/// `(old_integ_origin - new_integ_origin)` in the same staging tick.
+/// JEOD relies on its immediately-following `propagate_state` to refill
+/// descendants' parent-relative storage, but our adapter has no
+/// equivalent same-call propagation (the next tick's
+/// `propagate_state_from_root_system` runs many systems later) and the
+/// `TranslationalStateC`-is-already-integ-frame-relative storage
+/// contract would otherwise leave every reparented descendant's
+/// numerics inconsistent with the post-attach frame-tree topology for
+/// every consumer in the staging→propagate window. The cross-integ
+/// reparent + rewrite is exercised by the companion regressions
+/// `bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame`
+/// and `bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
+/// below.
 #[test]
 fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
     let parent_mass = MassProperties::new(1000.0);
@@ -1418,25 +1430,22 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
         .get::<FrameEntityC>(parent_entity)
         .expect("parent registered FrameEntityC")
         .0;
-    // The parent has no `GravityControlsC`, so `force_collection_system`
-    // produces zero force / acceleration; the integrator's
-    // `pos += vel · dt` step still advances the parent under no-force
-    // kinematics from the merged-composite seed:
-    //   pos(t=dt) = pos_merged + vel_merged · dt
-    //   vel(t=dt) = vel_merged
-    // For the parity check we only need the absolute-via-walk
-    // position — the integ-origin shift is fully exercised whether
-    // we read at t=0 (just the merged composite) or t=dt (the
-    // composite plus a velocity-term offset). Match against the
-    // pre-step value (the merged composite the kernel produced) and
-    // accept any extra shift up to `vel · dt` in tolerance, so the
-    // assertion is robust to whether `staging_system` runs before
-    // or after the integrator's t=0 advance in this test's
-    // schedule. A regression that mismatches the lift / lower (e.g.
-    // forgets to lower the result through the parent's integ
-    // origin) would produce an `abs_pos` off by `source_a_pos`
-    // ~1e8 m, well clear of the `2 · vel_max · dt` ~ 1.5e4 m
-    // tolerance below.
+    // The parent in this fixture has no `GravityControlsC`, which
+    // is a required (non-optional) component on
+    // `integration_system`'s body query — so the parent does not
+    // match the integrator and is *not* advanced at all. At t=dt the
+    // parent's `TranslationalStateC` therefore still holds the
+    // merged-composite seed `staging_system` wrote (no `vel · dt`
+    // advance). The drift bound below is kept generous — `2 · vel ·
+    // dt` — so the assertion would still hold under a future
+    // refactor that moved the parent into the integrator query
+    // (which would then advance it under no-force kinematics from
+    // the same seed); the parity check only needs the integ-origin
+    // shift to be applied correctly on the writeback. A regression
+    // that mismatches the lift / lower (e.g. forgets to lower the
+    // result through the parent's integ origin) would produce an
+    // `abs_pos` off by `source_a_pos` ~1e8 m, well clear of the
+    // `2 · vel_max · dt` ~ 1.5e4 m tolerance below.
     let abs_pos = app
         .world_mut()
         .run_system_cached_with(
@@ -2766,9 +2775,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
-                offset,
-            ),
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
             t_parent_child,
         });
     step(&mut app, 1, dt);

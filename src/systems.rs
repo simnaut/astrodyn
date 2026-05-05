@@ -3567,14 +3567,19 @@ pub fn staging_system(
     // parent and child state through `omega × r` and
     // `T_inertial_struct.transpose()` shifts — both arithmetic-valid only
     // when both bodies' translational state lives in the same inertial
-    // frame. For the cross-integ-frame case the pre-attach states are
-    // lifted to root inertial via each body's `IntegOrigin` (mirrors the
-    // runner's `mass_tree::attach_inner` RF.10 shift site), the kernel
-    // runs in root coordinates, and the merged result is lowered through
-    // the parent's `IntegOrigin` for writeback into
-    // `TranslationalStateC`'s integration-frame storage. For the
-    // same-integ-frame case both lifts collapse to a bit-identical zero
-    // shift so this is a no-op.
+    // frame. The pre-attach states are lifted to root inertial via each
+    // body's `IntegOrigin` (mirrors the runner's `mass_tree::attach_inner`
+    // RF.10 shift site), the kernel runs in root coordinates, and the
+    // merged result is lowered through the parent's `IntegOrigin` for
+    // writeback into `TranslationalStateC`'s integration-frame storage.
+    // The lift is identically zero only for root-integrated bodies; for
+    // any body integrating in a non-root `PlanetInertial<P>` the lift is
+    // non-zero. The same-integ-frame case is a no-op in *physical* terms
+    // (parent and child share an `IntegOrigin`, so the post-lift kernel
+    // arithmetic matches what the pre-lift integ-frame arithmetic would
+    // have produced — the per-body shifts cancel in any inter-body
+    // difference the kernel forms), but `frame_origin` is still consulted
+    // for both bodies in that case rather than short-circuited.
     frame_origin: FrameOrigin,
     root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
@@ -4221,13 +4226,19 @@ pub fn staging_system(
                     //
                     // Compute each body's pre-attach integ-frame
                     // origin in root-inertial coordinates. The lift
-                    // is identically zero for any body integrated in
-                    // root (`parent_orig == root_e` after fold), so
-                    // for the asymmetric case "parent in root + child
-                    // in PlanetInertial<P>" only the child carries a
+                    // is identically zero for any body whose folded
+                    // integ frame is root (`parent_frame == root_e` /
+                    // `child_frame == root_e`), so for the asymmetric
+                    // case "parent in root + child in
+                    // PlanetInertial<P>" only the child carries a
                     // non-zero shift; for the symmetric case "parent
                     // in PlanetInertial<P> + child in PlanetInertial<Q>"
-                    // both lifts are non-zero and distinct.
+                    // both lifts are non-zero and distinct. Note that
+                    // `parent_frame`/`child_frame` are the *folded*
+                    // values (root-equivalent topology mapped onto
+                    // `root_e`); the unfolded `parent_orig` /
+                    // `child_orig` may name a registered source frame
+                    // that is itself root-equivalent.
                     let resolve_integ_origin = |frame: Entity| -> (glam::DVec3, glam::DVec3) {
                         if frame == root_e {
                             (glam::DVec3::ZERO, glam::DVec3::ZERO)
@@ -4280,53 +4291,95 @@ pub fn staging_system(
                         // linear `bodies.iter()` scan per id would be
                         // O(subtree_size × body_count) per attach.
                         if let Some(&entity) = id_to_entity.get(&id) {
-                            if let Ok(fe) = body_frames.get(entity) {
-                                let body_frame_entity = fe.0;
-                                // Resolve this descendant's pre-attach
-                                // integ-frame origin from its
-                                // body-frame entity's current `ChildOf`
-                                // parent (the live integ-frame source
-                                // of truth, same fold rule used above
-                                // for the child/parent equality check).
-                                let descendant_integ_frame = parents
-                                    .get(body_frame_entity)
-                                    .unwrap_or_else(|err| {
-                                        panic!(
-                                            "staging_system: cross-integ-frame attach: \
-                                             descendant body {entity:?} body-frame entity \
-                                             {body_frame_entity:?} has no ChildOf parent \
-                                             ({err:?}). Every body-frame entity must be \
-                                             parented under its integration frame entity \
-                                             (set by register_body_frames_system)."
-                                        )
-                                    })
-                                    .parent();
-                                let descendant_integ_frame_folded =
-                                    if crate::validation::is_root_equivalent_entity(
-                                        descendant_integ_frame,
-                                        root_e,
-                                        &parents,
-                                        &frame_states,
-                                    ) {
-                                        root_e
-                                    } else {
-                                        descendant_integ_frame
-                                    };
-                                let (old_pos, old_vel) = if descendant_integ_frame_folded == root_e
-                                {
-                                    (glam::DVec3::ZERO, glam::DVec3::ZERO)
+                            // A descendant can legitimately lack a
+                            // body-frame entity *only* when it is a
+                            // pure mass-only node — i.e. it has no
+                            // `DynamicsConfigC` / `TranslationalStateC`
+                            // and therefore no integ-frame
+                            // interpretation to keep in sync with the
+                            // post-attach topology. A descendant that
+                            // *does* carry those components but is
+                            // missing `FrameEntityC` is the same
+                            // registration-race state we already
+                            // fail-loud on for the attach participants
+                            // (lines above, mirroring
+                            // `attach_validate_child`). Skipping it
+                            // would silently leave that body's stored
+                            // `TranslationalStateC` interpreted under
+                            // the pre-attach integ frame for every
+                            // staging→propagate consumer in the same
+                            // tick, so surface the misconfiguration
+                            // here rather than letting the stale
+                            // numerics propagate.
+                            let fe = body_frames.get(entity).ok();
+                            let body_frame_entity = match fe {
+                                Some(fe) => fe.0,
+                                None => {
+                                    let (has_dyn_cfg, has_trans, _has_rot) =
+                                        eligibility.get(entity).unwrap_or((false, false, false));
+                                    assert!(
+                                        !(has_dyn_cfg && has_trans),
+                                        "staging_system: cross-integ-frame attach: \
+                                         descendant body {entity:?} carries DynamicsConfigC \
+                                         and TranslationalStateC (dynamic body) but has no \
+                                         FrameEntityC — registration race vs \
+                                         register_body_frames_system. The cross-integ-frame \
+                                         reparent would otherwise leave this descendant's \
+                                         stored TranslationalStateC interpreted under the \
+                                         pre-attach integ frame while every other body in \
+                                         the subtree gets shifted into the new frame, \
+                                         silently mixing coordinates across distinct \
+                                         integration frames. Spawn the body with a \
+                                         registered IntegSourceC (or under the root frame) \
+                                         and ensure register_body_frames_system has run \
+                                         before firing the AttachEvent."
+                                    );
+                                    continue;
+                                }
+                            };
+                            // Resolve this descendant's pre-attach
+                            // integ-frame origin from its
+                            // body-frame entity's current `ChildOf`
+                            // parent (the live integ-frame source
+                            // of truth, same fold rule used above
+                            // for the child/parent equality check).
+                            let descendant_integ_frame = parents
+                                .get(body_frame_entity)
+                                .unwrap_or_else(|err| {
+                                    panic!(
+                                        "staging_system: cross-integ-frame attach: \
+                                         descendant body {entity:?} body-frame entity \
+                                         {body_frame_entity:?} has no ChildOf parent \
+                                         ({err:?}). Every body-frame entity must be \
+                                         parented under its integration frame entity \
+                                         (set by register_body_frames_system)."
+                                    )
+                                })
+                                .parent();
+                            let descendant_integ_frame_folded =
+                                if crate::validation::is_root_equivalent_entity(
+                                    descendant_integ_frame,
+                                    root_e,
+                                    &parents,
+                                    &frame_states,
+                                ) {
+                                    root_e
                                 } else {
-                                    let (p, v) =
-                                        frame_origin.origin_in_root(root_e, descendant_integ_frame);
-                                    (p.raw_si(), v.raw_si())
+                                    descendant_integ_frame
                                 };
-                                reparent_entries.push(CrossIntegReparentEntry {
-                                    body_entity: entity,
-                                    body_frame_entity,
-                                    old_integ_origin_pos: old_pos,
-                                    old_integ_origin_vel: old_vel,
-                                });
-                            }
+                            let (old_pos, old_vel) = if descendant_integ_frame_folded == root_e {
+                                (glam::DVec3::ZERO, glam::DVec3::ZERO)
+                            } else {
+                                let (p, v) =
+                                    frame_origin.origin_in_root(root_e, descendant_integ_frame);
+                                (p.raw_si(), v.raw_si())
+                            };
+                            reparent_entries.push(CrossIntegReparentEntry {
+                                body_entity: entity,
+                                body_frame_entity,
+                                old_integ_origin_pos: old_pos,
+                                old_integ_origin_vel: old_vel,
+                            });
                         }
                     }
 
