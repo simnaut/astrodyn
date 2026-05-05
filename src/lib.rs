@@ -2,6 +2,7 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+pub mod body_action;
 pub mod bundles;
 pub mod components;
 pub mod frame_param;
@@ -15,6 +16,10 @@ pub mod systems;
 pub mod validation;
 pub mod wrench;
 
+pub use body_action::{
+    add_body_action_via, body_action_intake_system, body_action_system, BodyActionCommandsExt,
+    BodyActionEvent, BodyActionsR,
+};
 pub use bundles::*;
 pub use components::*;
 pub use kinematic_propagation::propagate_state_from_root_system;
@@ -225,6 +230,13 @@ impl Plugin for JeodPlugin {
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
+        // Body-action lifecycle: callers add / remove
+        // body-action requests through this single message type or
+        // through `BodyActionCommandsExt` on `Commands`. The intake
+        // system drains it into `BodyActionsR`; the apply system
+        // walks the resource and mutates ready actions' subjects.
+        app.add_message::<body_action::BodyActionEvent>();
+        app.init_resource::<body_action::BodyActionsR>();
 
         // ── Systems ──
         // Source-frame registration runs at Startup to spawn the ECS
@@ -271,6 +283,26 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
+                // Body-action systems are intentionally NOT registered
+                // in `Startup`. Bevy gives every system instance an
+                // independent `Local<MessageCursor<BodyActionEvent>>`
+                // (one per registration site), so registering the same
+                // intake function in both `Startup` and `FixedUpdate`
+                // would let messages written before the first
+                // `app.update()` be observed once by each cursor — an
+                // anonymous fire-once `BodyActionEvent::Add` would
+                // therefore apply twice (once at the end of `Startup`,
+                // again on the first `FixedUpdate` tick after Bevy's
+                // double-buffer aging keeps the message live). Pinning
+                // the only intake / apply registration to `FixedUpdate`
+                // makes the cursor singular and the action-fire count
+                // exact. Init-time messages still land before any
+                // pipeline consumer reads the body's mutable state:
+                // Bevy's double-buffered `Messages` keeps Startup-era
+                // writes alive across the buffer swap that happens in
+                // `First`, so the FixedUpdate intake on the first tick
+                // observes them and applies before
+                // `JeodSet::EphemerisUpdate`.
             ),
         );
         // Reject configs where a single frame entity carries multiple
@@ -486,6 +518,56 @@ impl Plugin for JeodPlugin {
                 systems::sinusoidal_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::closure_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::multi_dof_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                // Body-action lifecycle: drain `BodyActionEvent`
+                // (`Add` / `Remove` variants) into `BodyActionsR`,
+                // then apply every ready action. Runs before
+                // `JeodSet::EphemerisUpdate` so a mid-tick mass /
+                // state replacement is visible to gravity, atmosphere,
+                // integration, and derived state in the same tick.
+                // Runs after `sync_body_mass_point_ref_system` (in the
+                // first `add_systems` call) so a freshly-spawned body
+                // has a `MassPointRef` before its `MassPropertiesC` is
+                // mutated by an `InitMass` action.
+                //
+                // `sync_body_mass_point_ref_system` mutates the world
+                // via `Commands::insert` / `Commands::remove`, so the
+                // `MassPointRef` (or its absence) only becomes
+                // visible after a flush. With Bevy's
+                // `auto_insert_apply_deferred` (the default), the
+                // explicit `.after(sync_body_mass_point_ref_system)`
+                // ordering causes the scheduler to auto-insert an
+                // `ApplyDeferred` between the two systems, so this
+                // intake pass observes the up-to-date
+                // `MassPointRef`. The same is true for the
+                // `register_body_frames_system` chain that
+                // `sync_body_mass_point_ref_system` itself depends on
+                // — every `Commands`-using ancestor in the chain
+                // gets an auto-flush before the next ordered system
+                // runs.
+                //
+                // Lives in this second `add_systems` to stay within
+                // Bevy's 20-tuple `IntoSystem` limit.
+                body_action::body_action_intake_system
+                    .after(JeodSet::TimeUpdate)
+                    .after(systems::sync_body_mass_point_ref_system)
+                    .before(systems::mass_update_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // Strictly ordered before `mass_update_system` so a
+                // queued `BodyAction::InitMass` lands its `dirty=true`
+                // mass replacement *before* the per-tick recompute walks
+                // the dirty flag — the recompute then runs against the
+                // newly applied mass on the same tick. The first
+                // `add_systems` call places `mass_update_system`
+                // `.after(JeodSet::TimeUpdate).before(JeodSet::EphemerisUpdate)`,
+                // i.e. in the same TimeUpdate→EphemerisUpdate gap as
+                // `body_action_system` — without this explicit ordering
+                // Bevy is free to schedule the two in either order and
+                // a same-tick mass propagation would be a coin flip.
+                body_action::body_action_system
+                    .after(JeodSet::TimeUpdate)
+                    .after(body_action::body_action_intake_system)
+                    .before(systems::mass_update_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Kinematic state propagation: walks MassChildOf
