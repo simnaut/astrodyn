@@ -441,3 +441,241 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
          alias {double_shift_alias_vel:?}",
     );
 }
+
+/// Cross-source attach: the parent integrates in `PlanetInertial<Moon>`
+/// (non-zero `IntegOrigin == (MOON_OFFSET, MOON_VELOCITY)`) while the
+/// child integrates at root (`IntegSourceC` absent, `IntegOrigin == 0`).
+/// The two bodies start from the same root-inertial CoM (we author the
+/// child's root-inertial state to coincide with the parent's lifted
+/// state), so the kernel's mass-weighted merge is well-defined and
+/// the only thing that distinguishes a correct lift from the
+/// regression scenarios below is **which body's** integ-origin is
+/// used at each per-body shift.
+///
+/// This pins what the existing two tests cannot: those use the same
+/// `IntegSourceC(Some(moon))` on both bodies, so a regression that
+/// accidentally reused the parent's origin for the child (or vice
+/// versa) would still pass — both sides happen to share the same
+/// lift. With cross-source attach, swapping which body's origin is
+/// applied changes the captured root-inertial coordinate by
+/// `±(MOON_OFFSET, MOON_VELOCITY)` (~3.8e8 m / ~1 km/s), far above
+/// the 1e-6 m / 1e-9 m·s⁻¹ tolerances.
+///
+/// Setup:
+/// - Parent at lunar 100 km circular orbit (Moon-relative integ-frame
+///   coords identical to `parent_initial_trans`).
+/// - Child authored in root-inertial at the same CoM and with the
+///   same root-inertial velocity as the parent's lifted state, plus
+///   the same small `+1.5 m/s ẑ` delta the same-source variant uses
+///   to keep the merge non-degenerate.
+/// - Child has no `IntegSourceC`, so `register_body_frames_system`
+///   parents its body-frame under the root frame and the lazy lift
+///   returns `(zero, zero)` for the child.
+///
+/// The kernel run uses each body's *own* integ-origin: parent gets
+/// `+MOON_OFFSET / +MOON_VELOCITY`, child gets `+0 / +0`. Any code
+/// path that swapped these (or applied the parent's to the child)
+/// would land the kernel input — and therefore the merged composite
+/// — far from the assertion targets.
+#[test]
+fn bevy_parity_attach_non_root_integ_source_per_body_lift_distinct_sources() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let _earth = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .id();
+    let moon = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .insert(SourceInertialVelocityC::default())
+        .id();
+
+    let mut tree = MassTree::new();
+    let id_parent = tree.add_body("Parent".into(), parent_mass());
+    let id_child = tree.add_body("Child".into(), child_mass());
+    app.insert_resource(MassTreeR(tree));
+
+    // Parent: Moon-integrated, planet-relative state.
+    let parent_pos_integ = parent_initial_trans().position;
+    let parent_vel_integ = parent_initial_trans().velocity;
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC(six_dof_config()),
+            MassPropertiesC::from(parent_mass()),
+            MassBodyIdC(id_parent),
+            TranslationalStateC::from(parent_initial_trans()),
+            RotationalStateC::from(initial_rot()),
+            FrameDerivativesC::default(),
+            GravityControlsC(GravityControls { controls: vec![] }),
+            IntegSourceC(Some(moon)),
+        ))
+        .id();
+
+    // Child: root-integrated (no `IntegSourceC`). Author the child's
+    // root-inertial state to coincide with the parent's *lifted*
+    // root-inertial state plus the same `+1.5 m/s ẑ` delta the
+    // same-source test uses — keeps the merge non-degenerate (mass-
+    // weighted velocity does real work) and produces the same kernel
+    // expected output if and only if the per-body lift uses each
+    // body's own origin.
+    let child_root_pos = parent_pos_integ + MOON_OFFSET;
+    let child_root_vel = parent_vel_integ + MOON_VELOCITY + DVec3::new(0.0, 0.0, 1.5);
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC(six_dof_config()),
+            MassPropertiesC::from(child_mass()),
+            MassBodyIdC(id_child),
+            TranslationalStateC::from(TranslationalState {
+                position: child_root_pos,
+                velocity: child_root_vel,
+            }),
+            RotationalStateC::from(initial_rot()),
+            FrameDerivativesC::default(),
+            GravityControlsC(GravityControls { controls: vec![] }),
+            // No IntegSourceC: defaults to root.
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Park the Moon at a non-zero inertial state so the parent's
+    // integ-origin is non-zero in root-inertial.
+    let sys = app
+        .world_mut()
+        .register_system(move |mut m: SourceMutator| {
+            m.set_source_state(moon, MOON_OFFSET, MOON_VELOCITY);
+        });
+    app.world_mut().run_system(sys).unwrap();
+
+    // Fire the attach.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut().run_schedule(FixedUpdate);
+
+    // Independent kernel run with each body lifted through *its own*
+    // integ-origin: parent gets `+MOON_*`, child stays at its
+    // root-inertial state.
+    let combined_mass = app
+        .world()
+        .resource::<MassTreeR>()
+        .0
+        .get(id_parent)
+        .composite_properties;
+
+    let q = JeodQuat::identity();
+    let parent_mass_props = parent_mass();
+    let expected = jeod_sim::stage_attach_combine(StageAttachInputs {
+        parent_position: parent_pos_integ + MOON_OFFSET,
+        parent_velocity: parent_vel_integ + MOON_VELOCITY,
+        parent_quaternion: q,
+        parent_ang_vel_body: DVec3::ZERO,
+        parent_mass: parent_mass_props,
+        orig_parent_cm_struct: parent_mass_props.position,
+        parent_t_inertial_struct: DMat3::IDENTITY,
+        // Child is root-integrated: lifted state == raw stored state.
+        child_position: child_root_pos,
+        child_velocity: child_root_vel,
+        child_quaternion: q,
+        child_ang_vel_body: DVec3::ZERO,
+        child_mass: child_mass(),
+        combined_mass,
+    });
+
+    // Lower the kernel's root-inertial output through the *parent's*
+    // integ-origin (the writeback uses the parent's origin only — the
+    // post-attach composite lives in the parent's storage frame).
+    let expected_pos_integ = expected.position - MOON_OFFSET;
+    let expected_vel_integ = expected.velocity - MOON_VELOCITY;
+
+    let post_pos_integ = app
+        .world()
+        .get::<TranslationalStateC>(parent_entity)
+        .unwrap()
+        .0
+        .position
+        .raw_si();
+    let post_vel_integ = app
+        .world()
+        .get::<TranslationalStateC>(parent_entity)
+        .unwrap()
+        .0
+        .velocity
+        .raw_si();
+
+    assert!(
+        (post_pos_integ - expected_pos_integ).length() < 1e-6,
+        "cross-source attach: TranslationalStateC.position must equal kernel output \
+         lowered through parent's IntegOrigin:\n  got {post_pos_integ:?}\n  \
+         expected {expected_pos_integ:?}\n  delta {:?}",
+        post_pos_integ - expected_pos_integ,
+    );
+    assert!(
+        (post_vel_integ - expected_vel_integ).length() < 1e-9,
+        "cross-source attach: TranslationalStateC.velocity must equal kernel output \
+         lowered through parent's IntegOrigin:\n  got {post_vel_integ:?}\n  \
+         expected {expected_vel_integ:?}\n  delta {:?}",
+        post_vel_integ - expected_vel_integ,
+    );
+
+    // Bug-mode alias 1: the per-body lift accidentally reused the
+    // parent's origin for the child (so the child's lifted position
+    // would be `child_root + MOON_OFFSET` instead of `child_root`).
+    // The kernel's mass-weighted merge would then differ from the
+    // correct expected by the child-mass fraction times `MOON_OFFSET`.
+    let m_p = parent_mass_props.mass;
+    let m_c = child_mass().mass;
+    let m_total = m_p + m_c;
+    let child_share = m_c / m_total;
+    let alias_swap_child_pos = (expected.position + child_share * MOON_OFFSET) - MOON_OFFSET;
+    let alias_swap_child_vel = (expected.velocity + child_share * MOON_VELOCITY) - MOON_VELOCITY;
+    assert!(
+        (post_pos_integ - alias_swap_child_pos).length() > 1.0,
+        "cross-source attach: TranslationalStateC.position matches the \
+         'parent's origin reused for child' bug-mode alias (off by \
+         child_share * MOON_OFFSET ≈ {:.0} m). got {post_pos_integ:?}, \
+         alias {alias_swap_child_pos:?}",
+        (child_share * MOON_OFFSET).length(),
+    );
+    assert!(
+        (post_vel_integ - alias_swap_child_vel).length() > 1.0,
+        "cross-source attach: TranslationalStateC.velocity matches the \
+         'parent's origin reused for child' bug-mode alias. \
+         got {post_vel_integ:?}, alias {alias_swap_child_vel:?}",
+    );
+
+    // Bug-mode alias 2: the per-body lift accidentally reused the
+    // child's origin (zero) for the parent. The kernel's mass-
+    // weighted merge would be off by the parent-mass fraction times
+    // `MOON_OFFSET` in the opposite direction.
+    let parent_share = m_p / m_total;
+    let alias_swap_parent_pos = (expected.position - parent_share * MOON_OFFSET) - MOON_OFFSET;
+    let alias_swap_parent_vel = (expected.velocity - parent_share * MOON_VELOCITY) - MOON_VELOCITY;
+    assert!(
+        (post_pos_integ - alias_swap_parent_pos).length() > 1.0,
+        "cross-source attach: TranslationalStateC.position matches the \
+         'child's origin reused for parent' bug-mode alias. \
+         got {post_pos_integ:?}, alias {alias_swap_parent_pos:?}",
+    );
+    assert!(
+        (post_vel_integ - alias_swap_parent_vel).length() > 1.0,
+        "cross-source attach: TranslationalStateC.velocity matches the \
+         'child's origin reused for parent' bug-mode alias. \
+         got {post_vel_integ:?}, alias {alias_swap_parent_vel:?}",
+    );
+}

@@ -64,13 +64,15 @@ const DT: f64 = 60.0;
 const NUM_STEPS_BEFORE_DETACH: usize = 5;
 const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
 /// Non-zero Moon inertial velocity for the velocity-shift variant.
-/// Picked along x to keep the position-shift signature (MOON_OFFSET
-/// also along x) easy to reason about in failure messages, but with
-/// magnitude (~1 km/s along y) that is well above any conceivable
-/// f64 round-off in the lift/lower chain. A bug that drops the
-/// velocity term of the lift would mislabel an integ-frame velocity
-/// as root-inertial and leak the full 1 km/s into
-/// `composite_velocity` — orders of magnitude above the 1e-9 tolerance.
+/// Picked along y so it is orthogonal to `MOON_OFFSET` (along x) —
+/// orthogonal so a bug that mixes the position and velocity branches
+/// of the lift/lower pair leaves a measurable residual in the
+/// component the failing branch would not have touched. Magnitude
+/// ~1 km/s, well above any conceivable f64 round-off in the lift/
+/// lower chain. A bug that drops the velocity term of the lift would
+/// mislabel an integ-frame velocity as root-inertial and leak the
+/// full 1 km/s into `composite_velocity` — orders of magnitude above
+/// the 1e-9 tolerance.
 const MOON_VELOCITY: DVec3 = DVec3::new(0.0, 1_000.0, 0.0);
 
 fn parent_mass() -> MassProperties {

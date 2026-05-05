@@ -2455,6 +2455,71 @@ fn body_integ_origin_in_root(
     }
 }
 
+/// Lazy fail-loud variant of [`body_integ_origin_in_root`] for systems
+/// that take `Option<Res<RootFrameEntityR>>`: a body with a
+/// `FrameEntityC` whose parent is *not* the root needs the
+/// integ-origin shift, and the shift cannot be computed without the
+/// root entity. Panicking here surfaces the misconfiguration at the
+/// exact site where wrong physics would otherwise propagate silently
+/// (per the *Fail Loudly* rule in CLAUDE.md): a non-root-integrated
+/// body's `TranslationalStateC` is planet-relative, and treating
+/// every integ-origin as zero would feed planet-relative coordinates
+/// into a kernel that composes in root-inertial — silently producing
+/// merged states off by the integration-frame's full translational
+/// state (~3.8e8 m / 1 km/s for lunar bodies).
+///
+/// Pure root-integrated worlds (the common minimal-test shape: no
+/// `JeodPlugin`, so no `FrameEntityC` on bodies) keep working — the
+/// `body_frame.is_none()` branch returns zero without consulting the
+/// root entity. Tests that exercise non-root-integrated bodies must
+/// register `JeodPlugin` (which inserts `RootFrameEntityR` and the
+/// frame-tree infrastructure) or supply an equivalent mock resource.
+fn body_integ_origin_in_root_lazy(
+    body_frame: Option<&FrameEntityC>,
+    parents: &Query<&ChildOf>,
+    root_frame_entity: Option<Entity>,
+    frame_origin: &FrameOrigin,
+) -> (Position<RootInertial>, Velocity<RootInertial>) {
+    // Resolve the body's integ-frame entity (parent of its
+    // `FrameEntityC` in the frame-tree). `None` means the body is
+    // root-integrated by convention — no shift needed.
+    let integ_frame_entity =
+        body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+    let Some(integ_e) = integ_frame_entity else {
+        return (
+            Position::<RootInertial>::zero(),
+            Velocity::<RootInertial>::zero(),
+        );
+    };
+    // The body has a registered frame entity. Without the root entity
+    // we cannot tell whether `integ_e == root` (root-integrated, safe
+    // zero shift) or `integ_e != root` (non-root, load-bearing shift).
+    // Demand the resource and panic with a fix-it diagnostic if it is
+    // absent — silently returning zero in the latter case would
+    // corrupt the merged composite by the integration-frame's full
+    // root-inertial state.
+    let root = root_frame_entity.unwrap_or_else(|| {
+        panic!(
+            "RootFrameEntityR resource not present, but a body carries FrameEntityC \
+             ({:?}) whose integ-frame parent is {integ_e:?} — the integ-origin shift \
+             cannot be computed without the root frame entity. JeodPlugin must be \
+             loaded for systems that lift integration-frame coordinates to \
+             root-inertial (staging_system, step_detached_system). If your test \
+             intentionally omits JeodPlugin, also omit FrameEntityC from the body \
+             (root-integrated bodies skip this path entirely).",
+            body_frame.map(|fe| fe.0)
+        )
+    });
+    if integ_e == root {
+        (
+            Position::<RootInertial>::zero(),
+            Velocity::<RootInertial>::zero(),
+        )
+    } else {
+        frame_origin.origin_in_root(root, integ_e)
+    }
+}
+
 /// Compute solar beta angle for entities with `SolarBetaC`.
 ///
 /// Requires a `SunMarker` entity to exist in the world.
@@ -3140,32 +3205,25 @@ pub fn staging_system(
         // shift, and the combine kernel is a root-inertial-shift
         // consumer.
         let parent_body_frame_capture = body_frames.get(evt.parent).ok();
-        let (parent_integ_origin_pos, parent_integ_origin_vel) = match root_frame_entity.as_deref()
-        {
-            Some(root) => {
-                let (p, v) = body_integ_origin_in_root(
-                    parent_body_frame_capture,
-                    &parents,
-                    root.0,
-                    &frame_origin,
-                );
-                (p.raw_si(), v.raw_si())
-            }
-            None => (glam::DVec3::ZERO, glam::DVec3::ZERO),
-        };
+        let (parent_integ_origin_pos_typed, parent_integ_origin_vel_typed) =
+            body_integ_origin_in_root_lazy(
+                parent_body_frame_capture,
+                &parents,
+                root_frame_entity.as_deref().map(|r| r.0),
+                &frame_origin,
+            );
+        let parent_integ_origin_pos = parent_integ_origin_pos_typed.raw_si();
+        let parent_integ_origin_vel = parent_integ_origin_vel_typed.raw_si();
         let child_body_frame_capture = body_frames.get(evt.child).ok();
-        let (child_integ_origin_pos, child_integ_origin_vel) = match root_frame_entity.as_deref() {
-            Some(root) => {
-                let (p, v) = body_integ_origin_in_root(
-                    child_body_frame_capture,
-                    &parents,
-                    root.0,
-                    &frame_origin,
-                );
-                (p.raw_si(), v.raw_si())
-            }
-            None => (glam::DVec3::ZERO, glam::DVec3::ZERO),
-        };
+        let (child_integ_origin_pos_typed, child_integ_origin_vel_typed) =
+            body_integ_origin_in_root_lazy(
+                child_body_frame_capture,
+                &parents,
+                root_frame_entity.as_deref().map(|r| r.0),
+                &frame_origin,
+            );
+        let child_integ_origin_pos = child_integ_origin_pos_typed.raw_si();
+        let child_integ_origin_vel = child_integ_origin_vel_typed.raw_si();
         let parent_position = parent_position_integ + parent_integ_origin_pos;
         let parent_velocity = parent_velocity_integ + parent_integ_origin_vel;
         let child_position = child_position_integ + child_integ_origin_pos;
@@ -3392,21 +3450,12 @@ pub fn staging_system(
         // JEOD_INV: RF.10 — root-inertial-shift consumer: the kernel
         // walks rigid-body composition in root-inertial coordinates.
         let parent_body_frame = body_frames.get(tree_root_entity).ok();
-        let (parent_integ_origin_pos, parent_integ_origin_vel) = match root_frame_entity.as_deref()
-        {
-            Some(root) => {
-                body_integ_origin_in_root(parent_body_frame, &parents, root.0, &frame_origin)
-            }
-            // No frame infrastructure (e.g. minimal-test world without
-            // `JeodPlugin`): treat every body as root-integrated. The
-            // production wiring always inserts `RootFrameEntityR`; this
-            // arm is a fail-soft for tests that exercise
-            // `staging_system` in isolation.
-            None => (
-                Position::<RootInertial>::zero(),
-                Velocity::<RootInertial>::zero(),
-            ),
-        };
+        let (parent_integ_origin_pos, parent_integ_origin_vel) = body_integ_origin_in_root_lazy(
+            parent_body_frame,
+            &parents,
+            root_frame_entity.as_deref().map(|r| r.0),
+            &frame_origin,
+        );
         let parent_pre_position_inertial = parent_pre_position + parent_integ_origin_pos.raw_si();
         let parent_pre_velocity_inertial = parent_pre_velocity + parent_integ_origin_vel.raw_si();
         let parent_composite_state = jeod_sim::RefFrameState {
@@ -3721,18 +3770,12 @@ pub fn staging_system(
             // `Position/Velocity<RootInertial>`.
             let parent_body_frame_shift = body_frames.get(shift.tree_root_entity).ok();
             let (parent_integ_origin_pos_shift, parent_integ_origin_vel_shift) =
-                match root_frame_entity.as_deref() {
-                    Some(root) => body_integ_origin_in_root(
-                        parent_body_frame_shift,
-                        &parents,
-                        root.0,
-                        &frame_origin,
-                    ),
-                    None => (
-                        Position::<RootInertial>::zero(),
-                        Velocity::<RootInertial>::zero(),
-                    ),
-                };
+                body_integ_origin_in_root_lazy(
+                    parent_body_frame_shift,
+                    &parents,
+                    root_frame_entity.as_deref().map(|r| r.0),
+                    &frame_origin,
+                );
             use jeod_sim::Vec3Ext as _;
             let updated = jeod_sim::DetachedSubtreeState {
                 composite_position: (new_position + parent_integ_origin_pos_shift.raw_si())
@@ -3840,19 +3883,12 @@ pub fn step_detached_system(
             // step-time writeback lowers from root-inertial to integ
             // frame.
             let body_frame = body_frames.get(entity).ok();
-            let (integ_origin_pos, integ_origin_vel) = match root_frame_entity.as_deref() {
-                Some(root) => {
-                    body_integ_origin_in_root(body_frame, &parents, root.0, &frame_origin)
-                }
-                // Fail-soft for tests that wire `step_detached_system`
-                // without `JeodPlugin`: no frame infrastructure means
-                // every body is treated as root-integrated, matching
-                // the staging-system convention.
-                None => (
-                    Position::<RootInertial>::zero(),
-                    Velocity::<RootInertial>::zero(),
-                ),
-            };
+            let (integ_origin_pos, integ_origin_vel) = body_integ_origin_in_root_lazy(
+                body_frame,
+                &parents,
+                root_frame_entity.as_deref().map(|r| r.0),
+                &frame_origin,
+            );
             let position = state.0.composite_position.raw_si() - integ_origin_pos.raw_si();
             let velocity = state.0.composite_velocity.raw_si() - integ_origin_vel.raw_si();
             t.0 =
