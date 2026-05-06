@@ -69,7 +69,8 @@ pub use atmosphere::{
     AtmosphereModel,
 };
 pub use attach::{
-    stage_attach_combine, stage_detach_capture, StageAttachInputs, StageAttachOutputs,
+    stage_attach_combine, stage_detach_capture, CrossIntegFrameStateShift, StageAttachInputs,
+    StageAttachOutputs,
 };
 pub use body_action::{BodyAction, LvlhAngularVelocityFrame, OrbitalElementSet};
 pub use derived::{

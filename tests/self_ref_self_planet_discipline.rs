@@ -372,11 +372,14 @@ fn canonical_storage_boundary_files_carry_ts01_marker() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pinned: &[(&str, &str)] = &[
         (
-            "src/components.rs",
+            "src/components/mod.rs",
             "Bevy `Component` newtype boundary — `<SelfRef>` tags on \
              RotationalStateC / MassPropertiesC / TotalForceC / \
              FrameDerivativesC / GravityTorqueC / StructuralTransformC / \
-             ExternalTorqueC / FlatPlateConfigC.",
+             ExternalTorqueC / FlatPlateConfigC are split across the \
+             per-stage submodules (`state`, `interaction`, `gravity`, \
+             …); the file-level marker on `mod.rs` covers the whole \
+             component module tree.",
         ),
         (
             "crates/jeod_runner/src/simulation/types.rs",

@@ -33,6 +33,29 @@
 //! composite-body inertial state — what the caller then attaches to
 //! the ECS (or stores in a runner-side map) so the detached subtree
 //! can drift ballistically.
+//!
+//! ## Cross-integration-frame attach
+//!
+//! When the parent and child of an attach resolve to different
+//! integration frames, the merged body switches integration frame —
+//! the child (and every kinematic descendant of the child in the mass
+//! tree) must be reinterpreted under the parent's integ frame post-
+//! attach. JEOD's `dyn_body_integration.cc::set_integ_frame` performs
+//! the topology reparent only ("does not update state"); the next
+//! `propagate_state()` pass refills descendants' parent-relative storage
+//! from the merged root.
+//!
+//! Adapters that lack JEOD's same-call `propagate_state` recursion
+//! (e.g. the Bevy adapter, where the kinematic propagation walk runs
+//! many systems later) must additionally **rewrite each descendant's
+//! stored translational state** from the old integ frame's coordinates
+//! into the new frame's coordinates inside the staging window. The pure
+//! arithmetic of that rewrite is captured by [`CrossIntegFrameStateShift`]:
+//! a typed translation between two non-rotating integration frames whose
+//! root-inertial origins are known. Both legitimate integ-frame entities
+//! in this codebase are non-rotating (`RootInertial` or
+//! `PlanetInertial<P>`), so the rewrite is a pure translation — no
+//! attitude or angular-velocity correction is required.
 
 use jeod_dynamics::{
     combine_states_at_attach, AttachCombineInputs, AttachCombineOutputs, DetachedSubtreeState,
@@ -216,6 +239,99 @@ pub fn stage_detach_capture(
     })
 }
 
+/// Pure translation between two non-rotating integration frames whose
+/// root-inertial origins are known.
+///
+/// Built from a body's *pre-attach* integ-frame origin and the
+/// post-attach (parent's) integ-frame origin, both expressed in
+/// root-inertial coordinates. The shift carried by this struct is
+/// `old - new`: applying it to a `(position, velocity)` pair stored in
+/// the *old* integ frame's coordinates yields the same physical pose
+/// re-expressed in the *new* integ frame's coordinates.
+///
+/// Used by the cross-integration-frame attach path on adapters that
+/// must rewrite each descendant's stored translational state inside the
+/// staging window (so consumers running between staging and the next
+/// kinematic propagation pass don't read pre-attach numerics through
+/// post-attach frame-tree topology). JEOD's
+/// `dyn_body_integration.cc::set_integ_frame` only reparents the frame
+/// nodes ("does not update state") and relies on a same-call
+/// `propagate_state()` recursion; adapters without that recursion do the
+/// translation here.
+///
+/// The translation is valid only because every legitimate integ-frame
+/// entity in this codebase is non-rotating (`RootInertial` or a planet
+/// inertial frame, all co-aligned with root inertial axes by the frame
+/// tree's construction). A rotating integ frame would additionally
+/// require an attitude / angular-velocity rewrite — that case is not
+/// supported and is structurally rejected upstream by the Bevy
+/// adapter's cross-integ-frame fence.
+///
+/// All inputs and outputs are raw `glam::DVec3` (root-inertial for the
+/// origin pairs, integration-frame for the body state). Typed quantity
+/// shifts are available in [`jeod_quantities::IntegOrigin`]; this
+/// helper sits one layer below to keep the per-descendant arithmetic
+/// fast and to match the mass-tree kernel's untyped surface.
+#[derive(Debug, Clone, Copy)]
+pub struct CrossIntegFrameStateShift {
+    shift_pos: glam::DVec3,
+    shift_vel: glam::DVec3,
+}
+
+impl CrossIntegFrameStateShift {
+    /// Build a state-shift from the body's pre-attach integ-frame
+    /// origin and the post-attach (parent's) integ-frame origin, both
+    /// expressed in root-inertial coordinates.
+    ///
+    /// Returns the no-op shift (zero pos, zero vel) when both origins
+    /// agree — useful for adapters that uniformly funnel every
+    /// descendant through this kernel without first checking whether
+    /// the body actually changed integ frame.
+    #[inline]
+    pub fn between_integ_origins(
+        old_origin_pos: glam::DVec3,
+        old_origin_vel: glam::DVec3,
+        new_origin_pos: glam::DVec3,
+        new_origin_vel: glam::DVec3,
+    ) -> Self {
+        Self {
+            shift_pos: old_origin_pos - new_origin_pos,
+            shift_vel: old_origin_vel - new_origin_vel,
+        }
+    }
+
+    /// Position component of the shift (`old_origin - new_origin`).
+    #[inline]
+    pub fn shift_pos(&self) -> glam::DVec3 {
+        self.shift_pos
+    }
+
+    /// Velocity component of the shift (`old_origin - new_origin`).
+    #[inline]
+    pub fn shift_vel(&self) -> glam::DVec3 {
+        self.shift_vel
+    }
+
+    /// Re-express a `(position, velocity)` pair stored in the *old*
+    /// integ-frame's coordinates into the *new* integ-frame's
+    /// coordinates by adding the shift component-wise.
+    ///
+    /// The pair is a pure translation between two co-aligned inertial
+    /// frames, so the same translation applies to both stored
+    /// `TranslationalState`-style payloads (the body's integ-frame
+    /// trans state) and the body-frame entity's `FrameTrans`-style
+    /// parent-relative payload — the per-frame rewrite at the reparent
+    /// site can call this helper for both.
+    #[inline]
+    pub fn apply(
+        &self,
+        position: glam::DVec3,
+        velocity: glam::DVec3,
+    ) -> (glam::DVec3, glam::DVec3) {
+        (position + self.shift_pos, velocity + self.shift_vel)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +467,55 @@ mod tests {
     fn stage_detach_capture_panics_on_non_unit_quat() {
         let bad_q = JeodQuat::new(2.0, 0.0, 0.0, 0.0);
         let _ = stage_detach_capture(DVec3::ZERO, DVec3::ZERO, bad_q, DVec3::ZERO);
+    }
+
+    /// `between_integ_origins` returns the additive shift `old - new`,
+    /// and `apply` adds that shift to a stored `(position, velocity)`
+    /// pair. The composition of "subtract origin" → "add origin" is
+    /// the typed translation between two non-rotating inertial frames.
+    #[test]
+    fn cross_integ_frame_state_shift_translates_state_between_origins() {
+        let old_origin_pos = DVec3::new(1.5e11, 2.0, -3.0);
+        let old_origin_vel = DVec3::new(0.1, 30_000.0, 0.0);
+        let new_origin_pos = DVec3::new(1.0e11, -4.0, 2.5);
+        let new_origin_vel = DVec3::new(-0.05, 25_000.0, 0.5);
+        let shift = CrossIntegFrameStateShift::between_integ_origins(
+            old_origin_pos,
+            old_origin_vel,
+            new_origin_pos,
+            new_origin_vel,
+        );
+        assert_eq!(shift.shift_pos(), old_origin_pos - new_origin_pos);
+        assert_eq!(shift.shift_vel(), old_origin_vel - new_origin_vel);
+
+        // A body whose stored state is `(p_old, v_old)` in the OLD
+        // frame represents the same physical pose as
+        // `(p_old + (old_origin - new_origin), v_old + (old_origin_vel
+        //  - new_origin_vel))` in the NEW frame.
+        let p_old = DVec3::new(7e6, 0.0, 0.0);
+        let v_old = DVec3::new(0.0, 7500.0, 0.0);
+        let (p_new, v_new) = shift.apply(p_old, v_old);
+        // Cross-check: the absolute root-inertial pose should be
+        // identical no matter which integ-frame we read it from.
+        assert!((p_old + old_origin_pos - (p_new + new_origin_pos)).length() < 1e-9);
+        assert!((v_old + old_origin_vel - (v_new + new_origin_vel)).length() < 1e-9);
+    }
+
+    /// Same-origin → zero shift. Folds the same-integ-frame case into a
+    /// bit-identical no-op without the caller having to special-case it.
+    #[test]
+    fn cross_integ_frame_state_shift_is_no_op_for_matching_origins() {
+        let origin_pos = DVec3::new(1.5e11, 0.0, 0.0);
+        let origin_vel = DVec3::new(0.0, 30_000.0, 0.0);
+        let shift = CrossIntegFrameStateShift::between_integ_origins(
+            origin_pos, origin_vel, origin_pos, origin_vel,
+        );
+        assert_eq!(shift.shift_pos(), DVec3::ZERO);
+        assert_eq!(shift.shift_vel(), DVec3::ZERO);
+        let p = DVec3::new(7e6, 0.0, 0.0);
+        let v = DVec3::new(0.0, 7500.0, 0.0);
+        let (p_new, v_new) = shift.apply(p, v);
+        assert_eq!(p_new, p);
+        assert_eq!(v_new, v);
     }
 }
