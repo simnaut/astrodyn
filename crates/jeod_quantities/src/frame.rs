@@ -75,7 +75,13 @@ pub trait Planet: PlanetSealed + Send + Sync + 'static {
 ///
 /// Vehicle marker types are used with [`BodyFrame`], [`StructuralFrame`],
 /// [`Lvlh`], and [`Ned`].
-pub trait Vehicle: VehicleSealed + 'static {
+///
+/// `Send + Sync` are required so `PhantomData<V>`-tagged ECS components
+/// can be moved between threads under Bevy's parallel scheduler. Every
+/// Vehicle marker is a zero-sized empty struct that trivially satisfies
+/// both — the supertrait bound just makes the contract explicit and
+/// mirrors the parallel symmetry with [`Planet`].
+pub trait Vehicle: VehicleSealed + Send + Sync + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
 }

@@ -10,7 +10,7 @@ use jeod_interactions::{
     FlatPlateThermal,
 };
 use jeod_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
-use jeod_quantities::frame::{BodyFrame, RootInertial, SelfRef, StructuralFrame, Vehicle};
+use jeod_quantities::frame::{BodyFrame, RootInertial, StructuralFrame, Vehicle};
 use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
@@ -47,10 +47,10 @@ use crate::integrable::IntegrableObject;
 /// **`DVec3 - Position<RootInertial>` does not compile:**
 ///
 /// ```compile_fail
-/// use jeod_sim::FlatPlateStageInputs;
+/// use jeod_sim::{FlatPlateStageInputs, SelfRef};
 /// use glam::DVec3;
 ///
-/// let inputs = FlatPlateStageInputs::default();
+/// let inputs = FlatPlateStageInputs::<SelfRef>::default();
 /// let stage_pos: DVec3 = DVec3::new(7.0e6, 0.0, 0.0); // raw integration-frame
 /// // No `Sub<Position<RootInertial>>` impl for `DVec3`:
 /// let _bug = stage_pos - inputs.sun_position;
@@ -63,19 +63,19 @@ use crate::integrable::IntegrableObject;
 /// [`IntegOrigin::shift_position`](jeod_quantities::IntegOrigin::shift_position)):
 ///
 /// ```compile_fail
-/// use jeod_sim::FlatPlateStageInputs;
+/// use jeod_sim::{FlatPlateStageInputs, SelfRef};
 /// use glam::DVec3;
 ///
 /// let raw_sun: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
 /// // Field is typed; raw DVec3 doesn't typecheck:
-/// let _bug = FlatPlateStageInputs {
+/// let _bug = FlatPlateStageInputs::<SelfRef> {
 ///     sun_position: raw_sun,
 ///     illum_factor: 1.0,
 ///     center_grav: DVec3::ZERO,
 /// };
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
-pub struct FlatPlateStageInputs {
+#[derive(Debug, Clone, Copy)]
+pub struct FlatPlateStageInputs<V: Vehicle> {
     /// Sun position in the simulation's root inertial frame, captured at
     /// step start. Typed so the closure inside `integrate_body_coupled`
     /// cannot subtract it from a raw integration-frame `DVec3` — the
@@ -94,14 +94,33 @@ pub struct FlatPlateStageInputs {
     /// between RK4 stages within JEOD either).
     pub illum_factor: f64,
     /// Center of gravity in the vehicle's structural frame. Typed
-    /// against the same `SelfRef`-wildcarded `StructuralFrame` as
+    /// against the same `<V>`-parameterized `StructuralFrame` as
     /// [`FlatPlate.position`](jeod_interactions::FlatPlate) so the
     /// two structural-frame inputs to the SRP torque kernel
     /// (`crot_to_cp = plate.position − center_grav`) cannot
     /// accidentally be mixed with an inertial-frame value at the
-    /// type level. The `SelfRef` wildcard mirrors the per-entity
-    /// adapter pattern documented on `FlatPlate`.
-    pub center_grav: Position<StructuralFrame<SelfRef>>,
+    /// type level. Mission code that pins a concrete vehicle (e.g.
+    /// `<Iss>`) gets the cross-vehicle compile guard here as well —
+    /// the kernel pairs `FlatPlate<V>::position` with
+    /// `FlatPlateStageInputs<V>::center_grav`, so the same `<V>` is
+    /// shared between the two structural-frame inputs. The Bevy
+    /// adapter and runner instantiate `<V = SelfRef>` because their
+    /// per-entity storage decides vehicle identity at runtime.
+    pub center_grav: Position<StructuralFrame<V>>,
+}
+
+// Manual `Default` impl for the same reason as `FlatPlateState`:
+// `derive(Default)` would synthesize a `where V: Default` bound that
+// `Vehicle` markers don't carry. The fields are all `Default` for any
+// `V`, so we hand-roll the impl.
+impl<V: Vehicle> Default for FlatPlateStageInputs<V> {
+    fn default() -> Self {
+        Self {
+            sun_position: Position::<RootInertial>::default(),
+            illum_factor: 0.0,
+            center_grav: Position::<StructuralFrame<V>>::default(),
+        }
+    }
 }
 
 /// Which integrator drives plate temperatures, and at what scheduling
@@ -168,10 +187,10 @@ pub enum ThermalIntegrationOrder {
 ///     ..Default::default()
 /// }
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct FlatPlateState {
+#[derive(Debug, Clone)]
+pub struct FlatPlateState<V: Vehicle> {
     /// Per-plate geometry, optical, and thermal properties.
-    pub plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
+    pub plates: Vec<(FlatPlate<V>, FlatPlateParams, FlatPlateThermal)>,
     /// Per-plate temperatures (K). Same length as `plates`.
     pub temperatures: Vec<f64>,
     /// Cached T^4 per plate from previous step (for thermal emission).
@@ -200,7 +219,7 @@ pub struct FlatPlateState {
     /// when `integration_order` is derivative-class. `None` in
     /// `Scheduled` mode. Consumed by the Stage-8 integration closure;
     /// cleared at the start of the next step's Stage 5.
-    pub stage_inputs: Option<FlatPlateStageInputs>,
+    pub stage_inputs: Option<FlatPlateStageInputs<V>>,
     /// RK4 kernel scratch: step-start temperature and T^4 snapshots.
     ///
     /// Populated by [`IntegrableObject::snapshot`] and consumed by
@@ -214,6 +233,25 @@ pub struct FlatPlateState {
     pub scratch: FlatPlateScratch,
 }
 
+// Manual `Default` impl: `derive(Default)` would synthesize a `where
+// V: Default` bound that `Vehicle` markers (`SelfRef`, mission-defined
+// `define_vehicle!` types) deliberately don't satisfy — they're
+// zero-sized phantom tags, not value-bearing types. The empty
+// `FlatPlateState` has no `V` value to default, so we provide the
+// impl by hand.
+impl<V: Vehicle> Default for FlatPlateState<V> {
+    fn default() -> Self {
+        Self {
+            plates: Vec::new(),
+            temperatures: Vec::new(),
+            t_pow4_cached: Vec::new(),
+            integration_order: ThermalIntegrationOrder::default(),
+            stage_inputs: None,
+            scratch: FlatPlateScratch::default(),
+        }
+    }
+}
+
 /// Step-start RK4 snapshot vectors for [`FlatPlateState`].
 ///
 /// Inner storage is private. Construct via `Default::default()`; mutate
@@ -224,7 +262,7 @@ pub struct FlatPlateScratch {
     t_pow4_snapshot: Vec<f64>,
 }
 
-impl FlatPlateState {
+impl<V: Vehicle> FlatPlateState<V> {
     /// Integrate plate temperatures via Forward Euler with overshoot clamping.
     ///
     /// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).
@@ -309,7 +347,7 @@ impl FlatPlateState {
 // FlatPlateState's temperature vector is the only sub-state that uses this
 // protocol today; orbital translational/rotational state is integrated
 // directly by the enclosing RK4 kernel.
-impl IntegrableObject for FlatPlateState {
+impl<V: Vehicle> IntegrableObject for FlatPlateState<V> {
     fn n_states(&self) -> usize {
         self.temperatures.len()
     }

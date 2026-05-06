@@ -916,10 +916,19 @@ impl From<DragConfigTyped> for DragConfigC {
 /// Wraps [`jeod_sim::FlatPlateState`] so the same type (and its
 /// `integrate_temperatures` method) is shared with the `Simulation` runner.
 ///
+/// The wrapped state is `FlatPlateState<SelfRef>` — the canonical
+/// runtime-resolved instantiation at the Bevy adapter boundary, where
+/// per-entity storage decides the vehicle identity at runtime. The
+/// underlying `jeod_interactions::FlatPlate<V>` is `<V: Vehicle>`-
+/// parametric so mission code that pins a concrete vehicle (e.g.
+/// `<Iss>`) can demonstrate cross-vehicle compile-time blocking
+/// upstream of the adapter; the adapter Component always lands at
+/// `<SelfRef>`.
+///
 /// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 #[require(RadiationForceC)]
-pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
+pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState<jeod_sim::SelfRef>);
 
 /// Marker for an entity that casts shadows (e.g., Earth).
 ///

@@ -365,7 +365,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     step_bevy(&mut app, NUM_STEPS);
     let bevy_ref = read_trans(app.world(), ref_veh);
     let bevy_subj = read_trans(app.world(), subj_veh);
-    let bevy_rel = jeod_sim::compute_lvlh_relative_state(
+    let bevy_rel = jeod_sim::compute_lvlh_relative_state::<jeod_sim::SelfRef>(
         bevy_ref.position,
         bevy_ref.velocity,
         bevy_subj.position,
@@ -388,7 +388,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
 
     let sim_ref = sim.body(0).trans;
     let sim_subj = sim.body(1).trans;
-    let sim_rel = jeod_sim::compute_lvlh_relative_state(
+    let sim_rel = jeod_sim::compute_lvlh_relative_state::<jeod_sim::SelfRef>(
         sim_ref.position,
         sim_ref.velocity,
         sim_subj.position,
