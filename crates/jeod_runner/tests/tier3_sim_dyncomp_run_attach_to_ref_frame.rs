@@ -944,6 +944,15 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         "RUN_attach_to_ref_frame CSV row count drift: expected {EXPECTED_SAMPLES} (12000 s @ 60 s)"
     );
 
+    // Tooling-enforced cadence check: JEOD logs at 60 s and our
+    // integrator runs at 0.03125 s (32 Hz), so 60 / 0.03125 = 1920 —
+    // every CSV row lands on an integrator output instant. If a future
+    // edit drifts either side off the integer ratio (e.g. someone
+    // changes DT_S without re-deriving the cadence), this fails loudly
+    // before the row loop quietly compares against held off-cadence
+    // samples.
+    CrossvalReport::assert_cadence_matches_times(rows.iter().map(|r| r.time), DT_S, 1e-6);
+
     let (mut sim, body_idx, earth_idx) = build_sim(&rows[0]);
     // Match JEOD's `(LOW_RATE_ENV, "environment")` job-class cadence on
     // `Earth_GGM05C_SimObject::rnp.update_rnp`

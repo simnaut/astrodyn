@@ -725,6 +725,13 @@ fn tier3_sim_apollo_trajectory() {
     }
     assert!(!our_log.is_empty(), "trajectory log is empty");
 
+    // Tooling-enforced cadence check: dt = 0.02 s and JEOD's CSV
+    // samples at 0.1 s, so 0.1 / 0.02 = 5 — every reference row is an
+    // integrator-output instant. If a future edit drifts either side
+    // off the integer ratio, this fails loudly before the row loop
+    // quietly compares against held off-cadence samples.
+    CrossvalReport::assert_cadence_matches(&ref_log, DT, 1e-6);
+
     let report = CrossvalReport::compute("tier3_sim_apollo_trajectory", &our_log, &ref_log);
     report.write();
 
