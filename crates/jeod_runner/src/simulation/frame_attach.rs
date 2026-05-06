@@ -304,6 +304,86 @@ impl Simulation {
         );
     }
 
+    /// Attach a body to a non-body reference frame using a named
+    /// subject mass-point with an explicit `(offset, T)` parent-frame
+    /// pose for that point.
+    ///
+    /// Port of JEOD's named-point variant of
+    /// `DynBody::attach_to_frame(this_point_name, parent_frame_name,
+    /// offset_pframe_cpt, T_pframe_cpt)`
+    /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`),
+    /// without the 180°-yaw alignment hardcode that
+    /// [`attach_to_frame_aligned`](Self::attach_to_frame_aligned)
+    /// applies. Used by JEOD's `SIM_dyncomp/RUN_attach_to_ref_frame`
+    /// `attach_wrap_child_parent_pos_rot` helper, which spells out the
+    /// pose of the named subject point in the parent frame and lets the
+    /// runner compose with the body's own struct-to-named-point geometry
+    /// to derive the parent-frame-to-struct pair the matrix attach takes.
+    ///
+    /// `offset_pframe_cpt` and `t_pframe_cpt` describe the pose of the
+    /// named subject point (`subject_point_name`) in the parent reference
+    /// frame's coordinates: the position of the named point and the
+    /// rotation matrix from parent-frame axes to the named point's body
+    /// axes. The runner composes that with the named point's pose in the
+    /// body's struct frame (via [`MassTree::attach_to_frame_offset`]) to
+    /// produce the `(offset_pframe_struct, t_pframe_struct)` pair the
+    /// underlying [`attach_to_frame`](Self::attach_to_frame) records.
+    ///
+    /// The body must have a registered mass-tree node
+    /// ([`add_body_to_tree`](Self::add_body_to_tree)) and the named
+    /// subject point must already exist on it (added via
+    /// `MassTree::add_mass_point`).
+    ///
+    /// # Panics
+    /// All of [`attach_to_frame`](Self::attach_to_frame)'s
+    /// preconditions, plus:
+    /// - The body has no mass-tree node yet.
+    /// - The named mass-point does not exist on the subject body.
+    ///
+    /// [`MassTree::attach_to_frame_offset`]: jeod_dynamics::MassTree::attach_to_frame_offset
+    // JEOD_INV: MA.21 — named points must exist on body
+    pub fn attach_to_frame_named_point(
+        &mut self,
+        body_idx: usize,
+        subject_point_name: &str,
+        parent_frame_id: FrameId,
+        offset_pframe_cpt: glam::DVec3,
+        t_pframe_cpt: DMat3,
+    ) {
+        assert!(
+            body_idx < self.bodies.len(),
+            "attach_to_frame_named_point: body index {body_idx} out of range \
+             (have {} bodies)",
+            self.bodies.len()
+        );
+        let mass_id = self.bodies[body_idx].mass_body_id.unwrap_or_else(|| {
+            panic!(
+                "attach_to_frame_named_point: body {body_idx} has no mass-tree \
+                 node. Call `Simulation::add_body_to_tree({body_idx}, ...)` first \
+                 so the named mass-point lookup has a body to look up against."
+            )
+        });
+        let tree = self.mass_tree.as_ref().unwrap_or_else(|| {
+            panic!(
+                "attach_to_frame_named_point: simulation has no mass tree. \
+                 Call `Simulation::add_body_to_tree(...)` for the subject body \
+                 before requesting a named-point attach."
+            )
+        });
+        let (offset_pframe_struct, t_pframe_struct) = tree.attach_to_frame_offset(
+            mass_id,
+            subject_point_name,
+            offset_pframe_cpt,
+            t_pframe_cpt,
+        );
+        self.attach_to_frame(
+            body_idx,
+            parent_frame_id,
+            offset_pframe_struct,
+            t_pframe_struct,
+        );
+    }
+
     /// Whether the given body is currently attached to a reference
     /// frame.
     ///
