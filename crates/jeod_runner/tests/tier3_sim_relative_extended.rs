@@ -143,7 +143,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
         // Earth-centered point-mass sim: the integration frame for
         // both bodies is `<PlanetInertial<Earth>>`; tag at the call
         // site to satisfy the typed entry's planet-inertial contract.
-        let rel = compute_lvlh_relative_state_typed(
+        let rel = compute_lvlh_relative_state_typed::<Earth, SelfRef>(
             chief.trans.position.m_at::<PlanetInertial<Earth>>(),
             chief.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
             deputy.trans.position.m_at::<PlanetInertial<Earth>>(),

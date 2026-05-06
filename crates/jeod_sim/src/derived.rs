@@ -11,7 +11,7 @@ use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
 use jeod_quantities::ext::Vec3Ext;
-use jeod_quantities::frame::{BodyFrame, Lvlh, RootInertial, SelfPlanet, SelfRef, Vehicle};
+use jeod_quantities::frame::{BodyFrame, Lvlh, RootInertial, SelfPlanet, Vehicle};
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -231,20 +231,24 @@ impl<Reference: Vehicle> RelativeTranslation<Reference> {
 ///
 /// The producer ([`compute_lvlh_relative_state`]) always rotates into
 /// the reference vehicle's LVLH frame, so the field type
-/// `Position<Lvlh<SelfRef>>` / `Velocity<Lvlh<SelfRef>>` reflects the
-/// frame at compile time. `SelfRef` is the wildcard vehicle phantom —
-/// the per-entity ECS adapter knows which vehicle is the LVLH chief
-/// at runtime; the typed field guards against a consumer that
-/// accidentally mixes an LVLH-frame value with an inertial- or body-
-/// frame value at the type level.
+/// `Position<Lvlh<Chief>>` / `Velocity<Lvlh<Chief>>` reflects the
+/// frame at compile time. The `<Chief: Vehicle>` parameter names the
+/// LVLH chief — mission code that knows the chief at compile time
+/// pins it (e.g. `LvlhRelativeState<Iss>`), and the Bevy adapter and
+/// runner instantiate `LvlhRelativeState<SelfRef>` because their
+/// per-entity storage decides the chief identity at runtime. A
+/// consumer holding a `Position<Lvlh<Iss>>` cannot accidentally
+/// consume a `Position<Lvlh<Soyuz>>`, and the existing
+/// `Lvlh`-vs-`PlanetInertial`/`BodyFrame`/`RootInertial` kind guard
+/// remains.
 #[derive(Debug, Clone)]
-pub struct LvlhRelativeState {
-    /// Position of subject relative to reference, in the reference
+pub struct LvlhRelativeState<Chief: Vehicle> {
+    /// Position of subject relative to reference, in the chief
     /// vehicle's LVLH frame (m).
-    pub position: Position<Lvlh<SelfRef>>,
-    /// Velocity of subject relative to reference, in the reference
+    pub position: Position<Lvlh<Chief>>,
+    /// Velocity of subject relative to reference, in the chief
     /// vehicle's LVLH frame (m/s).
-    pub velocity: Velocity<Lvlh<SelfRef>>,
+    pub velocity: Velocity<Lvlh<Chief>>,
 }
 
 /// Compute orbital elements from translational state.
@@ -461,12 +465,12 @@ pub fn compute_relative_state<Subject: Vehicle, Reference: Vehicle>(
 /// exists for callers that already hold raw `DVec3` from a hot path
 /// (no useful phantom available) and explicitly want to skip the typed
 /// boundary.
-pub fn compute_lvlh_relative_state(
+pub fn compute_lvlh_relative_state<Chief: Vehicle>(
     ref_pos: DVec3,
     ref_vel: DVec3,
     subj_pos: DVec3,
     subj_vel: DVec3,
-) -> LvlhRelativeState {
+) -> LvlhRelativeState<Chief> {
     let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
 
     // Relative state in inertial frame
@@ -482,11 +486,13 @@ pub fn compute_lvlh_relative_state(
     LvlhRelativeState {
         // The kernel rotates each vector through `lvlh.t_parent_this`,
         // which lands them in the chief vehicle's LVLH frame. The
-        // `<SelfRef>` wildcard mirrors the producer's static lack of a
-        // chief-vehicle phantom — the runtime adapter knows which
-        // entity is the chief.
-        position: pos_lvlh.m_at::<Lvlh<SelfRef>>(),
-        velocity: vel_lvlh.m_per_s_at::<Lvlh<SelfRef>>(),
+        // `<Chief>` parameter is named by the caller — mission code
+        // that pins a concrete chief gets the cross-vehicle compile
+        // guard, while the Bevy adapter and runner pass `SelfRef`
+        // because their per-entity storage decides chief identity at
+        // runtime.
+        position: pos_lvlh.m_at::<Lvlh<Chief>>(),
+        velocity: vel_lvlh.m_per_s_at::<Lvlh<Chief>>(),
     }
 }
 
@@ -505,13 +511,13 @@ pub fn compute_lvlh_relative_state(
 /// `add_relative_state_to_lvlh_frame`. Bit-identical kernel — calls
 /// through to the raw [`compute_lvlh_relative_state`] entry via
 /// `.raw_si()` at the boundary.
-pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet>(
+pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet, Chief: Vehicle>(
     ref_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
     ref_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     subj_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
     subj_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
-) -> LvlhRelativeState {
-    compute_lvlh_relative_state(
+) -> LvlhRelativeState<Chief> {
+    compute_lvlh_relative_state::<Chief>(
         ref_pos.raw_si(),
         ref_vel.raw_si(),
         subj_pos.raw_si(),
@@ -622,6 +628,7 @@ pub fn compute_body_solar_beta_typed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jeod_quantities::frame::SelfRef;
 
     /// Verify that `compute_body_geodetic` correctly applies the inertial-to-
     /// planet-fixed rotation before computing geodetic coordinates.
@@ -697,8 +704,8 @@ mod tests {
         let subj_pos = DVec3::new(6.778e6 + 50.0, 80.0, 10.0);
         let subj_vel = DVec3::new(-0.05, 7.668e3 + 0.06, 0.0);
 
-        let raw = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
-        let typed = compute_lvlh_relative_state_typed(
+        let raw = compute_lvlh_relative_state::<SelfRef>(ref_pos, ref_vel, subj_pos, subj_vel);
+        let typed = compute_lvlh_relative_state_typed::<Earth, SelfRef>(
             ref_pos.m_at::<PlanetInertial<Earth>>(),
             ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
             subj_pos.m_at::<PlanetInertial<Earth>>(),
@@ -710,10 +717,11 @@ mod tests {
         assert_eq!(typed.position.raw_si(), raw.position.raw_si());
         assert_eq!(typed.velocity.raw_si(), raw.velocity.raw_si());
 
-        // The output phantom is `<Lvlh<SelfRef>>` regardless of the
-        // input planet phantom — runtime knows which entity is the
-        // chief, the producer cannot statically (matches the struct
-        // contract on `LvlhRelativeState`).
+        // The output `<Chief>` parameter is named by the caller — the
+        // raw and typed entries above passed `<SelfRef>` (the wildcard
+        // for runtime-resolved adapter chiefs). Mission code that
+        // pins a concrete chief vehicle gets the cross-vehicle compile
+        // guard at this binding site.
         let _: Position<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
             typed.position;
         let _: Velocity<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =

@@ -480,7 +480,8 @@ fn tier3_sim_lvlh_relative_consistency() {
     let subj_pos = ref_pos + DVec3::new(100.0, 50.0, -30.0);
     let subj_vel = ref_vel + DVec3::new(0.01, -0.02, 0.005);
 
-    let lvlh_rel = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+    let lvlh_rel =
+        compute_lvlh_relative_state::<jeod_sim::SelfRef>(ref_pos, ref_vel, subj_pos, subj_vel);
 
     let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
     let rel_pos_inertial = subj_pos - ref_pos;
