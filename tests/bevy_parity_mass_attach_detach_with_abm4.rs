@@ -13,7 +13,7 @@ use bevy_jeod::{
     IntegratorTypeC, JeodPlugin, MassBodyIdC, MassPropertiesC, MassTreeR, SourceInertialPositionC,
     TranslationalStateC,
 };
-use glam::{DMat3, DVec3};
+use glam::DVec3;
 use jeod_sim::{
     Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     MassProperties, MassTree, TranslationalState,
@@ -138,14 +138,14 @@ fn bevy_parity_mass_attach_with_abm4_resets_integrator() {
     assert!(!read_abm4_topology_dirty(app.world(), body_b));
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step_bevy(&mut app, 1, sim_dt);
 
@@ -175,14 +175,14 @@ fn bevy_parity_mass_detach_with_abm4_resets_integrator() {
 
     // Pre-attach so detach has something to undo.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step_bevy(&mut app, 5, sim_dt);
     assert!(!read_abm4_priming(app.world(), body_a));
@@ -274,24 +274,24 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
 
     // Build the chain: middle → top, leaf → middle.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_middle,
             parent: e_top,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_leaf,
             parent: e_middle,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     // One step processes both attach events. Then prime ABM4.
     step_bevy(&mut app, 5, sim_dt);
@@ -303,14 +303,14 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
     // ── Attach `e_new` under `e_middle`. This recomputes middle's
     //    AND top's composite properties, so top's ABM4 must reset. ──
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_new,
             parent: e_middle,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step_bevy(&mut app, 1, sim_dt);
 

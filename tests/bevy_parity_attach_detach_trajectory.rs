@@ -440,14 +440,14 @@ fn bevy_parity_attach_detach_trajectory_simple() {
             sim.attach(r_v1, r_v2, offset, t_pc);
             sim.mark_kinematic_only(r_v1);
             app.world_mut()
-                .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+                .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
                 .write(AttachEvent {
                     child: b_v1,
                     parent: b_v2,
                     offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                         offset,
                     ),
-                    t_parent_child: t_pc,
+                    t_parent_child: jeod_sim::FrameTransform::from_matrix(t_pc),
                 });
             attach_fired = true;
         }

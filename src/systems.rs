@@ -3528,7 +3528,9 @@ pub fn cannonball_srp_system<P: Planet>(
 pub fn staging_system<P: Planet>(
     mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
-    mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent<jeod_sim::SelfRef>>,
+    mut attach_events: bevy::ecs::message::MessageReader<
+        crate::AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>,
+    >,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
     mut bodies: Query<(
         Entity,
@@ -4689,8 +4691,12 @@ pub fn staging_system<P: Planet>(
         // JEOD_INV: BA.12 — Bevy adapter dispatches every attach through
         // the reroot-aware kernel so chained-attach scenarios pick the
         // JEOD `dyn_body_attach.cc:521-567` path automatically.
-        let _attached_root =
-            tree.attach_with_reroot(child_id, parent_id, evt.offset.raw_si(), evt.t_parent_child);
+        let _attached_root = tree.attach_with_reroot(
+            child_id,
+            parent_id,
+            evt.offset.raw_si(),
+            evt.t_parent_child.matrix(),
+        );
     }
 
     // Per-detach post-mutation work: tree_root entity whose

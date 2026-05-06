@@ -241,14 +241,14 @@ fn build_bevy_app() -> (App, Entity, Entity) {
     // and writes the merged composite-body state back into the
     // parent's components.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child,
             parent,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 link_offset(),
             ),
-            t_parent_child: link_t_parent_child(),
+            t_parent_child: jeod_sim::FrameTransform::from_matrix(link_t_parent_child()),
         });
 
     (app, parent, child)
