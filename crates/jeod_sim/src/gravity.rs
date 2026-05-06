@@ -421,8 +421,8 @@ pub struct GravityBodyInputs<'a, S> {
 ///    it back into adapter-owned storage. Adapters that store typed
 ///    `GravityAccelerationTyped<RootInertial>` (the Bevy newtype) move
 ///    the value through; adapters that still store raw
-///    `GravityAcceleration` (the runner, until #364 migrates it)
-///    lower via `.raw_si()` inside the closure.
+///    `GravityAcceleration` (the runner) lower via `.raw_si()` inside
+///    the closure.
 ///
 /// `resolve_source` and `resolve_rel_source` receive the body key
 /// alongside the source identifier so adapters that want to surface

@@ -75,9 +75,10 @@ impl Simulation {
         // `(key, inputs, store)` triple `run_gravity_stage` expects.
         // The store closure captures `&mut body.gravity_accel` and
         // lowers the typed kernel result back to raw `GravityAcceleration`
-        // until #364 migrates `SimBody.gravity_accel` to the typed
-        // sibling — at which point the lowering goes away and both
-        // adapters write the typed value through unchanged.
+        // because `SimBody.gravity_accel` still uses the untyped layout;
+        // the Bevy adapter, which stores the typed
+        // `GravityAccelerationTyped<RootInertial>` newtype, moves the
+        // value through unchanged.
         let body_iter = self.bodies.iter_mut().enumerate().map(|(body_idx, body)| {
             let inputs = GravityBodyInputs {
                 position: body.trans.position,
