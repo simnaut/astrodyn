@@ -379,7 +379,11 @@ fn make_single_plate(
     albedo: f64,
     diffuse: f64,
     emissivity: f64,
-) -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
+) -> Vec<(
+    FlatPlate<jeod_sim::SelfRef>,
+    FlatPlateParams,
+    FlatPlateThermal,
+)> {
     vec![(
         FlatPlate {
             area: 100.0,
@@ -395,7 +399,14 @@ fn make_single_plate(
     )]
 }
 
-fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>) {
+fn run_shadow_parity(
+    label: &str,
+    srp_plates: Vec<(
+        FlatPlate<jeod_sim::SelfRef>,
+        FlatPlateParams,
+        FlatPlateThermal,
+    )>,
+) {
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
     // ── Bevy ──
@@ -507,7 +518,11 @@ fn tier3_bevy_shadow_2a_cooling() {
 
 fn run_srp_basic_parity(
     label: &str,
-    srp_plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
+    srp_plates: Vec<(
+        FlatPlate<jeod_sim::SelfRef>,
+        FlatPlateParams,
+        FlatPlateThermal,
+    )>,
 ) {
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
@@ -611,7 +626,11 @@ fn tier3_bevy_srp_basic_varied_cr() {
 fn run_srp_deriv_parity(
     label: &str,
     order: jeod_sim::ThermalIntegrationOrder,
-    srp_plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
+    srp_plates: Vec<(
+        FlatPlate<jeod_sim::SelfRef>,
+        FlatPlateParams,
+        FlatPlateThermal,
+    )>,
 ) {
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 

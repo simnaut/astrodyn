@@ -232,7 +232,7 @@ pub(crate) struct SimBody {
     pub gravity_controls: GravityControls<usize>,
     pub integrator: jeod_dynamics::IntegratorType,
     pub drag: Option<DragConfig>,
-    pub flat_plate_state: Option<jeod_sim::FlatPlateState>,
+    pub flat_plate_state: Option<jeod_sim::FlatPlateState<jeod_sim::SelfRef>>,
     pub cannonball_srp: Option<(f64, f64, f64)>,
     pub shadow_body: Option<(usize, f64)>,
     pub t_struct_body: DMat3,

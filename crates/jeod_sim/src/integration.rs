@@ -746,7 +746,7 @@ pub struct CoupledStageEval {
 // JEOD_INV: DB.07 — translational_dynamics gates integration
 // JEOD_INV: DB.08 — rotational_dynamics gates integration
 #[allow(clippy::too_many_arguments)]
-pub fn integrate_body_coupled(
+pub fn integrate_body_coupled<V: jeod_quantities::frame::Vehicle>(
     config: &DynamicsConfig,
     trans: &mut TranslationalState,
     rot: Option<&mut RotationalState>,
@@ -754,10 +754,10 @@ pub fn integrate_body_coupled(
     mut stage_fn: impl FnMut(
         &TranslationalState,
         Option<&RotationalState>,
-        &FlatPlateState,
+        &FlatPlateState<V>,
         f64,
     ) -> CoupledStageEval,
-    thermal: &mut FlatPlateState,
+    thermal: &mut FlatPlateState<V>,
     dt: f64,
     time_scale_factor: f64,
 ) {
@@ -888,17 +888,17 @@ pub fn integrate_body_coupled(
 /// fast tumblers or with much larger dt should renormalize between stages 2
 /// and 3.
 #[allow(clippy::too_many_arguments)]
-fn integrate_coupled_sixdof(
+fn integrate_coupled_sixdof<V: jeod_quantities::frame::Vehicle>(
     trans: &mut TranslationalState,
     rot: &mut RotationalState,
     mass_props: &MassProperties,
     stage_fn: &mut impl FnMut(
         &TranslationalState,
         Option<&RotationalState>,
-        &FlatPlateState,
+        &FlatPlateState<V>,
         f64,
     ) -> CoupledStageEval,
-    thermal: &mut FlatPlateState,
+    thermal: &mut FlatPlateState<V>,
     integ_dyndt: f64,
     n_plates: usize,
 ) {
@@ -1213,7 +1213,11 @@ mod tests {
             position: pos0,
             velocity: vel0,
         };
-        let mut thermal = FlatPlateState {
+        // `<SelfRef>` is the canonical runtime-resolved instantiation
+        // — the integration kernel is `<V>`-generic, but every adapter
+        // (Bevy + standalone runner) lands at `<SelfRef>`, and this
+        // unit test mirrors that boundary.
+        let mut thermal = FlatPlateState::<jeod_quantities::frame::SelfRef> {
             plates: vec![],
             temperatures: vec![],
             t_pow4_cached: vec![],

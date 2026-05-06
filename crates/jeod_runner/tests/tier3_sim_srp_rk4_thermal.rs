@@ -21,7 +21,11 @@ use jeod_sim::{
 };
 use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
-fn single_plate() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
+fn single_plate() -> Vec<(
+    FlatPlate<jeod_sim::SelfRef>,
+    FlatPlateParams,
+    FlatPlateThermal,
+)> {
     vec![(
         FlatPlate {
             area: 10.0,

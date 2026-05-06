@@ -60,10 +60,20 @@ pub struct FrameSwitchConfig<SourceId = usize> {
 // ── Solar radiation pressure ────────────────────────────────────────────
 
 /// Solar radiation pressure model — mutually exclusive variants.
+///
+/// The `FlatPlate` variant carries `FlatPlateState<SelfRef>`: this
+/// adapter-neutral struct is the runtime-resolved boundary where the
+/// vehicle phantom is `SelfRef` (the per-entity adapter knows the
+/// concrete vehicle at runtime). The underlying
+/// [`jeod_interactions::FlatPlate<V>`] is `<V: Vehicle>`-parametric so
+/// mission code that pins a concrete vehicle (e.g.
+/// `FlatPlateState<Iss>`) can demonstrate cross-vehicle compile-time
+/// blocking before lowering through the runner; the runner-facing
+/// `VehicleConfig` always lands at `<SelfRef>`.
 #[derive(Debug, Clone)]
 pub enum SrpModel {
     /// Per-plate modeling with thermal emission.
-    FlatPlate(FlatPlateState),
+    FlatPlate(FlatPlateState<jeod_quantities::frame::SelfRef>),
     /// Simple cannonball model.
     Cannonball {
         /// Effective cross-section area (m²).
