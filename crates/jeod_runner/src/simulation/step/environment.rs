@@ -15,9 +15,10 @@
 
 use glam::DVec3;
 
+use jeod_quantities::IntegOrigin;
 use jeod_sim::atmosphere::{run_atmosphere_stage, AtmosphereBodyInputs};
 use jeod_sim::gravity::{run_gravity_stage, GravityBodyInputs};
-use jeod_sim::{IntegOrigin, SelfPlanet};
+use jeod_sim::SelfPlanet;
 
 use super::super::Simulation;
 

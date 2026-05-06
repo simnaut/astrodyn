@@ -50,7 +50,8 @@
 use glam::DMat3;
 
 use jeod_frames::FrameId;
-use jeod_sim::{IntegrationFrame, RotationalState, TranslationalState, TranslationalStateTyped};
+use jeod_quantities::frame::IntegrationFrame;
+use jeod_sim::{RotationalState, TranslationalState, TranslationalStateTyped};
 
 use super::types::FrameAttachState;
 use super::Simulation;
@@ -436,7 +437,7 @@ impl Simulation {
     // `IntegOrigin`
     pub(crate) fn propagate_frame_attached_state(
         &mut self,
-        body_integ_origins: &[jeod_sim::IntegOrigin],
+        body_integ_origins: &[jeod_quantities::IntegOrigin],
     ) {
         // Snapshot whether any body is attached at all so we can
         // bail before doing the per-body sweep on the common

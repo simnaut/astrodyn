@@ -2468,6 +2468,7 @@ dependencies = [
  "jeod_gravity",
  "jeod_interactions",
  "jeod_math",
+ "jeod_quantities",
  "jeod_sim",
  "jeod_test_data",
  "jeod_time",
