@@ -338,6 +338,28 @@ impl Simulation {
         self.bodies[idx].mass_body_id
     }
 
+    /// Mass / inertia / CoM-offset block for the body at index `idx`,
+    /// or `None` for 3-DOF bodies that were configured without a
+    /// `MassProperties`. Mirrors JEOD's
+    /// `dyn_body.mass.composite_properties` accessor for atomic
+    /// (non-mass-tree) bodies — for tree-attached bodies the live
+    /// composite is recomputed in the mass tree, but the per-body
+    /// `MassProperties` carried here still reflects the body's own
+    /// mass properties at its structural origin. Used by the JEOD
+    /// surface-attach test fixtures that need to compute the body's
+    /// structure pose from its composite-body inertial state.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
+    pub fn body_mass(&self, idx: usize) -> Option<jeod_sim::MassProperties> {
+        assert!(
+            idx < self.bodies.len(),
+            "body_mass: body index {idx} out of range (have {} bodies)",
+            self.bodies.len()
+        );
+        self.bodies[idx].mass
+    }
+
     /// Adjust an integrated body's `trans` from a `core_body` inertial
     /// state to the corresponding `composite_body` inertial state,
     /// using the current mass tree's `core_wrt_composite` offset.
