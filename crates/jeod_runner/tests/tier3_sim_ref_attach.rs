@@ -73,6 +73,7 @@ use jeod_sim::{
     JeodQuat, MassProperties, RotationalState, SimulationBuilder, TranslationalState,
     VehicleBuilder,
 };
+use jeod_test_data::crossval::CrossvalReport;
 
 const SIM_DURATION_S: f64 = 100.0;
 const ATTACH_TIME_S: f64 = 50.0;
@@ -297,7 +298,7 @@ fn tier3_sim_ref_attach_matrix() {
         // compare an integer-second state against the half-second
         // CSV row at indices that don't correspond to an
         // integration step.
-        if (row.time - row.time.round()).abs() > 1e-6 {
+        if !CrossvalReport::is_on_integrator_cadence(row.time, DT_S) {
             continue;
         }
         // Step until our sim time matches the row's logged time.
@@ -454,7 +455,7 @@ fn tier3_sim_ref_attach_pt2pt() {
         // 0.5 s, so the half-second rows hold the integrator output
         // from the previous integer second. Comparing only at integer
         // seconds keeps our integration cadence aligned with JEOD's.
-        if (row.time - row.time.round()).abs() > 1e-6 {
+        if !CrossvalReport::is_on_integrator_cadence(row.time, DT_S) {
             continue;
         }
         sim.step_until(row.time).expect("step_until must not fail");
