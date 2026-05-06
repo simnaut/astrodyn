@@ -951,8 +951,14 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         errs.post_final_detach.ang_vel,
     );
 
-    // Per-regime tolerances. Values mirror the observed maxes from the
-    // JSON report, plus the CLAUDE.md "5% above" headroom.
+    // Per-regime, per-component tolerances. Every window asserts on all
+    // four components (pos, vel, quat, ang_vel) so a regression that
+    // doubles a residual still trips the gate. Values are set to ~5%
+    // above the observed max error per CLAUDE.md "Tolerance policy"; see
+    // the constants block at the bottom of the file for the rationale
+    // behind each window's choice.
+
+    // pre_attach
     assert!(
         errs.pre_attach.pos < PRE_ATTACH_POS_TOL_M,
         "pre_attach position {:.3e} exceeds {PRE_ATTACH_POS_TOL_M:.3e} m",
@@ -974,6 +980,7 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         errs.pre_attach.ang_vel
     );
 
+    // attached_first
     assert!(
         errs.attached_first.pos < ATTACHED_FIRST_POS_TOL_M,
         "attached_first position {:.3e} exceeds {ATTACHED_FIRST_POS_TOL_M:.3e} m",
@@ -984,7 +991,18 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         "attached_first velocity {:.3e} exceeds {ATTACHED_FIRST_VEL_TOL_MPS:.3e} m/s",
         errs.attached_first.vel
     );
+    assert!(
+        errs.attached_first.quat < ATTACHED_FIRST_QUAT_TOL_RAD,
+        "attached_first quat {:.3e} exceeds {ATTACHED_FIRST_QUAT_TOL_RAD:.3e} rad",
+        errs.attached_first.quat
+    );
+    assert!(
+        errs.attached_first.ang_vel < ATTACHED_FIRST_ANG_VEL_TOL_RAD_PER_S,
+        "attached_first ang_vel {:.3e} exceeds {ATTACHED_FIRST_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.attached_first.ang_vel
+    );
 
+    // burn_free_flight
     assert!(
         errs.burn_free_flight.pos < FREE_FLIGHT_POS_TOL_M,
         "burn_free_flight position {:.3e} exceeds {FREE_FLIGHT_POS_TOL_M:.3e} m",
@@ -995,24 +1013,84 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         "burn_free_flight velocity {:.3e} exceeds {FREE_FLIGHT_VEL_TOL_MPS:.3e} m/s",
         errs.burn_free_flight.vel
     );
+    assert!(
+        errs.burn_free_flight.quat < FREE_FLIGHT_QUAT_TOL_RAD,
+        "burn_free_flight quat {:.3e} exceeds {FREE_FLIGHT_QUAT_TOL_RAD:.3e} rad",
+        errs.burn_free_flight.quat
+    );
+    assert!(
+        errs.burn_free_flight.ang_vel < FREE_FLIGHT_ANG_VEL_TOL_RAD_PER_S,
+        "burn_free_flight ang_vel {:.3e} exceeds {FREE_FLIGHT_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.burn_free_flight.ang_vel
+    );
 
+    // attached_second_and_burn
     assert!(
         errs.attached_second_and_burn.pos < ATTACHED_BURN_POS_TOL_M,
         "attached_second_and_burn position {:.3e} exceeds {ATTACHED_BURN_POS_TOL_M:.3e} m",
         errs.attached_second_and_burn.pos
     );
-
     assert!(
-        errs.attached_surface_pt.pos < ATTACHED_SURFACE_POS_TOL_M,
-        "attached_surface_pt position {:.3e} exceeds {ATTACHED_SURFACE_POS_TOL_M:.3e} m",
+        errs.attached_second_and_burn.vel < ATTACHED_BURN_VEL_TOL_MPS,
+        "attached_second_and_burn velocity {:.3e} exceeds {ATTACHED_BURN_VEL_TOL_MPS:.3e} m/s",
+        errs.attached_second_and_burn.vel
+    );
+    assert!(
+        errs.attached_second_and_burn.quat < ATTACHED_BURN_QUAT_TOL_RAD,
+        "attached_second_and_burn quat {:.3e} exceeds {ATTACHED_BURN_QUAT_TOL_RAD:.3e} rad",
+        errs.attached_second_and_burn.quat
+    );
+    assert!(
+        errs.attached_second_and_burn.ang_vel < ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S,
+        "attached_second_and_burn ang_vel {:.3e} exceeds {ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.attached_second_and_burn.ang_vel
+    );
+
+    // attached_surface_pt (named-point overload)
+    assert!(
+        errs.attached_surface_pt.pos < ATTACHED_SURFACE_PT_POS_TOL_M,
+        "attached_surface_pt position {:.3e} exceeds {ATTACHED_SURFACE_PT_POS_TOL_M:.3e} m",
         errs.attached_surface_pt.pos
     );
     assert!(
-        errs.attached_surface_matrix.pos < ATTACHED_SURFACE_POS_TOL_M,
-        "attached_surface_matrix position {:.3e} exceeds {ATTACHED_SURFACE_POS_TOL_M:.3e} m",
-        errs.attached_surface_matrix.pos
+        errs.attached_surface_pt.vel < ATTACHED_SURFACE_PT_VEL_TOL_MPS,
+        "attached_surface_pt velocity {:.3e} exceeds {ATTACHED_SURFACE_PT_VEL_TOL_MPS:.3e} m/s",
+        errs.attached_surface_pt.vel
+    );
+    assert!(
+        errs.attached_surface_pt.quat < ATTACHED_SURFACE_PT_QUAT_TOL_RAD,
+        "attached_surface_pt quat {:.3e} exceeds {ATTACHED_SURFACE_PT_QUAT_TOL_RAD:.3e} rad",
+        errs.attached_surface_pt.quat
+    );
+    assert!(
+        errs.attached_surface_pt.ang_vel < ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S,
+        "attached_surface_pt ang_vel {:.3e} exceeds {ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.attached_surface_pt.ang_vel
     );
 
+    // attached_surface_matrix (matrix overload)
+    assert!(
+        errs.attached_surface_matrix.pos < ATTACHED_SURFACE_MATRIX_POS_TOL_M,
+        "attached_surface_matrix position {:.3e} exceeds {ATTACHED_SURFACE_MATRIX_POS_TOL_M:.3e} m",
+        errs.attached_surface_matrix.pos
+    );
+    assert!(
+        errs.attached_surface_matrix.vel < ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS,
+        "attached_surface_matrix velocity {:.3e} exceeds {ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS:.3e} m/s",
+        errs.attached_surface_matrix.vel
+    );
+    assert!(
+        errs.attached_surface_matrix.quat < ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD,
+        "attached_surface_matrix quat {:.3e} exceeds {ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD:.3e} rad",
+        errs.attached_surface_matrix.quat
+    );
+    assert!(
+        errs.attached_surface_matrix.ang_vel < ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S,
+        "attached_surface_matrix ang_vel {:.3e} exceeds {ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.attached_surface_matrix.ang_vel
+    );
+
+    // post_final_detach
     assert!(
         errs.post_final_detach.pos < POST_FINAL_DETACH_POS_TOL_M,
         "post_final_detach position {:.3e} exceeds {POST_FINAL_DETACH_POS_TOL_M:.3e} m",
@@ -1023,14 +1101,59 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         "post_final_detach velocity {:.3e} exceeds {POST_FINAL_DETACH_VEL_TOL_MPS:.3e} m/s",
         errs.post_final_detach.vel
     );
+    assert!(
+        errs.post_final_detach.quat < POST_FINAL_DETACH_QUAT_TOL_RAD,
+        "post_final_detach quat {:.3e} exceeds {POST_FINAL_DETACH_QUAT_TOL_RAD:.3e} rad",
+        errs.post_final_detach.quat
+    );
+    assert!(
+        errs.post_final_detach.ang_vel < POST_FINAL_DETACH_ANG_VEL_TOL_RAD_PER_S,
+        "post_final_detach ang_vel {:.3e} exceeds {POST_FINAL_DETACH_ANG_VEL_TOL_RAD_PER_S:.3e} rad/s",
+        errs.post_final_detach.ang_vel
+    );
 }
 
 // ── Per-window tolerances ─────────────────────────────────────────────
 // Each value is set to ~5% above the observed max error per CLAUDE.md
-// "Tolerance policy". The observed maxes come from the JSON
+// "Tolerance policy". Observed maxes come from the JSON
 // `tier3_sim_dyncomp_run_attach_to_ref_frame.json` report this test
 // writes; refresh by running the test once after a code change and
-// reading the per-window numbers off the eprintln summary.
+// reading the per-window numbers off the eprintln summary, then set
+// each tolerance to `observed * 1.05` rounded up to a clean 3-significant
+// digit literal.
+//
+// Surface-attach RNP-cadence rationale (applies to
+// `ATTACHED_SURFACE_PT_POS_TOL_M` / `ATTACHED_SURFACE_MATRIX_POS_TOL_M`,
+// the only multi-hundred-metre tolerances in this test):
+//
+// JEOD's verif sim updates EarthRNP at the `LOW_RATE_ENV` job class
+// (`Base/earth_GGM05C_baseline.sm:54-56`), which the SIM_dyncomp
+// `S_define` schedules at 60 s cadence — so the rotation matrix that
+// converts inertial → pfix is held constant across each 60 s log
+// interval. The runner refreshes EarthRNP every dynamics step
+// (DT_S = 0.03125 s, 32 Hz) by design — there is no equivalent of
+// Trick's per-job cadence scheduler. When a body is frame-attached to
+// `Earth.pfix`, the resulting inertial-frame trajectory is
+// `r_inertial(t) = T_inertial_pfix(t) * r_pfix_constant`; the JEOD
+// reference samples `T_inertial_pfix` at integer-minute boundaries
+// while our integration evaluates it at the sub-step. The residual is
+// bounded above by `|Ω · Δt · r|` where Ω = 7.292e-5 rad/s (Earth
+// rotation rate), Δt = 60 s (JEOD update interval), and r is the body's
+// distance from the rotation axis. At LEO altitude (~6.78e6 m) this is
+// ~30 m per axis — see `tier3_sim_ref_attach_matrix`'s 15 m residual at
+// the same parent frame. At surface altitude (~6.378e6 m) the bound is
+// ~28 m per axis, but the magnitude of the residual is dominated not by
+// the radial scale but by the *angular* sampling jitter integrated over
+// the 400 s frame-attached window: `|err_pos| ≈ Σ |r| · |Δθ_jitter|`,
+// which accumulates to the observed ~210 m. This is reference-output
+// fidelity — JEOD's lower-cadence RNP is the published behaviour for
+// this verif sim, and the runner mirrors against that signal exactly
+// rather than synthesising a JEOD-equivalent low-cadence RNP just for
+// this test. Tightening the surface-attach tolerances would require
+// either (a) faking JEOD's 60 s read-job cadence on the runner side
+// (which we don't do anywhere else in the runner) or (b) raising
+// JEOD's RNP cadence in the verif sim, which would invalidate the
+// reference CSV against every other tier 3 run that consumes it.
 
 // pre_attach (t=0..1000): free-flight under 8×8 SH + Sun/Moon + drag +
 // grav-grad torque on the LVLH-pitched ISS. Same physics floor as RUN_7D
@@ -1038,44 +1161,69 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
 // the quaternion residual (the LVLH initial attitude is sourced from
 // the CSV t=0 quaternion; the recurring trajectory's quat drift over
 // 1000 s tracks the JEOD/our composite-body sample timing offset).
-const PRE_ATTACH_POS_TOL_M: f64 = 1.5e-4;
-const PRE_ATTACH_VEL_TOL_MPS: f64 = 4.0e-7;
-const PRE_ATTACH_QUAT_TOL_RAD: f64 = 3.0e-3;
-const PRE_ATTACH_ANG_VEL_TOL_RAD_PER_S: f64 = 7.0e-6;
+// Observed maxes (this test's JSON report): pos=1.237e-4 m,
+// vel=3.114e-7 m/s, quat=2.550e-3 rad, ang_vel=6.130e-6 rad/s.
+const PRE_ATTACH_POS_TOL_M: f64 = 1.30e-4;
+const PRE_ATTACH_VEL_TOL_MPS: f64 = 3.27e-7;
+const PRE_ATTACH_QUAT_TOL_RAD: f64 = 2.68e-3;
+const PRE_ATTACH_ANG_VEL_TOL_RAD_PER_S: f64 = 6.44e-6;
 
 // attached_first (t=1000..1400): body glued to Earth.pfix matrix-attach
 // at the body's current pfix-relative pose. Position / velocity track
 // pfix's rotation; residual is the same f64-level rigid-composition
-// floor as pre_attach.
-const ATTACHED_FIRST_POS_TOL_M: f64 = 1.5e-3;
-const ATTACHED_FIRST_VEL_TOL_MPS: f64 = 1.5e-7;
+// floor as pre_attach. Observed maxes: pos=9.128e-4 m, vel=9.281e-8 m/s,
+// quat=2.766e-3 rad, ang_vel=1.290e-7 rad/s.
+const ATTACHED_FIRST_POS_TOL_M: f64 = 9.59e-4;
+const ATTACHED_FIRST_VEL_TOL_MPS: f64 = 9.75e-8;
+const ATTACHED_FIRST_QUAT_TOL_RAD: f64 = 2.91e-3;
+const ATTACHED_FIRST_ANG_VEL_TOL_RAD_PER_S: f64 = 1.36e-7;
 
 // burn_free_flight (t=1400..1800 + t=2200..2600 + t=2050..2200 inner):
 // post-detach free-flight (with the velocity-only rewind) and the
 // post-burn free-flight after the maneuver finishes. Errors accumulate
-// from the same RK4 floor plus the rewind round-trip.
-const FREE_FLIGHT_POS_TOL_M: f64 = 1.5e-3;
-const FREE_FLIGHT_VEL_TOL_MPS: f64 = 1.5e-6;
+// from the same RK4 floor plus the rewind round-trip. Observed maxes:
+// pos=1.356e-3 m, vel=9.208e-7 m/s, quat=3.819e-3 rad, ang_vel=3.368e-6
+// rad/s.
+const FREE_FLIGHT_POS_TOL_M: f64 = 1.43e-3;
+const FREE_FLIGHT_VEL_TOL_MPS: f64 = 9.67e-7;
+const FREE_FLIGHT_QUAT_TOL_RAD: f64 = 4.01e-3;
+const FREE_FLIGHT_ANG_VEL_TOL_RAD_PER_S: f64 = 3.54e-6;
 
 // attached_second_and_burn (t=1800..2200 incl. t=2000..2050 burst):
 // frame-attached during the maneuver-burst window. The 29 kN inertial
 // force is collected through the runner's `set_body_external_force`,
 // but the body is frame-attached so the force has no effect on the
 // derived state — exactly mirroring JEOD's `frame_attach.isAttached()`
-// gate that bypasses integration.
-const ATTACHED_BURN_POS_TOL_M: f64 = 7.0e-4;
+// gate that bypasses integration. Observed maxes: pos=4.954e-4 m,
+// vel=4.406e-7 m/s, quat=3.336e-3 rad, ang_vel=3.951e-6 rad/s.
+const ATTACHED_BURN_POS_TOL_M: f64 = 5.21e-4;
+const ATTACHED_BURN_VEL_TOL_MPS: f64 = 4.63e-7;
+const ATTACHED_BURN_QUAT_TOL_RAD: f64 = 3.51e-3;
+const ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S: f64 = 4.15e-6;
 
-// attached_surface_pt (t=2600..3000) and attached_surface_matrix
-// (t=3400..3800): surface-attach windows at altitude=1 m. The 200 m
-// position residual reflects the EarthRNP integer-second sampling vs
-// our sub-cycle sampling at the moment the captured pfix vector is
-// recorded — same class of residual as `tier3_sim_ref_attach_matrix`'s
-// 15 m at LEO altitude, scaled up by the ~16× radius vector difference
-// between LEO and the surface (the angular RNP sampling residual is
-// the same ~3e-5 rad in both, but `|err_pos| = |r| · |err_angle|` and
-// the surface reading comes after the body has been *placed* on Earth,
-// so it inherits the surface-radius angular spread).
-const ATTACHED_SURFACE_POS_TOL_M: f64 = 230.0;
+// attached_surface_pt (t=2600..3000): named-point overload at
+// altitude=1 m. Position residual is the surface-attach RNP-cadence
+// artefact described in the rationale block above — JEOD samples
+// EarthRNP at 60 s vs the runner's 32 Hz sub-step. Observed maxes:
+// pos=2.158e2 m, vel=9.359e-3 m/s, quat=3.870e-3 rad, ang_vel=1.802e-7
+// rad/s.
+const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 227.0;
+const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 9.83e-3;
+const ATTACHED_SURFACE_PT_QUAT_TOL_RAD: f64 = 4.07e-3;
+const ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S: f64 = 1.90e-7;
+
+// attached_surface_matrix (t=3400..3800): same surface placement as the
+// named-point variant but routed through the matrix-attach overload.
+// Same RNP-cadence artefact in pos/vel; the larger quat residual
+// reflects the matrix-attach window inheriting the post-3000 identity
+// attitude from the prior `DetachAndRestoreFullState`, which has had
+// 400 s of free-flight to drift before this surface-attach freezes the
+// attitude again. Observed maxes: pos=2.117e2 m, vel=1.161e-2 m/s,
+// quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
+const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 222.5;
+const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 1.22e-2;
+const ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD: f64 = 6.67e-2;
+const ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S: f64 = 1.13e-7;
 
 // post_final_detach (t=3000..3400 + t=3800..12000): free-flight from
 // identity attitude (JEOD's `set_state(Att)` reset, see
@@ -1083,9 +1231,13 @@ const ATTACHED_SURFACE_POS_TOL_M: f64 = 230.0;
 // the run. Errors are dominated by the t=3000 / t=3800 attitude
 // alignment lag — the body resumes from identity attitude with the
 // captured ang_vel, and the integrator's evolution over the residual
-// 8000 s window has time to drift ~0.27 rad against JEOD. Position
-// residuals are sub-meter; the quat-angle tolerance has the most
-// headroom because the post-detach attitude drift is the dominant
-// long-tail effect.
-const POST_FINAL_DETACH_POS_TOL_M: f64 = 2.0e-1;
-const POST_FINAL_DETACH_VEL_TOL_MPS: f64 = 2.5e-4;
+// 8000 s window has time to drift ~0.27 rad (~15°) against JEOD before
+// the run ends. The quat-angle tolerance is therefore the largest
+// dimensionless tolerance in this test, but it is still set to ~5%
+// above the observed max so a regression that doubled the drift to
+// ~30° would still trip the gate. Observed maxes: pos=1.718e-1 m,
+// vel=1.855e-4 m/s, quat=2.686e-1 rad, ang_vel=2.120e-4 rad/s.
+const POST_FINAL_DETACH_POS_TOL_M: f64 = 1.81e-1;
+const POST_FINAL_DETACH_VEL_TOL_MPS: f64 = 1.95e-4;
+const POST_FINAL_DETACH_QUAT_TOL_RAD: f64 = 2.82e-1;
+const POST_FINAL_DETACH_ANG_VEL_TOL_RAD_PER_S: f64 = 2.23e-4;
