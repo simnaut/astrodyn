@@ -76,18 +76,44 @@ pub struct FrameAttachInputs {
     /// same coordinates.
     pub parent_frame: RefFrameState,
     /// Rigid-body offset from the parent frame to the attached body's
-    /// composite-body frame: `position` is the attach point in
-    /// parent-frame coordinates, `t_parent_this` is the rotation from
-    /// parent-frame axes to body-frame axes. Mirrors the
+    /// **structural** frame: `position` is the structure-frame origin
+    /// in parent-frame coordinates, `t_parent_this` is the rotation
+    /// from parent-frame axes to structure-frame axes. Mirrors the
     /// `RefFrameState` that JEOD's
     /// `frame_attach.initialize_attachment(parent, X_pframe_to_struct)`
-    /// captures at attach time.
+    /// captures at attach time
+    /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:293-300, 367-378`).
     pub attach_offset: MassPointState,
+    /// Body's structure→composite-body offset, i.e. the composite CoM
+    /// position and orientation in the body's structural frame. This
+    /// is JEOD's `mass.composite_properties` (position is the
+    /// composite CoM in struct coords; `t_parent_this` is the
+    /// structure→body rotation, normally identity).
+    ///
+    /// The kernel applies a second rigid-body composition after the
+    /// parent⊕attach_offset step to derive the composite-body inertial
+    /// state from the structure-inertial state. Mirrors JEOD's
+    /// `propagate_state_from_structure` →
+    /// `compute_derived_state_forward(structure, mass.composite_properties,
+    /// composite_body)` in `dyn_body_propagate_state.cc:564-642`.
+    /// Without this step, callers that capture a struct-frame offset
+    /// in the parent (the JEOD convention) would land the body
+    /// `|composite_properties.position|` away from the correct
+    /// composite-body inertial pose — exactly the surface-attach
+    /// residual the matrix and named-point overloads exhibit when
+    /// the body's structure → CoM offset is nonzero.
+    ///
+    /// Pass `MassPointState::default()` (zero offset, identity
+    /// rotation) for atomic point-mass bodies whose CoM coincides
+    /// with the structural origin; the second `propagate_forward`
+    /// step is then a numerical no-op.
+    pub composite_offset: MassPointState,
 }
 
 /// Compute the attached body's composite-body inertial state from the
-/// parent reference frame's current state and the (frozen-at-attach)
-/// rigid-body offset.
+/// parent reference frame's current state, the (frozen-at-attach)
+/// rigid-body parent→structure offset, and the body's structure→composite
+/// CoM offset.
 ///
 /// Pure function: no side effects, no I/O, no mutation. Call sites are
 /// the per-step "frame-attached body update" pass in
@@ -99,12 +125,26 @@ pub struct FrameAttachInputs {
 /// invocations so derived-state consumers always observe a body whose
 /// state reflects the parent frame's just-finished intra-step updates.
 ///
-/// Implementation is the existing `propagate_forward` kernel — the
-/// algebra is bit-identical to the mass-tree kinematic walk's per-link
-/// composition. The only difference is which structure (`FrameTree`
-/// vs. `MassTree`) the upstream parent state was read from.
+/// Two-step composition mirroring JEOD:
+/// 1. `parent_frame ⊕ attach_offset` → structure-frame inertial state,
+///    matching `dyn_body_integration.cc:325-332`'s rebuild of
+///    `X_iframe_to_struct = X_iframe_to_pframe ⊕ attach_offset`.
+/// 2. `structure_state ⊕ composite_offset` → composite-body inertial
+///    state, matching `dyn_body_propagate_state.cc:571`'s
+///    `compute_derived_state_forward(structure, mass.composite_properties,
+///    composite_body)` call.
+///
+/// Both steps are the existing `propagate_forward` kernel; only the
+/// upstream input differs (frame tree vs. mass tree), and the second
+/// step is a numerical no-op when `composite_offset` is the default.
+// JEOD_INV: DB.31 — frame-attach derives composite from captured struct
+// offset (struct → composite CoM correction at capture time). Mirrors
+// `dyn_body_propagate_state.cc:571` (`propagate_state_from_structure`'s
+// `compute_derived_state_forward(structure, mass.composite_properties,
+// composite_body)` call).
 pub fn derive_frame_attached_state(input: FrameAttachInputs) -> RefFrameState {
-    propagate_forward(&input.parent_frame, &input.attach_offset)
+    let structure_state = propagate_forward(&input.parent_frame, &input.attach_offset);
+    propagate_forward(&structure_state, &input.composite_offset)
 }
 
 #[cfg(test)]
@@ -135,6 +175,7 @@ mod tests {
         let derived = derive_frame_attached_state(FrameAttachInputs {
             parent_frame: parent,
             attach_offset: offset,
+            composite_offset: MassPointState::default(),
         });
         assert!((derived.trans.position - parent.trans.position).length() < 1e-9);
         assert!((derived.trans.velocity - parent.trans.velocity).length() < 1e-9);
@@ -170,6 +211,7 @@ mod tests {
         let derived = derive_frame_attached_state(FrameAttachInputs {
             parent_frame: parent,
             attach_offset: offset,
+            composite_offset: MassPointState::default(),
         });
         // Position equals the offset (parent at origin, identity rotation).
         assert!((derived.trans.position - DVec3::new(r, 0.0, 0.0)).length() < 1e-9);
@@ -183,6 +225,70 @@ mod tests {
         );
         // Angular velocity matches the parent (rigid attachment).
         assert!((derived.rot.ang_vel_this - parent.rot.ang_vel_this).length() < 1e-12);
+    }
+
+    /// Non-zero `composite_offset` shifts the kernel's output by
+    /// `T_inertial_struct^T · composite_offset.position` relative to the
+    /// pure-struct case. Pins JEOD's `propagate_state_from_structure`
+    /// → `compute_derived_state_forward(structure, composite_properties,
+    /// composite_body)` step (`dyn_body_propagate_state.cc:571`):
+    /// the captured offset is the parent → struct pose, and the
+    /// composite-body pose is derived from struct via the body's
+    /// structure → CoM offset. SIM_dyncomp's mass fixture uses
+    /// `composite_properties.position = (-3, -1.5, 4)` (5.22 m
+    /// magnitude); a missing second propagate_forward step lands the
+    /// body that far off JEOD's composite-body trajectory on every
+    /// surface-attach event.
+    #[test]
+    fn composite_offset_applies_struct_to_com_correction() {
+        // Parent at the origin with identity attitude — so the
+        // captured `attach_offset` lands directly as the body's
+        // structure-frame state in inertial.
+        let parent = RefFrameState::default();
+        // Struct origin sits at (1e6, 0, 0) in inertial with identity
+        // attitude; mirrors the matrix-attach overload's input.
+        let attach_offset = MassPointState {
+            position: DVec3::new(1.0e6, 0.0, 0.0),
+            t_parent_this: JeodQuat::identity().left_quat_to_transformation(),
+        };
+        // Body's CoM is offset by (-3, -1.5, 4) m from the struct
+        // origin in struct coordinates — exactly JEOD's
+        // `set_mass_iss()` ISS fixture.
+        let composite_offset = MassPointState {
+            position: DVec3::new(-3.0, -1.5, 4.0),
+            t_parent_this: JeodQuat::identity().left_quat_to_transformation(),
+        };
+
+        let derived = derive_frame_attached_state(FrameAttachInputs {
+            parent_frame: parent,
+            attach_offset,
+            composite_offset,
+        });
+
+        // Identity attitudes throughout, so the kernel's composite
+        // position is the struct position plus the CoM offset
+        // verbatim.
+        let expected = attach_offset.position + composite_offset.position;
+        assert!(
+            (derived.trans.position - expected).length() < 1e-12,
+            "expected {expected:?}, got {:?}",
+            derived.trans.position
+        );
+
+        // Sanity: dropping the composite offset back to default
+        // returns the body to the captured struct pose, demonstrating
+        // the magnitude of the correction (5.22 m for this fixture).
+        let no_correction = derive_frame_attached_state(FrameAttachInputs {
+            parent_frame: parent,
+            attach_offset,
+            composite_offset: MassPointState::default(),
+        });
+        let delta = (derived.trans.position - no_correction.trans.position).length();
+        let expected_delta = composite_offset.position.length();
+        assert!(
+            (delta - expected_delta).abs() < 1e-12,
+            "CoM correction magnitude should be {expected_delta} m, got {delta}"
+        );
     }
 
     /// Detach is exact: applying [`crate::propagation::propagate_reverse`]
@@ -216,6 +322,7 @@ mod tests {
         let derived = derive_frame_attached_state(FrameAttachInputs {
             parent_frame: parent,
             attach_offset: offset,
+            composite_offset: MassPointState::default(),
         });
         let recovered = propagate_reverse(&derived, &offset);
         assert!((recovered.trans.position - parent.trans.position).length() < 1e-6);
