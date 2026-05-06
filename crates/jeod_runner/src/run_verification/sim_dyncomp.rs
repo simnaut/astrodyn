@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
-use jeod_sim::met_atmosphere;
+use jeod_atmosphere::met as met_atmosphere;
 use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };

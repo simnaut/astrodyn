@@ -26,7 +26,8 @@
 use glam::DVec3;
 
 use jeod_frames::FrameId;
-use jeod_sim::{IntegOrigin, Position, Velocity};
+use jeod_quantities::IntegOrigin;
+use jeod_sim::{Position, Velocity};
 
 use super::Simulation;
 use crate::error::StepError;

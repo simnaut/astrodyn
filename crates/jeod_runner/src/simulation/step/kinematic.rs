@@ -52,13 +52,14 @@
 use std::collections::HashMap;
 
 use jeod_dynamics::MassBodyId;
+use jeod_quantities::frame::IntegrationFrame;
+use jeod_quantities::IntegOrigin;
 use jeod_sim::{
-    propagate_state_via_storage, IntegOrigin, KinematicEdge, KinematicNodeState, MassStorage,
-    RootInertial, RotationalState, TranslationalState, TranslationalStateTyped,
+    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, RootInertial,
+    RotationalState, TranslationalState, TranslationalStateTyped,
 };
 
 use super::super::Simulation;
-use jeod_sim::IntegrationFrame;
 
 impl Simulation {
     /// Walk the mass tree from each root and overwrite every non-root,

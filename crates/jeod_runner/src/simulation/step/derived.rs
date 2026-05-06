@@ -3,7 +3,8 @@
 //! solar beta, earth lighting). Runs after integration; reads the
 //! post-integrated body state and writes per-body derived-state fields.
 
-use jeod_sim::{IntegOrigin, Position, RootInertial};
+use jeod_quantities::IntegOrigin;
+use jeod_sim::{Position, RootInertial};
 
 use super::super::Simulation;
 

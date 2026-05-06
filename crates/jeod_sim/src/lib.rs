@@ -1,8 +1,9 @@
 //! ECS-agnostic orchestration layer for JEOD physics.
 //!
-//! This crate is the **single dependency** for ECS adapters. It re-exports all
-//! types from the `jeod_*` physics crates that an adapter needs, plus
-//! orchestration functions that compose them into pipeline stages.
+//! This crate is the **single dependency** for ECS adapters and mission
+//! crates. It re-exports the types from the `jeod_*` physics crates that
+//! such consumers need, plus orchestration functions that compose them
+//! into pipeline stages.
 //!
 //! ## Per-body functions (primary API for ECS integration)
 //!
@@ -27,7 +28,19 @@
 //! For batch propagation and Tier 3 tests, see the `jeod_runner` crate which
 //! provides a standalone `Simulation` struct that owns all state and drives the
 //! pipeline. ECS adapters should **not** use `jeod_runner` — use the per-body
-//! functions from this crate instead.
+//! functions from this crate instead. `jeod_runner` is a parallel non-Bevy
+//! consumer and depends on the `jeod_*` physics crates directly; mission code
+//! never does.
+//!
+//! ## Re-export discipline
+//!
+//! Every `pub use jeod_*::...` re-export is justified by an active mission-
+//! crate or `bevy_jeod` adapter consumer. Items reached only by the standalone
+//! runner are not surfaced here — the runner imports them from the physics
+//! crate of origin. The contract is intentionally tight: a rename in one of
+//! the underlying physics crates only ripples to mission code if the affected
+//! type is one the mission API genuinely owns. The criteria are spelled out
+//! at the head of the re-export block in [`lib.rs`][self].
 //!
 //! ## Pipeline ordering
 //!
@@ -98,15 +111,12 @@ pub use interactions::{
 };
 pub use jeod_dynamics::kinematic_joint::{
     evaluate as evaluate_joint_kinematics, evaluate_closure as evaluate_closure_kinematics,
-    evaluate_model as evaluate_joint_kinematics_model,
     evaluate_multi_dof as evaluate_multi_dof_kinematics,
     evaluate_sinusoidal as evaluate_sinusoidal_kinematics, ClosureJointKinematicsSpec,
     JointKinematicsModel, JointKinematicsSpec, MultiDofJointKinematicsSpec, SingleDofKinematics,
     SinusoidalJointKinematicsSpec, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
-pub use jeod_dynamics::{
-    Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
-};
+pub use jeod_dynamics::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
@@ -128,27 +138,37 @@ pub use vehicle_config::{
 pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, EdgeGeometry};
 
 // ── Re-exports from jeod_* crates ──
-// ECS adapters depend only on jeod_sim — these re-exports provide all the
-// types needed for component definitions, system parameters, and resources.
+//
+// Curation criteria (audit §2.4 — issue #361):
+//
+// 1. `bevy_jeod` and any mission crate depend only on `jeod_sim` (per
+//    CLAUDE.md "Three-Layer Architecture"), so every type a mission
+//    crate reaches must be reachable through here.
+// 2. `jeod_runner` is a parallel non-Bevy consumer that *may* depend
+//    directly on the `jeod_*` physics crates (issue #360 / audit §2.3).
+//    Items that are needed only by `jeod_runner` are imported there
+//    directly, not surfaced on the `jeod_sim` API.
+// 3. Items that no consumer reaches are dropped — every entry below
+//    earns its place by an active `bevy_jeod` (root, examples, tests)
+//    or mission-crate consumer.
+//
+// Adding a new re-export is therefore tied to a concrete consumer that
+// imports it via `jeod_sim::...`; if the consumer is `jeod_runner`,
+// the import goes to its physics-crate dependency instead.
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    combine_states_at_attach, compute_frame_derivatives, compute_kinematic_child_state,
-    compute_kinematic_child_state_dquat, compute_kinematic_child_state_typed,
-    compute_node_composite, compute_t_inertial_struct, compute_translational_derivatives,
-    derive_frame_attached_state, derive_kinematic_child_from_states,
-    finalize_child_in_parent_frame, propagate_forward, recompute_composites_via_storage,
-    shift_wrench_to_parent, shift_wrench_to_parent_typed, AttachCombineInputs,
-    AttachCombineOutputs, DetachedSubtreeState, DynamicsConfig, ForceContributions,
-    FrameAttachInputs, FrameDerivatives, GravityAcceleration, KinematicChildInputs,
-    KinematicChildOutputs, MassBodyId, MassNodeOutputs, MassNodeView, MassPointState,
-    MassProperties, MassStorage, MassTree, RotationalState, SixDofState, TotalForce,
-    TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,
+    compute_frame_derivatives, compute_kinematic_child_state, compute_t_inertial_struct,
+    compute_translational_derivatives, derive_frame_attached_state, propagate_forward,
+    recompute_composites_via_storage, shift_wrench_to_parent, DetachedSubtreeState, DynamicsConfig,
+    FrameAttachInputs, FrameDerivatives, GravityAcceleration, MassBodyId, MassNodeOutputs,
+    MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
+    SixDofState, TotalForce, TranslationalState, Wrench,
 };
 
-// jeod_dynamics typed siblings (used by Bevy components after #172 H1
-// migration so the ECS storage layer carries frame phantoms rather
-// than re-lifting raw DVec3 every step).
+// jeod_dynamics typed siblings: ECS components built on the typed
+// state primitives so storage carries frame phantoms rather than
+// re-lifting raw `DVec3` every step.
 pub use jeod_dynamics::forces::{FrameDerivativesTyped, GravityAccelerationTyped, TotalForceTyped};
 pub use jeod_dynamics::mass::MassPropertiesTyped;
 pub use jeod_dynamics::rotational::RotationalStateTyped;
@@ -156,69 +176,56 @@ pub use jeod_dynamics::state::TranslationalStateTyped;
 
 // jeod_gravity: source definitions, controls, and tides
 pub use jeod_gravity::tides::{
-    compute_delta_c20, compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
+    compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
 };
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // jeod_atmosphere: state output and model types
 pub use jeod_atmosphere::exponential::ExponentialAtmosphere;
-pub use jeod_atmosphere::met::{self as met_atmosphere, GeoIndexType, MetAtmosphere};
+pub use jeod_atmosphere::met::{GeoIndexType, MetAtmosphere};
 pub use jeod_atmosphere::AtmosphereState;
 
 // jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
-    compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
     compute_earth_lighting, compute_earth_lighting_typed, compute_flat_plate_srp_thermal,
-    compute_flat_plate_srp_thermal_conduction, compute_ground_contact_geometry,
-    compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, AerodynamicForceTyped,
-    ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape, DragConfig,
-    DragConfigTyped, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
-    FlatPlateThermal, GroundFacet, LightingBody, LightingParams, Phase, RadiationForce,
-    SphericalTerrain, Terrain, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
+    compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, DragConfig, DragConfigTyped,
+    EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
+    LightingBody, LightingParams, RadiationForce, SOLAR_RADIUS,
 };
 
 // jeod_frames: reference frame state and arena-based frame tree.
-// `FrameTree`/`FrameId`/`FrameNode`/`RefFrameKind` are re-exported here so
-// every consumer of `jeod_sim` (`jeod_runner`, `bevy_jeod`, mission crates)
-// can build and walk the frame hierarchy without depending on `jeod_frames`
-// directly. Issue #71 — without this re-export, frame-tree orchestration
-// is bottled up inside `jeod_runner::Simulation` and unavailable to the
-// Bevy adapter.
-//
-// `RefFrameRot`/`RefFrameTrans` are the per-link state structs callers
-// need when constructing or reading frame nodes; `RefFrameStateTyped` is
-// the typed sibling for Phase C of issue #71.
+// `FrameStorage` plus the per-link state structs (`RefFrameRot`,
+// `RefFrameTrans`, `RefFrameState`) are needed by mission code that
+// constructs or reads frame nodes; `frame_compute_relative_state_via_storage`
+// drives cross-frame state queries.
 pub use jeod_frames::{
-    common_ancestor as frame_common_ancestor, compose_to_ancestor as frame_compose_to_ancestor,
-    compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameNode,
-    FrameStorage, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameStateTyped,
-    RefFrameTrans,
+    compute_relative_state as frame_compute_relative_state_via_storage, FrameStorage, RefFrameRot,
+    RefFrameState, RefFrameTrans,
 };
 
-// jeod_time: simulation time, leap seconds, epoch constants, and time scale network
+// jeod_time: simulation-time + leap-second + epoch surface that the
+// Bevy adapter and mission code consume through `SimulationTime` /
+// `default_leap_second_table()`.
 pub use jeod_time::{
     epoch::{J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY},
-    leap_second::{default_leap_second_table, LeapSecondTable},
-    time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate},
-    DynamicTime, MissionElapsedTime, SimulationTime, TimeManager, TimeScaleId, UserDefinedEpoch,
-    TAI_GPS_OFFSET,
+    leap_second::default_leap_second_table,
+    SimulationTime,
 };
 
-// jeod_time: planet rotation (used by ephemeris stage)
-pub use jeod_frames::rotation_j2000::{
-    compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar, polar_motion_matrix,
-};
+// jeod_frames: planet rotation (used by ephemeris stage and mission
+// code that sets up Mars/Moon planetary configurations).
+pub use jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt_with_polar;
 pub use jeod_frames::rotation_mars;
 pub use jeod_frames::rotation_moon;
 
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 
-// jeod_gravity: binary coefficient loading. The JEOD `.cc` source-file
-// parser (`load_from_jeod_cc`, `load_mu_from_jeod_cc`) lives in the
-// dev/test crate `jeod_test_data::jeod_cc` — production gravity does
-// not parse JEOD source.
-pub use jeod_gravity::coefficients;
+// jeod_gravity: relativistic-correction submodule consumed by mission
+// code that builds relativistic-source lists. The JEOD `.cc`
+// source-file parser (`load_from_jeod_cc`, `load_mu_from_jeod_cc`)
+// lives in the dev/test crate `jeod_test_data::jeod_cc` — production
+// gravity does not parse JEOD source.
 pub use jeod_gravity::relativistic;
 
 // jeod_planet: planet shape
@@ -228,17 +235,15 @@ pub use jeod_planet::PlanetShape;
 // `bevy_jeod` root crate) consume these types via `jeod_sim` to
 // preserve the "single dependency" invariant.
 pub use jeod_quantities::aliases::{
-    Acceleration, AngularAcceleration, AngularMomentum, AngularVelocity, Force, Jerk, Position,
-    Torque, Velocity,
+    Acceleration, AngularAcceleration, AngularVelocity, Force, Position, Torque, Velocity,
 };
-pub use jeod_quantities::diagnostics::{CompatibleVehiclePair, CompatibleVehicles};
-pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
+pub use jeod_quantities::diagnostics::CompatibleVehiclePair;
+pub use jeod_quantities::dims::GravParam;
 pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
-    PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, PlanetInertial,
+    RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
-pub use jeod_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `jeod_sim` don't need a direct
 // `jeod_quantities` line in their `Cargo.toml`. The macro body resolves
@@ -246,9 +251,7 @@ pub use jeod_quantities::integ_origin::IntegOrigin;
 // invoked from, so the sealed-trait bound is satisfied transparently.
 pub use jeod_quantities::body_attitude::BodyAttitude;
 pub use jeod_quantities::frame_transform::FrameTransform;
-pub use jeod_quantities::inertia::InertiaTensor;
 pub use jeod_quantities::qty3::Qty3;
-pub use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 pub use jeod_quantities::{define_planet, define_vehicle};
 
 // uom scalar quantities used directly by the Bevy adapter for typed
@@ -277,8 +280,4 @@ pub fn dimensionless(value: f64) -> Ratio {
 pub use jeod_math::JeodQuat;
 
 // jeod_math: derived state types
-pub use jeod_math::{
-    cartesian_to_geodetic_typed, compute_euler_angles_from_matrix_typed, compute_lvlh_frame_typed,
-    geodetic_to_cartesian_typed, solar_beta_angle_typed, EulerSequence, GeodeticState,
-    GeodeticStateTyped, LvlhFrame, OrbitalElements, OrbitalError,
-};
+pub use jeod_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements};
