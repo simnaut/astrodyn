@@ -249,15 +249,31 @@ pub fn stage_detach_capture(
 /// the *old* integ frame's coordinates yields the same physical pose
 /// re-expressed in the *new* integ frame's coordinates.
 ///
-/// Used by the cross-integration-frame attach path on adapters that
-/// must rewrite each descendant's stored translational state inside the
-/// staging window (so consumers running between staging and the next
-/// kinematic propagation pass don't read pre-attach numerics through
-/// post-attach frame-tree topology). JEOD's
-/// `dyn_body_integration.cc::set_integ_frame` only reparents the frame
-/// nodes ("does not update state") and relies on a same-call
-/// `propagate_state()` recursion; adapters without that recursion do the
-/// translation here.
+/// Used by the cross-integration-frame attach/detach path on every
+/// adapter that needs to translate a body's stored translational state
+/// across an integ-frame switch:
+///
+/// - The Bevy adapter calls this **per descendant** in the child's
+///   pre-attach mass-tree subtree, because each descendant may have
+///   had a different pre-attach integ frame than the new parent's and
+///   each one's stored coordinates must be re-expressed in the new
+///   parent's integ frame so consumers running between staging and the
+///   next kinematic propagation pass don't read pre-attach numerics
+///   through post-attach frame-tree topology.
+///
+/// - The runner's `Simulation::attach` / `Simulation::detach` call this
+///   **per side** at the kernel boundary: the seed-time lift uses
+///   `between_integ_origins(body_integ_origin, ZERO)` to re-express
+///   stored integ-frame state in root-inertial coordinates before
+///   `combine_states_at_attach` runs, and the writeback uses the
+///   symmetric `between_integ_origins(ZERO, body_integ_origin)` to
+///   lower the merged root-inertial result back into integ-frame
+///   storage.
+///
+/// JEOD's `dyn_body_integration.cc::set_integ_frame` only reparents the
+/// frame nodes ("does not update state") and relies on a same-call
+/// `propagate_state()` recursion; adapters without that recursion do
+/// the translation here.
 ///
 /// The translation is valid only because every legitimate integ-frame
 /// entity in this codebase is non-rotating (`RootInertial` or a planet
