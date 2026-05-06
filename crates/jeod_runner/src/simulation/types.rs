@@ -31,9 +31,9 @@ use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::FrameId;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
-    FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls,
+    FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls,
     GravitySource, GroundFacet, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements,
-    RadiationForce, RotationModel, RotationalState, SelfPlanet, SrpModel, TotalForce,
+    RadiationForce, RootInertial, RotationModel, RotationalState, SelfPlanet, SrpModel, TotalForce,
     TranslationalState, TranslationalStateTyped, VehicleConfig,
 };
 
@@ -275,7 +275,7 @@ pub(crate) struct SimBody {
     pub frame_switches: Vec<FrameSwitchConfig>,
 
     // ── Bookkeeping (written each step, not user-visible) ──
-    pub gravity_accel: GravityAcceleration,
+    pub gravity_accel: GravityAccelerationTyped<RootInertial>,
     pub total_force: TotalForce,
     pub frame_derivs: FrameDerivatives,
     pub aero_force: Option<AerodynamicForce>,
@@ -367,7 +367,7 @@ impl SimBody {
             body_frame_id,
             frame_switches: config.frame_switches,
 
-            gravity_accel: GravityAcceleration::default(),
+            gravity_accel: GravityAccelerationTyped::<RootInertial>::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
             aero_force: None,

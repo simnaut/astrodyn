@@ -43,7 +43,10 @@ impl Simulation {
                 body.rot.as_ref(),
                 body.t_struct_body,
                 body.mass.as_ref(),
-                body.gravity_accel.grav_accel,
+                // allowed: typed→raw boundary — `collect_and_resolve_forces`
+                // is the untyped force-collection kernel; the runner stores
+                // gravity acceleration typed against `RootInertial`.
+                body.gravity_accel.grav_accel.raw_si(),
             );
             body.total_force = total;
             body.frame_derivs = derivs;
@@ -1010,9 +1013,14 @@ impl Simulation {
                 let torque_body = body.t_struct_body * agg.torque;
                 body.total_force.force = force_inertial;
                 body.total_force.torque = torque_body;
+                // allowed: typed→raw boundary — `frame_derivs` is the
+                // untyped derivative struct used by the integrator
+                // contract; the runner's gravity storage is typed
+                // against `RootInertial`.
+                let grav_accel_raw = body.gravity_accel.grav_accel.raw_si();
                 if let Some(mass) = &body.mass {
                     body.frame_derivs.trans_accel =
-                        body.gravity_accel.grav_accel + force_inertial * mass.inverse_mass;
+                        grav_accel_raw + force_inertial * mass.inverse_mass;
                     if let Some(rot) = body.rot.as_ref() {
                         // Refresh rotational dynamics with the
                         // aggregated body-frame torque. Matches
@@ -1025,7 +1033,7 @@ impl Simulation {
                         body.frame_derivs.rot_accel = DVec3::ZERO;
                     }
                 } else {
-                    body.frame_derivs.trans_accel = body.gravity_accel.grav_accel;
+                    body.frame_derivs.trans_accel = grav_accel_raw;
                     body.frame_derivs.rot_accel = DVec3::ZERO;
                 }
             } else {
