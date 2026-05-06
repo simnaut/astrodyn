@@ -84,6 +84,19 @@
 //!   flow into root-inertial-only consumers (gravity, SRP, relativistic);
 //!   the only safe transition is via [`IntegOrigin`].
 //!
+//! - **Vehicle-phantom mismatch** on the Act-5 phantom-wrapped types
+//!   (`FlatPlate<V>`, `AttachEvent<VParent, VChild>`,
+//!   `RelativeState<Subject, Reference>`,
+//!   `RelativeTranslation<Reference>`, `LvlhRelativeState<Chief>`) is
+//!   surfaced via the [`diagnostics::CompatibleVehicles`] /
+//!   [`diagnostics::CompatibleVehiclePair`] markers. Each type exposes
+//!   a zero-cost `assert_*` witness method whose `where` bound resolves
+//!   only when the vehicle phantoms agree; on mismatch the diagnostic
+//!   names the expected and found vehicles in physics language instead
+//!   of a `PhantomData<…>` wall. Mission code reaches for the witness
+//!   at the boundary that hands the value to a slot of a specific
+//!   identity (e.g. `plate.assert_vehicle::<Iss>()`).
+//!
 //! ### Scaffolded but not currently wired
 //!
 //! [`diagnostics::IntoLength`], [`diagnostics::IntoAngle`],
