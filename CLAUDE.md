@@ -334,16 +334,25 @@ These Python files come in three parsability tiers:
 
 ## JEOD Integration Loop (maps to FixedUpdate)
 
+JEOD's per-step pipeline collapses to **seven** `JeodSet` variants
+(`src/sets.rs`), not nine. Two adjacent JEOD steps share a single set
+where the bundling is natural — gravity + atmosphere both run in
+`Environment`, and frame propagation rides inside the `Integration`
+system as its post-step rather than as a separate schedule pass.
+
 ```
-1. Time update         →  TimeUpdateSet
-2. Ephemeris update    →  EphemerisUpdateSet
-3. Gravity computation →  EnvironmentSet
-4. Atmosphere update   →  EnvironmentSet
-5. Aero/SRP/torque     →  InteractionSet
-6. Force collection    →  ForceCollectionSet
-7. State integration   →  IntegrationSet
-8. Frame propagation   →  IntegrationSet
-9. Derived states      →  DerivedStateSet
+JEOD step                        →  JeodSet variant
+1. Time update                   →  JeodSet::TimeUpdate
+2. Ephemeris update              →  JeodSet::EphemerisUpdate
+3. Gravity computation         ┐
+                               ├─→  JeodSet::Environment
+4. Atmosphere update           ┘
+5. Aero / SRP / gravity torque   →  JeodSet::Interaction
+6. Force collection              →  JeodSet::ForceCollection
+7. State integration           ┐
+                               ├─→  JeodSet::Integration
+8. Frame propagation           ┘    (post-step inside the integration system)
+9. Derived states                →  JeodSet::DerivedState
 ```
 
 Multi-stage integrators (RK4 = 4 stages) run as an inner loop within the
