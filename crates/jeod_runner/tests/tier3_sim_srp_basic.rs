@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Tier 3: SIM_1_BASIC — flat-plate SRP verification via Simulation pipeline
 //!
 //! SIM_1_BASIC places a 6-plate vehicle at ~1 AU from the Sun with zero velocity

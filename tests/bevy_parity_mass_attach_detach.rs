@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy ECS mass-tree parity vs the runner's arena `MassTree`.
 //!
 //! Migrates the `tier3_mass_attach_detach` cases from

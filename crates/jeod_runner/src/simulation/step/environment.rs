@@ -8,7 +8,7 @@ use glam::DVec3;
 
 use jeod_quantities::IntegOrigin;
 use jeod_sim::atmosphere::evaluate_atmosphere;
-use jeod_sim::gravity::accumulate_gravity;
+use jeod_sim::gravity::{run_gravity_stage, GravityBodyInputs};
 
 use super::super::Simulation;
 
@@ -19,55 +19,40 @@ impl Simulation {
     /// root inertial frame; it is also reused by stage 8 integration,
     /// so the caller pre-computes it once.
     pub(super) fn update_environment(&mut self, body_integ_origins: &[IntegOrigin]) {
-        // ── 4. Environment — gravity ──
-        // Helper: resolve source to gravity data via frame tree.
+        // ── 4 + 4b. Environment — gravity (Newtonian + relativistic) ──
+        // Per-body gravity composition (RF.10 shift, Newtonian
+        // accumulation, post-Newtonian correction) lives in the shared
+        // `evaluate_body_gravity` kernel; both this runner and the Bevy
+        // adapter call it inside their respective body loops, paying the
+        // adapter cost once at the boundary (here: source resolvers
+        // closing over the frame tree and gravity data).
         let gravity_data = &self.gravity_data;
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
-        let resolve_source = |source_id: usize| -> Option<jeod_sim::ResolvedSource<'_>> {
-            let grav = gravity_data.get(source_id)?;
-            let sfids = &source_frame_ids[source_id];
-            let src_node = frame_tree.get(sfids.inertial);
-            let position = if sfids.inertial == root_fid {
-                DVec3::ZERO
-            } else {
-                src_node.state.trans.position
+        let resolve_source =
+            |_body_idx: usize, source_id: usize| -> Option<jeod_sim::ResolvedSource<'_>> {
+                let grav = gravity_data.get(source_id)?;
+                let sfids = &source_frame_ids[source_id];
+                let src_node = frame_tree.get(sfids.inertial);
+                let position = if sfids.inertial == root_fid {
+                    DVec3::ZERO
+                } else {
+                    src_node.state.trans.position
+                };
+                let rotation = sfids
+                    .pfix
+                    .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
+                Some(jeod_sim::ResolvedSource {
+                    source: &grav.source,
+                    rotation,
+                    position,
+                    delta_c20: grav.delta_c20,
+                    has_delta_coeffs: grav.tidal_config.is_some(),
+                })
             };
-            let rotation = sfids
-                .pfix
-                .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
-            Some(jeod_sim::ResolvedSource {
-                source: &grav.source,
-                rotation,
-                position,
-                delta_c20: grav.delta_c20,
-                has_delta_coeffs: grav.tidal_config.is_some(),
-            })
-        };
-
-        // JEOD_INV: RF.10 — shift body position from integration frame to
-        // root inertial before passing to gravity / relativistic
-        // consumers. (Atmosphere is a non-shift site — see the atmosphere
-        // block below.) `IntegOrigin::zero()` is a no-op (bit-identical)
-        // when the body integrates in the root frame.
-        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            let o = &body_integ_origins[body_idx];
-            let inertial_state = body.trans.to_inertial(o);
-            body.gravity_accel = accumulate_gravity(
-                inertial_state.position.raw_si(),
-                &body.gravity_controls,
-                o.position.raw_si(),
-                resolve_source,
-            );
-        }
-
-        // ── 4b. Relativistic corrections ──
-        // After Newtonian gravity, apply post-Newtonian PPN correction for
-        // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
-        // PPN uses inertial coordinates — convert from integration frame.
         let resolve_rel_source =
-            |source_id: usize| -> Option<jeod_sim::ResolvedRelativisticSource> {
+            |_body_idx: usize, source_id: usize| -> Option<jeod_sim::ResolvedRelativisticSource> {
                 let grav = gravity_data.get(source_id)?;
                 let sfids = &source_frame_ids[source_id];
                 let position = if sfids.inertial == root_fid {
@@ -78,24 +63,40 @@ impl Simulation {
                 Some(jeod_sim::ResolvedRelativisticSource {
                     mu: grav.source.mu,
                     position,
-                    // Use velocity from gravity_data, not the tree node, because
-                    // central bodies at the root frame have zero tree velocity
-                    // but may have physical velocity for relativistic corrections.
+                    // Velocity comes from gravity_data, not the tree node,
+                    // because central bodies at the root frame have zero
+                    // tree velocity but may still have a physical velocity
+                    // for relativistic corrections.
                     velocity: grav.velocity,
                 })
             };
 
-        // JEOD_INV: RF.10 — relativistic correction needs both position and
-        // velocity in root inertial coordinates.
-        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            let inertial_state = body.trans.to_inertial(&body_integ_origins[body_idx]);
-            body.gravity_accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
-                inertial_state.position.raw_si(),
-                inertial_state.velocity.raw_si(),
-                &body.gravity_controls,
-                resolve_rel_source,
-            );
-        }
+        // Project each `(idx, &mut SimBody)` row into the
+        // `(key, inputs, store)` triple `run_gravity_stage` expects.
+        // The store closure captures `&mut body.gravity_accel` and
+        // lowers the typed kernel result back to raw `GravityAcceleration`
+        // because `SimBody.gravity_accel` still uses the untyped layout;
+        // the Bevy adapter, which stores the typed
+        // `GravityAccelerationTyped<RootInertial>` newtype, moves the
+        // value through unchanged.
+        let body_iter = self.bodies.iter_mut().enumerate().map(|(body_idx, body)| {
+            let inputs = GravityBodyInputs {
+                position: body.trans.position,
+                velocity: body.trans.velocity,
+                integ_origin: body_integ_origins[body_idx],
+                controls: &body.gravity_controls,
+            };
+            let gravity_accel_slot = &mut body.gravity_accel;
+            let store =
+                move |result: jeod_sim::GravityAccelerationTyped<jeod_sim::RootInertial>| {
+                    gravity_accel_slot.grav_accel = result.grav_accel.raw_si();
+                    gravity_accel_slot.grav_grad = result.grav_grad;
+                    gravity_accel_slot.grav_pot = result.grav_pot;
+                };
+            (body_idx, inputs, store)
+        });
+
+        run_gravity_stage(body_iter, resolve_source, resolve_rel_source);
 
         // ── 5. Environment — atmosphere ──
         if let Some(ref atmos_config) = self.atmosphere {

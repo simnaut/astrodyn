@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! ECS-agnostic orchestration layer for JEOD physics.
 //!
 //! This crate is the **single dependency** for ECS adapters and mission
@@ -96,7 +97,8 @@ pub use frame_orchestration::{
 };
 pub use gravity::{
     accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,
-    accumulate_relativistic_corrections_typed, ResolvedRelativisticSource, ResolvedSource,
+    accumulate_relativistic_corrections_typed, evaluate_body_gravity, evaluate_body_gravity_typed,
+    run_gravity_stage, GravityBodyInputs, ResolvedRelativisticSource, ResolvedSource,
 };
 pub use integrable::IntegrableObject;
 pub use integration::{
@@ -241,9 +243,10 @@ pub use jeod_quantities::diagnostics::CompatibleVehiclePair;
 pub use jeod_quantities::dims::GravParam;
 pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, PlanetInertial,
-    RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
+    PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
+pub use jeod_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `jeod_sim` don't need a direct
 // `jeod_quantities` line in their `Cargo.toml`. The macro body resolves

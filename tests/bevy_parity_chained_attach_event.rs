@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy ECS vs `jeod_runner::Simulation` parity for the
 //! chained-attach (re-rooting) path, driven through the production
 //! `AttachEvent` surface end-to-end.
