@@ -12,9 +12,10 @@ use glam::DVec3;
 
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
+use jeod_interactions::{ContactFacet, GroundFacet, Phase};
+use jeod_quantities::frame::IntegrationFrame;
 use jeod_sim::{
-    evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
-    MassProperties, Phase, Position, VehicleConfig, Velocity,
+    evaluate_ground_contact_pair, DragConfig, MassProperties, Position, VehicleConfig, Velocity,
 };
 
 use super::types::{
@@ -104,7 +105,7 @@ impl Simulation {
     ///
     /// The first call also pins the planet source whose `pfix` rotation
     /// will be queried for terrain lookups; subsequent registrations must
-    /// use the same `planet_source`. For [`SphericalTerrain`](jeod_sim::SphericalTerrain)
+    /// use the same `planet_source`. For [`SphericalTerrain`](jeod_interactions::SphericalTerrain)
     /// the pfix rotation cancels in the ground-point computation and
     /// `planet_source` is documentation-only — but we still validate
     /// consistency to keep ground-contact registrations explicit.

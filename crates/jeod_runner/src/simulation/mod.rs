@@ -29,7 +29,7 @@ pub(crate) mod types;
 mod validate;
 
 pub use jeod_dynamics::DetachedSubtreeState;
-pub use jeod_sim::{GroundFacet, SphericalTerrain, Terrain};
+pub use jeod_interactions::{GroundFacet, SphericalTerrain, Terrain};
 pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, VehicleOutput};
 
 use std::collections::HashMap;

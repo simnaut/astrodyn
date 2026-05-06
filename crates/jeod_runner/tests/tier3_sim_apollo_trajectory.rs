@@ -67,10 +67,10 @@
 #![cfg(feature = "verification")]
 
 use glam::{DMat3, DVec3};
+use jeod_atmosphere::met::GeoIndexType;
 use jeod_dynamics::{MassBodyId, MassProperties, MassTree};
 use jeod_math::JeodQuat;
 use jeod_runner::{RotationModel, Simulation, SimulationBuilderExt};
-use jeod_sim::met_atmosphere::GeoIndexType;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
