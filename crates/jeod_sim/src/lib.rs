@@ -84,7 +84,7 @@ pub use frame_orchestration::{
 pub use gravity::{
     accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,
     accumulate_relativistic_corrections_typed, evaluate_body_gravity, evaluate_body_gravity_typed,
-    ResolvedRelativisticSource, ResolvedSource,
+    run_gravity_stage, GravityBodyInputs, ResolvedRelativisticSource, ResolvedSource,
 };
 pub use integrable::IntegrableObject;
 pub use integration::{

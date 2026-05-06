@@ -7,7 +7,7 @@
 use glam::DVec3;
 
 use jeod_sim::atmosphere::evaluate_atmosphere;
-use jeod_sim::gravity::evaluate_body_gravity;
+use jeod_sim::gravity::{run_gravity_stage, GravityBodyInputs};
 use jeod_sim::IntegOrigin;
 
 use super::super::Simulation;
@@ -30,28 +30,29 @@ impl Simulation {
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
-        let resolve_source = |source_id: usize| -> Option<jeod_sim::ResolvedSource<'_>> {
-            let grav = gravity_data.get(source_id)?;
-            let sfids = &source_frame_ids[source_id];
-            let src_node = frame_tree.get(sfids.inertial);
-            let position = if sfids.inertial == root_fid {
-                DVec3::ZERO
-            } else {
-                src_node.state.trans.position
+        let resolve_source =
+            |_body_idx: usize, source_id: usize| -> Option<jeod_sim::ResolvedSource<'_>> {
+                let grav = gravity_data.get(source_id)?;
+                let sfids = &source_frame_ids[source_id];
+                let src_node = frame_tree.get(sfids.inertial);
+                let position = if sfids.inertial == root_fid {
+                    DVec3::ZERO
+                } else {
+                    src_node.state.trans.position
+                };
+                let rotation = sfids
+                    .pfix
+                    .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
+                Some(jeod_sim::ResolvedSource {
+                    source: &grav.source,
+                    rotation,
+                    position,
+                    delta_c20: grav.delta_c20,
+                    has_delta_coeffs: grav.tidal_config.is_some(),
+                })
             };
-            let rotation = sfids
-                .pfix
-                .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
-            Some(jeod_sim::ResolvedSource {
-                source: &grav.source,
-                rotation,
-                position,
-                delta_c20: grav.delta_c20,
-                has_delta_coeffs: grav.tidal_config.is_some(),
-            })
-        };
         let resolve_rel_source =
-            |source_id: usize| -> Option<jeod_sim::ResolvedRelativisticSource> {
+            |_body_idx: usize, source_id: usize| -> Option<jeod_sim::ResolvedRelativisticSource> {
                 let grav = gravity_data.get(source_id)?;
                 let sfids = &source_frame_ids[source_id];
                 let position = if sfids.inertial == root_fid {
@@ -62,24 +63,39 @@ impl Simulation {
                 Some(jeod_sim::ResolvedRelativisticSource {
                     mu: grav.source.mu,
                     position,
-                    // Velocity comes from gravity_data, not the tree
-                    // node, because central bodies at the root frame
-                    // have zero tree velocity but may still have a
-                    // physical velocity for relativistic corrections.
+                    // Velocity comes from gravity_data, not the tree node,
+                    // because central bodies at the root frame have zero
+                    // tree velocity but may still have a physical velocity
+                    // for relativistic corrections.
                     velocity: grav.velocity,
                 })
             };
 
-        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            body.gravity_accel = evaluate_body_gravity(
-                body.trans.position.raw_si(),
-                body.trans.velocity.raw_si(),
-                &body_integ_origins[body_idx],
-                &body.gravity_controls,
-                resolve_source,
-                resolve_rel_source,
-            );
-        }
+        // Project each `(idx, &mut SimBody)` row into the
+        // `(key, inputs, store)` triple `run_gravity_stage` expects.
+        // The store closure captures `&mut body.gravity_accel` and
+        // lowers the typed kernel result back to raw `GravityAcceleration`
+        // until #364 migrates `SimBody.gravity_accel` to the typed
+        // sibling — at which point the lowering goes away and both
+        // adapters write the typed value through unchanged.
+        let body_iter = self.bodies.iter_mut().enumerate().map(|(body_idx, body)| {
+            let inputs = GravityBodyInputs {
+                position: body.trans.position,
+                velocity: body.trans.velocity,
+                integ_origin: body_integ_origins[body_idx],
+                controls: &body.gravity_controls,
+            };
+            let gravity_accel_slot = &mut body.gravity_accel;
+            let store =
+                move |result: jeod_sim::GravityAccelerationTyped<jeod_sim::RootInertial>| {
+                    gravity_accel_slot.grav_accel = result.grav_accel.raw_si();
+                    gravity_accel_slot.grav_grad = result.grav_grad;
+                    gravity_accel_slot.grav_pot = result.grav_pot;
+                };
+            (body_idx, inputs, store)
+        });
+
+        run_gravity_stage(body_iter, resolve_source, resolve_rel_source);
 
         // ── 5. Environment — atmosphere ──
         if let Some(ref atmos_config) = self.atmosphere {

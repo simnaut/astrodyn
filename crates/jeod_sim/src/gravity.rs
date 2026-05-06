@@ -387,6 +387,82 @@ pub fn evaluate_body_gravity<'a, S: Copy + std::fmt::Debug + PartialEq>(
     accel
 }
 
+/// Per-body inputs the gravity stage driver consumes.
+///
+/// Bundled together so adapter `.map(...)` projections over a `Query`
+/// row or a `&mut SimBody` can yield a single record per body. The
+/// `controls` field carries the per-row borrow lifetime; both the
+/// driver's `BodyIter` items and its `resolve_source` closure share
+/// that lifetime via the `'a` parameter on
+/// [`run_gravity_stage`].
+pub struct GravityBodyInputs<'a, S> {
+    /// Body position in its integration frame.
+    pub position: Position<IntegrationFrame>,
+    /// Body velocity in its integration frame.
+    pub velocity: Velocity<IntegrationFrame>,
+    /// Integration-frame origin in root-inertial coordinates; use
+    /// [`IntegOrigin::zero`] for root-integrated bodies.
+    pub integ_origin: IntegOrigin,
+    /// Per-body gravity controls. Borrowed because controls live in
+    /// adapter-owned storage (Bevy `Query<&GravityControlsC>` row,
+    /// `SimBody.gravity_controls` field) and cloning is unnecessary.
+    pub controls: &'a GravityControls<S>,
+}
+
+/// Drive the gravity stage across an adapter-supplied iterator of
+/// bodies.
+///
+/// `bodies` yields one `(key, inputs, store)` triple per body. The
+/// driver:
+///
+/// 1. Calls [`evaluate_body_gravity_typed`] (RF.10 shift + Newtonian
+///    accumulation + post-Newtonian correction) for each body.
+/// 2. Hands the result to the per-body `store` closure, which writes
+///    it back into adapter-owned storage. Adapters that store typed
+///    `GravityAccelerationTyped<RootInertial>` (the Bevy newtype) move
+///    the value through; adapters that still store raw
+///    `GravityAcceleration` (the runner, until #364 migrates it)
+///    lower via `.raw_si()` inside the closure.
+///
+/// `resolve_source` and `resolve_rel_source` receive the body key
+/// alongside the source identifier so adapters that want to surface
+/// body context in diagnostic panics (e.g. *"Entity {body:?}: gravity
+/// source {src:?} not found"*) keep the reference they need.
+///
+/// The closure-based writer lets each adapter use whatever mutable
+/// handle its iterator yields (`Mut<'_, GravityAccelerationC>` for
+/// Bevy, `&mut GravityAcceleration` for the runner) without needing a
+/// trait impl on a foreign type — orphan rules block trait impls on
+/// `Mut<'_, T>` from outside `bevy_ecs`.
+///
+/// Both ECS adapters today route gravity through this function; future
+/// stage-shape changes (a new pre-step, a new gating condition, new
+/// telemetry) edit one site rather than two.
+pub fn run_gravity_stage<'a, S, K, Store, BodyIter, FS, FR>(
+    bodies: BodyIter,
+    resolve_source: FS,
+    resolve_rel_source: FR,
+) where
+    S: Copy + std::fmt::Debug + PartialEq + 'a,
+    K: Copy,
+    Store: FnOnce(GravityAccelerationTyped<RootInertial>),
+    BodyIter: IntoIterator<Item = (K, GravityBodyInputs<'a, S>, Store)>,
+    FS: Fn(K, S) -> Option<ResolvedSource<'a>>,
+    FR: Fn(K, S) -> Option<ResolvedRelativisticSource>,
+{
+    for (key, inputs, store) in bodies {
+        let result = evaluate_body_gravity_typed(
+            inputs.position,
+            inputs.velocity,
+            inputs.integ_origin,
+            inputs.controls,
+            |s| resolve_source(key, s),
+            |s| resolve_rel_source(key, s),
+        );
+        store(result);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -803,6 +879,104 @@ mod tests {
         assert_eq!(typed.grav_accel.raw_si(), raw.grav_accel);
         assert_eq!(typed.grav_pot, raw.grav_pot);
         assert_eq!(typed.grav_grad, raw.grav_grad);
+    }
+
+    /// `run_gravity_stage` over an iterator of two bodies produces the
+    /// same per-body accelerations as calling `evaluate_body_gravity_typed`
+    /// directly. The driver is a thin loop over the kernel, so this is a
+    /// shape check — no math regression possible if the per-body kernel
+    /// tests pass.
+    #[test]
+    fn run_gravity_stage_drives_kernel_per_body() {
+        let mu = 3.986e14;
+        let source = point_mass_source(mu);
+        let source_pos = DVec3::ZERO;
+        let controls = GravityControls {
+            controls: vec![GravityControl::new_spherical(0_usize, false)],
+        };
+
+        let body_a_pos = Position::<IntegrationFrame>::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
+        let body_a_vel = Velocity::<IntegrationFrame>::from_raw_si(DVec3::new(0.0, 7500.0, 0.0));
+        let body_b_pos = Position::<IntegrationFrame>::from_raw_si(DVec3::new(0.0, 7e6, 1e5));
+        let body_b_vel = Velocity::<IntegrationFrame>::from_raw_si(DVec3::new(-7500.0, 0.0, 50.0));
+        let integ_origin_a = IntegOrigin::zero();
+        let integ_origin_b = IntegOrigin {
+            position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
+            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
+        };
+
+        let resolve_source = |_body: usize, _src: usize| {
+            Some(ResolvedSource {
+                source: &source,
+                rotation: None,
+                position: source_pos,
+                delta_c20: 0.0,
+                has_delta_coeffs: false,
+            })
+        };
+        let resolve_rel_source = |_body: usize, _src: usize| {
+            Some(ResolvedRelativisticSource {
+                mu,
+                position: source_pos,
+                velocity: DVec3::ZERO,
+            })
+        };
+
+        // Per-body baseline.
+        let baseline_a = evaluate_body_gravity_typed(
+            body_a_pos,
+            body_a_vel,
+            integ_origin_a,
+            &controls,
+            |s| resolve_source(0_usize, s),
+            |s| resolve_rel_source(0_usize, s),
+        );
+        let baseline_b = evaluate_body_gravity_typed(
+            body_b_pos,
+            body_b_vel,
+            integ_origin_b,
+            &controls,
+            |s| resolve_source(1_usize, s),
+            |s| resolve_rel_source(1_usize, s),
+        );
+
+        // Driven by `run_gravity_stage`. Two bodies, two writer
+        // closures. Each closure captures a `&mut` to its own output
+        // slot — emulates the adapter pattern where the iterator's
+        // `.map(...)` projects each row into a writer that closes over
+        // that row's mutable storage handle.
+        let mut out_a = GravityAccelerationTyped::<RootInertial>::default();
+        let mut out_b = GravityAccelerationTyped::<RootInertial>::default();
+        let entries = [
+            (
+                0_usize,
+                GravityBodyInputs {
+                    position: body_a_pos,
+                    velocity: body_a_vel,
+                    integ_origin: integ_origin_a,
+                    controls: &controls,
+                },
+                Box::new(|r: GravityAccelerationTyped<RootInertial>| out_a = r)
+                    as Box<dyn FnOnce(_)>,
+            ),
+            (
+                1_usize,
+                GravityBodyInputs {
+                    position: body_b_pos,
+                    velocity: body_b_vel,
+                    integ_origin: integ_origin_b,
+                    controls: &controls,
+                },
+                Box::new(|r: GravityAccelerationTyped<RootInertial>| out_b = r)
+                    as Box<dyn FnOnce(_)>,
+            ),
+        ];
+        run_gravity_stage(entries, resolve_source, resolve_rel_source);
+
+        assert_eq!(out_a.grav_accel.raw_si(), baseline_a.grav_accel.raw_si());
+        assert_eq!(out_a.grav_pot, baseline_a.grav_pot);
+        assert_eq!(out_b.grav_accel.raw_si(), baseline_b.grav_accel.raw_si());
+        assert_eq!(out_b.grav_pot, baseline_b.grav_pot);
     }
 
     /// `IntegOrigin::zero()` collapses the kernel to a plain
