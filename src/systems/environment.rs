@@ -142,8 +142,14 @@ pub fn gravity_computation_system<P: Planet>(
 // JEOD_INV: AT.02 — atmosphere model pointer non-null for update (AtmosphereModelR resource checked)
 /// Update atmospheric state for entities that have `AtmosphericStateC`.
 ///
-/// Delegates to [`jeod_sim::evaluate_atmosphere`] for the per-body evaluation
-/// pipeline (planet-fixed rotation, geodetic conversion, model dispatch, wind).
+/// Delegates to [`jeod_sim::run_atmosphere_stage`] for the per-body
+/// evaluation loop. Atmosphere is an RF.10 *non-shift* site — the
+/// kernel reads the body's planet-inertial position directly without
+/// applying an `IntegOrigin` shift, so the body position flows through
+/// as `Position<PlanetInertial<P>>` (the same frame as
+/// `TranslationalStateC<P>` storage). This is the opposite of the
+/// gravity stage, which lifts to `RootInertial` via the integ-origin
+/// inside `run_gravity_stage`.
 pub fn atmosphere_update_system<P: Planet>(
     atmos_model: Option<Res<AtmosphereModelR>>,
     sim_time: Option<Res<SimulationTimeR>>,
@@ -171,23 +177,46 @@ pub fn atmosphere_update_system<P: Planet>(
     };
 
     let tai_tjt = sim_time.as_ref().map(|t| t.tai_tjt);
-    for (state, mut atmos) in &mut query {
-        // MET atmosphere requires time for seasonal variation. Check only when
-        // entities with AtmosphericStateC actually exist (avoids panic when MET
-        // is configured but no bodies need atmosphere yet).
-        if tai_tjt.is_none() {
-            if let jeod_sim::AtmosphereModel::Met(_) = &model.config.model {
+    // MET atmosphere requires time for seasonal variation. Check
+    // before driving the stage so we panic with the configuration
+    // diagnostic even if no body has yet acquired `AtmosphericStateC`
+    // — and we only check once per tick rather than per body.
+    if tai_tjt.is_none() {
+        if let jeod_sim::AtmosphereModel::Met(_) = &model.config.model {
+            // Only fail when a consumer is actually present; a MET
+            // model with no atmosphere-ed bodies is a benign config.
+            if !query.is_empty() {
                 panic!(
                     "MET atmosphere requires SimulationTimeR resource for TJT. \
                      Ensure JeodPlugin is added (it provides SimulationTimeR)."
                 );
             }
         }
-        **atmos = jeod_sim::evaluate_atmosphere_typed::<P>(
-            &model.config,
-            state.position,
-            t_inertial_pfix.as_ref(),
-            tai_tjt,
-        );
     }
+
+    // Project each `(state, atmos)` row from `query.iter_mut()` into
+    // `(entity_key, AtmosphereBodyInputs<P>, store_closure)`. The
+    // closure captures the row's `Mut<'_, AtmosphericStateC<P>>` by
+    // move and writes back when the driver invokes it — Bevy change
+    // detection fires on the deref-mut assignment as it would in a
+    // manual loop. The stage key is `()` (atmosphere has no per-source
+    // resolver to disambiguate) but the per-body driver still
+    // threads it through for symmetry with `run_gravity_stage`.
+    let body_iter = query.iter_mut().map(|(state, atmos)| {
+        let inputs = jeod_sim::AtmosphereBodyInputs {
+            position: state.position,
+        };
+        let mut atmos = atmos;
+        let store = move |result: jeod_sim::AtmosphereState<P>| {
+            **atmos = result;
+        };
+        ((), inputs, store)
+    });
+
+    jeod_sim::run_atmosphere_stage::<P, _, _, _>(
+        body_iter,
+        &model.config,
+        t_inertial_pfix.as_ref(),
+        tai_tjt,
+    );
 }

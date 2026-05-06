@@ -3,12 +3,22 @@
 //! and atmosphere evaluation. Reads source positions and frame tree
 //! (stage 2/2b output); writes per-body `gravity_accel` and
 //! `atmospheric_state`.
+//!
+//! JEOD_INV: TS.01 — this module is the atmosphere-stage adapter for
+//! the runner's planet-erased storage. `SimBody.atmospheric_state` is
+//! `Option<AtmosphereState<SelfPlanet>>` because the runner's
+//! atmosphere planet identity is keyed by a runtime source index
+//! (`atmosphere_planet_source: Option<usize>`), not by a compile-time
+//! `<P: Planet>` parameter. The `<SelfPlanet>`-tagged kernel call and
+//! the `Position<PlanetInertial<SelfPlanet>>` relabel below are the
+//! storage-boundary uses sanctioned by row TS.01.
 
 use glam::DVec3;
 
 use jeod_quantities::IntegOrigin;
-use jeod_sim::atmosphere::evaluate_atmosphere;
+use jeod_sim::atmosphere::{run_atmosphere_stage, AtmosphereBodyInputs};
 use jeod_sim::gravity::{run_gravity_stage, GravityBodyInputs};
+use jeod_sim::SelfPlanet;
 
 use super::super::Simulation;
 
@@ -99,6 +109,21 @@ impl Simulation {
         run_gravity_stage(body_iter, resolve_source, resolve_rel_source);
 
         // ── 5. Environment — atmosphere ──
+        // RF.10 NOTE: atmosphere is an RF.10 *non-shift* site, the
+        // opposite of the gravity stage above. The atmosphere kernel
+        // rotates by `t_pfix` (the atmosphere planet's
+        // `inertial → pfix` rotation) and computes geodetic altitude
+        // relative to that planet's center. The required input frame
+        // is *the atmosphere planet's inertial frame*, not the root
+        // inertial frame. In every realistic config the body's
+        // integration frame already is that planet's inertial frame
+        // (e.g., body integrates in `Earth.inertial`, atmosphere
+        // planet = Earth), so the `Position<IntegrationFrame>`
+        // relabel-to-`PlanetInertial<SelfPlanet>` at the boundary is
+        // bit-identical. Adding `body_integ_origins[idx].position`
+        // would shift to root inertial and produce a wrong altitude
+        // for any non-root-integrated body — so the atmosphere
+        // driver explicitly does *not* take an `IntegOrigin`.
         if let Some(ref atmos_config) = self.atmosphere {
             let t_pfix = self
                 .atmosphere_planet_source
@@ -107,28 +132,38 @@ impl Simulation {
                 .map(|pfix_id| &self.frame_tree.get(pfix_id).state.rot.t_parent_this);
             let tai_tjt = Some(self.time.tai_tjt);
 
-            // RF.10 NOTE: atmosphere is *not* in the shift class.
-            // `evaluate_atmosphere` rotates by `t_pfix` (the atmosphere
-            // planet's `inertial → pfix` rotation) and computes geodetic
-            // altitude relative to that planet's center. The required
-            // input frame is *the atmosphere planet's inertial frame*,
-            // not the root inertial frame. In every realistic config the
-            // body's integration frame already is that planet's inertial
-            // frame (e.g., body integrates in `Earth.inertial`,
-            // atmosphere planet = Earth). So `body.trans.position`
-            // (integration-frame coords) is the correct input. Adding
-            // `body_integ_origins[idx].position` would shift to root and
-            // produce wrong altitude for any non-root-integrated body.
-            for body in &mut self.bodies {
-                if body.atmospheric_state.is_some() {
-                    body.atmospheric_state = Some(evaluate_atmosphere(
-                        atmos_config,
-                        body.trans.position.raw_si(),
-                        t_pfix,
-                        tai_tjt,
-                    ));
-                }
-            }
+            // Project each `(idx, &mut SimBody)` row that has an
+            // active `atmospheric_state` slot into the
+            // `(key, inputs, store)` triple `run_atmosphere_stage`
+            // expects. `body.atmospheric_state.is_some()` is the runner
+            // analog of "entity has `AtmosphericStateC`" in the Bevy
+            // adapter — both gate the kernel call so untouched bodies
+            // keep their stored `None` / absent component. The store
+            // closure captures `&mut body.atmospheric_state` and erases
+            // the typed `<SelfPlanet>` result back into the runner's
+            // planet-keyed-at-runtime storage; the Bevy adapter, which
+            // stores `AtmosphericStateC<P>`, moves the planet-tagged
+            // value through unchanged.
+            let body_iter = self
+                .bodies
+                .iter_mut()
+                .enumerate()
+                .filter(|(_, body)| body.atmospheric_state.is_some())
+                .map(|(body_idx, body)| {
+                    let inputs = AtmosphereBodyInputs {
+                        position:
+                            jeod_sim::Position::<jeod_sim::PlanetInertial<SelfPlanet>>::from_raw_si(
+                                body.trans.position.raw_si(),
+                            ), // allowed: atmosphere RF.10 non-shift boundary — body integrates in the atmosphere planet's inertial frame, so relabel `IntegrationFrame` → `PlanetInertial<SelfPlanet>` is bit-identical
+                    };
+                    let slot = &mut body.atmospheric_state;
+                    let store = move |result: jeod_sim::AtmosphereState<SelfPlanet>| {
+                        *slot = Some(result);
+                    };
+                    (body_idx, inputs, store)
+                });
+
+            run_atmosphere_stage::<SelfPlanet, _, _, _>(body_iter, atmos_config, t_pfix, tai_tjt);
         }
     }
 }
