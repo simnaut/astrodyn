@@ -1,18 +1,23 @@
-//! Tier 3: SIM_verif_attach_detach — dyn-body mass-tree composite mass.
+//! Mass-tree composite-mass cross-check against JEOD's
+//! `models/dynamics/dyn_body/verif/SIM_verif_attach_detach/` reference CSVs.
 //!
-//! Cross-validates the composite mass of each of three vehicles (`veh1`,
-//! `veh2`, `veh3`) over time against JEOD's
-//! `models/dynamics/dyn_body/verif/SIM_verif_attach_detach/` simulation.
+//! This is a unit-level test of [`MassTree::attach`] / [`MassTree::detach`] /
+//! [`MassTree::attach_with_reroot`] against three placeholder vehicles
+//! (1 kg / 2 kg / 3 kg, named `veh{1,2,3}`) — the exact mass tree JEOD's
+//! verification SIM exercises. The signal validated is the single quantity
+//! that is fully determined by the mass-tree topology:
+//! `dyn_body.mass.composite_properties.mass`. JEOD logs it directly, so
+//! the JEOD CSV is convenient ground truth for the kernel — no
+//! `Simulation::step()` is involved.
 //!
-//! This is the **mass-tree slice** of a larger dynamics test. JEOD's run
-//! exercises:
-//! - `BodyAttachAligned` / `BodyDetach` (mass-tree attach/detach)
-//! - `DynBody::attach_to_frame` (reference-frame attach — not mass-tree)
-//! - Translational + rotational propagation
-//!
-//! Our port currently has only the mass-tree portion (`MassTree::attach` /
-//! `detach`). We therefore validate the single signal that is 100%
-//! determined by the mass tree: `dyn_body.mass.composite_properties.mass`.
+//! The full-pipeline cross-validation of the same SIM (translational and
+//! rotational propagation through `Simulation::step()`, attach/detach
+//! routed through the production [`Simulation::attach`] /
+//! [`Simulation::detach`] API, momentum conservation via
+//! `combine_states_at_attach`) lives in
+//! `crates/jeod_runner/tests/tier3_sim_attach_detach_trajectory.rs`. That
+//! file is the Tier 3 contract; this one is its mass-tree algebra
+//! companion.
 //!
 //! ## Runs validated
 //!
@@ -40,6 +45,7 @@
 //!   end here too.
 //!
 //! [`MassTree::attach_with_reroot`]: jeod_dynamics::MassTree::attach_with_reroot
+//! [`Simulation::attach`]: https://docs.rs/jeod_runner
 
 use jeod_dynamics::{MassProperties, MassTree};
 
@@ -174,17 +180,18 @@ fn assert_masses(row: &MassRow, v1: f64, v2: f64, v3: f64) -> f64 {
 const SIMPLE_ATTACH_TIME: f64 = 10.0;
 const SIMPLE_DETACH_TIME: f64 = 20.0;
 
-// non-recipe: SIM_verif_attach_detach exercises a placeholder mass-tree
-// (1/2/3 kg) directly through `MassTree::{attach,detach}`, not the full
-// simulation pipeline. Apollo masses don't apply; the event count is two,
-// so a one-shot flag pair is shorter than `EventSchedule`.
+// Mass-tree algebra check: the kernel's composite-mass output must match
+// JEOD's logged composite at every row of the verification SIM. The full
+// trajectory (with `Simulation::step()`-driven translation, rotation, and
+// momentum-conserving attach/detach) is exercised by the Tier 3 sibling at
+// `crates/jeod_runner/tests/tier3_sim_attach_detach_trajectory.rs`.
 #[test]
-fn tier3_sim_attach_detach_simple() {
+fn mass_tree_simple_attach_detach() {
     let rows = load_csv("attach_detach_simple_attach_detach.csv");
 
     // Sanity: initial state at t=0 must match baseline masses.
     let t0 = &rows[0];
-    let mut max_err = assert_masses(t0, 1.0, 2.0, 3.0);
+    assert_masses(t0, 1.0, 2.0, 3.0);
 
     // Build tree and step through the recorded timeline, applying
     // attach/detach at their scheduled times. JEOD fires each action exactly
@@ -232,16 +239,8 @@ fn tier3_sim_attach_detach_simple() {
         // JEOD's `update_mass_properties` runs at the dynamics rate
         // (DYNAMICS=0.01s), so by the log-cycle boundary the event's
         // effect is always visible. We compare directly.
-        max_err = max_err.max(assert_masses(row, m1, m2, m3));
+        assert_masses(row, m1, m2, m3);
     }
-
-    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
-        "tier3_sim_attach_detach_simple",
-        &[],
-        &[],
-    );
-    report.add_extra("composite_mass_max_err", max_err, "kg");
-    report.write();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -289,13 +288,17 @@ const COMPLEX_DETACH_FROM_V3_TIME: f64 = 60.0;
 /// | `[50, 55)`       | (1, 2, 5) — v1 detached from v2   |
 /// | `[55, 60)`       | (1, 3, 6) — v1 re-attached to v2  |
 /// | `[60, 65]`       | (1, 3, 3) — v3 ↔ v2 edge cut      |
-// non-recipe: SIM_verif_attach_detach exercises a placeholder mass
-// tree. Apollo / ISS recipes don't apply.
+//
+// Mass-tree algebra check across the chained-reroot timeline. Re-rooting,
+// detach, and re-attach are the kernel paths under test; full-pipeline
+// trajectory coverage of this run is deferred to its Tier 3 sibling at
+// `crates/jeod_runner/tests/tier3_sim_attach_detach_trajectory.rs` (and
+// `tier3_sim_complex_attach_detach.rs` for the complex schedule).
 #[test]
-fn tier3_sim_attach_detach_complex() {
+fn mass_tree_complex_attach_detach() {
     let rows = load_csv("attach_detach_complex_attach_detach.csv");
     let t0 = &rows[0];
-    let mut max_err = assert_masses(t0, 1.0, 2.0, 3.0);
+    assert_masses(t0, 1.0, 2.0, 3.0);
 
     let (mut tree, v1, v2, v3) = build_three_vehicles();
     let mut attach_v1_v2_fired = false;
@@ -341,16 +344,8 @@ fn tier3_sim_attach_detach_complex() {
         let m1 = tree.get(v1).composite_properties.mass;
         let m2 = tree.get(v2).composite_properties.mass;
         let m3 = tree.get(v3).composite_properties.mass;
-        max_err = max_err.max(assert_masses(row, m1, m2, m3));
+        assert_masses(row, m1, m2, m3);
     }
-
-    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
-        "tier3_sim_attach_detach_complex",
-        &[],
-        &[],
-    );
-    report.add_extra("composite_mass_max_err", max_err, "kg");
-    report.write();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -389,11 +384,15 @@ const CHILD_DERIV_DETACH_FROM_V3_TIME_SECOND: f64 = 45.0;
 /// | `[1, 2)`         | (1, 3, 3) — v1 attached to v2     |
 /// | `[2, 15)`        | (1, 3, 6) — v2 re-rooted under v3 |
 /// | `[15, 65]`       | (1, 3, 3) — v3 ↔ v2 edge cut      |
-// non-recipe: SIM_verif_attach_detach placeholder mass tree.
+//
+// Mass-tree algebra check for the second chained-reroot schedule. Asserts
+// the duplicate-detach no-op and the re-route via `remove_mass_body`. The
+// pipeline-level trajectory cross-check for SIM_verif_attach_detach lives
+// in `crates/jeod_runner/tests/tier3_sim_attach_detach_trajectory.rs`.
 #[test]
-fn tier3_sim_attach_detach_child_derivative() {
+fn mass_tree_child_derivative_attach_detach() {
     let rows = load_csv("attach_detach_child_deriv_attach_detach.csv");
-    let mut max_err = assert_masses(&rows[0], 1.0, 2.0, 3.0);
+    assert_masses(&rows[0], 1.0, 2.0, 3.0);
 
     let (mut tree, v1, v2, v3) = build_three_vehicles();
     let mut attach_v1_v2_fired = false;
@@ -430,14 +429,6 @@ fn tier3_sim_attach_detach_child_derivative() {
         let m1 = tree.get(v1).composite_properties.mass;
         let m2 = tree.get(v2).composite_properties.mass;
         let m3 = tree.get(v3).composite_properties.mass;
-        max_err = max_err.max(assert_masses(row, m1, m2, m3));
+        assert_masses(row, m1, m2, m3);
     }
-
-    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
-        "tier3_sim_attach_detach_child_derivative",
-        &[],
-        &[],
-    );
-    report.add_extra("composite_mass_max_err", max_err, "kg");
-    report.write();
 }

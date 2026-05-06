@@ -59,12 +59,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | quat_angle | 3.41025000000000009e-6 |  |  | rad |
 | ang_vel | 2.17918000000000012e-6 | 1.12437000000000003e-7 | 1.38965899999999994e-5 | rad/s |
 
-## `tier3_sim_attach_detach_simple`
-
-| Metric | X / value | Y | Z | Unit |
-|--------|-----------|---|---|------|
-| composite_mass_max_err | 0.00000000000000000e0 |  |  | kg |
-
 ## `tier3_sim_attach_mass`
 
 | Metric | X / value | Y | Z | Unit |
