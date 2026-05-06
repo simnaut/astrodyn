@@ -231,6 +231,7 @@ pub use jeod_quantities::aliases::{
     Acceleration, AngularAcceleration, AngularMomentum, AngularVelocity, Force, Jerk, Position,
     Torque, Velocity,
 };
+pub use jeod_quantities::diagnostics::{CompatibleVehiclePair, CompatibleVehicles};
 pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
 pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{

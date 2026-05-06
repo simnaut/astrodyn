@@ -84,7 +84,8 @@ use jeod_sim::{MassPointState, Planet};
 
 use crate::components::{
     Abm4StateC, FrameAngVelC, FrameAttachEvent, FrameAttachedC, FrameDetachEvent, FrameEntityC,
-    FrameRotC, FrameTransC, GaussJacksonStateC, MassChildOf, RotationalStateC, TranslationalStateC,
+    FrameRotC, FrameTransC, GaussJacksonStateC, MassChildOf, MassPropertiesC, RotationalStateC,
+    TranslationalStateC,
 };
 use crate::frame_param::RelativeFrameState;
 use crate::RootFrameEntityR;
@@ -441,6 +442,18 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
     // the `ParamSet` above.
     body_frames: Query<&FrameEntityC>,
     parents: Query<&ChildOf>,
+    // Per-body mass properties — needed for the kernel's
+    // structure → composite CoM correction
+    // (JEOD `dyn_body_propagate_state.cc:571`'s
+    // `compute_derived_state_forward(structure,
+    // mass.composite_properties, composite_body)`). The captured
+    // `attach_offset` is the parent → struct pose; without the body's
+    // CoM offset the composite-body writeback would land
+    // `|composite_properties.position|` away from JEOD's value
+    // whenever the CoM is offset from the structural origin. Bodies
+    // without a `MassPropertiesC` get a zero CoM offset (matches
+    // JEOD's default-constructed `composite_properties`).
+    body_mass: Query<&MassPropertiesC>,
     root_frame: Res<RootFrameEntityR>,
 ) {
     if attached.is_empty() {
@@ -480,12 +493,35 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
             // through the storage-agnostic helper.
             let parent_state = rel.relative_state(root, attach.parent_frame);
 
+            // Body's structure → composite-CoM offset for the
+            // kernel's struct → composite step (`dyn_body_propagate_state.cc:571`'s
+            // `compute_derived_state_forward(structure,
+            // mass.composite_properties, composite_body)`). Bodies
+            // without a `MassPropertiesC` get a zero offset (matches
+            // JEOD's default-constructed `composite_properties`); for
+            // bodies that do carry one, `to_untyped()` exposes the
+            // CoM position and struct → body rotation in the same
+            // shape JEOD's `MassPoint` uses.
+            let composite_offset = body_mass
+                .get(body_entity)
+                .ok()
+                .map(|mp| {
+                    let untyped = mp.0.to_untyped();
+                    MassPointState {
+                        position: untyped.position,
+                        t_parent_this: untyped.t_parent_this,
+                    }
+                })
+                .unwrap_or_default();
+            // JEOD_INV: DB.31 — frame-attach derives composite from
+            // captured struct offset.
             let derived = jeod_sim::derive_frame_attached_state(jeod_sim::FrameAttachInputs {
                 parent_frame: parent_state,
                 attach_offset: MassPointState {
                     position: attach.offset,
                     t_parent_this: attach.t_parent_body,
                 },
+                composite_offset,
             });
 
             // Body's integration-frame origin in root-inertial.
@@ -694,6 +730,7 @@ pub fn propagate_frame_attached_state_post_integration_system<P: Planet>(
     )>,
     body_frames: Query<&FrameEntityC>,
     parents: Query<&ChildOf>,
+    body_mass: Query<&MassPropertiesC>,
     root_frame: Res<RootFrameEntityR>,
 ) {
     propagate_frame_attached_state_system::<P>(
@@ -702,6 +739,7 @@ pub fn propagate_frame_attached_state_post_integration_system<P: Planet>(
         frame_qs,
         body_frames,
         parents,
+        body_mass,
         root_frame,
     );
 }
@@ -1085,53 +1123,63 @@ mod tests {
         // must fire on tick 1.
         step_bevy(&mut app, 1, 0.1);
 
-        // The frame-attached parent's state must reflect the captured
-        // offset (root frame is at origin, so root-inertial position =
-        // offset).
+        // The frame-attached parent's state is the composite-body
+        // inertial position derived from the captured offset (treated
+        // as the parent's structure pose in the parent reference
+        // frame, mirroring JEOD `frame_attach.initialize_attachment`)
+        // composed with the parent's structure → composite CoM offset
+        // (mirroring JEOD `propagate_state_from_structure`'s
+        // `compute_derived_state_forward(structure,
+        // mass.composite_properties, composite_body)` step). With
+        // parent mass 10 at struct origin and child mass 5 at
+        // `link_offset`, the parent's composite CoM in struct frame is
+        // `(5/15) * link_offset`; identity attitude makes the rotation
+        // a no-op, so `parent_pos = parent_offset + parent_composite_cm`.
         let parent_state = app
             .world()
             .get::<TranslationalStateC<jeod_sim::Earth>>(parent_body)
             .expect("parent body should still have TranslationalStateC");
         let parent_pos = parent_state.0.position.raw_si();
+        let parent_mass = 10.0;
+        let child_mass = 5.0;
+        let parent_composite_cm = child_link_offset * (child_mass / (parent_mass + child_mass));
+        let expected_parent_pos = parent_offset + parent_composite_cm;
         assert!(
-            (parent_pos - parent_offset).length() < 1e-9,
-            "frame-attached parent must end the tick at its captured offset \
-             ({parent_offset:?}); got {parent_pos:?}",
+            (parent_pos - expected_parent_pos).length() < 1e-9,
+            "frame-attached parent must end the tick at its struct → composite \
+             derived state. Expected {expected_parent_pos:?} (= captured offset \
+             {parent_offset:?} + composite CoM {parent_composite_cm:?}); \
+             got {parent_pos:?}",
         );
 
         // The kinematic child must inherit the *frame-attach-derived*
-        // parent state (parent_offset) plus the kernel's structural
-        // routing through the parent's composite CoM. The kernel
-        // computes:
-        //   r_inertial_child = r_inertial_parent + T_inertial_pstr · pcm_to_ccm
-        //   pcm_to_ccm = link_offset + child_composite_CoM_in_cstr
-        //              - parent_composite_CoM_in_pstr
-        // Both bodies have identity struct→body and a composite CoM
-        // collapsed to a single weighted-sum point along the link axis.
-        // With parent mass 10 at origin and child mass 5 at link_offset,
-        // parent's composite CoM in its own struct = (5/15) * link_offset.
-        // Child's composite CoM in its own struct = origin (no further
-        // children).
+        // parent state plus the kernel's structural routing through
+        // the parent's composite CoM. With the captured offset now
+        // treated as the parent's struct pose, the child's
+        // composite-body position simplifies to
+        // `parent_offset + child_link_offset + child_composite_CoM`
+        // (= `parent.struct + struct → child.struct → child.composite`).
+        // The intermediate composite-CoM contributions cancel
+        // algebraically: any shift the parent's composite CoM adds to
+        // the parent's writeback is undone when the kinematic walk
+        // routes back through the same offset to the child's struct.
+        // The child has no children and identity orientation, so its
+        // composite CoM is at its struct origin and the expected
+        // composite is `parent_offset + child_link_offset`.
         let child_state = app
             .world()
             .get::<TranslationalStateC<jeod_sim::Earth>>(child_body)
             .expect("kinematic child should still have TranslationalStateC");
         let child_pos = child_state.0.position.raw_si();
-        let parent_mass = 10.0;
-        let child_mass = 5.0;
-        let parent_composite_cm = child_link_offset * (child_mass / (parent_mass + child_mass));
-        let pcm_to_ccm = child_link_offset - parent_composite_cm;
-        // Parent has identity attitude (default) so T_inertial_pstr is
-        // identity — `pcm_to_ccm` is already in inertial frame.
-        let expected_child_pos = parent_offset + pcm_to_ccm;
+        let expected_child_pos = parent_offset + child_link_offset;
         assert!(
             (child_pos - expected_child_pos).length() < 1e-9,
             "kinematic child of a frame-attached root must derive its state from \
              the freshly-propagated parent. Expected {expected_child_pos:?} \
-             (= parent_offset + composite-CoM-routed link), got {child_pos:?}. \
+             (= parent_offset + child_link_offset), got {child_pos:?}. \
              If the schedule order regressed (kinematic walk before frame-attach \
-             propagation), the child would read the default-zero parent state and \
-             end up at the link contribution alone ({pcm_to_ccm:?}).",
+             propagation), the child would read the default-zero parent state \
+             and miss the parent_offset contribution.",
         );
     }
 }

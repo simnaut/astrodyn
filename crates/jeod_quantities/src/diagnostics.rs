@@ -16,7 +16,7 @@ use core::marker::PhantomData;
 use uom::si::{f64::Angle, f64::Length};
 
 use crate::dims::GravParam;
-use crate::frame::{Frame, Planet};
+use crate::frame::{Frame, Planet, Vehicle};
 use crate::quat::{Layout, NormalizedQuat, Transform};
 use crate::time_scale::TimeScale;
 
@@ -190,3 +190,88 @@ pub trait NoVectorVectorMul<D1, D2, F: Frame> {
     /// its three type parameters into the compiler diagnostic.
     fn _do_not_call(&self) -> PhantomData<(D1, D2, F)>;
 }
+
+/// Fires when two distinct vehicle phantoms appear in a slot that demands
+/// a single shared identity. Vehicle-side analog of [`CompatibleFrames`]
+/// — implemented only when `VL` and `VR` resolve to the same vehicle
+/// marker, so a mismatch surfaces a tailored physics-language message
+/// instead of a `PhantomData<…>` type-mismatch wall.
+///
+/// Used as the `where` bound that gates "carries a single vehicle"
+/// methods on the Act-5 phantom-wrapped types
+/// (`FlatPlate<V>`, `RelativeTranslation<Reference>`,
+/// `LvlhRelativeState<Chief>`, …): a method that requires the caller's
+/// turbofish vehicle to match the receiver's vehicle takes
+/// `(): CompatibleVehicles<VHere, VThere>` and the bound only resolves
+/// when the two phantoms agree.
+///
+/// ```compile_fail
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::diagnostics::CompatibleVehicles;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// fn require_match<VL, VR>()
+/// where
+///     VL: jeod_quantities::frame::Vehicle,
+///     VR: jeod_quantities::frame::Vehicle,
+///     (): CompatibleVehicles<VL, VR>,
+/// {
+/// }
+///
+/// // Same vehicle on both sides — compiles.
+/// require_match::<Iss, Iss>();
+/// // Mismatched vehicles — bound fails with the tailored diagnostic.
+/// require_match::<Iss, Soyuz>();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "vehicle mismatch: cannot combine values tagged `{VL}` with values tagged `{VR}`",
+    label = "mismatched vehicle: `{VL}` vs `{VR}`",
+    note = "the two vehicle phantoms must agree — pin the same `Vehicle` marker on both sides (e.g. via `define_vehicle!`), or rebuild the value for the right vehicle if it was constructed for a different one"
+)]
+pub trait CompatibleVehicles<VL: Vehicle, VR: Vehicle> {}
+
+impl<V: Vehicle> CompatibleVehicles<V, V> for () {}
+
+/// Paired-vehicle compatibility: fires when a `(Subject, Reference)` (or
+/// `(Parent, Child)`) pair on one value does not match the pair on the
+/// slot it's being passed into.
+///
+/// Implemented only when both the subject phantoms and the reference
+/// phantoms agree. Used by types that carry two independent vehicle
+/// identities — `RelativeState<Subject, Reference>` and
+/// `AttachEvent<VParent, VChild>` — so a `<Iss, Soyuz>` value cannot
+/// silently flow into a `<Iss, Cygnus>` slot.
+///
+/// ```compile_fail
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::diagnostics::CompatibleVehiclePair;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+/// define_vehicle!(Cygnus);
+///
+/// fn require_match<S1, R1, S2, R2>()
+/// where
+///     S1: jeod_quantities::frame::Vehicle,
+///     R1: jeod_quantities::frame::Vehicle,
+///     S2: jeod_quantities::frame::Vehicle,
+///     R2: jeod_quantities::frame::Vehicle,
+///     (): CompatibleVehiclePair<S1, R1, S2, R2>,
+/// {
+/// }
+///
+/// // Both pairs match — compiles.
+/// require_match::<Iss, Soyuz, Iss, Soyuz>();
+/// // Reference half mismatches — bound fails with the tailored diagnostic.
+/// require_match::<Iss, Soyuz, Iss, Cygnus>();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "paired-vehicle mismatch: cannot combine `<{S1}, {R1}>` with `<{S2}, {R2}>`",
+    label = "mismatched pair: `<{S1}, {R1}>` vs `<{S2}, {R2}>`",
+    note = "both phantoms in the pair must match — the subject (or parent) and the reference (or child) are independent identities, and a mismatch on either side means the value was built for a different physical relationship"
+)]
+pub trait CompatibleVehiclePair<S1: Vehicle, R1: Vehicle, S2: Vehicle, R2: Vehicle> {}
+
+impl<S: Vehicle, R: Vehicle> CompatibleVehiclePair<S, R, S, R> for () {}

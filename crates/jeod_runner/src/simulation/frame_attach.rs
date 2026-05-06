@@ -466,12 +466,46 @@ impl Simulation {
                 .frame_tree
                 .compute_relative_state(root, attach.parent_frame_id);
 
-            // Compose with the captured offset to get the body's
+            // Pull the body's structure → composite-CoM offset so
+            // the kernel can apply JEOD's struct → composite step
+            // (`dyn_body_propagate_state.cc:571`'s
+            // `compute_derived_state_forward(structure,
+            // mass.composite_properties, composite_body)`). The
+            // captured `attach_offset` is the parent → struct pose
+            // (mirrors JEOD `attach_to_frame`'s
+            // `frame_attach.initialize_attachment(parent,
+            // X_pframe_to_struct)`), so without this step the body
+            // would land `|composite_properties.position|` away from
+            // JEOD's composite-body trajectory whenever the body's
+            // CoM is offset from the structural origin. Atomic
+            // bodies whose CoM coincides with the struct origin
+            // (`mass.position = ZERO`, the default) reduce the
+            // second `propagate_forward` to a numerical no-op.
+            //
+            // Fall back to a zero offset for 3-DOF bodies that lack
+            // a `MassProperties` block entirely (the same `None` path
+            // the integrator handles in `step::integrate.rs`); JEOD
+            // models 3-DOF bodies with a default-constructed
+            // composite_properties whose `position` and
+            // `T_parent_this` are zero/identity, matching this
+            // fallback.
+            let composite_offset = self.bodies[body_idx]
+                .mass
+                .map(|mp| jeod_dynamics::MassPointState {
+                    position: mp.position,
+                    t_parent_this: mp.t_parent_this,
+                })
+                .unwrap_or_default();
+            // Compose with the captured offset and the body's
+            // structure → composite CoM offset to get the body's
             // composite-body inertial state.
+            // JEOD_INV: DB.31 — frame-attach derives composite from
+            // captured struct offset.
             let derived =
                 jeod_dynamics::derive_frame_attached_state(jeod_dynamics::FrameAttachInputs {
                     parent_frame: parent_state,
                     attach_offset: attach.attach_offset,
+                    composite_offset,
                 });
 
             // Lower the kernel's root-inertial output back into

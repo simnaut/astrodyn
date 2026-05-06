@@ -53,6 +53,43 @@ Match exactly:
   "Generating Tier 3 Reference Data").
 - New physics → usually all three.
 
+## Tier 3 conventions
+
+Every Tier 3 test must observe the following conventions in addition to
+the tier-and-naming rules above. Failing any of these is a correctness
+hazard, not a style preference.
+
+1. **Sample cadence must match the JEOD CSV log cadence.** JEOD's logger
+   frequently writes faster than the integrator runs (e.g. CSV rows at
+   0.5 s while `IntegLoop ... DYNAMICS=1.0`). On off-cadence rows Trick
+   re-emits the integrator's output from the previous integer second —
+   so naive row-by-row comparison passes vacuously on the off-cadence
+   rows and silently masks real residuals at the actual integrator-
+   output instants. Pick one of:
+   - **Cadence-aligned (preferred).** Choose an integrator step that
+     evenly divides the CSV cadence (e.g. dt = 0.03125 s against a 60 s
+     CSV — `60.0 / 0.03125 = 1920`). Then call
+     `CrossvalReport::assert_cadence_matches(&reference_log,
+     integrator_dt, 1e-6)` once before `compute` to fail loudly if the
+     ratio is ever non-integer.
+   - **Filter off-cadence rows.** When the integrator deliberately runs
+     coarser than the CSV (e.g. SIM_ref_attach's dt = 1.0 s against a
+     0.5 s CSV), skip rows that don't fall on an integrator-output
+     instant before logging into the `StateLog` slice that
+     `CrossvalReport::compute` sees. Use
+     `CrossvalReport::is_on_integrator_cadence(row.time, dt)` in the
+     row loop. The canonical template lives in
+     [`crates/jeod_runner/tests/tier3_sim_ref_attach.rs`][cadence-template].
+   - **Document the rationale.** Either choice must be justified in a
+     pure-rationale comment near the top of the test (or at the row
+     loop) that names the integrator step, the CSV cadence, the ratio,
+     and what Trick does on the off-cadence rows. The
+     [`tier3_sim_dyncomp_run_attach_to_ref_frame.rs`][cadence-rationale]
+     header block is the worked example.
+
+[cadence-template]: ../crates/jeod_runner/tests/tier3_sim_ref_attach.rs
+[cadence-rationale]: ../crates/jeod_runner/tests/tier3_sim_dyncomp_run_attach_to_ref_frame.rs
+
 ## `CrossvalReport` API
 
 `crates/jeod_test_data/src/crossval.rs` is the harness for every Tier 3 test

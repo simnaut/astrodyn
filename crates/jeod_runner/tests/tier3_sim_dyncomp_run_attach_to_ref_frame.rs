@@ -471,11 +471,22 @@ fn apply_event(
             // composition `structure.state.rot.T_parent_this · pfix.state.rot.T_parent_this^T`
             // but expressed in raw matrix form.
             let t_pfix_struct = t_inertial_struct * t_inertial_pfix.transpose();
-            // Body position in pfix coordinates: `r_pfix =
-            // T_inertial_pfix · r_inertial` (same algebra
-            // `compute_relative_state(earth_pfix, body)` returns).
-            let r_inertial = body_out.trans.position;
-            let offset_pfix = t_inertial_pfix * r_inertial;
+            // Body's *structure* position in pfix coordinates,
+            // mirroring JEOD's
+            // `structure.compute_relative_state(parent)` capture.
+            // `body_out.trans.position` is the composite-body
+            // inertial position; the struct position in inertial is
+            // composite − T_inertial_struct^T · mass.composite_properties.position
+            // (the inverse of `compute_derived_state_forward`'s
+            // struct → composite step). Then transforming through
+            // `T_inertial_pfix` gives the struct in pfix.
+            let composite_offset_struct = sim
+                .body_mass(body_idx)
+                .map(|mp| mp.position)
+                .unwrap_or(DVec3::ZERO);
+            let struct_inertial =
+                body_out.trans.position - t_inertial_struct.transpose() * composite_offset_struct;
+            let offset_pfix = t_inertial_pfix * struct_inertial;
             sim.attach_to_frame(body_idx, earth_pfix, offset_pfix, t_pfix_struct);
         }
         Event::DetachAndRestoreVel => {
@@ -933,6 +944,15 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
         "RUN_attach_to_ref_frame CSV row count drift: expected {EXPECTED_SAMPLES} (12000 s @ 60 s)"
     );
 
+    // Tooling-enforced cadence check: JEOD logs at 60 s and our
+    // integrator runs at 0.03125 s (32 Hz), so 60 / 0.03125 = 1920 —
+    // every CSV row lands on an integrator output instant. If a future
+    // edit drifts either side off the integer ratio (e.g. someone
+    // changes DT_S without re-deriving the cadence), this fails loudly
+    // before the row loop quietly compares against held off-cadence
+    // samples.
+    CrossvalReport::assert_cadence_matches_times(rows.iter().map(|r| r.time), DT_S, 1e-6);
+
     let (mut sim, body_idx, earth_idx) = build_sim(&rows[0]);
     // Match JEOD's `(LOW_RATE_ENV, "environment")` job-class cadence on
     // `Earth_GGM05C_SimObject::rnp.update_rnp`
@@ -1229,20 +1249,25 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
 // This is a JEOD/Trick scheduling fact, not a runner bug. Without
 // the mirror, the surface-attach residual is ~215 m (one DT_S of
 // sidereal phase drift acting on a surface-altitude-scaled vector at
-// ~6.378e6 m radius). With the mirror it drops to ~5.22 m, the
-// floor set by JEOD's structure→composite CoM offset
-// (`mass.composite.position = (-3, -1.5, 4)` per
-// `verif/SIM_dyncomp/Modified_data/mass.py:4`,
-// `|(-3, -1.5, 4)| ≈ 5.22 m`). That residual is a separate gap in
-// our `attach_to_frame` kernel (we don't apply the structure→
-// composite correction at attach time the way JEOD's
-// `dyn_body_propagate_state.cc:469-476` does) and is tracked in
-// follow-up issue #350.
-//
-// The `attached_first`, `burn_free_flight`,
-// `attached_second_and_burn`, and `post_final_detach` windows do drop
-// to f64-floor levels (sub-millimetre) under the matched cadence —
-// see those tolerance constants below.
+// ~6.378e6 m radius). With the mirror plus the
+// structure→composite CoM correction inside
+// `derive_frame_attached_state` (the captured offset is treated as
+// the parent-frame-relative *struct* pose, and the body's struct →
+// composite CoM offset — `mass.composite.position = (-3, -1.5, 4)`
+// for the SIM_dyncomp ISS fixture per
+// `verif/SIM_dyncomp/Modified_data/mass.py:4` — is composed onto
+// the struct state via `propagate_forward` to derive the
+// composite-body inertial pose), the surface-attach residual drops
+// to the post-detach attitude-drift floor (the post-3000 / post-3800
+// `DetachAndRestoreFullState` resets composite_body's quaternion to
+// identity, so the integrator's attitude at the next
+// surface-attach captures a slightly different `t_inertial_struct`
+// than JEOD; rotated through the CoM offset that becomes the
+// dominant residual in the `attached_surface_matrix` window).
+// `attached_first`, `burn_free_flight`,
+// `attached_second_and_burn`, and `post_final_detach` windows
+// continue to land at the f64-floor / RK4-drift levels documented
+// per-window below.
 
 // pre_attach (t=0..1000): free-flight under 8×8 SH + Sun/Moon + drag +
 // grav-grad torque on the LVLH-pitched ISS. Same physics floor as
@@ -1293,29 +1318,38 @@ const ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S: f64 = 4.15e-6;
 
 // attached_surface_pt (t=2600..3000): named-point overload at
 // altitude = 1 m. After applying the JEOD/Trick scheduled-class
-// staleness mirror (see the rationale block above), the residual
-// drops from ~215 m to the structure→composite CoM-offset floor
-// of ~5.22 m, tracked as a separate kernel-side fix in issue #350.
-// Matched RNP cadence — observed maxes: pos=5.220e0 m,
-// vel=2.957e-4 m/s, quat=3.870e-3 rad, ang_vel=1.802e-7 rad/s.
-const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 5.49;
-const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 3.11e-4;
+// staleness mirror plus the structure→composite CoM correction
+// inside `derive_frame_attached_state` (see the rationale block
+// above), the residual drops to the integrator's attitude-drift
+// floor — the t=2600 attach captures the body's quaternion 200 s
+// after the LVLH-init, which differs from JEOD's by the same RK4
+// drift that floors the `attached_first` window's quat residual.
+// Rotated through the (-3, -1.5, 4) CoM offset that becomes a
+// sub-cm position contribution.
+// Matched RNP cadence — observed maxes: pos=9.616e-3 m,
+// vel=5.529e-7 m/s, quat=3.870e-3 rad, ang_vel=1.802e-7 rad/s.
+const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 1.01e-2;
+const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 5.81e-7;
 const ATTACHED_SURFACE_PT_QUAT_TOL_RAD: f64 = 4.07e-3;
 const ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S: f64 = 1.90e-7;
 
 // attached_surface_matrix (t=3400..3800): same surface placement as
 // the named-point variant but routed through the matrix-attach
-// overload. Same surface-placement residual in pos/vel as
-// `attached_surface_pt` (both windows are now at the
-// structure→composite CoM-offset floor described above and tracked
-// in #350); the larger quat residual reflects the matrix-attach
-// window inheriting the post-3000 identity attitude from the prior
-// `DetachAndRestoreFullState`, which has had 400 s of free-flight to
-// drift before this surface-attach freezes the attitude again.
-// Matched RNP cadence — observed maxes: pos=5.220e0 m,
-// vel=2.587e-4 m/s, quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
-const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 5.49;
-const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 2.72e-4;
+// overload. Both windows now apply the structure→composite CoM
+// correction (the captured offset becomes the body's struct pose,
+// and the kernel composes the body's CoM offset to derive the
+// composite-body inertial state). Matrix-window pos/vel residuals
+// are larger than pt's because the matrix attach fires at t=3400 —
+// 400 s after `DetachAndRestoreFullState` reset composite_body's
+// quaternion to identity, so the integrator has 400 s of attitude
+// drift accumulated from the identity reset by the time this attach
+// captures `t_inertial_struct`. The drift, rotated through
+// `(-3, -1.5, 4)`, dominates the position residual. The quat
+// residual itself reflects that same accumulated drift.
+// Matched RNP cadence — observed maxes: pos=2.720e-1 m,
+// vel=9.903e-6 m/s, quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
+const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 2.86e-1;
+const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 1.04e-5;
 const ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD: f64 = 6.67e-2;
 const ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S: f64 = 1.13e-7;
 

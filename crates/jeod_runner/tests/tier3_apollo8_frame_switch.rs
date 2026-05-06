@@ -345,6 +345,13 @@ fn tier3_apollo8_eci_integ() {
         }
     }
 
+    // Tooling-enforced cadence check: dt = 0.5 s and JEOD's CSV samples
+    // at 0.5 s, so every reference row is an integrator-output instant.
+    // The assertion runs before tolerance checks so a future change
+    // that breaks the ratio fails on the cadence message rather than
+    // on a vacuously passing row-by-row comparison.
+    CrossvalReport::assert_cadence_matches(&ref_log, DT, 1e-6);
+
     let report = CrossvalReport::compute("tier3_apollo8_eci_integ", &our_log, &ref_log);
     report.write();
 
