@@ -6,8 +6,8 @@
 //!
 //! JEOD_INV: TS.01 — this module is the atmosphere-stage adapter for
 //! the runner's planet-erased storage. `SimBody.atmospheric_state` is
-//! `Option<AtmosphereState<SelfPlanet>>` because the runner's
-//! atmosphere planet identity is keyed by a runtime source index
+//! `AtmosphereState<SelfPlanet>` because the runner's atmosphere
+//! planet identity is keyed by a runtime source index
 //! (`atmosphere_planet_source: Option<usize>`), not by a compile-time
 //! `<P: Planet>` parameter. The `<SelfPlanet>`-tagged kernel call and
 //! the `Position<PlanetInertial<SelfPlanet>>` relabel below are the
@@ -128,23 +128,22 @@ impl Simulation {
                 .map(|pfix_id| &self.frame_tree.get(pfix_id).state.rot.t_parent_this);
             let tai_tjt = Some(self.time.tai_tjt);
 
-            // Project each `(idx, &mut SimBody)` row that has an
-            // active `atmospheric_state` slot into the
-            // `(key, inputs, store)` triple `run_atmosphere_stage`
-            // expects. `body.atmospheric_state.is_some()` is the runner
-            // analog of "entity has `AtmosphericStateC`" in the Bevy
-            // adapter — both gate the kernel call so untouched bodies
-            // keep their stored `None` / absent component. The store
-            // closure captures `&mut body.atmospheric_state` and erases
-            // the typed `<SelfPlanet>` result back into the runner's
-            // planet-keyed-at-runtime storage; the Bevy adapter, which
-            // stores `AtmosphericStateC<P>`, moves the planet-tagged
-            // value through unchanged.
+            // Project each `(idx, &mut SimBody)` row whose drag config
+            // is active into the `(key, inputs, store)` triple
+            // `run_atmosphere_stage` expects. `body.drag.is_some()` is
+            // the runner analog of "entity has `DragConfigC`
+            // (auto-inserts `AtmosphericStateC`)" in the Bevy
+            // adapter — both gate the kernel call so non-drag bodies
+            // keep their stored default. The store closure captures
+            // `&mut body.atmospheric_state` and moves the typed
+            // `<SelfPlanet>` result through unchanged; the Bevy
+            // adapter, which stores `AtmosphericStateC<P>`, moves the
+            // planet-tagged value through unchanged.
             let body_iter = self
                 .bodies
                 .iter_mut()
                 .enumerate()
-                .filter(|(_, body)| body.atmospheric_state.is_some())
+                .filter(|(_, body)| body.drag.is_some())
                 .map(|(body_idx, body)| {
                     let inputs = AtmosphereBodyInputs {
                         position:
@@ -154,7 +153,7 @@ impl Simulation {
                     };
                     let slot = &mut body.atmospheric_state;
                     let store = move |result: jeod_sim::AtmosphereState<SelfPlanet>| {
-                        *slot = Some(result);
+                        *slot = result;
                     };
                     (body_idx, inputs, store)
                 });

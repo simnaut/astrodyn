@@ -251,7 +251,16 @@ pub(crate) struct SimBody {
     pub shadow_body: Option<(usize, f64)>,
     pub t_struct_body: DMat3,
     pub compute_gravity_torque: bool,
-    pub atmospheric_state: Option<AtmosphereState<SelfPlanet>>,
+    /// Per-body atmospheric state slot.
+    ///
+    /// Always present; the runner's atmosphere stage gates execution on
+    /// `body.drag.is_some()` (the same predicate that decides whether
+    /// the slot was previously primed). This mirrors the Bevy adapter's
+    /// `AtmosphericStateC<P>`, which `DragConfigC` auto-inserts via
+    /// `#[require(...)]` — both consumers now carry the typed slot
+    /// unconditionally and use a separate config-presence predicate to
+    /// decide whether to fill it.
+    pub atmospheric_state: AtmosphereState<SelfPlanet>,
     pub external_force: DVec3,
     pub external_torque: DVec3,
     /// Externally applied force in the body's structural frame (N).
@@ -331,13 +340,6 @@ impl SimBody {
 
         let shadow_body = config.shadow_body.map(|sb| (sb.source_idx, sb.radius));
 
-        let has_drag = config.drag.is_some();
-        let atmospheric_state = if has_drag {
-            Some(AtmosphereState::<SelfPlanet>::default())
-        } else {
-            None
-        };
-
         Self {
             // VehicleConfig::trans is documented as integration-frame; wrap
             // the untyped storage with the IntegrationFrame phantom so
@@ -364,7 +366,7 @@ impl SimBody {
             shadow_body,
             t_struct_body: config.t_struct_body,
             compute_gravity_torque: config.compute_gravity_gradient,
-            atmospheric_state,
+            atmospheric_state: AtmosphereState::<SelfPlanet>::default(),
             external_force: config.external_force,
             external_torque: config.external_torque,
             external_force_struct: DVec3::ZERO,

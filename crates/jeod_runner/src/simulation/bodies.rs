@@ -696,12 +696,13 @@ impl Simulation {
 
     /// Toggle a body's aerodynamic drag configuration mid-run.
     ///
-    /// `Some(cfg)` enables drag with the supplied parameters and primes
-    /// the body's per-step `AtmosphereState` storage so the next
-    /// `Simulation::step()` evaluates the atmosphere model. `None`
-    /// disables drag and clears the cached atmospheric state — the
-    /// body's drag and atmosphere-evaluation passes both no-op until
-    /// the setter is called again with `Some`.
+    /// `Some(cfg)` enables drag with the supplied parameters; the
+    /// body's atmospheric-state slot is unconditionally present and
+    /// the next `Simulation::step()` will fill it via the atmosphere
+    /// stage (gated on `body.drag.is_some()`). `None` disables drag
+    /// and resets the cached atmospheric state to `default()` so a
+    /// subsequent re-enable starts from a clean slot rather than a
+    /// stale density from before the toggle.
     ///
     /// Used by Tier 3 sims that toggle the atmosphere mid-trajectory
     /// (`SIM_dyncomp/RUN_attach_to_ref_frame` disables atmosphere at
@@ -720,21 +721,15 @@ impl Simulation {
             "set_body_drag: body index {idx} out of range (have {} bodies)",
             self.bodies.len()
         );
-        if drag.is_some() {
-            // Prime an `AtmosphereState` slot if one is missing so the
-            // first post-toggle step evaluates the atmosphere; existing
-            // state is left in place (the drag config change shouldn't
-            // discard a freshly evaluated density).
-            if self.bodies[idx].atmospheric_state.is_none() {
-                self.bodies[idx].atmospheric_state = Some(jeod_sim::AtmosphereState::default());
-            }
-        } else {
-            // Clear the atmospheric-state slot too — a `None` drag
-            // config combined with a `Some` atmospheric_state would
-            // leave the body's atmosphere-evaluation pass running each
-            // step without consuming the result, wasting work and
-            // confusing readers about the body's actual configuration.
-            self.bodies[idx].atmospheric_state = None;
+        if drag.is_none() {
+            // Reset the cached atmospheric state when drag is turned
+            // off so the slot doesn't leak stale density values into
+            // any later re-enable cycle. The atmosphere-evaluation
+            // pass is already gated on `body.drag.is_some()`, so the
+            // slot's contents are inert while drag is off — clearing
+            // is purely hygienic, mirroring the pre-migration
+            // `atmospheric_state = None` behavior.
+            self.bodies[idx].atmospheric_state = jeod_sim::AtmosphereState::default();
         }
         self.bodies[idx].drag = drag;
     }

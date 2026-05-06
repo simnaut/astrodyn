@@ -78,9 +78,8 @@ pub mod wrench;
 
 // ── Orchestration functions ──
 pub use atmosphere::{
-    evaluate_atmosphere, evaluate_atmosphere_typed, evaluate_body_atmosphere,
-    evaluate_body_atmosphere_typed, run_atmosphere_stage, AtmosphereBodyInputs, AtmosphereConfig,
-    AtmosphereModel,
+    evaluate_atmosphere, evaluate_atmosphere_typed, evaluate_body_atmosphere_typed,
+    run_atmosphere_stage, AtmosphereBodyInputs, AtmosphereConfig, AtmosphereModel,
 };
 pub use attach::{
     stage_attach_combine, stage_detach_capture, CrossIntegFrameStateShift, StageAttachInputs,

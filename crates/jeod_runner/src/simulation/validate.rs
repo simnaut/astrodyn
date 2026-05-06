@@ -101,8 +101,12 @@ impl Simulation {
                 }
             }
 
-            // Atmospheric state requires atmosphere config on the simulation
-            if body.atmospheric_state.is_some() && self.atmosphere.is_none() {
+            // Drag requires atmosphere config on the simulation. (After
+            // the typed-storage migration the per-body atmospheric
+            // state is unconditionally present; drag presence is the
+            // discriminator that decides whether the atmosphere stage
+            // fills it, so the validation key is now `body.drag`.)
+            if body.drag.is_some() && self.atmosphere.is_none() {
                 all_errors.push(ValidationError::AtmosphericStateWithoutAtmosphere { body_idx });
             }
 
