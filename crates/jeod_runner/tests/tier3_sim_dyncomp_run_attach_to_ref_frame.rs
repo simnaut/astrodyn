@@ -416,12 +416,18 @@ fn surface_altitude_scaled(pfix_position: DVec3) -> DVec3 {
 /// Apply one [`Event`] to the runner. Captures pre-attach state into
 /// `lifecycle` on attach events and consumes it on detach events. Reads
 /// `earth_idx` to look up `Earth.pfix` for the frame-attach overloads.
+///
+/// `stale_pfix_vec` carries the body's pfix-frame cartesian sampled at
+/// `event_time - DT_S` for the surface-attach variants, matching JEOD's
+/// scheduled-class ordering described in the per-window-tolerance
+/// rationale block. All other variants ignore it.
 fn apply_event(
     sim: &mut Simulation,
     body_idx: usize,
     earth_idx: usize,
     event: Event,
     lifecycle: &mut Lifecycle,
+    stale_pfix_vec: Option<DVec3>,
 ) {
     match event {
         Event::AttachToEarthPfixCaptureVel => {
@@ -517,7 +523,11 @@ fn apply_event(
                 .source_pfix_rotation(earth_idx)
                 .expect("Earth source has a pfix rotation");
             let t_inertial_struct = rot.quaternion.left_quat_to_transformation();
-            let pfix_vec = t_inertial_pfix * body_out.trans.position;
+            // Use the pfix vector sampled one DT_S earlier to mirror
+            // JEOD's scheduled-class ordering — see the per-window
+            // tolerance rationale block for the full derivation.
+            let pfix_vec =
+                stale_pfix_vec.unwrap_or_else(|| t_inertial_pfix * body_out.trans.position);
             let surface_pos = surface_altitude_scaled(pfix_vec);
 
             // Disable the atmosphere so the surface placement doesn't
@@ -562,7 +572,11 @@ fn apply_event(
                 .source_pfix_rotation(earth_idx)
                 .expect("Earth source has a pfix rotation");
             let t_inertial_struct = rot.quaternion.left_quat_to_transformation();
-            let pfix_vec = t_inertial_pfix * body_out.trans.position;
+            // Same one-DT_S-stale pfix sampling as the named-point
+            // variant — see the per-window tolerance rationale block
+            // for the JEOD scheduled-class ordering this mirrors.
+            let pfix_vec =
+                stale_pfix_vec.unwrap_or_else(|| t_inertial_pfix * body_out.trans.position);
             let surface_pos = surface_altitude_scaled(pfix_vec);
 
             disable_atmosphere(sim, body_idx);
@@ -704,9 +718,38 @@ fn drive_through_csv(
         while next_event_idx < schedule.len() && schedule[next_event_idx].0 <= row.time + 0.5 * DT_S
         {
             let (event_time, event) = schedule[next_event_idx];
+
+            // Surface-attach windows snapshot pfix.cart_coords at
+            // `event_time - DT_S` to mirror JEOD's scheduled-class
+            // ordering (see the per-window-tolerance rationale block at
+            // the bottom of the file). All other event variants ignore
+            // `stale_pfix_vec` and recompute pfix internally.
+            let stale_pfix_vec: Option<DVec3> = if matches!(
+                event,
+                Event::AttachWrapChildParentPosRotCaptureFullState
+                    | Event::AttachWrapPosRotParentCaptureFullState
+            ) {
+                sim.step_until(event_time - DT_S)
+                    .expect("step_until to t-dt must succeed");
+                let body_now = sim.body(body_idx);
+                let t_ip_now = sim
+                    .source_pfix_rotation(earth_idx)
+                    .expect("Earth source has a pfix rotation");
+                Some(t_ip_now * body_now.trans.position)
+            } else {
+                None
+            };
+
             sim.step_until(event_time)
                 .expect("step_until to event time must succeed");
-            apply_event(sim, body_idx, earth_idx, event, &mut lifecycle);
+            apply_event(
+                sim,
+                body_idx,
+                earth_idx,
+                event,
+                &mut lifecycle,
+                stale_pfix_vec,
+            );
             next_event_idx += 1;
         }
 
@@ -1158,17 +1201,48 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
 // default zero cadence; only Tier 3 cross-validation against JEOD's
 // verif sims needs the matched lower-cadence path.
 //
-// The surface-attach windows (`ATTACHED_SURFACE_PT_*` and
-// `ATTACHED_SURFACE_MATRIX_*`) carry multi-hundred-metre tolerances
-// even with the matched cadence: the residual there is **not** the
-// RNP-cadence artefact but a separate frame-attached-state
-// composition residual (the body's pfix offset is ~6.378e6 m on the
-// surface vs ~6.778e6 m at LEO, a 6 % radial change that scales the
-// residual proportionally to ~210 m vs the LEO ~15 m seen by
-// `tier3_sim_ref_attach_matrix`). The `attached_first`,
-// `burn_free_flight`, `attached_second_and_burn`, and `post_final_detach`
-// windows do drop to f64-floor levels (sub-millimetre) under the
-// matched cadence — see those tolerance constants below.
+// Surface-attach pfix-staleness mirror (applies to the
+// `ATTACHED_SURFACE_PT_*` / `ATTACHED_SURFACE_MATRIX_*` windows):
+//
+// JEOD's surface-attach windows snapshot
+// `vehicle.pfix.state.cart_coords` at `event_time - DT_S` rather than
+// at `event_time` — a side-effect of Trick's default scheduled-class
+// order
+// (`automatic, random, environment, sensor*, scheduled, effector*,
+// automatic_last, logging, data_record, system_*, integ_loop`,
+// `parse_s_define.pm:19-25`) which places `integ_loop` last. When a
+// `trick.add_read(N, ...)` block fires inside the `automatic` class:
+//   * `vehicle.dyn_body.composite_body.state.trans.position` reflects
+//     the body at t = N - DT_S (the output of cycle N-DT_S's
+//     `integ_loop`).
+//   * `vehicle.pfix.state.cart_coords` was last refreshed by the
+//     `environment`-class `pfix.update()` job during cycle
+//     N - DT_S — which read the body **before** that cycle's
+//     `integ_loop` ran, so it reflects the body at t = N - 2 * DT_S.
+// `pfix.cart_coords` is therefore exactly one DT_S older than
+// `composite_body.position` at the moment of the read block, and the
+// captured surface offset uses that one-DT_S-stale pfix vector. We
+// mirror that here in `drive_through_csv` by stepping the simulation
+// to `event_time - DT_S`, snapshotting the pfix vector, then stepping
+// to `event_time` and applying the event with the captured snapshot.
+//
+// This is a JEOD/Trick scheduling fact, not a runner bug. Without
+// the mirror, the surface-attach residual is ~215 m (one DT_S of
+// sidereal phase drift acting on a surface-altitude-scaled vector at
+// ~6.378e6 m radius). With the mirror it drops to ~5.22 m, the
+// floor set by JEOD's structure→composite CoM offset
+// (`mass.composite.position = (-3, -1.5, 4)` per
+// `verif/SIM_dyncomp/Modified_data/mass.py:4`,
+// `|(-3, -1.5, 4)| ≈ 5.22 m`). That residual is a separate gap in
+// our `attach_to_frame` kernel (we don't apply the structure→
+// composite correction at attach time the way JEOD's
+// `dyn_body_propagate_state.cc:469-476` does) and is tracked in
+// follow-up issue #350.
+//
+// The `attached_first`, `burn_free_flight`,
+// `attached_second_and_burn`, and `post_final_detach` windows do drop
+// to f64-floor levels (sub-millimetre) under the matched cadence —
+// see those tolerance constants below.
 
 // pre_attach (t=0..1000): free-flight under 8×8 SH + Sun/Moon + drag +
 // grav-grad torque on the LVLH-pitched ISS. Same physics floor as
@@ -1218,29 +1292,30 @@ const ATTACHED_BURN_QUAT_TOL_RAD: f64 = 3.51e-3;
 const ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S: f64 = 4.15e-6;
 
 // attached_surface_pt (t=2600..3000): named-point overload at
-// altitude = 1 m. The position residual here is the frame-attached
-// surface-placement composition residual described in the cadence
-// rationale block above — distinct from the RNP-cadence regime that
-// dominates `attached_first` / `burn_free_flight` (those drop to f64
-// floor under matched cadence; this window does not). Matched RNP
-// cadence — observed maxes: pos=2.158e2 m, vel=9.359e-3 m/s,
-// quat=3.870e-3 rad, ang_vel=1.802e-7 rad/s.
-const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 227.0;
-const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 9.83e-3;
+// altitude = 1 m. After applying the JEOD/Trick scheduled-class
+// staleness mirror (see the rationale block above), the residual
+// drops from ~215 m to the structure→composite CoM-offset floor
+// of ~5.22 m, tracked as a separate kernel-side fix in issue #350.
+// Matched RNP cadence — observed maxes: pos=5.220e0 m,
+// vel=2.957e-4 m/s, quat=3.870e-3 rad, ang_vel=1.802e-7 rad/s.
+const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 5.49;
+const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 3.11e-4;
 const ATTACHED_SURFACE_PT_QUAT_TOL_RAD: f64 = 4.07e-3;
 const ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S: f64 = 1.90e-7;
 
 // attached_surface_matrix (t=3400..3800): same surface placement as
 // the named-point variant but routed through the matrix-attach
 // overload. Same surface-placement residual in pos/vel as
-// `attached_surface_pt`; the larger quat residual reflects the
-// matrix-attach window inheriting the post-3000 identity attitude from
-// the prior `DetachAndRestoreFullState`, which has had 400 s of
-// free-flight to drift before this surface-attach freezes the
-// attitude again. Observed maxes: pos=2.117e2 m, vel=1.161e-2 m/s,
-// quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
-const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 222.5;
-const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 1.22e-2;
+// `attached_surface_pt` (both windows are now at the
+// structure→composite CoM-offset floor described above and tracked
+// in #350); the larger quat residual reflects the matrix-attach
+// window inheriting the post-3000 identity attitude from the prior
+// `DetachAndRestoreFullState`, which has had 400 s of free-flight to
+// drift before this surface-attach freezes the attitude again.
+// Matched RNP cadence — observed maxes: pos=5.220e0 m,
+// vel=2.587e-4 m/s, quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
+const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 5.49;
+const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 2.72e-4;
 const ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD: f64 = 6.67e-2;
 const ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S: f64 = 1.13e-7;
 
