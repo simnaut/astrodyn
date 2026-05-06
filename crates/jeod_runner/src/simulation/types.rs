@@ -29,12 +29,14 @@ use glam::{DMat3, DVec3};
 
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::FrameId;
+use jeod_interactions::{ContactFacet, GroundFacet};
+use jeod_quantities::frame::IntegrationFrame;
 use jeod_sim::{
-    AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
-    FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls,
-    GravitySource, GroundFacet, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements,
-    RadiationForce, RootInertial, RotationModel, RotationalState, SelfPlanet, SrpModel, TotalForce,
-    TranslationalState, TranslationalStateTyped, VehicleConfig,
+    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
+    FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls, GravitySource,
+    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RootInertial, RotationModel,
+    RotationalState, SelfPlanet, SrpModel, TotalForce, TranslationalState, TranslationalStateTyped,
+    VehicleConfig,
 };
 
 /// Registration of a contact interaction between two bodies.

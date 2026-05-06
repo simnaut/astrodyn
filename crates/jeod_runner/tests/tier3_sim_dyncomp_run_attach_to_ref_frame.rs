@@ -98,8 +98,8 @@
 use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
+use jeod_atmosphere::met as met_atmosphere;
 use jeod_runner::{RotationModel, Simulation, SimulationBuilderExt};
-use jeod_sim::met_atmosphere;
 use jeod_sim::{
     default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
     EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,

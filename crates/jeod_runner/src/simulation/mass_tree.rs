@@ -11,7 +11,8 @@ use glam::{DMat3, DVec3};
 
 use jeod_dynamics::{combine_states_at_attach, AttachCombineInputs, MassBodyId, MassPointState};
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{IntegrationFrame, RotationalState, TranslationalState, TranslationalStateTyped};
+use jeod_quantities::frame::IntegrationFrame;
+use jeod_sim::{RotationalState, TranslationalState, TranslationalStateTyped};
 
 use jeod_dynamics::DetachedSubtreeState;
 

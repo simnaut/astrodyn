@@ -8,7 +8,8 @@
 
 use glam::{DMat3, DVec3};
 
-use jeod_sim::{IntegOrigin, Position, RadiationForce, RootInertial, Vec3Ext};
+use jeod_quantities::IntegOrigin;
+use jeod_sim::{Position, RadiationForce, RootInertial, Vec3Ext};
 
 use super::super::Simulation;
 
