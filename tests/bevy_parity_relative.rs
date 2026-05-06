@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Tier 3: Bevy App vs jeod_runner::Simulation bit-identical parity tests
 //! for relative dynamics and LVLH-relative state computations.
 //!
