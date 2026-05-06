@@ -34,12 +34,67 @@ pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, Ve
 
 use std::collections::HashMap;
 
+use glam::DMat3;
+
 use jeod_dynamics::MassBodyId;
 use jeod_frames::{FrameId, FrameTree, RefFrameKind};
 use jeod_sim::atmosphere::AtmosphereConfig;
 use jeod_sim::{SimulationTime, SourceFrameIds};
 
 use crate::simulation::types::{GravityData, SimBody};
+
+/// Cached slowly-varying components of the Earth RNP composition when
+/// [`Simulation::earth_rnp_refresh_cadence_s`] is non-zero. JEOD's
+/// `Earth_GGM05C_SimObject` (`Base/earth_GGM05C_baseline.sm:114, 119`)
+/// schedules two distinct RNP jobs:
+///
+/// - `(LOW_RATE_ENV, "environment") rnp.update_rnp(...)` — refreshes
+///   precession, nutation, polar motion at the configured cadence
+///   (60 s for SIM_dyncomp's `LOW_RATE_ENV`).
+/// - `P_ENV("derivative") rnp.update_axial_rotation(gmst)` — refreshes
+///   the GAST rotation at every derivative call, using the *cached*
+///   nutation `equa_of_equi` term and the current `gmst_seconds`.
+///
+/// `propagate_rnp` then composes the cached precession/nutation/polar
+/// motion with the freshly-computed GAST rotation into the final
+/// `T_parent_this`. The runner mirrors that split: the cache stores
+/// the polar-motion-by-NP product (`pm^T × NP` or `NP` when polar
+/// motion is disabled) plus the cached `equa_of_equi`, and the
+/// per-step path recomputes GAST + final composition from the current
+/// `gmst_seconds`. Holding the full inertial → pfix matrix constant
+/// across 60 s would freeze the planet's diurnal rotation between
+/// refreshes (≈ 30 m position drift per 60 s at LEO altitude); caching
+/// only the non-diurnal terms preserves the per-step diurnal sample
+/// while still matching JEOD's lower-cadence precession/nutation/polar
+/// motion sampling.
+///
+/// Production runs default to per-step refresh
+/// (`earth_rnp_refresh_cadence_s == 0.0`); cross-validation runs that
+/// need to match a JEOD verif sim's lower-rate cadence call
+/// [`Simulation::set_earth_rnp_refresh_cadence`] before stepping.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EarthRnpCache {
+    /// `simtime` (seconds since the start of the simulation) at which
+    /// the slowly-varying components were last refreshed. Used to gate
+    /// the next refresh against `earth_rnp_refresh_cadence_s`.
+    pub(crate) simtime_at_refresh: f64,
+    /// Cached `NP = nutation^T × precession^T`. Composed with the
+    /// per-step GAST rotation (and optional polar motion) to produce
+    /// the final `T_parent_this`. The composition order is
+    /// `T = polar^T × gast^T × NP` (or `T = gast^T × NP` when polar
+    /// motion is disabled), matching `compute_t_parent_this_with_polar`.
+    pub(crate) np: DMat3,
+    /// Cached `polar^T` matrix, present iff `polar_motion = Some(...)`
+    /// at the time of the refresh. The per-step recomposition reuses
+    /// this matrix without recomputing the polar-motion trig — a
+    /// stationary value over the cadence window since `polar_motion`
+    /// itself only changes at simulation-config boundaries.
+    pub(crate) polar_t: Option<DMat3>,
+    /// Cached nutation `equa_of_equi` (equation of the equinoxes), in
+    /// the same units `gast_rotation_matrix` expects. Refreshed
+    /// alongside `np`; consumed by every per-step GAST recomputation.
+    pub(crate) equa_of_equi: f64,
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Simulation
@@ -200,6 +255,25 @@ pub struct Simulation {
     /// with the constraint. This guard is a port-specific safety check,
     /// not a JEOD invariant.
     pub(crate) has_stepped: bool,
+    /// Refresh cadence for the Earth RNP rotation matrix, in simulated
+    /// seconds. `0.0` (default) refreshes every step — the production
+    /// configuration. A positive value reuses the cached matrix until
+    /// `cadence` simulated seconds have elapsed since the last refresh,
+    /// matching Trick's `(LOW_RATE_ENV, "environment")` job class on
+    /// `Earth_GGM05C_SimObject::rnp.update_rnp`
+    /// (`Base/earth_GGM05C_baseline.sm:114`).
+    ///
+    /// Set via [`Self::set_earth_rnp_refresh_cadence`]. The cadence is
+    /// per-`Simulation`, not global; multiple simulations in the same
+    /// process can have different cadences.
+    pub(crate) earth_rnp_refresh_cadence_s: f64,
+    /// Cached Earth RNP matrix when
+    /// [`Self::earth_rnp_refresh_cadence_s`] is non-zero. `None` before
+    /// the first step and whenever cadence is zero (the per-step path
+    /// recomputes unconditionally). Refreshed inside `update_ephemeris`
+    /// when the elapsed time since `simtime_at_refresh` reaches the
+    /// configured cadence.
+    pub(crate) earth_rnp_cache: Option<EarthRnpCache>,
 }
 
 impl Simulation {
@@ -234,7 +308,57 @@ impl Simulation {
             ground_contact_planet_source: None,
             coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch::new(),
             has_stepped: false,
+            earth_rnp_refresh_cadence_s: 0.0,
+            earth_rnp_cache: None,
         }
+    }
+
+    /// Set the Earth RNP rotation-matrix refresh cadence, in simulated
+    /// seconds.
+    ///
+    /// The default (`0.0`) refreshes the inertial → pfix rotation every
+    /// dynamics step — the production configuration: it preserves
+    /// continuous accuracy as the body propagates and matches what
+    /// Trick's `P_ENV("derivative") rnp.update_axial_rotation` would
+    /// give if it shared the rotation slot directly.
+    ///
+    /// A positive cadence makes `update_ephemeris` reuse the cached
+    /// matrix until the configured number of simulated seconds have
+    /// elapsed since the last refresh, mirroring Trick's
+    /// `(LOW_RATE_ENV, "environment")` job class on
+    /// `Earth_GGM05C_SimObject::rnp.update_rnp`
+    /// (`Base/earth_GGM05C_baseline.sm:114`). Use this only for
+    /// cross-validation runs that need bit-for-bit alignment with a
+    /// JEOD verif sim's lower-cadence RNP refresh.
+    ///
+    /// The cadence is per-`Simulation`. Calling this method clears the
+    /// existing cache so the next step refreshes from scratch.
+    ///
+    /// # Panics
+    /// Panics if `cadence_s` is not finite or is negative.
+    // JEOD_INV: PF.06 — RNP refresh cadence configurable per simulation
+    pub fn set_earth_rnp_refresh_cadence(&mut self, cadence_s: f64) -> &mut Self {
+        assert!(
+            cadence_s.is_finite() && cadence_s >= 0.0,
+            "set_earth_rnp_refresh_cadence: cadence must be finite and >= 0, got {cadence_s}. \
+             Use 0.0 for per-step refresh (default) or a positive value to reuse the cached \
+             matrix across that many simulated seconds."
+        );
+        self.earth_rnp_refresh_cadence_s = cadence_s;
+        // Drop the prior cache so the next step computes a fresh matrix
+        // at the new cadence — switching between cadences mid-run would
+        // otherwise serve a stale matrix that was computed against the
+        // previous cadence schedule.
+        self.earth_rnp_cache = None;
+        self
+    }
+
+    /// Read back the Earth RNP refresh cadence in simulated seconds.
+    ///
+    /// `0.0` is the default (per-step refresh). See
+    /// [`Self::set_earth_rnp_refresh_cadence`] for the semantics.
+    pub fn earth_rnp_refresh_cadence(&self) -> f64 {
+        self.earth_rnp_refresh_cadence_s
     }
 
     /// Number of bodies in the simulation.
