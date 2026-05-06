@@ -2495,8 +2495,8 @@ pub fn gravity_computation_system<P: Planet>(
             let (integ_pos, integ_vel) =
                 body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
             let inputs = jeod_sim::GravityBodyInputs {
-                position: Position::<IntegrationFrame>::from_raw_si(state.position.raw_si()),
-                velocity: Velocity::<IntegrationFrame>::from_raw_si(state.velocity.raw_si()),
+                position: Position::<IntegrationFrame>::from_raw_si(state.position.raw_si()), // allowed: gravity RF.10 boundary — relabel `PlanetInertial<P>` → `IntegrationFrame` so the kernel's `IntegOrigin` shift is the structurally-guarded transition to `RootInertial`
+                velocity: Velocity::<IntegrationFrame>::from_raw_si(state.velocity.raw_si()), // allowed: same gravity RF.10 boundary
                 integ_origin: IntegOrigin {
                     position: integ_pos,
                     velocity: integ_vel,
