@@ -355,9 +355,8 @@ impl SimBody {
             // Convert at the runner boundary: VehicleConfig carries the
             // jeod_sim-owned IntegratorType (mission-facing contract);
             // SimBody stores jeod_dynamics::IntegratorType because the
-            // runner can depend on jeod_dynamics directly (#360) and
-            // wants the raw enum for its own integrate/validate
-            // dispatch.
+            // runner can depend on jeod_dynamics directly and wants the
+            // raw enum for its own integrate/validate dispatch.
             integrator: config.integrator.into(),
             drag: config.drag,
             flat_plate_state,
