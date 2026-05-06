@@ -2,6 +2,14 @@
 //! [`evaluate_atmosphere`] / [`evaluate_atmosphere_typed`] orchestration
 //! that converts inertial position to geodetic coordinates and queries
 //! the configured density / temperature / wind model.
+//!
+//! JEOD_INV: TS.01 — the `<SelfPlanet>`-tagged returns from the untyped
+//! [`evaluate_atmosphere`] entry point exist for runner storage whose
+//! planet identity is keyed by a dynamic source index. Mission code
+//! that knows the planet at compile time uses the
+//! [`evaluate_atmosphere_typed`] sibling, which carries `<P: Planet>`
+//! end-to-end. The lint at `tests/self_ref_self_planet_discipline.rs`
+//! enforces this discipline globally.
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;

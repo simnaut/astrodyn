@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! MET (Marshall Engineering Thermosphere) atmosphere model.
 //!
 //! Faithful port of JEOD's MET atmosphere implementation, which is based on:

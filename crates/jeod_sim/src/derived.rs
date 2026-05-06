@@ -3,6 +3,18 @@
 //! Post-integration observational quantities computed from the integrated state.
 //! Each function is pure (no side effects) and takes explicit parameters so that
 //! any ECS adapter can call it from a system function.
+//!
+//! JEOD_INV: TS.01 — dynamic-registry-erased return-type boundary. The
+//! `<SelfPlanet>`-tagged returns from [`compute_orbital_elements`] (and
+//! the `<SelfRef, SelfRef>` instantiations of [`compute_relative_state`]
+//! / [`compute_lvlh_relative_state`] used by the standalone runner)
+//! exist because the runner's per-body planet identity is keyed by a
+//! dynamic source index rather than a compile-time `<P>`; the typed
+//! `_typed` siblings in this module are the compile-time-pinned API
+//! surface mission code uses. The wildcard tags here are the documented
+//! storage / erasure boundary for that runtime-resolved choice. The
+//! lint at `tests/self_ref_self_planet_discipline.rs` enforces this
+//! globally.
 
 use glam::{DMat3, DQuat, DVec3};
 
@@ -76,6 +88,45 @@ pub struct RelativeState<Subject: Vehicle, Reference: Vehicle> {
     /// runner instantiate `<SelfRef>` because their per-entity
     /// storage decides the subject identity at runtime.
     pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<Subject>>,
+}
+
+impl<Subject: Vehicle, Reference: Vehicle> RelativeState<Subject, Reference> {
+    /// Type-level witness that this relative state carries the caller's
+    /// expected `(Subject, Reference)` vehicle phantoms. Compiles only
+    /// when both phantoms agree; on mismatch the
+    /// [`jeod_quantities::diagnostics::CompatibleVehiclePair`] bound
+    /// fails and surfaces a physics-language diagnostic naming both
+    /// expected and found pairs instead of a `PhantomData<…>` wall.
+    ///
+    /// The method is a no-op (returns `self`) and has zero runtime
+    /// cost; it exists to thread the diagnostic into call sites that
+    /// would otherwise see only a generic type-mismatch error.
+    ///
+    /// # Compile-time mismatch
+    ///
+    /// ```compile_fail
+    /// use jeod_quantities::define_vehicle;
+    /// use jeod_sim::{compute_relative_state, RelativeState, RotationalState, TranslationalState};
+    /// use glam::DVec3;
+    ///
+    /// define_vehicle!(Iss);
+    /// define_vehicle!(Soyuz);
+    /// define_vehicle!(Cygnus);
+    ///
+    /// let trans = TranslationalState { position: DVec3::ZERO, velocity: DVec3::ZERO };
+    /// let rel: RelativeState<Iss, Soyuz> =
+    ///     compute_relative_state::<Iss, Soyuz>(&trans, None, &trans, None);
+    /// // Asserting the wrong reference vehicle fires the
+    /// // `CompatibleVehiclePair` diagnostic.
+    /// let _ = rel.assert_pair::<Iss, Cygnus>();
+    /// ```
+    #[inline]
+    pub fn assert_pair<S: Vehicle, R: Vehicle>(self) -> Self
+    where
+        (): jeod_quantities::diagnostics::CompatibleVehiclePair<Subject, Reference, S, R>,
+    {
+        self
+    }
 }
 
 /// Frame-tagged translational state inside a [`RelativeState`].
@@ -225,6 +276,43 @@ impl<Reference: Vehicle> RelativeTranslation<Reference> {
             Self::Inertial { velocity, .. } => velocity.raw_si(),
         }
     }
+
+    /// Type-level witness that this translation carries the caller's
+    /// expected reference-vehicle phantom `R`. Compiles only when
+    /// `Reference == R`; on mismatch the
+    /// [`jeod_quantities::diagnostics::CompatibleVehicles`] bound fails
+    /// and surfaces a physics-language diagnostic naming the expected
+    /// and found vehicles instead of a `PhantomData<…>` wall.
+    ///
+    /// The method is a no-op (returns `self`) and has zero runtime
+    /// cost; it exists so a consumer holding a
+    /// `RelativeTranslation<Iss>` can refuse — at compile time, with a
+    /// physics-language message — a value built for a different
+    /// reference vehicle.
+    ///
+    /// # Compile-time mismatch
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_quantities::define_vehicle;
+    /// use jeod_sim::{compute_relative_state, RelativeTranslation, TranslationalState};
+    ///
+    /// define_vehicle!(Iss);
+    /// define_vehicle!(Soyuz);
+    ///
+    /// let trans = TranslationalState { position: DVec3::ZERO, velocity: DVec3::ZERO };
+    /// let rel = compute_relative_state::<Iss, Iss>(&trans, None, &trans, None);
+    /// // Asserting the wrong reference fires the `CompatibleVehicles`
+    /// // diagnostic naming `Iss` (found) and `Soyuz` (expected).
+    /// let _ = rel.trans.assert_reference::<Soyuz>();
+    /// ```
+    #[inline]
+    pub fn assert_reference<R: Vehicle>(self) -> Self
+    where
+        (): jeod_quantities::diagnostics::CompatibleVehicles<Reference, R>,
+    {
+        self
+    }
 }
 
 /// Relative state expressed in the LVLH frame of the reference vehicle.
@@ -249,6 +337,48 @@ pub struct LvlhRelativeState<Chief: Vehicle> {
     /// Velocity of subject relative to reference, in the chief
     /// vehicle's LVLH frame (m/s).
     pub velocity: Velocity<Lvlh<Chief>>,
+}
+
+impl<Chief: Vehicle> LvlhRelativeState<Chief> {
+    /// Type-level witness that this LVLH state carries the caller's
+    /// expected chief-vehicle phantom `C`. Compiles only when
+    /// `Chief == C`; on mismatch the
+    /// [`jeod_quantities::diagnostics::CompatibleVehicles`] bound fails
+    /// and surfaces a physics-language diagnostic naming the expected
+    /// and found chief instead of a `PhantomData<…>` wall.
+    ///
+    /// The method is a no-op (returns `self`) and has zero runtime
+    /// cost; it exists so a consumer holding an
+    /// `LvlhRelativeState<Iss>` can refuse — at compile time, with a
+    /// physics-language message — a value built for a different chief.
+    ///
+    /// # Compile-time mismatch
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_quantities::define_vehicle;
+    /// use jeod_sim::{compute_lvlh_relative_state, LvlhRelativeState};
+    ///
+    /// define_vehicle!(Iss);
+    /// define_vehicle!(Soyuz);
+    ///
+    /// let r_pos = DVec3::new(6.778e6, 0.0, 0.0);
+    /// let r_vel = DVec3::new(0.0, 7.668e3, 0.0);
+    /// let s_pos = DVec3::new(6.778e6 + 50.0, 0.0, 0.0);
+    /// let s_vel = DVec3::new(0.0, 7.668e3, 0.0);
+    /// let lvlh: LvlhRelativeState<Iss> =
+    ///     compute_lvlh_relative_state::<Iss>(r_pos, r_vel, s_pos, s_vel);
+    /// // Asserting a different chief fires the `CompatibleVehicles`
+    /// // diagnostic naming `Iss` (found) and `Soyuz` (expected).
+    /// let _ = lvlh.assert_chief::<Soyuz>();
+    /// ```
+    #[inline]
+    pub fn assert_chief<C: Vehicle>(self) -> Self
+    where
+        (): jeod_quantities::diagnostics::CompatibleVehicles<Chief, C>,
+    {
+        self
+    }
 }
 
 /// Compute orbital elements from translational state.
@@ -843,5 +973,47 @@ mod tests {
         };
         let _: Position<BodyFrame<Ref>> = position;
         let _: jeod_quantities::aliases::Velocity<BodyFrame<Ref>> = velocity;
+    }
+
+    /// `assert_pair` / `assert_reference` / `assert_chief` are zero-cost
+    /// type-witness no-ops that compile when the caller's vehicle
+    /// phantoms match the value's. The negative branch is covered by
+    /// the per-method `compile_fail` doctests; this `#[test]` confirms
+    /// the positive branch round-trips.
+    #[test]
+    fn vehicle_witness_methods_compile_when_phantoms_match() {
+        use jeod_math::JeodQuat;
+        use jeod_quantities::define_vehicle;
+
+        define_vehicle!(Iss);
+        define_vehicle!(Soyuz);
+
+        let trans = crate::TranslationalState {
+            position: DVec3::new(6_778_137.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7668.56, 0.0),
+        };
+        let rot = RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        };
+
+        // RelativeState<Iss, Soyuz>::assert_pair::<Iss, Soyuz>()
+        // compiles; constructed via the producer with both phantoms
+        // pinned to concrete vehicles.
+        let rel: RelativeState<Iss, Soyuz> =
+            compute_relative_state::<Iss, Soyuz>(&trans, Some(&rot), &trans, Some(&rot));
+        let rel = rel.assert_pair::<Iss, Soyuz>();
+
+        // RelativeTranslation<Soyuz>::assert_reference::<Soyuz>() compiles.
+        let _ = rel.trans.assert_reference::<Soyuz>();
+
+        // LvlhRelativeState<Iss>::assert_chief::<Iss>() compiles.
+        let lvlh: LvlhRelativeState<Iss> = compute_lvlh_relative_state::<Iss>(
+            DVec3::new(6.778e6, 0.0, 0.0),
+            DVec3::new(0.0, 7.668e3, 0.0),
+            DVec3::new(6.778e6 + 50.0, 0.0, 0.0),
+            DVec3::new(0.0, 7.668e3, 0.0),
+        );
+        let _ = lvlh.assert_chief::<Iss>();
     }
 }

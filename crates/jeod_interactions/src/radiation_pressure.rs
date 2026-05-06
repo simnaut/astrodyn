@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Solar radiation pressure computation.
 //!
 //! **Flat-plate** — port of JEOD `FlatPlateRadiationFacet`:
@@ -118,6 +119,48 @@ pub struct FlatPlate<V: Vehicle> {
     /// the struct-level doc comment for the `<V>` parameterization
     /// rationale.
     pub position: Position<StructuralFrame<V>>,
+}
+
+impl<V: Vehicle> FlatPlate<V> {
+    /// Type-level witness that this plate's vehicle phantom matches the
+    /// caller's expected vehicle `W`. Compiles only when `V == W`; on
+    /// mismatch the [`jeod_quantities::diagnostics::CompatibleVehicles`]
+    /// bound fails and surfaces a physics-language diagnostic naming the
+    /// expected and found vehicles instead of a `PhantomData<…>` wall.
+    ///
+    /// Mission code that assembles a typed plate set for a specific
+    /// vehicle calls this at the boundary to make the cross-vehicle
+    /// guard explicit; the method itself is a no-op (returns `self`) and
+    /// has zero runtime cost.
+    ///
+    /// # Compile-time mismatch
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_interactions::FlatPlate;
+    /// use jeod_quantities::define_vehicle;
+    /// use jeod_quantities::ext::Vec3Ext;
+    /// use jeod_quantities::frame::StructuralFrame;
+    ///
+    /// define_vehicle!(Iss);
+    /// define_vehicle!(Soyuz);
+    ///
+    /// let plate: FlatPlate<Iss> = FlatPlate {
+    ///     area: 10.0,
+    ///     normal: DVec3::X,
+    ///     position: DVec3::ZERO.m_at::<StructuralFrame<Iss>>(),
+    /// };
+    /// // Asserting the wrong vehicle fires the `CompatibleVehicles`
+    /// // diagnostic naming `Iss` (found) and `Soyuz` (expected).
+    /// let _ = plate.assert_vehicle::<Soyuz>();
+    /// ```
+    #[inline]
+    pub fn assert_vehicle<W: Vehicle>(self) -> Self
+    where
+        (): jeod_quantities::diagnostics::CompatibleVehicles<V, W>,
+    {
+        self
+    }
 }
 
 /// Optical properties shared by one or more flat plates.
@@ -1583,5 +1626,26 @@ mod tests {
             (actual_diff - expected_diff).abs() < 1e-10,
             "Power dump should add {expected_diff:.4e} K/s, got {actual_diff:.4e}"
         );
+    }
+
+    /// `FlatPlate::assert_vehicle::<W>()` is a zero-cost type-witness
+    /// no-op when `V == W`. The negative branch (cross-vehicle
+    /// mismatch) is covered by the method's `compile_fail` doctest;
+    /// this `#[test]` confirms the positive branch round-trips.
+    #[test]
+    fn flat_plate_assert_vehicle_compiles_when_phantoms_match() {
+        use jeod_quantities::define_vehicle;
+        use jeod_quantities::ext::Vec3Ext;
+        use jeod_quantities::frame::StructuralFrame;
+
+        define_vehicle!(Iss);
+
+        let plate: FlatPlate<Iss> = FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO.m_at::<StructuralFrame<Iss>>(),
+        };
+        let plate = plate.assert_vehicle::<Iss>();
+        assert_eq!(plate.area, 10.0);
     }
 }

@@ -51,8 +51,18 @@ stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in the
 that delegate to `jeod_sim` functions, plugin registration).
 
 The root package depends **only** on `jeod_sim` + `bevy` — never on `jeod_*`
-crates directly. This makes `jeod_sim` the single API surface for any consumer
-(ECS adapter or otherwise).
+crates directly. **`jeod_sim` is the single API surface for the production
+path:** every Bevy system, every mission crate, every downstream consumer that
+ships in a real simulation reads the workspace through `jeod_sim` and only
+through `jeod_sim`. The narrower the production-path surface, the smaller the
+contract that has to stay stable across phases.
+
+This rule is scoped to the production path because the workspace also contains
+a non-shipping test harness (`jeod_runner`) whose role is the inverse: it owns
+its own state container and *needs* to construct concrete physics types
+itself. See [`bevy_jeod` vs `jeod_runner`](#bevy_jeod-vs-jeod_runner-two-parallel-consumers-of-jeod_sim)
+below for why that asymmetry is intentional and what each consumer is allowed
+to depend on.
 
 Never put physics algorithms directly in a Bevy system function. The system queries
 components, then calls a `jeod_sim` function. This keeps physics portable to other
@@ -88,9 +98,30 @@ mission code — so type-system work that targets a class of bugs
 (rather than a runner-internal helper) belongs in `jeod_quantities` or
 `jeod_dynamics`, not in `jeod_runner`.
 
+The two consumers have **deliberately different dep-graph rights**, and
+the difference is non-negotiable in both directions:
+
+- **`bevy_jeod` and any mission crate** (production path) depend only on
+  `jeod_sim` plus `bevy`. They **must not** add a direct `jeod_*` physics
+  dependency. The "single API surface" rule from the previous section
+  applies here, full stop — every physics type that the production path
+  needs has to be reachable through `jeod_sim`. If something isn't, the
+  fix is to widen `jeod_sim`'s curated re-export surface, not to bypass it.
+- **`jeod_runner`** (in-workspace test harness) is allowed to depend
+  directly on the physics crates it needs to populate its `Simulation`
+  state container — today that is `jeod_dynamics`, `jeod_gravity`,
+  `jeod_time`, `jeod_frames`, `jeod_interactions`, and `jeod_math`.
+  Those direct deps are intentional: the runner owns its own state and
+  constructs concrete physics types by hand at the kernel boundary;
+  routing them through `jeod_sim` would force `jeod_sim` to expose
+  internal vocabulary purely for one in-workspace consumer's benefit.
+  The runner is *not* a mission consumer and is never published as one.
+
 Mission crates that target the production runtime depend on
 `bevy_jeod` (and transitively `jeod_sim`). They never depend on
-`jeod_runner`.
+`jeod_runner`, and they never reach around `jeod_sim` to pull a
+physics crate directly — if you find yourself writing
+`jeod_dynamics = …` in a mission `Cargo.toml`, that is the bug.
 
 ## Computational Independence (non-negotiable)
 

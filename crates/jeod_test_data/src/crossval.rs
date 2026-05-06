@@ -205,6 +205,111 @@ impl CrossvalReport {
         self.extras.push((var.to_string(), val, unit.to_string()));
     }
 
+    /// Assert that every reference-CSV sample time falls on an integrator
+    /// output instant — i.e., that `row.time` is an integer multiple of
+    /// `integrator_dt` within a small tolerance.
+    ///
+    /// Tier 3 cross-validation compares our trajectory against JEOD's CSV
+    /// row-by-row. When JEOD's logger writes faster than the integrator
+    /// runs (e.g. CSV at 0.5 s while `IntegLoop ... DYNAMICS=1.0`), Trick
+    /// holds and re-emits the integrator's output from the previous
+    /// integer second on the off-cadence rows. A naive row-by-row
+    /// comparison passes vacuously on those held rows because both sides
+    /// quote the same earlier state, masking real residuals at the actual
+    /// integrator-output instants.
+    ///
+    /// Call this at the top of a Tier 3 test to fail loudly when the
+    /// integrator step does not divide the CSV cadence. If a test is
+    /// deliberately running an off-cadence integrator (e.g. dt=1.0 s
+    /// against a 0.5 s CSV), it must filter the off-cadence rows out
+    /// before logging — see [`CrossvalReport::is_on_integrator_cadence`]
+    /// for the per-row helper that the existing
+    /// `tier3_sim_ref_attach.rs` half-second skip pattern uses — and
+    /// then call `assert_cadence_matches` on the *filtered* sample
+    /// times so the helper still sees a clean cadence-aligned set.
+    ///
+    /// `tolerance_fraction` is the fraction of `integrator_dt` allowed
+    /// as f64 round-off slack on each row's modular residual; `1e-6` is
+    /// the conservative default used at the existing per-test skip
+    /// sites.
+    pub fn assert_cadence_matches(
+        reference: &[StateLog],
+        integrator_dt: f64,
+        tolerance_fraction: f64,
+    ) {
+        Self::assert_cadence_matches_times(
+            reference.iter().map(|s| s.time),
+            integrator_dt,
+            tolerance_fraction,
+        );
+    }
+
+    /// Same as [`CrossvalReport::assert_cadence_matches`] but takes a raw
+    /// iterator of CSV row times. Use this when the test holds the CSV
+    /// rows in a domain-specific record type (e.g. `DyncompRecord`)
+    /// rather than `StateLog`, so the cadence check can run before any
+    /// `StateLog` is built — turning the cadence assertion into the very
+    /// first thing the row loop sees.
+    pub fn assert_cadence_matches_times<I>(times: I, integrator_dt: f64, tolerance_fraction: f64)
+    where
+        I: IntoIterator<Item = f64>,
+    {
+        assert!(
+            integrator_dt > 0.0,
+            "assert_cadence_matches: integrator_dt must be positive, got {integrator_dt}"
+        );
+        assert!(
+            (0.0..1.0).contains(&tolerance_fraction),
+            "assert_cadence_matches: tolerance_fraction must be in [0, 1), got {tolerance_fraction}"
+        );
+        let abs_tol = (tolerance_fraction * integrator_dt).max(f64::EPSILON);
+        for (i, t) in times.into_iter().enumerate() {
+            let n = (t / integrator_dt).round();
+            let modular_err = (t - n * integrator_dt).abs();
+            assert!(
+                modular_err <= abs_tol,
+                "Tier 3 cadence mismatch at reference row {i} (t = {t:.9} s): \
+                 not an integer multiple of integrator_dt = {integrator_dt} s \
+                 (closest multiple = {:.9} s, residual = {modular_err:.3e} s, \
+                 tolerance = {abs_tol:.3e} s). \
+                 Either change the integrator dt to divide the CSV cadence, or \
+                 filter off-cadence rows out of `reference` before calling \
+                 `CrossvalReport::compute` — see `is_on_integrator_cadence` and \
+                 the half-second-skip pattern in \
+                 `crates/jeod_runner/tests/tier3_sim_ref_attach.rs`.",
+                n * integrator_dt
+            );
+        }
+    }
+
+    /// Per-row predicate: `true` iff `row_time` is an integer multiple of
+    /// `integrator_dt` within `1e-6 * integrator_dt` round-off slack.
+    ///
+    /// Use inside the test's main row loop as the standard cadence skip:
+    ///
+    /// ```ignore
+    /// for row in &rows {
+    ///     if !CrossvalReport::is_on_integrator_cadence(row.time, dt) {
+    ///         continue;  // off-cadence sample, Trick re-emits the prior step's state
+    ///     }
+    ///     // ...compare this row...
+    /// }
+    /// ```
+    ///
+    /// This is the catch-able tooling form of the
+    /// `(row.time - row.time.round()).abs() > 1e-6` skip already used in
+    /// `tier3_sim_ref_attach.rs` (whose dt happens to be 1.0 s, so
+    /// `.round()` and "integer multiple of dt" coincide).
+    pub fn is_on_integrator_cadence(row_time: f64, integrator_dt: f64) -> bool {
+        assert!(
+            integrator_dt > 0.0,
+            "is_on_integrator_cadence: integrator_dt must be positive, got {integrator_dt}"
+        );
+        let n = (row_time / integrator_dt).round();
+        let abs_tol = (1e-6 * integrator_dt).max(f64::EPSILON);
+        (row_time - n * integrator_dt).abs() <= abs_tol
+    }
+
     /// Worst-component position error (∞-norm, for assert! statements).
     pub fn max_position_component(&self) -> f64 {
         self.position
@@ -391,5 +496,68 @@ fn write_f64_field(json: &mut String, name: &str, val: &Option<f64>) {
         None => {
             json.push_str(&format!(r#","{name}":null"#));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ref_log_at(times: &[f64]) -> Vec<StateLog> {
+        times
+            .iter()
+            .map(|&t| StateLog {
+                time: t,
+                ..StateLog::default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn cadence_matches_when_csv_is_integer_multiple_of_dt() {
+        // 60 s CSV cadence with a 0.03125 s integrator step (32 Hz):
+        // 60.0 / 0.03125 = 1920 — integer. Mirrors
+        // `tier3_sim_dyncomp_run_attach_to_ref_frame.rs`.
+        let times: Vec<f64> = (0..201).map(|i| i as f64 * 60.0).collect();
+        let reference = ref_log_at(&times);
+        CrossvalReport::assert_cadence_matches(&reference, 0.03125, 1e-6);
+    }
+
+    #[test]
+    fn cadence_matches_when_csv_equals_dt() {
+        // Apollo 8 test: dt=0.5 s and CSV at 0.5 s.
+        let times: Vec<f64> = (0..201).map(|i| i as f64 * 0.5).collect();
+        let reference = ref_log_at(&times);
+        CrossvalReport::assert_cadence_matches(&reference, 0.5, 1e-6);
+    }
+
+    #[test]
+    #[should_panic(expected = "Tier 3 cadence mismatch")]
+    fn cadence_panics_on_half_second_csv_with_one_second_integrator() {
+        // The exact bug shape #355 targets: CSV samples at 0.5 s but
+        // the integrator runs at 1.0 s. Half-second rows are not on
+        // any integrator-output instant.
+        let times: Vec<f64> = (0..101).map(|i| i as f64 * 0.5).collect();
+        let reference = ref_log_at(&times);
+        CrossvalReport::assert_cadence_matches(&reference, 1.0, 1e-6);
+    }
+
+    #[test]
+    fn is_on_cadence_filters_half_seconds_at_dt_one() {
+        // The half-second rows must skip; the integer-second rows pass.
+        assert!(CrossvalReport::is_on_integrator_cadence(0.0, 1.0));
+        assert!(CrossvalReport::is_on_integrator_cadence(50.0, 1.0));
+        assert!(!CrossvalReport::is_on_integrator_cadence(0.5, 1.0));
+        assert!(!CrossvalReport::is_on_integrator_cadence(50.5, 1.0));
+    }
+
+    #[test]
+    fn is_on_cadence_handles_f64_jitter_within_one_ppm_of_dt() {
+        // f64 round-off well below 1e-6 * dt should still register as
+        // on-cadence.
+        assert!(CrossvalReport::is_on_integrator_cadence(
+            60.0 + 1e-12,
+            0.03125
+        ));
     }
 }
