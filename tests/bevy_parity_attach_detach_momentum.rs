@@ -204,14 +204,14 @@ fn bevy_attach_conserves_linear_and_angular_momentum() {
 
     // Fire the attach event.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::new(2.0, 0.0, 0.0),
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
 
     step(&mut app, 1, 1.0);
@@ -317,14 +317,14 @@ fn bevy_attach_no_relative_motion_preserves_parent_state() {
     );
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -388,14 +388,14 @@ fn bevy_detach_captures_subtree_state() {
 
     // Attach (soft merge, zero offset, identity rotation).
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -513,14 +513,14 @@ fn bevy_detach_derives_child_state_via_rigid_body_composition() {
     );
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 attach_offset,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -614,14 +614,14 @@ fn bevy_detached_subtree_propagates_ballistically() {
     // derive the child's instantaneous state from the parent's
     // composite at the detach instant via `propagate_forward`.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -704,14 +704,14 @@ fn bevy_re_attach_consumes_detached_state() {
 
     // Attach.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -731,14 +731,14 @@ fn bevy_re_attach_consumes_detached_state() {
 
     // Re-attach — handler consumes the captured DetachedSubtreeStateC.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -858,14 +858,14 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
     // ballistic state (matches the parent's composite at the detach
     // instant — same as `bevy_detached_subtree_propagates_ballistically`).
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, dt);
 
@@ -1034,14 +1034,14 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
     // Fire the attach event and step once so `staging_system`
     // processes it.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -1318,14 +1318,14 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
     // composite through the parent's integ origin for the writeback
     // into the parent's `TranslationalStateC`.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -1650,14 +1650,14 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
 
     // Fire the cross-integ-frame attach.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -1951,14 +1951,14 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
     // in the same integ frame and lets the merge proceed; the old
     // `IntegSourceC` check would have falsely rejected this attach.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -2222,12 +2222,12 @@ fn bevy_detach_reads_live_composite_through_mass_property_revert() {
     // into the parent's `TranslationalStateC` (post-attach inertial
     // position = parent_pre.position + cm_delta_inertial).
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, dt);
 
@@ -2374,12 +2374,12 @@ fn bevy_runner_parity_attach_detach_momentum() {
         child_rot,
     );
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
-            t_parent_child,
+            t_parent_child: jeod_sim::FrameTransform::from_matrix(t_parent_child),
         });
     step(&mut app, 1, dt);
 
@@ -2774,12 +2774,12 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
     app.world_mut().run_schedule(Startup);
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
-            t_parent_child,
+            t_parent_child: jeod_sim::FrameTransform::from_matrix(t_parent_child),
         });
     step(&mut app, 1, dt);
 
@@ -3081,14 +3081,14 @@ fn bevy_attach_root_equivalent_parents_succeed() {
     // Fire the attach. The fence must fold both parents onto root and
     // proceed.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -3190,14 +3190,14 @@ fn bevy_attach_malformed_frame_node_panics() {
 
     // Fire the attach. The fence must panic before the merge runs.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 }
@@ -3315,14 +3315,14 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
     // Fire the attach. The legality check in the fence must reject
     // the equal-but-illegal parents.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 }
@@ -3433,14 +3433,14 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
     // (un-folded) parent and reject the stray frame even though it
     // would fold to root for the equality comparison.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 }
@@ -3528,14 +3528,14 @@ fn bevy_attach_mass_only_no_frame_entity_succeeds() {
     // still runs; without the carve-out the previous code panicked
     // here on `body_frames.get(body)` returning Err.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 
@@ -3634,14 +3634,14 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
         .remove::<ChildOf>();
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 }
@@ -3743,14 +3743,14 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
         .remove::<FrameEntityC>();
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     // Invoke `staging_system` directly so the registration-race
     // condition (eligibility components present, FrameEntityC
@@ -3842,14 +3842,14 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
     );
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     step(&mut app, 1, 1.0);
 }
@@ -3945,14 +3945,14 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
         .remove::<TranslationalStateC<jeod_sim::Earth>>();
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     app.world_mut()
         .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
@@ -4000,7 +4000,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
     // hand so `staging_system` can read its event reader without
     // panicking on "Requested resource does not exist". `JeodPlugin`
     // does this in `build`; this regression deliberately bypasses it.
-    app.add_message::<AttachEvent>();
+    app.add_message::<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>();
     app.add_message::<DetachEvent>();
 
     let mut tree = MassTree::new();
@@ -4077,14 +4077,14 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
     );
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     app.world_mut()
         .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
@@ -4118,7 +4118,7 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     // the AttachEvent / DetachEvent message resources by hand
     // (normally done by `JeodPlugin::build`) so `staging_system`'s
     // event reader can run.
-    app.add_message::<AttachEvent>();
+    app.add_message::<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>();
     app.add_message::<DetachEvent>();
 
     let mut tree = MassTree::new();
@@ -4150,14 +4150,14 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     );
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
                 DVec3::ZERO,
             ),
-            t_parent_child: DMat3::IDENTITY,
+            t_parent_child: jeod_sim::FrameTransform::identity(),
         });
     app.world_mut()
         .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)

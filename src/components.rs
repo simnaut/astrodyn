@@ -14,7 +14,7 @@ use jeod_sim::{
     GravityAccelerationTyped, GravityControls, GravitySource, MassProperties, MassPropertiesTyped,
     Planet, PlanetFixed, PlanetInertial, PlanetShape, Position, Ratio, RootInertial,
     RotationalState, RotationalStateTyped, SelfRef, StructuralFrame, Torque, TotalForce,
-    TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
+    TotalForceTyped, TranslationalState, TranslationalStateTyped, Vehicle, Velocity,
 };
 
 // ── Dynamics ──
@@ -1302,32 +1302,85 @@ pub struct KinematicChildC;
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
 /// before integration each step.
 ///
-/// `offset` carries `Position<StructuralFrame<SelfRef>>`: the child's
-/// structural origin lives in the parent's structural frame, and the
-/// `SelfRef` wildcard tag mirrors the per-entity adapter pattern (the
-/// concrete vehicle identity of the parent is determined at runtime
-/// via the entity hierarchy). The compile-time guard is the *frame
-/// kind*: a caller that holds an inertial-frame position cannot
-/// accidentally feed it as the structural-frame attach offset.
+/// # Vehicle phantoms
 ///
-/// `t_parent_child` stays raw `glam::DMat3` for now — typing it as a
-/// `FrameTransform<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>`
-/// would yield `From == To`, which is the identity-direction case
-/// covered only by `FrameTransform::identity`. A two-vehicle phantom
-/// distinguishing parent vs child structural frames is the right
-/// follow-up but requires the `<V>` Bevy-component genericity from
-/// Section A of the audit (see #263 / sibling issues) — the `SelfRef`
-/// wildcard cannot encode that distinction at the type level.
+/// `AttachEvent` is parameterized by **two** vehicle phantoms:
+/// `VParent` names the parent body's vehicle identity and `VChild`
+/// names the child body's. The split lets the type system distinguish
+/// the parent's structural frame from the child's, which is necessary
+/// to type the rotation slot as
+/// `FrameTransform<StructuralFrame<VParent>, StructuralFrame<VChild>>`
+/// — a single-phantom shape would collapse `From == To` and lose the
+/// directional guarantee at the type level.
+///
+/// Mission code that pins both vehicles (via
+/// [`define_vehicle!`](jeod_sim::define_vehicle)) gets a compile-time
+/// guard against confusing one attach pair with another — e.g.
+/// `AttachEvent<Iss, Soyuz>` cannot be confused with
+/// `AttachEvent<Iss, Cygnus>`, and a `t_parent_child` constructed for
+/// the wrong pair fails to typecheck. The compile-time guard layered
+/// on top of the existing frame-kind check (structural-vs-inertial)
+/// is the parent-and-child vehicle identity.
+///
+/// # Runtime-resolved boundary
+///
+/// The canonical Bevy adapter registers and consumes
+/// `AttachEvent<SelfRef, SelfRef>` because per-entity storage decides
+/// both parent and child vehicle identity at runtime via the entity
+/// hierarchy — the message bus does not statically know which vehicle
+/// pair is involved. `<SelfRef, SelfRef>` is the documented
+/// runtime-resolved instantiation; mission code that mints concrete
+/// pairs may register the matching `add_message::<AttachEvent<P, C>>()`
+/// itself.
+///
+/// # Direction convention
+///
+/// `t_parent_child` rotates vectors expressed in the **parent's**
+/// structural frame into the **child's** structural frame, matching
+/// JEOD's `T_pstr_cstr` (see
+/// `models/dynamics/mass/src/mass_attach.cc:151` —
+/// "Transformation matrix from the new parent body's structural
+/// frame to this body's structural frame"). The offset is the child's
+/// structural origin expressed in the parent's structural frame
+/// coordinates (JEOD `offset_pstr_cstr_pstr`).
+///
+/// # Cross-pair compile-time guard
+///
+/// Constructing an `AttachEvent<Iss, Soyuz>` whose `t_parent_child`
+/// was built for a different pair (e.g. `<Iss, Iss>` — a same-vehicle
+/// "self attach" rotation that happens to typecheck without the
+/// split phantom) is rejected at compile time:
+///
+/// ```compile_fail
+/// use bevy_jeod::AttachEvent;
+/// use bevy::prelude::Entity;
+/// use jeod_sim::{define_vehicle, FrameTransform, StructuralFrame, Vec3Ext};
+/// use glam::DVec3;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// let _ = AttachEvent::<Iss, Soyuz> {
+///     child: Entity::PLACEHOLDER,
+///     parent: Entity::PLACEHOLDER,
+///     offset: Vec3Ext::m_at::<StructuralFrame<Iss>>(DVec3::ZERO),
+///     // Wrong pair: `<Iss, Iss>` does not match the slot's expected
+///     // `<Iss, Soyuz>` — typecheck failure.
+///     t_parent_child: FrameTransform::<StructuralFrame<Iss>, StructuralFrame<Iss>>::identity(),
+/// };
+/// ```
 #[derive(Message, Debug, Clone)]
-pub struct AttachEvent {
+pub struct AttachEvent<VParent: Vehicle, VChild: Vehicle> {
     /// Entity of the child body.
     pub child: Entity,
     /// Entity of the parent body.
     pub parent: Entity,
-    /// Child structural origin in the parent's structural frame (m).
-    pub offset: jeod_sim::Position<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>,
-    /// Rotation from parent structural frame to child structural frame.
-    pub t_parent_child: glam::DMat3,
+    /// Child structural origin expressed in the **parent's** structural
+    /// frame coordinates (m). JEOD `offset_pstr_cstr_pstr`.
+    pub offset: Position<StructuralFrame<VParent>>,
+    /// Rotation taking vectors expressed in the parent's structural
+    /// frame into the child's structural frame. JEOD `T_pstr_cstr`.
+    pub t_parent_child: FrameTransform<StructuralFrame<VParent>, StructuralFrame<VChild>>,
 }
 
 /// Message: detach a child body from its parent in the mass tree.

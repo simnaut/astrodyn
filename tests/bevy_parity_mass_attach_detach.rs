@@ -407,7 +407,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
     // Build an app with both staging and composite systems wired.
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_message::<AttachEvent>();
+    app.add_message::<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>();
     app.add_message::<DetachEvent>();
     // composite first, then staging — matches the production schedule
     // ordering in JeodPlugin::build (composite_mass_system runs in
@@ -467,7 +467,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
         child: child_entity,
         parent: parent_entity,
         offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
-        t_parent_child: DMat3::IDENTITY,
+        t_parent_child: jeod_sim::FrameTransform::identity(),
     });
     // Add the ECS-native MassChildOf relation too, so on the next
     // tick composite_mass_system has work to do (otherwise it

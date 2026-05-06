@@ -615,11 +615,11 @@ fn bevy_sim_elapsed(app: &App) -> f64 {
 /// Queue an `AttachEvent` on the Bevy app's message bus.
 fn fire_bevy_attach(app: &mut App, child: Entity, parent: Entity, offset: DVec3, t_pc: DMat3) {
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child,
             parent,
             offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
-            t_parent_child: t_pc,
+            t_parent_child: jeod_sim::FrameTransform::from_matrix(t_pc),
         });
 }
