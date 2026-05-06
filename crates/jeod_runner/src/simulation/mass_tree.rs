@@ -2511,7 +2511,7 @@ mod tests {
         // Splice GJ8 state onto cm post-validate (validate forbids
         // GJ+6DOF; we're exercising the inline reset block defensively).
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg.into());
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
         sim.bodies[cm_idx].gj_state = Some(gj);
@@ -2609,7 +2609,7 @@ mod tests {
         // Splice GJ8 state onto cm AFTER the detach so
         // attach_subtree_aligned's reset block has something to clear.
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg.into());
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
         sim.bodies[cm_idx].gj_state = Some(gj);
@@ -2682,7 +2682,7 @@ mod tests {
     #[should_panic(expected = "topology")]
     fn dirty_gauss_jackson_state_panics_on_integrate() {
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg.into());
         drive_gj_past_priming(&mut gj);
 
         // Simulate a regression where Site A (mark) fired but Site B

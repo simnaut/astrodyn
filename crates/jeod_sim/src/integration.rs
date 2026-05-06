@@ -7,9 +7,10 @@
 use glam::DVec3;
 use jeod_dynamics::state::TranslationalStateTyped;
 use jeod_dynamics::{
-    DynamicsConfig, IntegratorType, MassProperties, RotationalState, SixDofState,
-    TranslationalState,
+    DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
+
+use crate::integrator::IntegratorType;
 use jeod_math::JeodQuat;
 use jeod_quantities::aliases::{Acceleration, Force, Position, Torque, Velocity};
 use jeod_quantities::frame::{BodyFrame, RootInertial, Vehicle};
@@ -628,9 +629,13 @@ pub fn integrate_body(
                 "GaussJackson integrator requires gj_state. \
                  Set SimBody::gj_state or call Simulation::validate() first.",
             );
+            // Convert the wrapper config once for the equality check; the
+            // raw kernel below operates on the underlying jeod_dynamics
+            // config that gj.config() returns.
+            let raw_cfg: jeod_dynamics::GaussJacksonConfig = cfg.into();
             debug_assert_eq!(
                 gj.config(),
-                &cfg,
+                &raw_cfg,
                 "GaussJacksonState config does not match IntegratorType config. \
                  Recreate the state from the same config or call Simulation::validate()."
             );
@@ -1204,7 +1209,7 @@ mod tests {
             DVec3::ZERO,
             dt,
             tsf,
-            jeod_dynamics::IntegratorType::Rk4,
+            IntegratorType::Rk4,
             None,
             None,
         );

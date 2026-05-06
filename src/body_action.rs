@@ -692,8 +692,8 @@ pub fn body_action_system<P: Planet>(
             // `None` on RK4 entities), so this branch is free for the
             // common path.
             jeod_sim::reset_integrators(
-                gj.as_deref_mut().map(|c| &mut c.0),
-                abm.as_deref_mut().map(|c| &mut c.0),
+                gj.as_deref_mut().map(|c| c.0.inner_mut()),
+                abm.as_deref_mut().map(|c| c.0.inner_mut()),
             );
         }
         // Do not advance idx: the queue shifted left by one when we

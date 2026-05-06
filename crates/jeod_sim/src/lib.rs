@@ -60,6 +60,7 @@ pub mod frame_orchestration;
 pub mod gravity;
 pub mod integrable;
 pub mod integration;
+pub mod integrator;
 pub mod interactions;
 pub mod kinematic_propagation;
 pub mod pipeline;
@@ -108,6 +109,7 @@ pub use integration::{
     integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
     reset_integrators, CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
 };
+pub use integrator::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use interactions::{
     compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
     compute_gravity_torque, compute_gravity_torque_typed, evaluate_contact_pair,
@@ -121,7 +123,6 @@ pub use jeod_dynamics::kinematic_joint::{
     JointKinematicsModel, JointKinematicsSpec, MultiDofJointKinematicsSpec, SingleDofKinematics,
     SinusoidalJointKinematicsSpec, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
-pub use jeod_dynamics::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};

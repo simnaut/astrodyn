@@ -72,8 +72,9 @@ use bevy_jeod::{
     MassTreeR, RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_dynamics::{IntegratorType, MassProperties};
+use jeod_dynamics::MassProperties;
 use jeod_runner::Simulation;
+use jeod_sim::IntegratorType;
 use jeod_sim::{
     DynamicsConfig, GravityControls, JeodQuat, MassTree, RotationalState, SimulationTime,
     TranslationalState, VehicleConfig,
