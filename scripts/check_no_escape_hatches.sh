@@ -61,9 +61,12 @@ marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
 # ── Category 2: typed-quantity bypass constructors (banned across src/**) ──
 # `crates/**` is fully exempt — the typed siblings and their internal
 # `_unchecked` bridges all live there by construction.
-# `src/components.rs` is exempt — Bevy components' `From<Untyped>` impls
+# `src/components/**` is exempt — Bevy components' `From<Untyped>` impls
 # are the canonical insertion-time boundary; each one is the analogue
-# of jeod_dynamics's `from_untyped_unchecked`.
+# of jeod_dynamics's `from_untyped_unchecked`. (Pre-split history: this
+# was a single `src/components.rs` file; the same boundary semantics
+# apply to every per-stage submodule under the new `src/components/`
+# directory.)
 # `src/lib.rs` is exempt — `spawn_bevy` performs insertion-time lifts
 # from `VehicleConfig` (still untyped in jeod_sim) to typed components.
 # All other files under `src/**` are policed.
@@ -81,6 +84,7 @@ marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
 # not exempt subsequent unrelated lines.
 src_files_to_scan=$(find src/ -name "*.rs" -type f \
     -not -path 'src/components.rs' \
+    -not -path 'src/components/*' \
     -not -path 'src/lib.rs' \
     | sort)
 
