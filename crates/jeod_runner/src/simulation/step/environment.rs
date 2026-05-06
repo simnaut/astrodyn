@@ -84,11 +84,9 @@ impl Simulation {
         // Project each `(idx, &mut SimBody)` row into the
         // `(key, inputs, store)` triple `run_gravity_stage` expects.
         // The store closure captures `&mut body.gravity_accel` and
-        // lowers the typed kernel result back to raw `GravityAcceleration`
-        // because `SimBody.gravity_accel` still uses the untyped layout;
-        // the Bevy adapter, which stores the typed
-        // `GravityAccelerationTyped<RootInertial>` newtype, moves the
-        // value through unchanged.
+        // moves the typed kernel result through unchanged — both
+        // adapters now share the same
+        // `GravityAccelerationTyped<RootInertial>` storage type.
         let body_iter = self.bodies.iter_mut().enumerate().map(|(body_idx, body)| {
             let inputs = GravityBodyInputs {
                 position: body.trans.position,
@@ -99,9 +97,7 @@ impl Simulation {
             let gravity_accel_slot = &mut body.gravity_accel;
             let store =
                 move |result: jeod_sim::GravityAccelerationTyped<jeod_sim::RootInertial>| {
-                    gravity_accel_slot.grav_accel = result.grav_accel.raw_si();
-                    gravity_accel_slot.grav_grad = result.grav_grad;
-                    gravity_accel_slot.grav_pot = result.grav_pot;
+                    *gravity_accel_slot = result;
                 };
             (body_idx, inputs, store)
         });

@@ -358,35 +358,6 @@ pub fn evaluate_body_gravity_typed<'a, S: Copy + std::fmt::Debug + PartialEq>(
     accel
 }
 
-/// Raw sibling of [`evaluate_body_gravity_typed`] for adapters that
-/// store gravity acceleration as the untyped [`GravityAcceleration`]
-/// (currently `jeod_runner::SimBody.gravity_accel`).
-///
-/// Same numerics — the RF.10 shift is performed in raw arithmetic, then
-/// [`accumulate_gravity`] and [`accumulate_relativistic_corrections`]
-/// run on the shifted coordinates. Once `SimBody.gravity_accel`
-/// migrates to the typed sibling (tracked separately), this raw entry
-/// point can be deleted in favor of `evaluate_body_gravity_typed` for
-/// both adapters.
-// JEOD_INV: RF.10 — integ-frame to root-inertial shift is encapsulated here.
-pub fn evaluate_body_gravity<'a, S: Copy + std::fmt::Debug + PartialEq>(
-    body_position: DVec3,
-    body_velocity: DVec3,
-    integ_origin: &IntegOrigin,
-    controls: &GravityControls<S>,
-    resolve_source: impl Fn(S) -> Option<ResolvedSource<'a>>,
-    resolve_rel_source: impl Fn(S) -> Option<ResolvedRelativisticSource>,
-) -> GravityAcceleration {
-    let origin_pos = integ_origin.position.raw_si();
-    let abs_pos = body_position + origin_pos;
-    let abs_vel = body_velocity + integ_origin.velocity.raw_si();
-
-    let mut accel = accumulate_gravity(abs_pos, controls, origin_pos, resolve_source);
-    accel.grav_accel +=
-        accumulate_relativistic_corrections(abs_pos, abs_vel, controls, resolve_rel_source);
-    accel
-}
-
 /// Per-body inputs the gravity stage driver consumes.
 ///
 /// Bundled together so adapter `.map(...)` projections over a `Query`
@@ -418,11 +389,10 @@ pub struct GravityBodyInputs<'a, S> {
 /// 1. Calls [`evaluate_body_gravity_typed`] (RF.10 shift + Newtonian
 ///    accumulation + post-Newtonian correction) for each body.
 /// 2. Hands the result to the per-body `store` closure, which writes
-///    it back into adapter-owned storage. Adapters that store typed
-///    `GravityAccelerationTyped<RootInertial>` (the Bevy newtype) move
-///    the value through; adapters that still store raw
-///    `GravityAcceleration` (the runner) lower via `.raw_si()` inside
-///    the closure.
+///    it back into adapter-owned storage. Both adapters now store
+///    `GravityAccelerationTyped<RootInertial>` (the Bevy
+///    `GravityAccelerationC` newtype and `SimBody.gravity_accel`),
+///    so the closure is a direct move.
 ///
 /// `resolve_source` and `resolve_rel_source` receive the body key
 /// alongside the source identifier so adapters that want to surface
@@ -431,9 +401,9 @@ pub struct GravityBodyInputs<'a, S> {
 ///
 /// The closure-based writer lets each adapter use whatever mutable
 /// handle its iterator yields (`Mut<'_, GravityAccelerationC>` for
-/// Bevy, `&mut GravityAcceleration` for the runner) without needing a
-/// trait impl on a foreign type — orphan rules block trait impls on
-/// `Mut<'_, T>` from outside `bevy_ecs`.
+/// Bevy, `&mut GravityAccelerationTyped<RootInertial>` for the runner)
+/// without needing a trait impl on a foreign type — orphan rules block
+/// trait impls on `Mut<'_, T>` from outside `bevy_ecs`.
 ///
 /// Both ECS adapters today route gravity through this function; future
 /// stage-shape changes (a new pre-step, a new gating condition, new
@@ -758,7 +728,7 @@ mod tests {
         assert!(!third_body.battin_method);
     }
 
-    /// `evaluate_body_gravity` (raw) is numerically equivalent to the
+    /// `evaluate_body_gravity_typed` is numerically equivalent to the
     /// open-coded shift-then-accumulate sequence the runner has carried
     /// since before the kernel existed: lift body coordinates to root
     /// inertial via the integ-origin, then call `accumulate_gravity` and
@@ -799,16 +769,17 @@ mod tests {
         };
 
         // New kernel.
-        let kernel = evaluate_body_gravity(
-            body_pos_integ,
-            body_vel_integ,
-            &integ_origin,
+        let kernel = evaluate_body_gravity_typed(
+            Position::<IntegrationFrame>::from_raw_si(body_pos_integ),
+            Velocity::<IntegrationFrame>::from_raw_si(body_vel_integ),
+            integ_origin,
             &controls,
             resolve_source,
             resolve_rel_source,
         );
 
-        // Manual composition — exactly what the runner does today.
+        // Manual composition — exactly what the runner did before the
+        // kernel landed.
         let abs_pos = body_pos_integ + integ_origin.position.raw_si();
         let abs_vel = body_vel_integ + integ_origin.velocity.raw_si();
         let mut manual = accumulate_gravity(
@@ -820,65 +791,9 @@ mod tests {
         manual.grav_accel +=
             accumulate_relativistic_corrections(abs_pos, abs_vel, &controls, resolve_rel_source);
 
-        assert_eq!(kernel.grav_accel, manual.grav_accel);
+        assert_eq!(kernel.grav_accel.raw_si(), manual.grav_accel);
         assert_eq!(kernel.grav_pot, manual.grav_pot);
         assert_eq!(kernel.grav_grad, manual.grav_grad);
-    }
-
-    /// Typed kernel produces the same numbers as the raw kernel —
-    /// the typed sibling is a relabel-only wrapper.
-    #[test]
-    fn evaluate_body_gravity_typed_matches_raw() {
-        let mu = 3.986e14;
-        let source = point_mass_source(mu);
-        let source_pos = DVec3::ZERO;
-
-        let body_pos_integ = DVec3::new(7e6, 1e5, -2e5);
-        let body_vel_integ = DVec3::new(-100.0, 7500.0, 50.0);
-        let integ_origin = IntegOrigin {
-            position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 1e9, 0.0)),
-            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
-        };
-        let controls = GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false)],
-        };
-        let resolve_source = |_: usize| {
-            Some(ResolvedSource {
-                source: &source,
-                rotation: None,
-                position: source_pos,
-                delta_c20: 0.0,
-                has_delta_coeffs: false,
-            })
-        };
-        let resolve_rel_source = |_: usize| {
-            Some(ResolvedRelativisticSource {
-                mu,
-                position: source_pos,
-                velocity: DVec3::ZERO,
-            })
-        };
-
-        let raw = evaluate_body_gravity(
-            body_pos_integ,
-            body_vel_integ,
-            &integ_origin,
-            &controls,
-            resolve_source,
-            resolve_rel_source,
-        );
-        let typed = evaluate_body_gravity_typed(
-            Position::<IntegrationFrame>::from_raw_si(body_pos_integ),
-            Velocity::<IntegrationFrame>::from_raw_si(body_vel_integ),
-            integ_origin,
-            &controls,
-            resolve_source,
-            resolve_rel_source,
-        );
-
-        assert_eq!(typed.grav_accel.raw_si(), raw.grav_accel);
-        assert_eq!(typed.grav_pot, raw.grav_pot);
-        assert_eq!(typed.grav_grad, raw.grav_grad);
     }
 
     /// `run_gravity_stage` over an iterator of two bodies produces the
@@ -1012,10 +927,10 @@ mod tests {
             })
         };
 
-        let kernel = evaluate_body_gravity(
-            body_pos,
-            body_vel,
-            &integ_origin,
+        let kernel = evaluate_body_gravity_typed(
+            Position::<IntegrationFrame>::from_raw_si(body_pos),
+            Velocity::<IntegrationFrame>::from_raw_si(body_vel),
+            integ_origin,
             &controls,
             resolve_source,
             resolve_rel_source,
@@ -1024,7 +939,7 @@ mod tests {
         plain.grav_accel +=
             accumulate_relativistic_corrections(body_pos, body_vel, &controls, resolve_rel_source);
 
-        assert_eq!(kernel.grav_accel, plain.grav_accel);
+        assert_eq!(kernel.grav_accel.raw_si(), plain.grav_accel);
         assert_eq!(kernel.grav_pot, plain.grav_pot);
         assert_eq!(kernel.grav_grad, plain.grav_grad);
     }

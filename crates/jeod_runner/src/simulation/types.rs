@@ -33,9 +33,10 @@ use jeod_interactions::{ContactFacet, GroundFacet};
 use jeod_quantities::frame::IntegrationFrame;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
-    FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls, GravitySource,
-    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RotationModel, RotationalState,
-    SelfPlanet, SrpModel, TotalForce, TranslationalState, TranslationalStateTyped, VehicleConfig,
+    FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls, GravitySource,
+    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RootInertial, RotationModel,
+    RotationalState, SelfPlanet, SrpModel, TotalForce, TranslationalState, TranslationalStateTyped,
+    VehicleConfig,
 };
 
 /// Registration of a contact interaction between two bodies.
@@ -276,7 +277,7 @@ pub(crate) struct SimBody {
     pub frame_switches: Vec<FrameSwitchConfig>,
 
     // ── Bookkeeping (written each step, not user-visible) ──
-    pub gravity_accel: GravityAcceleration,
+    pub gravity_accel: GravityAccelerationTyped<RootInertial>,
     pub total_force: TotalForce,
     pub frame_derivs: FrameDerivatives,
     pub aero_force: Option<AerodynamicForce>,
@@ -368,7 +369,7 @@ impl SimBody {
             body_frame_id,
             frame_switches: config.frame_switches,
 
-            gravity_accel: GravityAcceleration::default(),
+            gravity_accel: GravityAccelerationTyped::<RootInertial>::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
             aero_force: None,
