@@ -53,8 +53,10 @@
 //! - **Re-rooting attaches**: `RUN_complex_attach_detach` and
 //!   `RUN_compute_child_derivative` exercise chained `attach_to(name1,
 //!   name2)` invocations whose parent-of-the-attaching-subtree's-root
-//!   is repointed; the existing `tier3_sim_attach_detach.rs` defers
-//!   them. This test does not address that gap.
+//!   is repointed; the mass-tree algebra check at
+//!   `crates/jeod_dynamics/tests/mass_tree_placeholder.rs` covers the
+//!   composite-mass output of those re-rooting paths but does not drive
+//!   the full pipeline. This test does not address the trajectory gap.
 //! - **Reference-frame attaches and dynamic-body-action rate changes**:
 //!   past `FRAME_ATTACH_PHASE_START = 30 s` the JEOD run fires
 //!   `set_attitude_rate` and a sequence of reference-frame attach/detach
