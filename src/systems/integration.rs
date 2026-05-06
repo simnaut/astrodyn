@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy systems for [`JeodSet::Integration`](crate::JeodSet::Integration).
 //!
 //! State integration (RK4 / Gauss-Jackson / ABM4), mass-tree staging
@@ -844,6 +845,9 @@ pub fn integration_system<P: Planet>(
 pub fn staging_system<P: Planet>(
     mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
+    // JEOD_INV: TS.01 — Bevy adapter message-bus storage boundary: the
+    // canonical runtime-resolved `AttachEvent<SelfRef, SelfRef>` reader
+    // pair with the registration in `JeodPlugin::build`.
     mut attach_events: bevy::ecs::message::MessageReader<
         crate::AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>,
     >,

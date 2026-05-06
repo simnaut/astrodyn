@@ -4,6 +4,12 @@
 //! names. We lift that distinction to compile time: `Position<RootInertial>` and
 //! `Position<Ecef>` are distinct types and cannot be added.
 //!
+//! JEOD_INV: TS.01 — this file defines the runtime-resolved-boundary
+//! wildcards [`SelfRef`] and [`SelfPlanet`]. The full description of
+//! their boundary discipline lives in `docs/JEOD_invariants.md` row
+//! TS.01 and is enforced by the workspace lint at
+//! `tests/self_ref_self_planet_discipline.rs`.
+//!
 //! ## Extension model
 //!
 //! - **Frame *kinds*** (`RootInertial`, `Ecef`, `BodyFrame<V>`, …) are sealed
@@ -115,6 +121,11 @@ planet_marker!(Mars, "Mars");
 /// already carries a `PlanetC` discriminator — the typed `FrameTransform`
 /// inside the Component encodes the *direction* (RootInertial → PlanetFixed)
 /// while the planet identity stays at the entity level.
+// JEOD_INV: TS.01 — `SelfPlanet` is the per-entity storage-boundary
+// wildcard for runtime-resolved planet identity (Bevy components, runner
+// `SimBody`/`VehicleOutput` slots, dynamic-registry-erased returns). All
+// system code paths and APIs use `<P: Planet>` instead. See the lint at
+// `tests/self_ref_self_planet_discipline.rs`.
 #[derive(Debug, Clone, Copy)]
 pub struct SelfPlanet;
 impl PlanetSealed for SelfPlanet {}
@@ -300,6 +311,13 @@ impl<C: Vehicle> Frame for Ned<C> {
 /// Never appears in user-facing `Query`s — components wrap concrete
 /// monomorphizations like `Position<RootInertial>` or
 /// `Torque<BodyFrame<SelfRef>>`, so the user sees only the wrapper newtype.
+// JEOD_INV: TS.01 — `SelfRef` is the per-entity storage-boundary wildcard
+// for runtime-resolved vehicle identity (Bevy components, `AttachEvent`
+// canonical registration, runner `SimBody.flat_plate_state`,
+// `compute_relative_state::<SelfRef, SelfRef>`). System code paths and
+// public APIs use `<V: Vehicle>` parameters; the wildcard appears only at
+// per-entity storage boundaries. See the lint at
+// `tests/self_ref_self_planet_discipline.rs`.
 #[derive(Debug, Clone, Copy)]
 pub struct SelfRef;
 impl VehicleSealed for SelfRef {}

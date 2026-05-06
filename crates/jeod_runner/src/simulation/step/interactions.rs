@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Stage 6 of [`super::super::Simulation::step_internal`]: drag, SRP,
 //! and gravity-gradient-torque interactions. Reads atmospheric state
 //! (stage 5), gravity acceleration (stage 4), and source positions

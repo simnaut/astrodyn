@@ -43,6 +43,11 @@ impl PlanetConfig {
     /// at the consumer side via the `mu_*()` constants in
     /// `jeod_sim::recipes::constants` or via
     /// `mu_typed().relabel::<P>()`.
+    // JEOD_INV: TS.01 — `PlanetConfig` is a runtime-resolved boundary:
+    // its `mu_typed()` returns `<SelfPlanet>` because the entity that
+    // holds this config decides the planet identity dynamically. The
+    // typed `recipes::constants::mu_*()` accessors carry `<P>` for
+    // mission code.
     #[inline]
     pub fn mu_typed(&self) -> GravParam<SelfPlanet> {
         self.shape.mu_typed()

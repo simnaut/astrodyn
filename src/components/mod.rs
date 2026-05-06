@@ -6,6 +6,16 @@
 //! generics directly without the `TypePath` constraint that previously
 //! forced a `<SelfPlanet>` wildcard at the storage layer.
 //!
+//! JEOD_INV: TS.01 — this module is a per-entity storage boundary. The
+//! `<SelfRef>` and `<SelfPlanet>` wildcard tags on Bevy `Component`,
+//! `Message`, and runner-state field types in this module (and its
+//! per-stage submodules) are the canonical sites where runtime-resolved
+//! entity identity meets the compile-time phantom-frame discipline. All
+//! system code paths and `jeod_*` / `jeod_sim` APIs use `<V: Vehicle>` /
+//! `<P: Planet>` parameters; the wildcards are confined to this storage
+//! layer. See `tests/self_ref_self_planet_discipline.rs` for the lint
+//! that enforces the rule across the workspace.
+//!
 //! # Submodule layout
 //!
 //! Components are grouped along the same axis as

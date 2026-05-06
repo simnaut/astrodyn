@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Vehicle-level configuration types.
 //!
 //! [`VehicleConfig`] is the user-facing description of a single simulated

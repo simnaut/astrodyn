@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy `Component` and `Message` newtypes for the mass tree —
 //! per-body mass identifier, the parent ↔ child mass-tree edge, the
 //! mass-point back-pointer, the kinematic-child gating marker, and the

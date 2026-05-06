@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Sanity test for `ThermalIntegrationOrder::DerivativeRk4`.
 //!
 //! No JEOD reference sim exercises the full RK4 thermal path today, so this
