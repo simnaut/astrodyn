@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{Planet, Position, RootInertial, Velocity};
+use jeod_sim::{IntegOrigin, IntegrationFrame, Planet, Position, RootInertial, Velocity};
 
 use crate::components::*;
 use crate::frame_param::FrameOrigin;
@@ -66,93 +66,76 @@ pub fn gravity_computation_system<P: Planet>(
         Option<&TidalConfigC>,
     )>,
 ) {
-    for (entity, state, controls, mut accel, body_frame) in &mut bodies {
-        // `TranslationalStateC` stores typed
-        // `Position<PlanetInertial<P>>` /
-        // `Velocity<PlanetInertial<P>>`. For root-integrated
-        // bodies the integ frame numerically equals root inertial, so
-        // the raw values match what gravity wants. For non-root
-        // bodies we shift to absolute root-inertial coordinates below
-        // via the body frame entity's parent +
-        // `FrameOrigin::origin_in_root`. The shift is the only safe
-        // path from `PlanetInertial<P>` to `RootInertial` (RF.10);
-        // relabel via `from_raw_si` so the compiler accepts the
-        // addition with the typed root-inertial origin.
-        let body_pos = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: gravity shift-site, planet-inertial → root-inertial via integ-origin offset
-        let body_vel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same gravity shift-site
+    // Project each `(entity, state, controls, accel, body_frame)` row
+    // from `bodies.iter_mut()` into `(entity, GravityBodyInputs,
+    // store_closure)`. The closure captures the row's
+    // `Mut<'_, GravityAccelerationC>` by move and writes back to it
+    // when the driver invokes it — Bevy change detection fires on the
+    // deref-mut assignment as it would in a manual loop. Relabeling
+    // `Position<PlanetInertial<P>>` → `Position<IntegrationFrame>` is
+    // the boundary lift; the RF.10 shift to root inertial happens
+    // inside `evaluate_body_gravity_typed` via the `IntegOrigin`.
+    let body_iter = bodies
+        .iter_mut()
+        .map(|(entity, state, controls, accel, body_frame)| {
+            let (integ_pos, integ_vel) =
+                body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+            let inputs = jeod_sim::GravityBodyInputs {
+                position: Position::<IntegrationFrame>::from_raw_si(state.position.raw_si()), // allowed: gravity RF.10 boundary — relabel `PlanetInertial<P>` → `IntegrationFrame` so the kernel's `IntegOrigin` shift is the structurally-guarded transition to `RootInertial`
+                velocity: Velocity::<IntegrationFrame>::from_raw_si(state.velocity.raw_si()), // allowed: same gravity RF.10 boundary
+                integ_origin: IntegOrigin {
+                    position: integ_pos,
+                    velocity: integ_vel,
+                },
+                controls: &controls.0,
+            };
+            let mut accel = accel;
+            let store = move |result: jeod_sim::GravityAccelerationTyped<RootInertial>| {
+                accel.0 = result;
+            };
+            (entity, inputs, store)
+        });
 
-        // Integration-frame origin (relative to root) — zero for
-        // root-integrated bodies. Shared helper documents the cases
-        // (no `FrameEntityC` legacy entity → zero; integ frame is the
-        // root frame → zero; otherwise walk via `FrameOrigin`).
-        let (integ_origin, integ_origin_vel) =
-            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
-        let abs_pos = body_pos + integ_origin;
-
-        let typed_accel = jeod_sim::accumulate_gravity_typed(
-            abs_pos,
-            &controls.0,
-            integ_origin,
-            |source_entity| match sources.get(source_entity) {
-                Ok((source, rot, pos, _, tidal, tidal_config)) => {
-                    Some(jeod_sim::ResolvedSource {
-                        source: &source.0,
-                        rotation: rot.map(|r| r.0.matrix_ref()),
-                        position: pos.0.raw_si(),
-                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
-                        // JEOD gates on n_deltacoeffs > 0 (tidal config
-                        // present), not on whether ΔC20 component exists.
-                        has_delta_coeffs: tidal_config.is_some(),
-                    })
+    jeod_sim::run_gravity_stage(
+        body_iter,
+        |entity, source_entity| match sources.get(source_entity) {
+            Ok((source, rot, pos, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
+                source: &source.0,
+                rotation: rot.map(|r| r.0.matrix_ref()),
+                position: pos.0.raw_si(),
+                delta_c20: tidal.map_or(0.0, |t| t.0.value),
+                // JEOD gates on n_deltacoeffs > 0 (tidal config
+                // present), not on whether ΔC20 component exists.
+                has_delta_coeffs: tidal_config.is_some(),
+            }),
+            Err(_) => {
+                panic!(
+                    "Entity {entity:?}: GravityControl references source \
+                     {source_entity:?} which does not exist or lacks \
+                     GravitySourceC + SourceInertialPositionC."
+                );
+            }
+        },
+        // Source velocity flows through the planet-agnostic
+        // `SourceInertialVelocityC` (`Velocity<RootInertial>`). It is
+        // opt-in: `PlanetBundle`, `SunBundle`, and `MoonBundle` do not
+        // insert it, and `ephemeris_update_system` only writes through
+        // it when it is already present (no auto-insert from
+        // `EphemerisBodyC`). Sources without the component coast at
+        // zero velocity for the relativistic correction — callers who
+        // want PPN to see source motion must attach
+        // `SourceInertialVelocityC` explicitly.
+        |_entity, source_entity| {
+            sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
+                let velocity = v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO);
+                jeod_sim::ResolvedRelativisticSource {
+                    mu: s.mu,
+                    position: p.0.raw_si(),
+                    velocity,
                 }
-                Err(_) => {
-                    panic!(
-                        "Entity {entity:?}: GravityControl references source \
-                         {source_entity:?} which does not exist or lacks \
-                         GravitySourceC + SourceInertialPositionC."
-                    );
-                }
-            },
-        );
-        accel.0 = typed_accel;
-
-        // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
-        // gravity, matching Simulation::step() stage 4b ordering. PPN depends
-        // on |r_body - r_source| and v_body in inertial frame, so for
-        // non-root-integrated bodies we lift `body_pos`/`body_vel` from
-        // integ-frame coords into absolute inertial coords first.
-        // Reuse the typed origin computed above: (integ_origin,
-        // integ_origin_vel) are already Position/Velocity<Inertial>.
-        let abs_body_pos = body_pos + integ_origin;
-        let abs_body_vel = body_vel + integ_origin_vel;
-        let rel_accel = jeod_sim::accumulate_relativistic_corrections_typed(
-            abs_body_pos,
-            abs_body_vel,
-            &controls.0,
-            |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                    // Source velocity flows through the planet-agnostic
-                    // `SourceInertialVelocityC` (`Velocity<RootInertial>`).
-                    // It is opt-in: `PlanetBundle`, `SunBundle`, and
-                    // `MoonBundle` do not insert it, and
-                    // `ephemeris_update_system` only writes through it
-                    // when it is already present (no auto-insert from
-                    // `EphemerisBodyC`). Sources without the component
-                    // coast at zero velocity for the relativistic
-                    // correction — callers who want PPN to see source
-                    // motion must attach `SourceInertialVelocityC`
-                    // explicitly.
-                    let velocity = v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO);
-                    jeod_sim::ResolvedRelativisticSource {
-                        mu: s.mu,
-                        position: p.0.raw_si(),
-                        velocity,
-                    }
-                })
-            },
-        );
-        accel.grav_accel += rel_accel;
-    }
+            })
+        },
+    );
 }
 
 // JEOD_INV: AT.01 — active flag gates computation (no AtmosphericStateC component = no computation)
