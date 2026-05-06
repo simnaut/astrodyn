@@ -2,6 +2,14 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+// JEOD_INV: TS.01 — `bevy_jeod` is the Bevy adapter and is a per-entity
+// storage boundary throughout: the `Component` newtypes in
+// `crate::components`, the `Message` registrations below
+// (`AttachEvent<SelfRef, SelfRef>`, etc.), and the `spawn_bevy` lifts
+// all sit at the runtime-resolved vehicle/planet boundary. System code
+// inside `crate::systems` and friends carries `<P: Planet>` parameters
+// and re-tags into `<SelfRef>`-marked storage at the write site only.
+
 pub mod body_action;
 pub mod bundles;
 pub mod components;
@@ -239,6 +247,11 @@ impl Plugin for JeodPlugin {
         // `add_message::<AttachEvent<Iss, Soyuz>>()` itself; the
         // canonical `staging_system` reads the `<SelfRef, SelfRef>`
         // instantiation only.
+        // JEOD_INV: TS.01 — Bevy `Message` storage boundary: the
+        // `<SelfRef, SelfRef>` registration is the runtime-resolved
+        // event-bus equivalent of the per-entity Component wildcards
+        // in `src/components.rs`. The runtime entity identity decides
+        // both the parent and child vehicle when the message is read.
         app.add_message::<AttachEvent<jeod_sim::SelfRef, jeod_sim::SelfRef>>();
         app.add_message::<DetachEvent>();
         app.add_message::<FrameAttachEvent>();

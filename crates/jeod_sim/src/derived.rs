@@ -3,6 +3,18 @@
 //! Post-integration observational quantities computed from the integrated state.
 //! Each function is pure (no side effects) and takes explicit parameters so that
 //! any ECS adapter can call it from a system function.
+//!
+//! JEOD_INV: TS.01 — dynamic-registry-erased return-type boundary. The
+//! `<SelfPlanet>`-tagged returns from [`compute_orbital_elements`] (and
+//! the `<SelfRef, SelfRef>` instantiations of [`compute_relative_state`]
+//! / [`compute_lvlh_relative_state`] used by the standalone runner)
+//! exist because the runner's per-body planet identity is keyed by a
+//! dynamic source index rather than a compile-time `<P>`; the typed
+//! `_typed` siblings in this module are the compile-time-pinned API
+//! surface mission code uses. The wildcard tags here are the documented
+//! storage / erasure boundary for that runtime-resolved choice. The
+//! lint at `tests/self_ref_self_planet_discipline.rs` enforces this
+//! globally.
 
 use glam::{DMat3, DQuat, DVec3};
 

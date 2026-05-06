@@ -12,6 +12,18 @@
 //! kinematics, no `Simulation` dependency. It is re-exported from
 //! `simulation::mod` so consumers reach it via
 //! `jeod_runner::DetachedSubtreeState` regardless.
+//!
+//! JEOD_INV: TS.01 — runner storage boundary. The `<SelfRef>` /
+//! `<SelfPlanet>` wildcards on `SimBody`, `VehicleConfig`, and
+//! `VehicleOutput` fields below are the runner-internal analogue of the
+//! Bevy `Component` boundary in `src/components.rs`: per-body storage
+//! whose vehicle/planet identity is decided at runtime by the body's
+//! position in the runner's `Vec<SimBody>` and its `gravity_controls`
+//! source index, not by a compile-time mission-crate phantom. System
+//! code (`step::*`, `mass_tree`, `frame_attach`) reads these fields and
+//! threads `<V: Vehicle>` / `<P: Planet>` parameters through the
+//! kernel calls that consume them. See
+//! `tests/self_ref_self_planet_discipline.rs` for the workspace lint.
 
 use glam::{DMat3, DVec3};
 
