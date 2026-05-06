@@ -12,7 +12,9 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{combine_states_at_attach, AttachCombineInputs, MassBodyId, MassPointState};
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_quantities::frame::IntegrationFrame;
-use jeod_sim::{RotationalState, TranslationalState, TranslationalStateTyped};
+use jeod_sim::{
+    CrossIntegFrameStateShift, RotationalState, TranslationalState, TranslationalStateTyped,
+};
 
 use jeod_dynamics::DetachedSubtreeState;
 
@@ -362,16 +364,45 @@ impl Simulation {
                 let (_p, v) = self.frame_origin(self.bodies[subject_root_idx].integ_frame_id);
                 v
             };
+            // Lift each side's pre-attach state from its own integration
+            // frame to root-inertial via the
+            // [`CrossIntegFrameStateShift`] kernel. `old = body's integ
+            // origin`, `new = ZERO` makes `apply` add the integ origin to
+            // the stored `(position, velocity)` — the lift partner of
+            // the writeback shift below. Same kernel as the Bevy adapter
+            // uses per-descendant in `apply_cross_integ_frame_attach`;
+            // here it runs once per side because the runner stores at
+            // most one integ-frame-typed state per body. For
+            // root-integrated bodies the kernel collapses to
+            // `between_integ_origins(ZERO, ZERO, ZERO, ZERO)` and
+            // `apply` is a bit-identical no-op.
+            let root_lift = CrossIntegFrameStateShift::between_integ_origins(
+                root_integ_origin_pos,
+                root_integ_origin_vel,
+                glam::DVec3::ZERO,
+                glam::DVec3::ZERO,
+            );
+            let subject_root_lift = CrossIntegFrameStateShift::between_integ_origins(
+                subject_root_integ_origin_pos,
+                subject_root_integ_origin_vel,
+                glam::DVec3::ZERO,
+                glam::DVec3::ZERO,
+            );
             let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
-            root_pre_state.trans.position += root_integ_origin_pos;
-            root_pre_state.trans.velocity += root_integ_origin_vel;
+            (root_pre_state.trans.position, root_pre_state.trans.velocity) =
+                root_lift.apply(root_pre_state.trans.position, root_pre_state.trans.velocity);
             let root_pre_composite_props = self.bodies[root_idx]
                 .mass
                 .expect("attach: tree root has no mass properties");
             let mut child_pre_state =
                 Self::body_composite_state_or_default(&self.bodies[subject_root_idx]);
-            child_pre_state.trans.position += subject_root_integ_origin_pos;
-            child_pre_state.trans.velocity += subject_root_integ_origin_vel;
+            (
+                child_pre_state.trans.position,
+                child_pre_state.trans.velocity,
+            ) = subject_root_lift.apply(
+                child_pre_state.trans.position,
+                child_pre_state.trans.velocity,
+            );
             let child_pre_composite_props = self.bodies[subject_root_idx]
                 .mass
                 .expect("attach: subject root has no mass properties");
@@ -474,13 +505,27 @@ impl Simulation {
             // only thing that prevents writing a root-inertial value
             // into integration-frame storage and silently corrupting
             // every downstream consumer of `body.trans`.
+            // Symmetric partner of the seed-time lift: lower the merged
+            // root-inertial composite back into integration-frame
+            // coordinates via the [`CrossIntegFrameStateShift`] kernel.
+            // `old = ZERO, new = root's integ origin` makes `apply`
+            // subtract the integ origin from the merged state. For a
+            // root-integrated root the kernel collapses to a no-op.
+            let root_lower = CrossIntegFrameStateShift::between_integ_origins(
+                glam::DVec3::ZERO,
+                glam::DVec3::ZERO,
+                snap.root_integ_origin_pos,
+                snap.root_integ_origin_vel,
+            );
+            let (writeback_position, writeback_velocity) = root_lower.apply(
+                combined.composite_state.trans.position,
+                combined.composite_state.trans.velocity,
+            );
             self.bodies[root_idx].trans =
                 TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                     &TranslationalState {
-                        position: combined.composite_state.trans.position
-                            - snap.root_integ_origin_pos,
-                        velocity: combined.composite_state.trans.velocity
-                            - snap.root_integ_origin_vel,
+                        position: writeback_position,
+                        velocity: writeback_velocity,
                     },
                 );
             // Write rotational state only when the root already carried
@@ -741,9 +786,23 @@ impl Simulation {
             let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
             v
         };
+        // Lift the (former) parent's pre-detach root state from its
+        // integration frame to root-inertial via the
+        // [`CrossIntegFrameStateShift`] kernel so the body-aware tree
+        // walk in `derive_subtree_composite_state` runs in a single
+        // inertial frame. `old = root's integ origin, new = ZERO`
+        // makes `apply` add the integ origin to the stored
+        // `(position, velocity)`. Same kernel as the symmetric attach
+        // lift; root-integrated roots collapse to a no-op.
+        let root_lift = CrossIntegFrameStateShift::between_integ_origins(
+            root_integ_origin_pos,
+            root_integ_origin_vel,
+            glam::DVec3::ZERO,
+            glam::DVec3::ZERO,
+        );
         let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
-        root_pre_state.trans.position += root_integ_origin_pos;
-        root_pre_state.trans.velocity += root_integ_origin_vel;
+        (root_pre_state.trans.position, root_pre_state.trans.velocity) =
+            root_lift.apply(root_pre_state.trans.position, root_pre_state.trans.velocity);
         let root_pre_composite_props = self.bodies[root_idx]
             .mass
             .expect("detach: tree root has no mass properties");
@@ -814,11 +873,23 @@ impl Simulation {
         let new_root_position = root_pre_state.trans.position + cm_delta_inertial;
         let new_root_velocity = root_pre_state.trans.velocity + dvel_inertial;
 
+        // Lower the (former) parent root's post-detach state from
+        // root-inertial back into its integration-frame coordinates
+        // via the [`CrossIntegFrameStateShift`] kernel — symmetric
+        // partner of the seed-time lift above.
+        let root_lower = CrossIntegFrameStateShift::between_integ_origins(
+            glam::DVec3::ZERO,
+            glam::DVec3::ZERO,
+            root_integ_origin_pos,
+            root_integ_origin_vel,
+        );
+        let (root_writeback_position, root_writeback_velocity) =
+            root_lower.apply(new_root_position, new_root_velocity);
         self.bodies[root_idx].trans =
             TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                 &TranslationalState {
-                    position: new_root_position - root_integ_origin_pos,
-                    velocity: new_root_velocity - root_integ_origin_vel,
+                    position: root_writeback_position,
+                    velocity: root_writeback_velocity,
                 },
             );
         // root.rot is unchanged — composite/core share body axes (the
@@ -841,11 +912,32 @@ impl Simulation {
         // — `add_body` resolved it from `VehicleConfig::integ_source`).
         // Lower through the child's `IntegOrigin` before the cast so
         // the typed label matches the stored coordinates.
+        // Lower the freshly-detached child's instantaneous
+        // root-inertial composite-body state into its own
+        // integration-frame coordinates via the
+        // [`CrossIntegFrameStateShift`] kernel. The child's integ
+        // frame is unchanged across detach (`add_body` resolved it
+        // from `VehicleConfig::integ_source` and stays put), so this
+        // is the symmetric writeback partner of `child_lift =
+        // between_integ_origins(child_integ_origin, ZERO)` even
+        // though the lift never explicitly ran (the kernel walk
+        // produced a root-inertial value directly from the
+        // already-lifted parent root).
+        let child_lower = CrossIntegFrameStateShift::between_integ_origins(
+            glam::DVec3::ZERO,
+            glam::DVec3::ZERO,
+            child_integ_origin_pos,
+            child_integ_origin_vel,
+        );
+        let (child_writeback_position, child_writeback_velocity) = child_lower.apply(
+            child_pre_state.trans.position,
+            child_pre_state.trans.velocity,
+        );
         self.bodies[child_idx].trans =
             TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                 &TranslationalState {
-                    position: child_pre_state.trans.position - child_integ_origin_pos,
-                    velocity: child_pre_state.trans.velocity - child_integ_origin_vel,
+                    position: child_writeback_position,
+                    velocity: child_writeback_velocity,
                 },
             );
         if child_has_rot {
