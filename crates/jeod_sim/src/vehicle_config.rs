@@ -11,9 +11,9 @@
 
 use glam::{DMat3, DVec3};
 
+use crate::integrator::IntegratorType;
 use crate::interactions::FlatPlateState;
 use crate::EulerSequence;
-use jeod_dynamics::IntegratorType;
 use jeod_gravity::GravityControls;
 use jeod_interactions::DragConfig;
 

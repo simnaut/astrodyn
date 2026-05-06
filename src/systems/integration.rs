@@ -729,8 +729,8 @@ pub fn integration_system<P: Planet>(
             dt,
             sim_time.0.time_scale_factor,
             integrator_type,
-            gj_state.as_mut().map(|g| &mut g.0),
-            abm4_state.as_mut().map(|a| &mut a.0),
+            gj_state.as_mut().map(|g| g.0.inner_mut()),
+            abm4_state.as_mut().map(|a| a.0.inner_mut()),
         );
         // Re-wrap kernel-mutated state back into typed components;
         // integrate_body signature is untyped, so re-wrapping is the
@@ -2937,8 +2937,8 @@ pub fn staging_system<P: Planet>(
     for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
         if affected_ids.binary_search(&body_id.0).is_ok() {
             jeod_sim::reset_integrators(
-                gj_opt.as_mut().map(|c| &mut c.0),
-                abm_opt.as_mut().map(|c| &mut c.0),
+                gj_opt.as_mut().map(|c| c.0.inner_mut()),
+                abm_opt.as_mut().map(|c| c.0.inner_mut()),
             );
         }
     }

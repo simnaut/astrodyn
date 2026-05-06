@@ -120,8 +120,8 @@ fn reset_multi_step_history(
     let mut gj = gj_q.get_mut(entity).ok();
     let mut abm = abm_q.get_mut(entity).ok();
     jeod_sim::reset_integrators(
-        gj.as_mut().map(|g| &mut g.0),
-        abm.as_mut().map(|a| &mut a.0),
+        gj.as_mut().map(|g| g.0.inner_mut()),
+        abm.as_mut().map(|a| a.0.inner_mut()),
     );
 }
 

@@ -47,9 +47,9 @@ use glam::{DMat3, DVec3};
 
 use jeod_dynamics::body_init::init_from_orbital_elements_typed;
 use jeod_dynamics::state::TranslationalStateTyped;
-use jeod_dynamics::{
-    GaussJacksonConfig, IntegratorType, MassProperties, RotationalState, TranslationalState,
-};
+use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
+
+use crate::integrator::{GaussJacksonConfig, IntegratorType};
 use jeod_gravity::{GravityControl, GravityControls};
 use jeod_interactions::DragConfig;
 use jeod_math::{EulerSequence, OrbitalElements};

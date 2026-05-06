@@ -15,16 +15,16 @@
 
 use glam::{DMat3, DVec3};
 use jeod_dynamics::state::TranslationalStateTyped;
-use jeod_dynamics::{
-    GaussJacksonConfig, IntegratorType, MassProperties, RotationalState, TranslationalState,
-};
+use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_gravity::GravityControl;
 use jeod_interactions::DragConfig;
 use jeod_math::{JeodQuat, OrbitalElements};
 use jeod_quantities::ext::F64Ext;
 use jeod_sim::vehicle_builder::VehicleBuilder;
 use jeod_sim::vehicle_config::VehicleConfig;
-use jeod_sim::{Earth, PlanetInertial, Position, RootInertial, Velocity};
+use jeod_sim::{
+    Earth, GaussJacksonConfig, IntegratorType, PlanetInertial, Position, RootInertial, Velocity,
+};
 
 fn iss_trans() -> TranslationalStateTyped<RootInertial> {
     TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {

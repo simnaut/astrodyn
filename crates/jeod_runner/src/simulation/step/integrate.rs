@@ -504,7 +504,10 @@ impl Simulation {
                         body.total_force.torque,
                         dt,
                         time_scale_factor,
-                        body.integrator,
+                        // Runner stores the raw jeod_dynamics enum; the
+                        // jeod_sim kernel takes the wrapped flavor —
+                        // convert at the boundary (cheap copy).
+                        body.integrator.into(),
                         body.gj_state.as_mut(),
                         body.abm4_state.as_mut(),
                     );
