@@ -61,7 +61,7 @@ pub enum ValidationError {
     GaussJacksonConfigInvalid { body_idx: usize, detail: String },
     /// ABM4 integrator with rotational_dynamics=true (6-DOF not supported).
     Abm4With6Dof { body_idx: usize },
-    /// Body has `atmospheric_state` but simulation has no atmosphere config.
+    /// Body has a drag config but simulation has no atmosphere config.
     AtmosphericStateWithoutAtmosphere { body_idx: usize },
     /// Body has `compute_solar_beta=true` but simulation has no `sun_source`.
     SolarBetaWithoutSunSource { body_idx: usize },
@@ -272,7 +272,7 @@ impl std::fmt::Display for ValidationError {
             Self::AtmosphericStateWithoutAtmosphere { body_idx } => {
                 write!(
                     f,
-                    "Body {body_idx}: atmospheric_state is set but simulation has no \
+                    "Body {body_idx}: drag is configured but simulation has no \
                      atmosphere config. Set Simulation::atmosphere to enable atmosphere \
                      evaluation."
                 )

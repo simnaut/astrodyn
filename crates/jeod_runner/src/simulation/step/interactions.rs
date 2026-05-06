@@ -70,11 +70,10 @@ impl Simulation {
             // Aerodynamic drag — uses planet-centered velocity (NOT a
             // shift site; see comment above).
             body.aero_force = None;
-            if let (Some(ref drag_config), Some(ref atmos)) = (&body.drag, &body.atmospheric_state)
-            {
+            if let Some(ref drag_config) = body.drag {
                 body.aero_force = Some(jeod_sim::compute_drag(
                     drag_config,
-                    atmos,
+                    &body.atmospheric_state,
                     body.trans.velocity.raw_si(),
                     body.rot.as_ref(),
                     body.t_struct_body,

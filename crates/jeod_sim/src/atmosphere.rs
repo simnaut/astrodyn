@@ -4,12 +4,13 @@
 //! the configured density / temperature / wind model.
 //!
 //! JEOD_INV: TS.01 — the `<SelfPlanet>`-tagged returns from the untyped
-//! [`evaluate_atmosphere`] entry point exist for runner storage whose
-//! planet identity is keyed by a dynamic source index. Mission code
-//! that knows the planet at compile time uses the
-//! [`evaluate_atmosphere_typed`] sibling, which carries `<P: Planet>`
-//! end-to-end. The lint at `tests/self_ref_self_planet_discipline.rs`
-//! enforces this discipline globally.
+//! [`evaluate_atmosphere`] entry point exist for adapter storage whose
+//! planet identity is keyed by a dynamic source index (the runner's
+//! `atmosphere_planet_source: Option<usize>`). Mission code that knows
+//! the planet at compile time uses the [`evaluate_atmosphere_typed`]
+//! sibling, which carries `<P: Planet>` end-to-end. The lint at
+//! `tests/self_ref_self_planet_discipline.rs` enforces this discipline
+//! globally.
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
@@ -226,24 +227,6 @@ pub fn evaluate_body_atmosphere_typed<P: Planet>(
     evaluate_atmosphere_typed::<P>(config, position, t_inertial_pfix, tai_tjt)
 }
 
-/// Raw sibling of [`evaluate_body_atmosphere_typed`] for adapters whose
-/// storage is the planet-erased [`AtmosphereState<SelfPlanet>`]
-/// (currently `jeod_runner::SimBody.atmospheric_state`). Same
-/// non-shift discipline as the typed entry point — `position` is
-/// already in the atmosphere planet's inertial frame.
-// JEOD_INV: AT.01 — active flag gates computation (caller checks presence)
-// JEOD_INV: AT.02 — atmosphere model pointer non-null (caller provides config)
-// JEOD_INV: AT.03 — planet-fixed position required for geodetic altitude
-// JEOD_INV: AT.04 — wind velocity computed as omega x position (co-rotation)
-pub fn evaluate_body_atmosphere(
-    config: &AtmosphereConfig,
-    position: DVec3,
-    t_inertial_pfix: Option<&DMat3>,
-    tai_tjt: Option<f64>,
-) -> AtmosphereState<SelfPlanet> {
-    evaluate_atmosphere(config, position, t_inertial_pfix, tai_tjt)
-}
-
 /// Per-body inputs the atmosphere stage driver consumes.
 ///
 /// Mirrors [`crate::gravity::GravityBodyInputs`] in shape: each adapter
@@ -272,11 +255,12 @@ pub struct AtmosphereBodyInputs<P: Planet> {
 ///    geodetic altitude must be measured against the atmosphere
 ///    planet's center, not against the simulation root.
 /// 2. Hands the result to the per-body `store` closure, which writes
-///    it back into adapter-owned storage. Adapters that store
-///    `AtmosphereState<P>` (the Bevy `AtmosphericStateC<P>` newtype)
-///    move the value through; adapters that store the planet-erased
-///    `AtmosphereState<SelfPlanet>` (the runner) erase via
-///    [`AtmosphereState::relabel`] inside the closure.
+///    it back into adapter-owned storage. Both adapters now store the
+///    typed [`AtmosphereState<P>`] (the Bevy `AtmosphericStateC<P>`
+///    newtype with `<P>` pinned at the type level, the runner with
+///    `<P> = SelfPlanet` because its planet identity is keyed by a
+///    runtime source index), so each closure is a direct move on the
+///    adapter's mutable handle.
 ///
 /// `config`, `t_inertial_pfix`, and `tai_tjt` are stage-level constants
 /// (planet-keyed atmosphere model, planet-fixed rotation, time tag) and
@@ -289,7 +273,7 @@ pub struct AtmosphereBodyInputs<P: Planet> {
 ///
 /// The closure-based writer mirrors the gravity stage: each adapter
 /// uses whatever mutable handle its iterator yields
-/// (`Mut<'_, AtmosphericStateC<P>>` for Bevy, `&mut Option<AtmosphereState<SelfPlanet>>`
+/// (`Mut<'_, AtmosphericStateC<P>>` for Bevy, `&mut AtmosphereState<SelfPlanet>`
 /// for the runner) without a trait impl on a foreign type.
 pub fn run_atmosphere_stage<P, K, Store, BodyIter>(
     bodies: BodyIter,
@@ -316,7 +300,8 @@ mod tests {
     use jeod_quantities::frame::Earth;
 
     /// Build a plain exponential-atmosphere config with no co-rotation
-    /// wind so the kernel-vs-raw comparisons are bit-identical.
+    /// wind so the typed-kernel-vs-`evaluate_atmosphere` comparison is
+    /// bit-identical.
     fn earth_exponential_config() -> AtmosphereConfig {
         AtmosphereConfig {
             model: AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
@@ -326,39 +311,27 @@ mod tests {
         }
     }
 
-    /// `evaluate_body_atmosphere` (raw) reproduces the call sequence the
-    /// runner has carried since before the kernel existed: pass body
-    /// position in the atmosphere planet's inertial frame straight to
-    /// `evaluate_atmosphere` — *no* `IntegOrigin` shift.
+    /// `evaluate_body_atmosphere_typed` reproduces the open-coded
+    /// `evaluate_atmosphere` sequence the runner has carried since
+    /// before the kernel existed: pass body position in the atmosphere
+    /// planet's inertial frame straight to `evaluate_atmosphere` —
+    /// *no* `IntegOrigin` shift. The typed kernel is a relabel-only
+    /// wrapper, so `Position<PlanetInertial<P>> -> AtmosphereState<P>`
+    /// returns numerics bit-identical to the planet-erased
+    /// `evaluate_atmosphere` reference.
     #[test]
-    fn evaluate_body_atmosphere_matches_evaluate_atmosphere() {
-        let config = earth_exponential_config();
-        let position = DVec3::new(7e6, 1e5, -2e5);
-
-        let kernel = evaluate_body_atmosphere(&config, position, None, None);
-        let manual = evaluate_atmosphere(&config, position, None, None);
-
-        assert_eq!(kernel.density, manual.density);
-        assert_eq!(kernel.temperature, manual.temperature);
-        assert_eq!(kernel.pressure, manual.pressure);
-        assert_eq!(kernel.wind.raw_si(), manual.wind.raw_si());
-    }
-
-    /// Typed kernel produces the same numbers as the raw kernel — the
-    /// typed sibling is a relabel-only wrapper.
-    #[test]
-    fn evaluate_body_atmosphere_typed_matches_raw() {
+    fn evaluate_body_atmosphere_typed_matches_evaluate_atmosphere() {
         let config = earth_exponential_config();
         let raw_position = DVec3::new(7e6, 1e5, -2e5);
         let typed_position = Position::<PlanetInertial<Earth>>::from_raw_si(raw_position);
 
-        let raw = evaluate_body_atmosphere(&config, raw_position, None, None);
+        let manual = evaluate_atmosphere(&config, raw_position, None, None);
         let typed = evaluate_body_atmosphere_typed::<Earth>(&config, typed_position, None, None);
 
-        assert_eq!(typed.density, raw.density);
-        assert_eq!(typed.temperature, raw.temperature);
-        assert_eq!(typed.pressure, raw.pressure);
-        assert_eq!(typed.wind.raw_si(), raw.wind.raw_si());
+        assert_eq!(typed.density, manual.density);
+        assert_eq!(typed.temperature, manual.temperature);
+        assert_eq!(typed.pressure, manual.pressure);
+        assert_eq!(typed.wind.raw_si(), manual.wind.raw_si());
     }
 
     /// Type alias for the row-tuple shape `run_atmosphere_stage`
