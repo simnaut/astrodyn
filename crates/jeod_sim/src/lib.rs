@@ -144,13 +144,13 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 
 // ── Re-exports from jeod_* crates ──
 //
-// Curation criteria (audit §2.4 — issue #361):
+// Curation criteria (audit §2.4):
 //
 // 1. `bevy_jeod` and any mission crate depend only on `jeod_sim` (per
 //    CLAUDE.md "Three-Layer Architecture"), so every type a mission
 //    crate reaches must be reachable through here.
 // 2. `jeod_runner` is a parallel non-Bevy consumer that *may* depend
-//    directly on the `jeod_*` physics crates (issue #360 / audit §2.3).
+//    directly on the `jeod_*` physics crates (audit §2.3).
 //    Items that are needed only by `jeod_runner` are imported there
 //    directly, not surfaced on the `jeod_sim` API.
 // 3. Items that no consumer reaches are dropped — every entry below
