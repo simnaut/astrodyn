@@ -1392,6 +1392,54 @@ pub struct AttachEvent<VParent: Vehicle, VChild: Vehicle> {
     pub t_parent_child: FrameTransform<StructuralFrame<VParent>, StructuralFrame<VChild>>,
 }
 
+impl<VParent: Vehicle, VChild: Vehicle> AttachEvent<VParent, VChild> {
+    /// Type-level witness that this attach pair carries the caller's
+    /// expected `(P, C)` vehicle phantoms. Compiles only when
+    /// `(VParent, VChild) == (P, C)`; on mismatch the
+    /// [`jeod_sim::CompatibleVehiclePair`] bound fails and surfaces a
+    /// physics-language diagnostic naming both expected and found pairs
+    /// instead of a `PhantomData<…>` wall.
+    ///
+    /// Mission code that wires a typed attach event for a specific
+    /// parent/child pair calls this at the boundary to make the
+    /// cross-pair guard explicit; the method itself is a no-op (returns
+    /// `self`) and has zero runtime cost.
+    ///
+    /// # Compile-time mismatch
+    ///
+    /// ```compile_fail
+    /// use bevy::prelude::Entity;
+    /// use bevy_jeod::AttachEvent;
+    /// use glam::{DMat3, DVec3};
+    /// use jeod_sim::{define_vehicle, FrameTransform, StructuralFrame, Vec3Ext};
+    ///
+    /// define_vehicle!(Iss);
+    /// define_vehicle!(Soyuz);
+    /// define_vehicle!(Cygnus);
+    ///
+    /// let evt: AttachEvent<Iss, Soyuz> = AttachEvent {
+    ///     child: Entity::PLACEHOLDER,
+    ///     parent: Entity::PLACEHOLDER,
+    ///     offset: DVec3::ZERO.m_at::<StructuralFrame<Iss>>(),
+    ///     t_parent_child: FrameTransform::<
+    ///         StructuralFrame<Iss>,
+    ///         StructuralFrame<Soyuz>,
+    ///     >::from_matrix(DMat3::IDENTITY),
+    /// };
+    /// // Asserting the wrong child vehicle fires the
+    /// // `CompatibleVehiclePair` diagnostic naming the found and
+    /// // expected pairs.
+    /// let _ = evt.assert_pair::<Iss, Cygnus>();
+    /// ```
+    #[inline]
+    pub fn assert_pair<P: Vehicle, C: Vehicle>(self) -> Self
+    where
+        (): jeod_sim::CompatibleVehiclePair<VParent, VChild, P, C>,
+    {
+        self
+    }
+}
+
 /// Message: detach a child body from its parent in the mass tree.
 ///
 /// The entity must have [`MassBodyIdC`] and be attached to a parent.
