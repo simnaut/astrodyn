@@ -38,6 +38,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod accumulate;
 pub mod coefficients;
 pub mod compute;
 pub mod fixtures;
@@ -51,6 +52,11 @@ pub mod spherical_harmonics_gravity_source;
 pub mod tides;
 pub mod verif;
 
+pub use accumulate::{
+    accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,
+    accumulate_relativistic_corrections_typed, evaluate_body_gravity_typed, run_gravity_stage,
+    GravityBodyInputs, ResolvedRelativisticSource, ResolvedSource,
+};
 pub use compute::{calc_spherical, gravitation, gravitation_with_scratch};
 pub use gravity_controls::*;
 pub use gravity_source::*;

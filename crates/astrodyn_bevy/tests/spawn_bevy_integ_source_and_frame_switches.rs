@@ -112,7 +112,9 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 /// `differential` flags on the gravity controls to match.
 fn earth_then_moon_config() -> VehicleConfig {
     VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -146,7 +148,9 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
 
     // Build a config that integrates in Moon (source index 1).
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -221,7 +225,9 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
     // *presence* of `IntegSourceC` (or relying on `Without<IntegSourceC>`)
     // see the same shape as a manually-spawned root-integrated vehicle.
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -251,7 +257,9 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -280,7 +288,9 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -302,7 +312,9 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))

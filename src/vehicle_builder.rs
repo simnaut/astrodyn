@@ -47,7 +47,7 @@ use glam::{DMat3, DVec3};
 
 use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
 use astrodyn_dynamics::state::TranslationalStateTyped;
-use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_dynamics::{MassProperties, RotationalState};
 
 use crate::integrator::{GaussJacksonConfig, IntegratorType};
 use astrodyn_gravity::{GravityControl, GravityControls};
@@ -205,13 +205,6 @@ impl VehicleBuilder<NeedsState> {
     ) -> VehicleBuilder<NeedsMass> {
         self.trans = Some(s);
         self.transition()
-    }
-
-    /// Set the initial translational state from an untyped
-    /// [`TranslationalState`]. Convenience for call sites that haven't
-    /// migrated to typed quantities yet.
-    pub fn with_state(self, s: TranslationalState) -> VehicleBuilder<NeedsMass> {
-        self.with_translational(TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&s))
     }
 
     /// Set the initial translational state from Keplerian orbital
@@ -498,6 +491,7 @@ impl VehicleBuilder<Ready> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use astrodyn_dynamics::TranslationalState;
     use astrodyn_quantities::ext::F64Ext;
 
     fn iss_trans() -> TranslationalStateTyped<RootInertial> {
@@ -548,10 +542,14 @@ mod tests {
     fn ready_state_full_surface() {
         use astrodyn_interactions::DragConfig;
         let cfg = VehicleBuilder::new()
-            .with_state(TranslationalState {
-                position: DVec3::new(7_000_000.0, 0.0, 0.0),
-                velocity: DVec3::new(0.0, 7_500.0, 0.0),
-            })
+            .with_translational(
+                TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(
+                    &TranslationalState {
+                        position: DVec3::new(7_000_000.0, 0.0, 0.0),
+                        velocity: DVec3::new(0.0, 7_500.0, 0.0),
+                    },
+                ),
+            )
             .three_dof_point_mass(1_000.0.kg())
             .rk4()
             .gravity_gradient()

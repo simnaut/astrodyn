@@ -117,10 +117,8 @@ pub use integration::{
 };
 pub use integrator::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use interactions::{
-    compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
-    compute_gravity_torque, compute_gravity_torque_typed, evaluate_contact_pair,
-    evaluate_ground_contact_pair, ContactPairEval, FlatPlateStageInputs, FlatPlateState,
-    GroundContactPairEval, ThermalIntegrationOrder,
+    evaluate_contact_pair, evaluate_ground_contact_pair, ContactPairEval, FlatPlateStageInputs,
+    FlatPlateState, GroundContactPairEval, ThermalIntegrationOrder,
 };
 pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
@@ -194,7 +192,9 @@ pub use astrodyn_atmosphere::AtmosphereState;
 
 // astrodyn_interactions: config, result types, and computation functions
 pub use astrodyn_interactions::{
-    compute_earth_lighting, compute_earth_lighting_typed, compute_flat_plate_srp_thermal,
+    compute_ballistic_drag, compute_ballistic_drag_typed, compute_cannonball_srp,
+    compute_cannonball_srp_typed, compute_earth_lighting, compute_earth_lighting_typed,
+    compute_flat_plate_srp_thermal, compute_gravity_torque, compute_gravity_torque_typed,
     compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, DragConfig, DragConfigTyped,
     EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
     LightingBody, LightingParams, RadiationForce, SOLAR_RADIUS,

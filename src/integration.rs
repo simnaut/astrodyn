@@ -1078,10 +1078,21 @@ pub fn integrate_body_typed<V: Vehicle>(
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
 ) {
     use uom::si::time::second;
+    // allowed: typed-sibling boundary at the gateway-owned `IntegratorType`
+    // wrapper. The integrator orchestration (`integrate_body`,
+    // `integrate_body_coupled`, multi-stage RK4/Gauss-Jackson/ABM4) is
+    // gateway-resident because it composes gateway-only types
+    // (`crate::integrator::IntegratorType` wrapper, `FlatPlateState`,
+    // `IntegrableObject`) and surfaces Bevy/runner-aware diagnostics. The
+    // typed sibling unwraps `Position`/`Velocity` for the caller-supplied
+    // `gravity_fn` closure on each integrator stage; lifting the raw
+    // intermediate position is unavoidable here. See issue #388 — the
+    // kernel itself is the documented orchestration boundary, not a
+    // candidate for relocation into `astrodyn_dynamics`.
     let raw_gravity_fn = |pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
         gravity_fn(
-            Position::<RootInertial>::from_raw_si(pos),
-            Velocity::<RootInertial>::from_raw_si(vel),
+            Position::<RootInertial>::from_raw_si(pos), // allowed: integrator-stage boundary, see note above
+            Velocity::<RootInertial>::from_raw_si(vel), // allowed: integrator-stage boundary, see note above
             time_frac,
         )
         .raw_si()
@@ -1101,6 +1112,8 @@ pub fn integrate_body_typed<V: Vehicle>(
         gj_state,
         abm4_state,
     );
+    // allowed: typed-sibling boundary writing the raw integrator output
+    // back into the typed `trans`. See note above.
     *trans = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&raw_trans);
 }
 

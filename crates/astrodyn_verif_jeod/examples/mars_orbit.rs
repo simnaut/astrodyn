@@ -83,7 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         velocity: INIT_VEL,
     };
     let dawn = VehicleBuilder::new()
-        .with_state(trans)
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&trans))
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()
         .gravity(GravityControl::new_nonspherical(mars, 110, 110, false))

@@ -17,6 +17,7 @@
 use astrodyn_math::OrbitalElements;
 use astrodyn_quantities::aliases::{Position, Velocity};
 use astrodyn_quantities::dims::GravParam;
+use astrodyn_quantities::ext::Vec3Ext;
 use astrodyn_quantities::frame::{Earth, Mars, Planet, PlanetInertial, Sun};
 
 use super::constants::{mu_ggm05c, mu_mars, mu_sun};
@@ -40,13 +41,11 @@ use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 /// - **Output planet identity**: the returned `OrbitalElements<P>`
 ///   propagates the central-body phantom to downstream consumers.
 fn from_pos_vel_with_mu<P: Planet>(
-    pos: glam::DVec3,
-    vel: glam::DVec3,
+    pos: Position<PlanetInertial<P>>,
+    vel: Velocity<PlanetInertial<P>>,
     mu: GravParam<P>,
 ) -> OrbitalElements<P> {
-    let p = Position::<PlanetInertial<P>>::from_raw_si(pos);
-    let v = Velocity::<PlanetInertial<P>>::from_raw_si(vel);
-    OrbitalElements::<P>::from_cartesian_typed(mu, p, v)
+    OrbitalElements::<P>::from_cartesian_typed(mu, pos, vel)
         .expect("preset state vector must produce well-defined orbital elements")
 }
 
@@ -78,8 +77,8 @@ pub fn iss() -> OrbitalElements<Earth> {
 fn circular_orbit_with_mu<P: Planet>(r: f64, inc: f64, mu: GravParam<P>) -> OrbitalElements<P> {
     let v = (mu.value / r).sqrt();
     from_pos_vel_with_mu::<P>(
-        glam::DVec3::new(r, 0.0, 0.0),
-        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
+        glam::DVec3::new(r, 0.0, 0.0).m_at::<PlanetInertial<P>>(),
+        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()).m_per_s_at::<PlanetInertial<P>>(),
         mu,
     )
 }
@@ -141,8 +140,8 @@ pub fn leo_polar_600km() -> OrbitalElements<Earth> {
 /// ```
 pub fn mercury_perihelion() -> OrbitalElements<Sun> {
     from_pos_vel_with_mu::<Sun>(
-        glam::DVec3::new(46.0e9, 0.0, 0.0),
-        glam::DVec3::new(0.0, 58_980.0, 0.0),
+        glam::DVec3::new(46.0e9, 0.0, 0.0).m_at::<PlanetInertial<Sun>>(),
+        glam::DVec3::new(0.0, 58_980.0, 0.0).m_per_s_at::<PlanetInertial<Sun>>(),
         mu_sun(),
     )
 }
@@ -160,8 +159,9 @@ pub fn mercury_perihelion() -> OrbitalElements<Sun> {
 /// ```
 pub fn mars_dawn_orbit() -> OrbitalElements<Mars> {
     from_pos_vel_with_mu::<Mars>(
-        glam::DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9),
-        glam::DVec3::new(-2_273.107_8, 2_380.132_4, -22.911),
+        glam::DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9)
+            .m_at::<PlanetInertial<Mars>>(),
+        glam::DVec3::new(-2_273.107_8, 2_380.132_4, -22.911).m_per_s_at::<PlanetInertial<Mars>>(),
         mu_mars(),
     )
 }

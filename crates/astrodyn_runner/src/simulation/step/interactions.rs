@@ -71,12 +71,11 @@ impl Simulation {
             // shift site; see comment above).
             body.aero_force = None;
             if let Some(ref drag_config) = body.drag {
-                body.aero_force = Some(astrodyn::compute_drag(
+                body.aero_force = Some(astrodyn::compute_ballistic_drag(
                     drag_config,
                     &body.atmospheric_state,
                     body.trans.velocity.raw_si(),
-                    body.rot.as_ref(),
-                    body.t_struct_body,
+                    &t_inertial_struct,
                 ));
             }
 
@@ -259,9 +258,10 @@ impl Simulation {
             body.gravity_torque = None;
             if body.compute_gravity_torque {
                 if let (Some(ref rot), Some(ref mass)) = (&body.rot, &body.mass) {
+                    let t_parent_this = rot.quaternion.left_quat_to_transformation();
                     body.gravity_torque = Some(astrodyn::compute_gravity_torque(
                         &body.gravity_accel.grav_grad,
-                        rot,
+                        &t_parent_this,
                         &mass.inertia,
                     ));
                 }

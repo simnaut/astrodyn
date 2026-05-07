@@ -84,7 +84,9 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&body_state_initial()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -144,7 +146,9 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .insert(SourceInertialPositionC::default());
 
     let cfg = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&body_state_initial()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -285,16 +289,20 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&body_state_initial()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&TranslationalState {
             position: DVec3::new(7_000_000.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7000.0, 0.0),
-        })
+        }))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -432,16 +440,20 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&body_state_initial()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&TranslationalState {
             position: DVec3::new(7_000_000.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7000.0, 0.0),
-        })
+        }))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -591,10 +603,12 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     // the Mars `Add` message is the only misconfiguration on this
     // tick.
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&TranslationalState {
             position: DVec3::new(7_000_000.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7000.0, 0.0),
-        })
+        }))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -654,10 +668,12 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
         ))
         .id();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&TranslationalState {
             position: DVec3::new(7_000_000.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7000.0, 0.0),
-        })
+        }))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))

@@ -83,7 +83,9 @@ fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(initial_trans())
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&initial_trans()))
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))

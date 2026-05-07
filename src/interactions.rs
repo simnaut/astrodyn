@@ -5,14 +5,12 @@
 
 use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
 use astrodyn_interactions::{
-    compute_contact_force_from_geometry, compute_contact_geometry, AerodynamicForce,
-    AerodynamicForceTyped, ContactFacet, DragConfig, DragConfigTyped, FlatPlate, FlatPlateParams,
-    FlatPlateThermal,
+    compute_contact_force_from_geometry, compute_contact_geometry, ContactFacet, FlatPlate,
+    FlatPlateParams, FlatPlateThermal,
 };
-use astrodyn_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
-use astrodyn_quantities::frame::{BodyFrame, RootInertial, StructuralFrame, Vehicle};
+use astrodyn_quantities::aliases::Position;
+use astrodyn_quantities::frame::{RootInertial, StructuralFrame, Vehicle};
 use glam::{DMat3, DVec3};
-use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
 
@@ -403,68 +401,6 @@ impl<V: Vehicle> IntegrableObject for FlatPlateState<V> {
     }
 }
 
-/// Compute aerodynamic drag for a body, handling the frame transform.
-///
-/// Computes `T_inertial_struct` from the body's quaternion and structural
-/// transform, then delegates to `astrodyn_interactions::compute_ballistic_drag`.
-///
-/// # Arguments
-/// - `drag_config`: Cd and area
-/// - `atmos`: atmospheric state (density, wind)
-/// - `velocity`: body velocity in inertial frame
-/// - `rot`: rotational state (for frame transform). `None` = identity.
-/// - `t_struct_body`: structural-to-body rotation. `DMat3::IDENTITY` when structure = body.
-pub fn compute_drag(
-    drag_config: &DragConfig,
-    atmos: &astrodyn_atmosphere::AtmosphereState<astrodyn_quantities::frame::SelfPlanet>,
-    velocity: DVec3,
-    rot: Option<&RotationalState>,
-    t_struct_body: DMat3,
-) -> AerodynamicForce {
-    let t_inertial_body = rot.map_or(DMat3::IDENTITY, |r| {
-        r.quaternion.left_quat_to_transformation()
-    });
-    let t_inertial_struct =
-        astrodyn_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
-
-    astrodyn_interactions::compute_ballistic_drag(drag_config, atmos, velocity, &t_inertial_struct)
-}
-
-/// Compute gravity gradient torque for a body, handling the quaternion-to-matrix conversion.
-///
-/// Converts the body's quaternion to a rotation matrix, then delegates to
-/// `astrodyn_interactions::compute_gravity_torque`.
-///
-/// # Arguments
-/// - `grav_grad`: gravity gradient tensor from `GravityAcceleration`
-/// - `rot`: rotational state (for body attitude matrix)
-/// - `inertia`: body inertia tensor
-pub fn compute_gravity_torque(grav_grad: &DMat3, rot: &RotationalState, inertia: &DMat3) -> DVec3 {
-    let t_parent_this = rot.quaternion.left_quat_to_transformation();
-    astrodyn_interactions::compute_gravity_torque(grav_grad, &t_parent_this, inertia)
-}
-
-/// Compute cannonball SRP force using JEOD's `RadiationDefaultSurface` formula.
-///
-/// Delegates to [`astrodyn_interactions::compute_cannonball_srp`].
-pub fn compute_cannonball_srp(
-    body_pos: DVec3,
-    sun_pos: DVec3,
-    cx_area: f64,
-    albedo: f64,
-    diffuse: f64,
-    illum_factor: f64,
-) -> DVec3 {
-    astrodyn_interactions::compute_cannonball_srp(
-        body_pos,
-        sun_pos,
-        cx_area,
-        albedo,
-        diffuse,
-        illum_factor,
-    )
-}
-
 /// Evaluation of a contact pair against the intermediate state of the two bodies.
 ///
 /// `pair_force_on_a` is the contact force on body A in the inertial frame.
@@ -762,80 +698,6 @@ pub fn evaluate_ground_contact_pair(
         force_on_a: force_on_a_inertial,
         torque_a_body,
     })
-}
-
-/// Typed sibling of [`compute_drag`].
-///
-/// Generic over the atmosphere planet `P`: drag uses the vehicle's
-/// velocity in the planet's inertial frame (matching the corotation
-/// wind in `atmos.wind`), so the typed velocity argument is
-/// `Velocity<PlanetInertial<P>>` — not root-inertial. RF.10.
-pub fn compute_drag_typed<P: astrodyn_quantities::frame::Planet, V: Vehicle>(
-    drag_config: &DragConfigTyped,
-    atmos: &astrodyn_atmosphere::AtmosphereState<P>,
-    velocity: Velocity<astrodyn_quantities::frame::PlanetInertial<P>>,
-    rot: Option<&RotationalState>,
-    t_struct_body: DMat3,
-) -> AerodynamicForceTyped<V> {
-    // The kernel reads `atmos.density` and `atmos.wind.raw_si()`; both
-    // are bit-identical to a `<SelfPlanet>`-tagged equivalent. Synthesize
-    // the planet-erased view at the call site to reuse the numeric
-    // path. The compile-time guard is the function signature: a caller
-    // cannot pass `&AtmosphereState<Mars>` together with a
-    // `Velocity<PlanetInertial<Earth>>`.
-    let atmos_self =
-        astrodyn_atmosphere::AtmosphereState::<astrodyn_quantities::frame::SelfPlanet>::from_raw(
-            atmos.density,
-            atmos.temperature,
-            atmos.pressure,
-            atmos.wind.raw_si(),
-        );
-    let raw = compute_drag(
-        &drag_config.to_untyped(),
-        &atmos_self,
-        velocity.raw_si(),
-        rot,
-        t_struct_body,
-    );
-    AerodynamicForceTyped::<V>::from_untyped_unchecked(&raw)
-}
-
-/// Typed sibling of [`compute_gravity_torque`].
-///
-/// Returns the gravity gradient torque in [`BodyFrame<V>`].
-pub fn compute_gravity_torque_typed<V: Vehicle>(
-    grav_grad: &DMat3,
-    rot: &RotationalState,
-    inertia: InertiaTensor<BodyFrame<V>>,
-) -> Torque<BodyFrame<V>> {
-    let inertia_dmat = inertia.as_dmat3();
-    let raw = compute_gravity_torque(grav_grad, rot, &inertia_dmat);
-    Torque::<BodyFrame<V>>::from_raw_si(raw)
-}
-
-/// Typed sibling of [`compute_cannonball_srp`].
-///
-/// Identical kernel — wraps positions and uom dimensionless ratios.
-/// Returns the cannonball SRP force in [`RootInertial`].
-pub fn compute_cannonball_srp_typed(
-    body_pos: Position<RootInertial>,
-    sun_pos: Position<RootInertial>,
-    cx_area: Area,
-    albedo: Ratio,
-    diffuse: Ratio,
-    illum_factor: Ratio,
-) -> Force<RootInertial> {
-    use uom::si::area::square_meter;
-    use uom::si::ratio::ratio;
-    let raw = compute_cannonball_srp(
-        body_pos.raw_si(),
-        sun_pos.raw_si(),
-        cx_area.get::<square_meter>(),
-        albedo.get::<ratio>(),
-        diffuse.get::<ratio>(),
-        illum_factor.get::<ratio>(),
-    );
-    Force::<RootInertial>::from_raw_si(raw)
 }
 
 /// Transform a contact facet's shape endpoints from structural to inertial

@@ -38,6 +38,7 @@ pub mod data_nutation_j2000;
 pub mod frame_storage;
 pub mod frame_tree;
 pub mod nutation_j2000;
+pub mod orchestration;
 pub mod precession_j2000;
 pub mod ref_frame_state;
 pub mod rotation_j2000;
@@ -48,4 +49,7 @@ pub use frame_storage::{
     common_ancestor, compose_to_ancestor, compute_relative_state, FrameStorage,
 };
 pub use frame_tree::{FrameId, FrameNode, FrameTree};
+pub use orchestration::{
+    compute_relative_state_typed, frame_origin, frame_origin_typed, sync_pfix_rotation,
+};
 pub use ref_frame_state::*;

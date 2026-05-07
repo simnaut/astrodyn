@@ -19,7 +19,7 @@
 use astrodyn_quantities::aliases::Position;
 use astrodyn_quantities::frame::{Planet, PlanetFixed};
 use astrodyn_quantities::qty3::Qty3;
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
 use uom::si::length::meter;
@@ -57,6 +57,40 @@ impl GeodeticState {
     pub fn to_planet_fixed(&self, r_eq: f64, r_pol: f64) -> DVec3 {
         geodetic_to_cartesian_impl(self, r_eq, r_pol)
     }
+}
+
+/// Compute the geodetic state of a body in inertial coordinates.
+///
+/// Rotates the inertial position into the planet-fixed frame using the given
+/// transformation matrix, then delegates to
+/// [`GeodeticState::from_planet_fixed`] (sole owner of the JEOD Borkowski
+/// iteration kernel). Bit-identical numerics to the typed sibling
+/// [`compute_body_geodetic_typed`].
+pub fn compute_body_geodetic(
+    position: DVec3,
+    t_inertial_pfix: &DMat3,
+    r_eq: f64,
+    r_pol: f64,
+) -> GeodeticState {
+    let pos_pfix = *t_inertial_pfix * position;
+    GeodeticState::from_planet_fixed(pos_pfix, r_eq, r_pol)
+}
+
+/// Typed sibling of [`compute_body_geodetic`].
+///
+/// Accepts a typed inertial position and ellipsoid radii, applies the
+/// inertial-to-planet-fixed rotation, then delegates to
+/// [`GeodeticState::from_planet_fixed`] (sole owner of the JEOD Borkowski
+/// iteration kernel). Returns the f64 [`GeodeticState`] used by Bevy
+/// components; bit-identical to the f64 surface.
+pub fn compute_body_geodetic_typed<P: Planet>(
+    position: Position<astrodyn_quantities::frame::PlanetInertial<P>>,
+    t_inertial_pfix: &DMat3,
+    r_eq: Length,
+    r_pol: Length,
+) -> GeodeticState {
+    let pos_pfix = *t_inertial_pfix * position.raw_si();
+    GeodeticState::from_planet_fixed(pos_pfix, r_eq.get::<meter>(), r_pol.get::<meter>())
 }
 
 /// Typed geodetic coordinates on a reference ellipsoid.

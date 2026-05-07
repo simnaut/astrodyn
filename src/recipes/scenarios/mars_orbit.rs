@@ -44,14 +44,16 @@ pub fn mars_orbit() -> SimulationBuilder {
     sb = sb.sun(sun_idx);
 
     // Dawn initial state at Mars (Mars-centered inertial frame).
-    use astrodyn_dynamics::TranslationalState;
-    let trans = TranslationalState {
-        position: DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9),
-        velocity: DVec3::new(-2_273.107_8, 2_380.132_4, -22.911),
+    use astrodyn_dynamics::state::TranslationalStateTyped;
+    use astrodyn_quantities::frame::RootInertial;
+    let trans = TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9)
+            .m_at::<RootInertial>(),
+        velocity: DVec3::new(-2_273.107_8, 2_380.132_4, -22.911).m_per_s_at::<RootInertial>(),
     };
 
     let vehicle = VehicleBuilder::new()
-        .with_state(trans)
+        .with_translational(trans)
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(mars_idx, false))

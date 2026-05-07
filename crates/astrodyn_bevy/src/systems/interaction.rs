@@ -51,17 +51,19 @@ pub fn aero_drag_system<P: Planet>(
         // structural-frame Component still uses raw DVec3; that's a
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
+        let t_inertial_body = rot_untyped.quaternion.left_quat_to_transformation();
+        let t_inertial_struct =
+            astrodyn::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
         // The body velocity and atmospheric state both carry the
         // concrete planet `<P>` at the type level (matching the
         // system instantiation's `<P>` parameter, gated by the bodies
         // query filter), so they pass straight into the typed kernel
         // without a relabel.
-        let result = astrodyn::compute_drag_typed::<P, SelfRef>(
+        let result = astrodyn::compute_ballistic_drag_typed::<P, SelfRef>(
             &drag_config.0,
             &atmos.0,
             state.velocity,
-            Some(&rot_untyped),
-            t_struct_body,
+            &t_inertial_struct,
         );
 
         aero_force.force = result.force.raw_si();
@@ -93,9 +95,10 @@ pub fn gravity_torque_system(
         // directly; read it without lifting. Same for the rotational
         // state — it's already typed.
         let rot_untyped = rot.0.to_untyped();
+        let t_parent_this = rot_untyped.quaternion.left_quat_to_transformation();
         torque.0 = astrodyn::compute_gravity_torque_typed::<SelfRef>(
             &grav.grav_grad,
-            &rot_untyped,
+            &t_parent_this,
             mass.0.inertia,
         );
     }
