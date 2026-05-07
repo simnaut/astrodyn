@@ -19,7 +19,7 @@
 //! a higher-fidelity field is needed.
 //!
 //! Fixtures here are regenerable via the `extract_*` binaries under
-//! `astrodyn_test_data` (`cargo run -p astrodyn_test_data --bin
+//! `astrodyn_verif_jeod` (`cargo run -p astrodyn_verif_jeod --bin
 //! extract_grav_coeffs` for Earth fields, `extract_mars_data` for
 //! Moon/Mars/Sun).
 

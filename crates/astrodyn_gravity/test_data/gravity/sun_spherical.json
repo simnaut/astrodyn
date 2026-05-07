@@ -4,6 +4,6 @@
   "jeod_rev": "27893108bbde8bb162b3213a30d57af89acd1c76",
   "mu_m3_per_s2": 1.3271244e20,
   "radius_m": 696000000.0,
-  "regen_command": "cargo run -p astrodyn_test_data --bin extract_mars_data",
+  "regen_command": "cargo run -p astrodyn_gravity --bin extract_mars_data",
   "note": "Sun point-mass gravity (mu and radius only). Encoded as a degree=1 SH with all-zero coefficients so the production binary loader works uniformly; only mu/radius are physically meaningful."
 }

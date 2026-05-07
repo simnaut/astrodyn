@@ -101,7 +101,7 @@ pub type PreStepBuilder = fn(&InitialConditions) -> PreStepClosure;
 /// reuses the rest of the trajectory for the per-step comparison.
 ///
 /// All variants use raw `glam` types so this struct stays adapter-
-/// neutral (no dependency on `astrodyn_test_data` from `astrodyn` outside
+/// neutral (no dependency on `astrodyn_verif_jeod` from `astrodyn` outside
 /// of dev-deps).
 ///
 /// **Quaternion convention.** `glam::DQuat` is laid out as `(x, y, z, w)`

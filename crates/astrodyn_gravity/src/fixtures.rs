@@ -3,7 +3,7 @@
 //! Loads spherical-harmonics coefficient sets (and point-mass `mu`
 //! values) from the binary fixtures committed under `test_data/gravity/`.
 //! These fixtures are produced by parsing JEOD's `.cc` source files into
-//! the production [`astrodyn_gravity::coefficients::save_binary`] format —
+//! the production [`crate::coefficients::save_binary`] format —
 //! see the `extract_grav_coeffs` and `extract_mars_data` binaries in
 //! this crate for the regen step.
 //!

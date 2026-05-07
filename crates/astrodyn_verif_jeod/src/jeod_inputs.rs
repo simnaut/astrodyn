@@ -73,7 +73,7 @@ fn workspace_root() -> PathBuf {
             break;
         }
     }
-    // Fallback: two parents up from `crates/astrodyn_test_data/`.
+    // Fallback: two parents up from `crates/astrodyn_verif_jeod/`.
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())

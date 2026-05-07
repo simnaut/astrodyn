@@ -11,6 +11,6 @@
   "mu_m3_per_s2": 398600441500000.0,
   "tide_free": false,
   "tide_free_delta": 4.173e-9,
-  "generated_by": "cargo run -p astrodyn_test_data --bin extract_grav_coeffs",
+  "generated_by": "cargo run -p astrodyn_gravity --bin extract_grav_coeffs",
   "note": "Regenerate after a JEOD upgrade or coefficient-file change. The .bin file uses the astrodyn_gravity::coefficients::save_binary format (magic JEOD, version 1)."
 }
