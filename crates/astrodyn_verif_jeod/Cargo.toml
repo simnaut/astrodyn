@@ -19,9 +19,10 @@ exclude = [
 ]
 
 [features]
-# Marker feature kept for `#![cfg(feature = "verification")]` gates in
-# tier 3 tests inherited from the pre-dissolution astrodyn_runner setup.
-# Default-on so `cargo nextest run -p astrodyn_verif_jeod` includes them.
+# `verification` gates `#![cfg(feature = "verification")]` on the tier 3
+# tests in this crate. Default-on so `cargo nextest run -p astrodyn_verif_jeod`
+# picks them up; downstream consumers that don't want the JEOD-source-backed
+# scaffolding can opt out with `--no-default-features`.
 default = ["verification"]
 verification = []
 

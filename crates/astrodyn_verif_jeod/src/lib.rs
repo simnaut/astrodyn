@@ -1,12 +1,11 @@
 //! JEOD cross-validation parsers, fixtures, and Tier 3 infrastructure.
 //!
-//! Absorbed the former `astrodyn_test_data` crate: every JEOD-source parser
-//! and Tier 2/Tier 3 reference loader lives here. The crate ships with the
-//! committed JEOD reference fixtures under `test_data/` (trajectory CSVs,
-//! Apollo `.out` snapshots, `baselines.{json,md}`, the verbatim NASA mirror
-//! under `jeod_inputs/`, the Tier 2 reference vectors under `body_init/` and
-//! `jeod_validation/`) and the JEOD-parity ephemeris kernel under
-//! `assets/de405.bsp`.
+//! Every JEOD-source parser and Tier 2 / Tier 3 reference loader lives here.
+//! The crate ships with the committed JEOD reference fixtures under
+//! `test_data/` (trajectory CSVs, Apollo `.out` snapshots,
+//! `baselines.{json,md}`, the verbatim NASA mirror under `jeod_inputs/`, the
+//! Tier 2 reference vectors under `body_init/` and `jeod_validation/`) and
+//! the JEOD-parity ephemeris kernel under `assets/de405.bsp`.
 //!
 //! ## Top-level modules
 //!
