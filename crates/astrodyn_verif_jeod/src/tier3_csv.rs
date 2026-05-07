@@ -55,7 +55,7 @@ fn read_csv(path: &Path, sim_name: &str) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
             "Failed to read {sim_name} CSV from {}: {e}\n\
-             Generate with: docker run --rm -v $(pwd)/test_data:/output \
+             Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
              -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
             path.display()
         )

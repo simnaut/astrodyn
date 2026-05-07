@@ -90,7 +90,7 @@ fn load_contact_csv(path: &Path) -> Vec<ContactRecord> {
             "Failed to read SIM_contact CSV from {}: {e}\n\
              Generate with:\n  \
              docker build -f trick/Dockerfile -t jeod-trick ..\n  \
-             docker run --rm -v $(pwd)/test_data:/output \\\n    \
+             docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \\\n    \
                -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\\n    \
                jeod-trick",
             path.display()

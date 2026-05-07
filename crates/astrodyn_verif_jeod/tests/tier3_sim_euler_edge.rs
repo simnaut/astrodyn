@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_Euler edge-case cross-validation
 //!
 //! RUN_ecc: Eccentric orbit (400 km x 8000 km altitude) — varying orbital rate

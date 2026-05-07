@@ -102,7 +102,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     assert!(
         csv_path.exists(),
         "SIM_1_BASIC CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output \
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );

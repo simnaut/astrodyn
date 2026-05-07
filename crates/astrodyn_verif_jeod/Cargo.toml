@@ -16,13 +16,6 @@ exclude = [
     "assets/*.bsp",
 ]
 
-[features]
-# `verification` gates `#![cfg(feature = "verification")]` on the tier 3
-# tests in this crate. Default-on so `cargo nextest run -p astrodyn_verif_jeod`
-# picks them up; downstream consumers can opt out with `--no-default-features`.
-default = ["verification"]
-verification = []
-
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
@@ -40,3 +33,11 @@ log = { workspace = true }
 regex = "1"
 thiserror = { workspace = true }
 uom = { workspace = true }
+
+[[example]]
+name = "earth_moon"
+path = "examples/earth_moon.rs"
+
+[[example]]
+name = "mars_orbit"
+path = "examples/mars_orbit.rs"

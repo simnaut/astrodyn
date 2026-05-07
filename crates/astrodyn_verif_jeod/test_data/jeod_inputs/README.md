@@ -1,4 +1,4 @@
-# `crates/astrodyn_verif_jeod/crates/astrodyn_verif_jeod/test_data/jeod_inputs/` — verbatim JEOD source mirror
+# `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` — verbatim JEOD source mirror
 
 Tier 3 verification rigs need JEOD configuration files (S_define
 `#define DYNAMICS` lines, `Modified_data/*.py`, `SET_test/RUN_*/input.py`)
@@ -25,7 +25,7 @@ Resolve a path from Rust via `astrodyn_verif_jeod::jeod_inputs::path("<rel>")`.
 # From the astrodyn workspace root, with $JEOD_HOME pointing at a
 # JEOD checkout that already contains the upgraded source.
 JEOD=$JEOD_HOME
-DEST=test_data/jeod_inputs
+DEST=crates/astrodyn_verif_jeod/test_data/jeod_inputs
 find "$DEST" -type f ! -name README.md \
   | while read -r f; do
       rel=${f#"$DEST/"}

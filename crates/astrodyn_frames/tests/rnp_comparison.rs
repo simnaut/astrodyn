@@ -157,7 +157,7 @@ fn rnp_component_comparison() {
     assert!(
         csv_path.exists(),
         "JEOD RNP data not found at {}. \
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output jeod-trick",
         csv_path.display()
     );
 

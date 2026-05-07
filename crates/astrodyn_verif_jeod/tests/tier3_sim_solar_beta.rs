@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: ISS LEO trajectory cross-validation against SIM_dyncomp RUN_2,
 //! with the Sun source registered + DE421-driven each step so
 //! `body.solar_beta` is computed throughout. Sun has mu=0 — the Sun

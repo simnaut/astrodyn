@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: Battin's method vs direct subtraction for third-body gravity
 //!
 //! Verifies that Battin's method for differential (third-body) gravity
@@ -73,7 +71,7 @@ fn tier3_battin_vs_direct_trajectory() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output \
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );

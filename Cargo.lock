@@ -358,7 +358,6 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_time",
- "astrodyn_verif_jeod",
  "glam 0.30.10",
  "log",
  "uom",

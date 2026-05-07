@@ -4,7 +4,7 @@
 //! around the Trick / JEOD reference-CSV regeneration Docker invocation.
 //! Mission authors and contributors who don't routinely write
 //! `docker run -v ... -v ... jeod-trick` invocations can use this to
-//! refresh `test_data/*.csv` from the underlying JEOD verification sims.
+//! refresh `crates/astrodyn_verif_jeod/test_data/*.csv` from the underlying JEOD verification sims.
 //!
 //! Background: the regeneration Docker image (`jeod-trick`) is built
 //! from `trick/Dockerfile` against the parent directory (so `trick/`
@@ -35,7 +35,7 @@ regenerate-tier3 options:
     --build                 Force rebuild of the jeod-trick image
                             before running.
     --output <path>         Override the host output directory
-                            (default: ./test_data).
+                            (default: ./crates/astrodyn_verif_jeod/test_data).
     --image <tag>           Override the Docker image tag
                             (default: jeod-trick).
     --max-parallel <n>      Cap concurrent trick-CP builds via
@@ -79,7 +79,7 @@ impl RegenerateArgs {
         let mut a = Self {
             force: false,
             build_image: false,
-            output: PathBuf::from("test_data"),
+            output: PathBuf::from("crates/astrodyn_verif_jeod/test_data"),
             image: "jeod-trick".to_string(),
             max_parallel: None,
         };

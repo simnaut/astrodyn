@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: Polar motion regression check (point-mass gravity).
 //!
 //! Validates that enabling `Simulation::polar_motion` does not break

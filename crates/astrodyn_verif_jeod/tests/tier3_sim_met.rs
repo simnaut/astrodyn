@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_5A — MET atmosphere via Simulation pipeline
 //!
 //! Propagates an ISS-like elliptical orbit with point-mass gravity and MET

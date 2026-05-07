@@ -3,7 +3,7 @@
 # Usage (from astrodyn project root, with trick and jeod as siblings):
 #   docker build -f trick/Dockerfile -t jeod-trick ..
 #   docker run --rm \
-#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
 #     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
 #     jeod-trick
 #
@@ -55,7 +55,7 @@ VOLUME /output
 # The generate_references.sh script is mounted at runtime, not baked into the
 # image.  This avoids Docker layer cache issues when only the script changes:
 #   docker run --rm -e FORCE=1 \
-#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
 #     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
 #     jeod-trick
 #

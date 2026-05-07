@@ -49,7 +49,7 @@ fn run_gj_test(
     assert!(
         csv_path.exists(),
         "JEOD GJ reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output \
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );

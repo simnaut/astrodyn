@@ -114,7 +114,7 @@ jobs:
       - name: Verify JEOD env vars are unset (regression fence)
         # #249/#239 finished migrating the run_verification/sim_*.rs
         # rigs to committed fixtures under crates/astrodyn_verif_jeod/test_data/jeod_inputs/ and
-        # test_data/gravity/. Tier 3 now runs without a JEOD checkout;
+        # crates/astrodyn_gravity/test_data/gravity/. Tier 3 now runs without a JEOD checkout;
         # this fence catches any regression that re-introduces a
         # $JEOD_HOME read on the runtime path.
         run: |

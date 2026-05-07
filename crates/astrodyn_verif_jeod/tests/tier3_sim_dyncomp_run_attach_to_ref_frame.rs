@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp `RUN_attach_to_ref_frame` — multi-attach
 //! lifecycle over an 8-hour ISS trajectory with the full force model.
 //!

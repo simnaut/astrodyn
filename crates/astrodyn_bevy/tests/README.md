@@ -136,7 +136,7 @@ and the regex format the report binary uses to extract literals.
 
 ## Baseline-freeze workflow
 
-`test_data/baselines.json` records the per-test, per-component Tier 3 max
+`crates/astrodyn_verif_jeod/test_data/baselines.json` records the per-test, per-component Tier 3 max
 absolute errors. The snapshot was frozen at Phase 0 of the type-system
 refactor (#101) and every refactor-only phase since (0, 2–6, 9–10) is
 gated on it: a refactor-only PR must not regress past
@@ -174,6 +174,6 @@ cargo nextest run --workspace -E 'test(tier3_)'
 cargo run -p astrodyn_verif_jeod --bin tier3_report -- --freeze-baselines
 ```
 
-Commit the updated `test_data/baselines.json` and `test_data/baselines.md`
+Commit the updated `crates/astrodyn_verif_jeod/test_data/baselines.json` and `crates/astrodyn_verif_jeod/test_data/baselines.md`
 together — `baselines.md` is the human-readable companion produced by the
 same binary.

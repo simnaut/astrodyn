@@ -18,12 +18,16 @@ a regression fence that asserts `JEOD_HOME` and `JEOD_PATH` are both
 unset before running.
 
 You only need `$JEOD_HOME` when **regenerating fixtures** after a JEOD
-upgrade. The `extract_*` binaries under `crates/astrodyn_verif_jeod/src/bin/`
-parse JEOD source into the binary fixtures committed under
-`test_data/gravity/`; the verbatim mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/`
-is refreshed via the `cp` recipe in
-`test_data/jeod_inputs/README.md`. Both flows accept either
-`$JEOD_HOME` or `--jeod-home <PATH>`.
+upgrade. The `extract_*` regen binaries are distributed by owner crate:
+`extract_grav_coeffs` and `extract_mars_data` live in
+`crates/astrodyn_gravity/src/bin/` (parsing JEOD `.cc` files into
+`crates/astrodyn_gravity/test_data/gravity/*.bin`),
+`extract_planet_pfixposn` lives in `crates/astrodyn_planet/src/bin/`,
+and `extract_body_init` / `extract_jeod_validation` live in
+`crates/astrodyn_verif_jeod/src/bin/`. The verbatim NASA JEOD source
+mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` is
+refreshed via the `cp` recipe in that directory's `README.md`. Both
+flows accept either `$JEOD_HOME` or `--jeod-home <PATH>`.
 
 For the Docker reference-CSV regen (Tier 3 baselines):
 
@@ -400,7 +404,7 @@ cargo test --workspace -- --skip tier3_         # unit + tier 2
 All three test tiers (`cargo nextest run --workspace`) run without
 `$JEOD_HOME` set — `run_verification/sim_*.rs` reads everything from
 the committed mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` plus the parsed
-gravity binaries under `test_data/gravity/`. The regen binaries
+gravity binaries under `crates/astrodyn_gravity/test_data/gravity/`. The regen binaries
 (`extract_*`) and the Docker reference-CSV flow are the only paths
 that still need `$JEOD_HOME`. `TRICK_HOME` follows the standard Trick
 environment convention and is required only by the Docker
@@ -438,7 +442,7 @@ When tightening tolerances after a code improvement: run the full test suite, in
 the JSON reports in `target/tier3_crossval/`, compute `error * 1.05` per component,
 and update the literal values in the test source.
 
-See `crates/astrodyn_bevy/tests/README.md` "Baseline-freeze workflow" for the `test_data/baselines.json`
+See `crates/astrodyn_bevy/tests/README.md` "Baseline-freeze workflow" for the `crates/astrodyn_verif_jeod/test_data/baselines.json`
 gating policy, the `tier3_baseline_diff` check, and the refreeze workflow.
 
 ### Test tiers and CI
@@ -483,13 +487,13 @@ docker build -f trick/Dockerfile -t jeod-trick ..
 # Generate reference CSVs into test_data/ (incremental — skips existing outputs)
 mkdir -p test_data
 docker run --rm \
-  -v $(pwd)/test_data:/output \
+  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
   -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
   jeod-trick
 
 # Force regenerate all data (ignores existing outputs)
 docker run --rm -e FORCE=1 \
-  -v $(pwd)/test_data:/output \
+  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
   -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
   jeod-trick
 ```

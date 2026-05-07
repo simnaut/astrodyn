@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_tide_verif RUN_01 — solid body tides cross-validation.
 //!
 //! Migrated from a 290-line bespoke per-step ephemeris-update loop to

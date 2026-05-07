@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_3_ORBIT — flat-plate SRP + conical Earth shadow, GEO
 //! orbit, ~23 days.
 //!

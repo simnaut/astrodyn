@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_SolarBeta edge-case cross-validation via Simulation pipeline.
 //!
 //! - `RUN_incl_0` — equatorial orbit (i=0), point-mass gravity. Beta tracks

@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_2 — Point-mass gravity (3-DOF and 6-DOF)
 //!
 //! All simulation parameters (mu, step size, mass) are loaded from JEOD source

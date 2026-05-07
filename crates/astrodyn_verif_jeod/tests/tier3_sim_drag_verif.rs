@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_6B — aerodynamic drag via Simulation pipeline
 //!
 //! Propagates a 1 kg sphere in elliptical orbit with point-mass gravity, MET

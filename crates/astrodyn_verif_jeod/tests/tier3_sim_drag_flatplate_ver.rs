@@ -131,7 +131,7 @@ fn run_flat_plate_case(case: &FlatPlateCase) -> (f64, f64, f64) {
         csv_path.exists(),
         "SIM_VER_DRAG CSV not found at {}.\n\
          Generate with: docker run --rm --entrypoint /bin/bash \
-         -v $(pwd)/test_data:/output \
+         -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
          jeod-trick /generate_references.sh",
         csv_path.display()

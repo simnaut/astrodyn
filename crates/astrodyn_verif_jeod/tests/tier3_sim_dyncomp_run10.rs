@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_10A/10C/10D — Gravity gradient torque
 //!
 //! All simulation parameters (mu, step size, mass) are loaded from JEOD source
@@ -52,7 +50,7 @@ fn tier3_reference_run10a_libration_period() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 

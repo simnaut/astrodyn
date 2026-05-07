@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_OrbElem cross-validation (derived_state/verif/SIM_OrbElem)
 //!
 //! Point-mass gravity, eccentric orbit (e=0.36), 24h, dt=0.03125s.

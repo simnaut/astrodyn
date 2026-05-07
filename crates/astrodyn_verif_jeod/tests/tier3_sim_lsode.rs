@@ -151,7 +151,7 @@ fn run_integ_test(
     assert!(
         csv_path.exists(),
         "JEOD SIM_integ_test reference CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output \
+         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );

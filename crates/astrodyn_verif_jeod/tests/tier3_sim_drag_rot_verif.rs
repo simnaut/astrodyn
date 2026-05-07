@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_6B with non-identity structural-to-body rotation
 //!
 //! Same scenario as `tier3_sim_drag_verif` (1 kg sphere, elliptical orbit,

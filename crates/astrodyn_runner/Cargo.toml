@@ -24,10 +24,6 @@ uom = { workspace = true }
 
 [dev-dependencies]
 astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
-# `earth_moon` / `mars_orbit` examples and a couple of smoke tests
-# pull in the JEOD-fixture-backed reference data through verif_jeod.
-# Dev-only so the lib stays JEOD-source-free.
-astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
 
 [[example]]
 name = "batch_propagation"
@@ -36,11 +32,3 @@ path = "examples/batch_propagation.rs"
 [[example]]
 name = "leo_drag"
 path = "examples/leo_drag.rs"
-
-[[example]]
-name = "earth_moon"
-path = "examples/earth_moon.rs"
-
-[[example]]
-name = "mars_orbit"
-path = "examples/mars_orbit.rs"

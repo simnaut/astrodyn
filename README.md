@@ -33,9 +33,9 @@ for the layered-architecture rules.
 
 - `VehicleBuilder` — typestate builder that refuses `.build()` until
   state, mass, and integrator are set.
-- `recipes::*` — `earth`, `orbital_elements`, `vehicle`, `scenarios`,
-  `verification` (the last gated behind the in-repo-only
-  `jeod-source` feature).
+- `recipes::*` — `earth`, `moon`, `mars`, `sun`, `orbital_elements`,
+  `vehicle`, `scenarios`. Mission-facing only; the JEOD-source-backed
+  Tier 3 verification scaffolding lives in `astrodyn_verif_jeod`.
 - Per-stage pipeline functions (`accumulate_gravity`,
   `validate_body`, …) that mirror the `JeodSet` schedule slot the
   Bevy adapter exposes.

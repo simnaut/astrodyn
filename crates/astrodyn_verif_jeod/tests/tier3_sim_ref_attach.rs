@@ -123,7 +123,7 @@ fn load_state_csv(filename: &str) -> Vec<StateRow> {
         "JEOD reference data not found at {}.\n\
          Generate with:\n\
          docker run --rm \\\n\
-           -v $(pwd)/test_data:/output \\\n\
+           -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \\\n\
            -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\\n\
            jeod-trick",
         path.display()

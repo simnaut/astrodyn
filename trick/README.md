@@ -27,7 +27,7 @@ This takes 15-30 minutes (compiling Trick + JEOD from source).
 ```bash
 # Run all JEOD verification sims and export CSVs to test_data/
 mkdir -p test_data
-docker run --rm -v $(pwd)/test_data:/output jeod-trick
+docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output jeod-trick
 ```
 
 The container runs these JEOD sims:
@@ -62,7 +62,7 @@ These are consumed by `cargo test` when the `test_data/` directory is present.
 To get a shell inside the container for interactive sim runs:
 
 ```bash
-docker run --rm -it -v $(pwd)/test_data:/output jeod-trick bash
+docker run --rm -it -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output jeod-trick bash
 cd /jeod/verif/SIM_dyncomp
 trick-CP                                    # compile
 ./S_main*.exe SET_test/RUN_2/input.py        # run from SIM root

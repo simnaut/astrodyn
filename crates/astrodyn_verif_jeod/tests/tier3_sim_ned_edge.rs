@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_NED edge-case cross-validation
 //!
 //! RUN_ell_polar: Polar orbit on ellipsoidal Earth — geodetic singularity at poles

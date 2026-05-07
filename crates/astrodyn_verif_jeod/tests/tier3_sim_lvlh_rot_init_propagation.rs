@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_dyncomp RUN_2 with `BodyAction::InitLvlhRot` post-init
 //! propagation.
 //!

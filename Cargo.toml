@@ -8,6 +8,19 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Workspace-only artifacts that don't belong in the published crate:
+# Trick / Docker reference-CSV regen tooling, the JEOD-invariant catalog
+# (lives next to the source it tags), workspace-level invariant tests,
+# CI workflows, and the xtask binary.
+exclude = [
+    "trick/**",
+    "docs/**",
+    "scripts/**",
+    "tests/**",
+    "xtask/**",
+    ".github/**",
+    "CHANGELOG.md",
+]
 
 [dependencies]
 astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.1.0" }

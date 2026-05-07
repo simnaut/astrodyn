@@ -1,5 +1,3 @@
-#![cfg(feature = "verification")]
-
 //! Tier 3: SIM_torque_compare_simple — six runs of progressive
 //! gravity + gravity-gradient complexity.
 //!

@@ -64,8 +64,6 @@
 //! complements it by exercising the full `Simulation::step()` pipeline
 //! end-to-end through the same event sequence.
 
-#![cfg(feature = "verification")]
-
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
