@@ -19,10 +19,10 @@
 //! no JEOD CSV reference for it — the comparison is internal between the
 //! two sibling sims.
 
-use astrodyn_verif_jeod::verification::InitialConditions;
-use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_runner::SimulationBuilderExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
+use astrodyn_verif_jeod::verification::InitialConditions;
 use glam::DVec3;
 
 /// Simulation duration (seconds): 8 hours.

@@ -1,4 +1,3 @@
-
 //! Smoke test for the `VerificationCase::pre_step` factory hook (#156).
 //!
 //! Builds a minimal `VerificationCase` whose pre-step closure stamps the
@@ -28,15 +27,15 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use astrodyn_verif_jeod::verification::{
-    CsvReference, InitialConditions, PreStepClosure, SimContext, Tolerances, VerificationCase,
-};
 use astrodyn::GravitySourceEntry;
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, RotationModel, SimulationBuilder,
     SimulationTime, TranslationalState, VehicleConfig,
 };
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::verification::{
+    CsvReference, InitialConditions, PreStepClosure, SimContext, Tolerances, VerificationCase,
+};
 use astrodyn_verif_jeod::VerificationCaseExt;
 use glam::DVec3;
 use uom::si::f64::Time;

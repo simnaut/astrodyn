@@ -11,8 +11,8 @@
 //! source loading and `Simulation` setup; the test body is a one-liner that
 //! delegates to [`VerificationCaseExt::run_and_assert`].
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run2_3dof() {

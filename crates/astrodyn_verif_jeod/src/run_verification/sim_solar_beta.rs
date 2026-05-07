@@ -240,8 +240,7 @@ const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 =
 fn sim_solar_beta_time() -> SimulationTime {
     let mut time = SimulationTime::new(SIM_SOLAR_BETA_EPOCH_TAI_TJT, default_leap_second_table());
     let time_cfg = crate::time_config::load_time_config(
-        &crate::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
-            .join("Modified_data/date_and_time.py"),
+        &crate::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("Modified_data/date_and_time.py"),
     );
     if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
         time.set_ut1_tai_offset(ut1_tai);

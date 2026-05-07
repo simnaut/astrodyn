@@ -8,8 +8,8 @@
 //!
 //! Point-mass Earth gravity, RK4 at the SIM_LVLH S_define step size, 24h.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_derived_state;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_lvlh_ecc() {

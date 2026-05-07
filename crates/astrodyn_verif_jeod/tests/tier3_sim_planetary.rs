@@ -7,8 +7,8 @@
 //! orbits. These exercise coordinate singularities (equatorial RAAN, polar
 //! LVLH).
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_planetary;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_planetary_leo_inc() {

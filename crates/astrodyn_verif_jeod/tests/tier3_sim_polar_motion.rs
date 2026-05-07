@@ -7,8 +7,8 @@
 //! the planet-fixed rotation is never used, so polar motion has zero
 //! trajectory effect — errors should match RUN_2 exactly.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_polar_motion;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run2p_polar_motion() {

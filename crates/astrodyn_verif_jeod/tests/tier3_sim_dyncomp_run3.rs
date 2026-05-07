@@ -9,8 +9,8 @@
 //! [`run_verification::sim_dyncomp`](astrodyn_verif_jeod::run_verification::sim_dyncomp)
 //! recipe family.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run3a_sh4x4() {

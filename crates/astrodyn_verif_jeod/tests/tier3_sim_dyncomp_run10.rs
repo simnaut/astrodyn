@@ -14,9 +14,9 @@
 use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use astrodyn::JeodQuat;
-use astrodyn_verif_jeod::VerificationCaseExt;
-use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_jeod::crossval::CrossvalReport;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run10a_gravity_torque() {

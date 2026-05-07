@@ -8,8 +8,8 @@
 //! aero-trajectory CSV (position+velocity only — `aero_force` is not
 //! exposed on `VehicleOutput`).
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 // non-recipe: SIM_dyncomp RUN_6B — 1 kg sphere, Cd=0.02, MET atmosphere on
 // elliptical orbit; reproduces JEOD's verification fixture exactly.

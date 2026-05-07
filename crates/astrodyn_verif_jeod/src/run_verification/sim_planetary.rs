@@ -12,9 +12,7 @@
 //! SIM_Planetary stores them inline rather than in a separate
 //! Modified_data file.
 
-use crate::verification::{
-    CsvReference, InitialConditions, Tolerances, VerificationCase,
-};
+use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,

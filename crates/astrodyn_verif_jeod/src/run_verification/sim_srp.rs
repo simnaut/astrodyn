@@ -181,8 +181,7 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 
 fn srp_time(modified_data_dir: &str) -> SimulationTime {
     let cfg = crate::time_config::load_time_config(
-        &crate::jeod_inputs::path(modified_data_dir)
-            .join("Modified_data/date_and_time.py"),
+        &crate::jeod_inputs::path(modified_data_dir).join("Modified_data/date_and_time.py"),
     );
     SimulationTime::new(cfg.tai_tjt(), default_leap_second_table())
 }

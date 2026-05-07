@@ -35,12 +35,12 @@ pub mod sim_srp;
 pub mod sim_tide_verif;
 pub mod sim_torque_simple;
 
-use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
+use crate::crossval::{CrossvalReport, StateLog};
+use crate::tier3_csv;
 use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
-use crate::crossval::{CrossvalReport, StateLog};
-use crate::tier3_csv;
+use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
 use glam::DVec3;
 use uom::si::time::second;
 

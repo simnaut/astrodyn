@@ -5,8 +5,8 @@
 //! Uses the RUN_2 point-mass 6-DOF trajectory (which has quaternion data)
 //! to validate Euler angle computation through the Simulation pipeline.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_derived_state;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_euler() {

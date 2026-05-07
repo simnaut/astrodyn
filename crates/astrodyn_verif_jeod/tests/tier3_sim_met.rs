@@ -10,8 +10,8 @@
 //! RUN_5A config, so the atmosphere has no effect on the trajectory. We still
 //! configure it to validate that our MET density computation matches JEOD's.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_met_run5a() {

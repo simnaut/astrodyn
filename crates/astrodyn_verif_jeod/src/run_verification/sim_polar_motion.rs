@@ -7,9 +7,7 @@
 //! validates that enabling the feature does not break point-mass
 //! propagation.
 
-use crate::verification::{
-    CsvReference, InitialConditions, Tolerances, VerificationCase,
-};
+use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, RotationModel, SimulationBuilder, SimulationTime, TranslationalState,
@@ -30,9 +28,8 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
-    let dt = crate::s_define::load_dynamics_dt(
-        &crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
-    );
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"));
     let time = SimulationTime::at_j2000(default_leap_second_table());
 
     let mut sb = SimulationBuilder::new(time, dt);

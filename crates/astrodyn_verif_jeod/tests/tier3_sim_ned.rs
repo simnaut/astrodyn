@@ -11,8 +11,8 @@
 //! Validates the full Simulation pipeline: orbit integration -> RNP rotation
 //! -> geodetic coordinate conversion, compared against JEOD CSV values.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_derived_state;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_geodetic() {

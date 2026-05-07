@@ -20,8 +20,8 @@
 //! JEOD's CSV output is consumed only as the reference for
 //! comparison, never fed back into our integration.
 
-use astrodyn_verif_jeod::VerificationCaseExt;
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run2_lvlh_rot_init_propagation() {

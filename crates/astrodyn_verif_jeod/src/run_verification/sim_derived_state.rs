@@ -130,9 +130,8 @@ pub fn orbelem_ecc() -> VerificationCase {
 
 fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = crate::s_define::load_dynamics_dt(
-        &crate::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
-    );
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"));
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -215,9 +214,8 @@ pub fn lvlh_equ() -> VerificationCase {
 
 fn ned_time() -> SimulationTime {
     let verif_dir = crate::jeod_inputs::path(DERIVED_STATE_VERIF);
-    let time_cfg = crate::time_config::load_time_config(
-        &verif_dir.join("Modified_data/date_and_time.py"),
-    );
+    let time_cfg =
+        crate::time_config::load_time_config(&verif_dir.join("Modified_data/date_and_time.py"));
     let leap_table = default_leap_second_table();
     let tai_utc_s = leap_table.tai_utc_at_utc_tjt(time_cfg.utc_tjt());
     let epoch_tai_tjt = time_cfg.tai_tjt_with_offset(tai_utc_s);
@@ -228,9 +226,8 @@ fn ned_time() -> SimulationTime {
 
 fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = crate::s_define::load_dynamics_dt(
-        &crate::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
-    );
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_NED_DIR).join("S_define"));
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, true));
@@ -383,9 +380,8 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
     // verif sim shares its time/integrator config with the dyncomp
     // RUN_2 trajectory it's driven from, so we read the same file the
     // existing test reads.
-    let dt = crate::s_define::load_dynamics_dt(
-        &crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
-    );
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"));
 
     let q = init
         .quaternion

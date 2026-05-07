@@ -213,8 +213,7 @@ fn lvlh_init_from_state_py(
     state_py: &std::path::Path,
     function_name: &str,
 ) -> (JeodQuat, DVec3, LvlhAngularVelocityFrame) {
-    let lvlh =
-        crate::lvlh_init_data::load_lvlh_init_function(state_py, function_name);
+    let lvlh = crate::lvlh_init_data::load_lvlh_init_function(state_py, function_name);
     let sequence = match lvlh.euler_sequence.as_str() {
         // JEOD `trick.Orientation.Yaw_Pitch_Roll = 5`, ZYX axis order.
         // models/utils/orientation/include/orientation.hh:130
@@ -244,10 +243,7 @@ fn lvlh_init_from_state_py(
 /// reference CSV's t=0 quaternion. Exercises the LVLH-rot-init path
 /// end-to-end through the public `BodyAction` API.
 fn init_lvlh_rot_state(state_py: &std::path::Path) -> RotationalState {
-    let trans = crate::lvlh_init_data::load_trans_init_function(
-        state_py,
-        "set_trans_init_typical",
-    );
+    let trans = crate::lvlh_init_data::load_trans_init_function(state_py, "set_trans_init_typical");
     let (q_lvlh_body, ang_vel_lvlh_to_body, ang_vel_frame) =
         lvlh_init_from_state_py(state_py, "set_orientation_lvlh");
     let action = BodyAction::InitLvlhRot {
@@ -279,10 +275,8 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     let mass_props = iss_mass_properties();
     let state_py = sim_dir.join("Modified_data/state.py");
 
-    let trans = crate::lvlh_init_data::load_trans_init_function(
-        &state_py,
-        "set_trans_init_typical",
-    );
+    let trans =
+        crate::lvlh_init_data::load_trans_init_function(&state_py, "set_trans_init_typical");
     let trans_state = TranslationalState {
         position: DVec3::from_array(trans.position),
         velocity: DVec3::from_array(trans.velocity),
@@ -407,8 +401,7 @@ fn sphere_mass_properties() -> MassProperties {
 /// `Modified_data/time.py`), with the UT1-TAI offset applied.
 fn dyncomp_time() -> SimulationTime {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
-    let time_cfg =
-        crate::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let time_cfg = crate::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
         .ut1_tai_offset()
