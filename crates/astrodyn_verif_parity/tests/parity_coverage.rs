@@ -190,11 +190,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
     ),
     (
-        "lvlh_relative",
-        "pre-recipe sibling (same family as `relative`) — needs new \
-         CsvReference variant; recipe migration is a follow-up to #389",
-    ),
-    (
         "lvlh_rot_init_propagation",
         "pre-recipe sibling — overlaps with sim_dyncomp::run2_lvlh_rot_init_propagation \
          but no parity wrapper yet (#389 follow-up)",
