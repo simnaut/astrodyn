@@ -83,9 +83,9 @@ fn tier3_simulation_earth_moon_clem() {
 
     // JEOD uses DE405; we use DE421 (no LE DE405 BSP available for Anise).
     // DE405/DE421 difference is sub-meter for Moon-centered 7-day orbits.
-    let bsp_path = test_data_path("de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     let mut ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
-    let bpc_path = test_data_path("moon_pa_de421_1900-2050.bpc");
+    let bpc_path = astrodyn::ephemeris_assets::moon_pa_path();
     ephemeris
         .load_bpc(&bpc_path)
         .expect("load Moon BPC for libration");

@@ -87,7 +87,7 @@ fn tier3_simulation_mars_dawn() {
     let time = SimulationTime::new(dawn_tai_tjt, leap_table);
 
     // Load DE421 for Sun position relative to Mars at Dawn epoch
-    let bsp_path = test_data_path("de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     let ephemeris = astrodyn::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
     let epoch_tdb_jd = time.tdb_julian_date();
     let (sun_pos_typed, _sun_vel) = ephemeris

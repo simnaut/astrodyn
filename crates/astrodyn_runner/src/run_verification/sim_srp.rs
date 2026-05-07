@@ -45,7 +45,7 @@ const INITIAL_PLATE_TEMP_K: f64 = 270.0;
 const SRP_SUN_IDX: usize = 1;
 
 fn bsp_path() -> PathBuf {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    let p = astrodyn::ephemeris_assets::de421_path();
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
     p
 }

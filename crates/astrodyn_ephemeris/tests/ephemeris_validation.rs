@@ -1,21 +1,18 @@
 //! Ephemeris validation tests using DE421.bsp (same kernel as JEOD).
 //!
-//! Requires `test_data/de421.bsp` to be present. Download with:
-//!   curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
+//! Reads the bundled `crates/astrodyn_ephemeris/assets/de421.bsp` via
+//! `astrodyn_ephemeris::assets::de421_path`. Download with:
+//!   curl -Lo crates/astrodyn_ephemeris/assets/de421.bsp \
+//!     https://public-data.nyxspace.com/anise/de421.bsp
 
 use astrodyn_ephemeris::{Ephemeris, EphemerisBody};
-use std::path::Path;
 
 fn load_de421() -> Ephemeris {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("test_data/de421.bsp");
+    let path = astrodyn_ephemeris::assets::de421_path();
     assert!(
         path.exists(),
-        "DE421.bsp not found at {}. Download with: curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp",
+        "DE421.bsp not found at {}. Download with: curl -Lo \
+         crates/astrodyn_ephemeris/assets/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp",
         path.display()
     );
     Ephemeris::from_bsp(&path).expect("Failed to load DE421.bsp")

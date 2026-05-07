@@ -64,7 +64,7 @@ fn main() {
 
     let jeod_rev = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
 
-    let out_dir = workspace_root().join("test_data").join("gravity");
+    let out_dir = workspace_root().join("crates/astrodyn_gravity/test_data/gravity");
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
         panic!("Cannot create {}: {e}", out_dir.display());
     });

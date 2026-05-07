@@ -452,7 +452,7 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
     // astrodyn_runner uses the BSP for Moon/Sun ephemeris evaluation each
     // step. Phase 1 SIM_Apollo runs are 12 s, well within DE405/DE421
     // coverage.
-    let bsp_path = astrodyn_test_data::tier3_csv::test_data_path("de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp_path.exists(),
         "DE421 ephemeris missing at {}",

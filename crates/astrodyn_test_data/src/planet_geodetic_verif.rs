@@ -70,7 +70,8 @@ pub enum PlanetFixedSeed {
 /// Panics if the JSON file is missing or malformed; the panic names the
 /// regen command per CLAUDE.md "Fail Loudly".
 pub fn load_planet_fixed_verif_cases() -> Vec<PlanetFixedSeed> {
-    let path = crate::tier3_csv::test_data_path("planet_pfixposn_seeds.json");
+    let path = crate::tier3_csv::workspace_root()
+        .join("crates/astrodyn_planet/test_data/planet_pfixposn_seeds.json");
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
             "Cannot read {}: {e}. Regenerate with `cargo run -p astrodyn_test_data \

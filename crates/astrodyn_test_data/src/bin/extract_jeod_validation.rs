@@ -51,24 +51,28 @@ fn main() {
         jeod_root.display(),
     );
 
-    let out_dir = workspace_root().join("test_data").join("jeod_validation");
+    let workspace = workspace_root();
+    let verif_data = workspace.join("crates/astrodyn_verif_jeod/test_data");
+    let out_dir = verif_data.join("jeod_validation");
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
         panic!("Cannot create {}: {e}", out_dir.display());
     });
 
     extract_orbital_vectors(&jeod_root, &out_dir);
     extract_euler_cases(&jeod_root, &out_dir);
-    let test_data = workspace_root().join("test_data");
-    extract_grav_geospherical_verif_out(&jeod_root, &test_data.join("gravity"));
+    extract_grav_geospherical_verif_out(
+        &jeod_root,
+        &workspace.join("crates/astrodyn_gravity/test_data/gravity"),
+    );
     copy_verbatim(
         &jeod_root,
         "models/environment/time/data/Leap_Second.dat",
-        &test_data.join("time").join("Leap_Second.dat"),
+        &workspace.join("crates/astrodyn_time/test_data/Leap_Second.dat"),
     );
     copy_verbatim(
         &jeod_root,
         "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/mass.py",
-        &test_data.join("body_init").join("iss_mass.py"),
+        &verif_data.join("body_init").join("iss_mass.py"),
     );
 }
 

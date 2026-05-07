@@ -541,7 +541,7 @@ pub fn run3b_sh8x8() -> VerificationCase {
 /// updates for third-body and tidal scenarios. Panics with the expected
 /// path if missing — the file is committed to `test_data/` per CLAUDE.md.
 fn bsp_path() -> PathBuf {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    let p = astrodyn::ephemeris_assets::de421_path();
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
     p
 }

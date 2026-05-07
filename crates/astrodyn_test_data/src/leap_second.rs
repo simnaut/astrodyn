@@ -33,7 +33,8 @@ pub struct LeapSecondEntry {
 /// Panics if the fixture is missing or malformed; the message includes
 /// the regen command.
 pub fn load_leap_second_table() -> Vec<LeapSecondEntry> {
-    let path = crate::tier3_csv::test_data_path("time/Leap_Second.dat");
+    let path =
+        crate::tier3_csv::workspace_root().join("crates/astrodyn_time/test_data/Leap_Second.dat");
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
             "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \

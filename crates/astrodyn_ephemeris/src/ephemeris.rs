@@ -233,20 +233,15 @@ mod typed_accessor_tests {
     //! message if the kernel is missing (no graceful skip — see project
     //! policy).
     use super::*;
-    use std::path::PathBuf;
 
     const J2000_TDB_JD: f64 = 2_451_545.0;
 
     fn load_de421() -> Ephemeris {
-        // crates/astrodyn_ephemeris -> workspace root -> test_data/de421.bsp
-        let path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("workspace root")
-            .join("test_data/de421.bsp");
+        let path = crate::assets::de421_path();
         assert!(
             path.exists(),
-            "DE421.bsp not found at {}. Download with: curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp",
+            "DE421.bsp not found at {}. Download with: curl -Lo crates/astrodyn_ephemeris/assets/de421.bsp \
+             https://public-data.nyxspace.com/anise/de421.bsp",
             path.display(),
         );
         Ephemeris::from_bsp(&path).expect("load DE421.bsp")

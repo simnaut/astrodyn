@@ -51,7 +51,8 @@ fn main() {
         cases.len(),
     );
 
-    let out_path = astrodyn_test_data::tier3_csv::test_data_path("planet_pfixposn_seeds.json");
+    let out_path = astrodyn_test_data::tier3_csv::workspace_root()
+        .join("crates/astrodyn_planet/test_data/planet_pfixposn_seeds.json");
     let mut f = std::fs::File::create(&out_path)
         .unwrap_or_else(|e| panic!("Cannot create {}: {e}", out_path.display()));
     write_json(&mut f, &cases);

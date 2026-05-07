@@ -368,19 +368,7 @@ pub fn assert_earth_lighting_eq(
 // ── DE421 helpers ──
 
 pub fn bsp_path() -> std::path::PathBuf {
-    // Walk up to workspace root (Cargo.lock) so the parity crate finds
-    // the de421.bsp at the workspace-root `test_data/`.
-    let mut dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("Cargo.lock").exists() {
-            return dir.join("test_data/de421.bsp");
-        }
-        assert!(
-            dir.pop(),
-            "workspace root (Cargo.lock) not found above {}",
-            env!("CARGO_MANIFEST_DIR")
-        );
-    }
+    astrodyn::ephemeris_assets::de421_path()
 }
 
 pub const J2000_JD: f64 = 2_451_545.0;

@@ -42,25 +42,14 @@
 use astrodyn_gravity::SphericalHarmonicsData;
 use std::path::PathBuf;
 
-/// Resolve a path under the workspace `test_data/gravity/` directory.
+/// Resolve a path under `crates/astrodyn_gravity/test_data/gravity/`.
 ///
 /// Walks up from `CARGO_MANIFEST_DIR` until it finds `Cargo.lock`, then joins
-/// `test_data/gravity/<filename>`. Mirrors the lookup used by
-/// [`super::tier3_csv::test_data_path`] so resolution is consistent regardless
-/// of whether tests run from a single-crate or workspace root.
+/// the gravity-coefficient fixtures committed in the gravity crate.
 fn fixture_path(filename: &str) -> PathBuf {
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("Cargo.lock").exists() {
-            break;
-        }
-        if !dir.pop() {
-            return PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test_data/gravity")
-                .join(filename);
-        }
-    }
-    dir.join("test_data").join("gravity").join(filename)
+    crate::tier3_csv::workspace_root()
+        .join("crates/astrodyn_gravity/test_data/gravity")
+        .join(filename)
 }
 
 fn load_fixture(label: &str) -> SphericalHarmonicsData {

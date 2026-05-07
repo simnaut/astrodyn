@@ -755,8 +755,9 @@ fn main() {
     eprintln!("Wrote {}", output_path.display());
 
     if freeze_baselines {
-        let baselines_dir = root.join("test_data");
-        fs::create_dir_all(&baselines_dir).expect("failed to create test_data/");
+        let baselines_dir = root.join("crates/astrodyn_verif_jeod/test_data");
+        fs::create_dir_all(&baselines_dir)
+            .expect("failed to create crates/astrodyn_verif_jeod/test_data/");
         let json_path = baselines_dir.join("baselines.json");
         let md_path = baselines_dir.join("baselines.md");
         write_baselines_json(&json_path, &entries);

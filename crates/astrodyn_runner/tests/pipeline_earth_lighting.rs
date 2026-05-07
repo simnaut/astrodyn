@@ -16,11 +16,10 @@ use astrodyn::{
 };
 use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
-use std::path::Path;
 
 #[test]
 fn pipeline_earth_lighting_smoke() {
-    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",

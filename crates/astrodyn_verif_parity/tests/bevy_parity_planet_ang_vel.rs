@@ -22,7 +22,6 @@ use astrodyn_bevy::{
     PlanetBundle, PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
 };
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::tier3_csv::test_data_path;
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -384,8 +383,8 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
     // requires. The kernel `moon_pa_de421_1900-2050.bpc` is already
     // committed to `test_data/` (used by `tier3_simulation_earth_moon_clem`),
     // so no new fixture commit is needed.
-    let bsp = test_data_path("de421.bsp");
-    let bpc = test_data_path("moon_pa_de421_1900-2050.bpc");
+    let bsp = astrodyn::ephemeris_assets::de421_path();
+    let bpc = astrodyn::ephemeris_assets::moon_pa_path();
 
     // ── Bevy ──
     let mut app = App::new();

@@ -16,45 +16,39 @@ use std::path::{Path, PathBuf};
 
 pub use super::dyncomp_csv::{load_dyncomp_csv, DyncompRecord, FrameDerivs, FrameState};
 
-/// Resolve a fixture relative to the workspace.
+/// Resolve a fixture under `crates/astrodyn_verif_jeod/test_data/`.
 ///
-/// Two locations are checked, in order:
-/// 1. `crates/astrodyn_verif_jeod/test_data/<filename>` — Tier 3 reference
-///    CSVs, Apollo `.out` files, `baselines.{json,md}`, and the JEOD-source
-///    mirror under `jeod_inputs/` live here.
-/// 2. Workspace-root `test_data/<filename>` — cross-cutting fixtures
-///    (gravity coefficients, leap-second table, `body_init/`,
-///    `jeod_validation/`, ephemerides, `planet_pfixposn_seeds.json`) still
-///    live here pending the follow-up redistribution.
-///
-/// Walks up from `CARGO_MANIFEST_DIR` until it finds `Cargo.lock` to anchor
-/// resolution. Returning the verif-jeod candidate when neither exists keeps
-/// the callsite's "file not found" panic message useful — the verif crate
-/// is where new Tier 3 fixtures should land.
+/// This is the home for Tier 3 reference CSVs, Apollo `.out` files,
+/// `baselines.{json,md}`, the JEOD-source mirror under `jeod_inputs/`,
+/// and the JEOD-derived Tier 2 reference data under `body_init/` and
+/// `jeod_validation/`. Cross-cutting fixtures (gravity coefficients,
+/// leap-second table, ephemerides, planet seeds) are *not* under this
+/// path — they live with their owner crates and have dedicated
+/// resolvers (e.g. [`gravity_fixtures::gravity_path`],
+/// [`leap_second::leap_second_path`]).
 pub fn test_data_path(filename: &str) -> PathBuf {
+    workspace_root()
+        .join("crates/astrodyn_verif_jeod/test_data")
+        .join(filename)
+}
+
+/// Walk up from `CARGO_MANIFEST_DIR` to the workspace root (the directory
+/// containing `Cargo.lock`). Falls back to a best-effort `../..` if no
+/// `Cargo.lock` is reachable.
+pub fn workspace_root() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
         if dir.join("Cargo.lock").exists() {
-            break;
+            return dir;
         }
         if !dir.pop() {
-            // No workspace root reachable — return a best-effort relative path.
             return PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../astrodyn_verif_jeod/test_data")
-                .join(filename);
+                .parent()
+                .and_then(|p| p.parent())
+                .map(PathBuf::from)
+                .expect("CARGO_MANIFEST_DIR has at least two ancestors");
         }
     }
-    let verif = dir
-        .join("crates/astrodyn_verif_jeod/test_data")
-        .join(filename);
-    if verif.exists() {
-        return verif;
-    }
-    let root = dir.join("test_data").join(filename);
-    if root.exists() {
-        return root;
-    }
-    verif
 }
 
 fn read_csv(path: &Path, sim_name: &str) -> String {

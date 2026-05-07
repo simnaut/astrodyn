@@ -267,7 +267,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
 
     // Initial Sun / Moon positions at the dyncomp epoch, refreshed each
     // step by the pre-step closure in `pre_step_closure`.
-    let bsp = astrodyn_test_data::tier3_csv::test_data_path("de421.bsp");
+    let bsp = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp.exists(),
         "DE421 ephemeris not found at {} — committed to test_data/",
@@ -686,7 +686,7 @@ fn drive_through_csv(
     earth_idx: usize,
     rows: &[DyncompRecord],
 ) -> WindowErrors {
-    let bsp = astrodyn_test_data::tier3_csv::test_data_path("de421.bsp");
+    let bsp = astrodyn::ephemeris_assets::de421_path();
     let ephemeris = Ephemeris::from_bsp(&bsp).expect("load DE421");
     let epoch_tdb_jd = sim.time.tdb_julian_date();
 

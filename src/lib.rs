@@ -226,7 +226,7 @@ pub use astrodyn_frames::rotation_mars;
 pub use astrodyn_frames::rotation_moon;
 
 // astrodyn_ephemeris: ephemeris data
-pub use astrodyn_ephemeris::{Ephemeris, EphemerisBody};
+pub use astrodyn_ephemeris::{assets as ephemeris_assets, Ephemeris, EphemerisBody};
 
 // astrodyn_gravity: relativistic-correction submodule consumed by mission
 // code that builds relativistic-source lists. The JEOD `.cc`

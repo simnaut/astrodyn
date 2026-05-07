@@ -31,6 +31,7 @@
 
 pub use astrodyn_quantities::prelude::*;
 
+pub mod assets;
 pub mod bodies;
 pub mod ephemeris;
 

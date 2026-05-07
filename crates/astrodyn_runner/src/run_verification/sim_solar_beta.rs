@@ -59,7 +59,7 @@ const J2000_JD: f64 = 2_451_545.0;
 const SUN_SOURCE_IDX: usize = 1;
 
 fn bsp_path() -> PathBuf {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    let p = astrodyn::ephemeris_assets::de421_path();
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
     p
 }

@@ -12,15 +12,13 @@
 //! [`recipes::verification::reference_data`](astrodyn::recipes::verification::reference_data),
 //! which reads the committed `test_data/gravity/moon_lp150q.bin`
 //! fixture for the Moon LP150Q gravity model. DE421 ephemeris and Moon
-//! libration come from the committed `test_data/de421.bsp` and
-//! `test_data/moon_pa_de421_1900-2050.bpc`. No JEOD checkout is
+//! libration come from the committed `crates/astrodyn_ephemeris/assets/de421.bsp` and
+//! `crates/astrodyn_ephemeris/assets/moon_pa_de421_1900-2050.bpc`. No JEOD checkout is
 //! required to run the example.
 //!
 //! ```bash
 //! cargo run -p astrodyn_runner --example earth_moon
 //! ```
-
-use std::path::Path;
 
 use astrodyn::recipes::{epoch, sun, vehicle, verification::reference_data};
 use astrodyn::vehicle_builder::VehicleBuilder;
@@ -59,9 +57,9 @@ fn parse_steps_arg(default: usize) -> usize {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load DE421 + Moon BPC libration (committed at test_data/).
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data");
-    let bsp_path = data_dir.join("de421.bsp");
-    let bpc_path = data_dir.join("moon_pa_de421_1900-2050.bpc");
+
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
+    let bpc_path = astrodyn::ephemeris_assets::moon_pa_path();
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",

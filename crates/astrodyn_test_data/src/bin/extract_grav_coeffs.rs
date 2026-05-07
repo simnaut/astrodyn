@@ -145,18 +145,9 @@ fn resolve_out_dir(args: &[String]) -> PathBuf {
             return PathBuf::from(p);
         }
     }
-    // Default: <workspace>/test_data/gravity
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("Cargo.lock").exists() {
-            break;
-        }
-        if !dir.pop() {
-            // Legacy fallback (matches `tier3_csv::test_data_path` behavior).
-            return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/gravity");
-        }
-    }
-    dir.join("test_data").join("gravity")
+    // Default: <workspace>/crates/astrodyn_gravity/test_data/gravity
+    astrodyn_test_data::tier3_csv::workspace_root()
+        .join("crates/astrodyn_gravity/test_data/gravity")
 }
 
 #[allow(clippy::too_many_arguments)]

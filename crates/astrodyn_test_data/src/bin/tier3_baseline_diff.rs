@@ -466,7 +466,9 @@ fn main() -> ExitCode {
     };
 
     let root = workspace_root();
-    let baselines_path = root.join("test_data").join("baselines.json");
+    let baselines_path = root
+        .join("crates/astrodyn_verif_jeod/test_data")
+        .join("baselines.json");
     let current_dir = root.join("target").join("tier3_crossval");
 
     let baselines_raw = match fs::read_to_string(&baselines_path) {

@@ -33,7 +33,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
         csv_path.display()
     );
 
-    let bsp_path = astrodyn_test_data::tier3_csv::test_data_path("de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",

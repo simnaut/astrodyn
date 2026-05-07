@@ -6,7 +6,7 @@
 //!   [`recipes::verification::reference_data`])
 //! - Mars IAU rotation model
 //! - Sun as 3rd-body perturbation with DE421 ephemeris
-//!   (`test_data/de421.bsp`)
+//!   (`crates/astrodyn_ephemeris/assets/de421.bsp`)
 //!
 //! No JEOD checkout is required — both the gravity binary and the DE421
 //! ephemeris are committed under `test_data/`. Mission code that wants a
@@ -16,8 +16,6 @@
 //! ```bash
 //! cargo run -p astrodyn_runner --example mars_orbit
 //! ```
-
-use std::path::Path;
 
 use astrodyn::recipes::{epoch, sun, vehicle, verification::reference_data};
 use astrodyn::vehicle_builder::VehicleBuilder;
@@ -51,8 +49,7 @@ fn parse_steps_arg(default: usize) -> usize {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data");
-    let bsp_path = data_dir.join("de421.bsp");
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",

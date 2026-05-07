@@ -8,14 +8,12 @@
 //! `Simulation`. This is the "use a scenario as the starting point,
 //! then customize" archetype recipes are designed to support.
 //!
-//! Uses DE421 ephemeris from `test_data/de421.bsp` for Moon and Sun
+//! Uses DE421 ephemeris from `crates/astrodyn_ephemeris/assets/de421.bsp` for Moon and Sun
 //! positions.
 //!
 //! ```bash
 //! cargo run -p astrodyn_runner --example apollo
 //! ```
-
-use std::path::Path;
 
 use astrodyn::recipes::scenarios::apollo;
 use astrodyn::recipes::Mission;
@@ -58,8 +56,8 @@ fn parse_steps_arg(default: usize) -> usize {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Override scenario state with Apollo parking orbit, attach DE421
     // ephemeris, then build.
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data");
-    let bsp_path = data_dir.join("de421.bsp");
+
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",

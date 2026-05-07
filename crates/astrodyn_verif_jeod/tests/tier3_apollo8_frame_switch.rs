@@ -68,8 +68,9 @@ fn test_data_dir() -> std::path::PathBuf {
 /// If `enable_frame_switch` is true, a distance-based frame switch to the
 /// Moon's inertial frame is configured.
 fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
-    let data_dir = test_data_dir();
-    let bsp_path = data_dir.join("de405.bsp");
+    // DE405 lives under verif_jeod/assets/ (JEOD-parity-only, large binary
+    // segregated from test_data/ trajectory CSVs).
+    let bsp_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/de405.bsp");
     assert!(
         bsp_path.exists(),
         "DE405 ephemeris not found at {}",
