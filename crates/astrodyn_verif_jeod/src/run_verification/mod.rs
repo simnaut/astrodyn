@@ -236,7 +236,11 @@ impl VerificationCaseExt for VerificationCase {
 /// Project the t=0 [`StateLog`] from the reference CSV into the
 /// adapter-neutral [`InitialConditions`] passed to scenario builders.
 /// Scenarios consume this rather than re-parsing the CSV themselves.
-fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
+///
+/// Exposed `pub` so `astrodyn_verif_parity::VerificationCaseParityExt`
+/// (issue #389) can re-use the same projection without re-implementing
+/// the field-by-field copy.
+pub fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
     InitialConditions {
         time: t0.time,
         position: t0.position.unwrap_or_default(),
@@ -244,6 +248,21 @@ fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
         quaternion: t0.quaternion,
         ang_vel: t0.ang_vel,
     }
+}
+
+/// Public state-only loader for a [`CsvReference`].
+///
+/// Returns just the `Vec<StateLog>` portion of [`load_reference`]; the
+/// per-family typed-records vec stays private because it carries
+/// extras-comparator wiring `verif_parity` doesn't need (parity tests
+/// compare runner state to bevy state, not against JEOD-logged extras).
+///
+/// Exposed for `astrodyn_verif_parity::VerificationCaseParityExt`
+/// (issue #389) so the parity trait can consume the same reference-CSV
+/// schedule that `run_and_assert` does, without duplicating the
+/// per-variant dispatch.
+pub fn load_reference_states(csv: &CsvReference, path: &std::path::Path) -> Vec<StateLog> {
+    load_reference(csv, path, None).0
 }
 
 /// Build a [`StateLog`] from a body's snapshot, with the time copied

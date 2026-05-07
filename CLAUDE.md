@@ -180,6 +180,19 @@ The three verification tiers:
   through `Simulation::step()`, compare against JEOD Trick simulation output over
   hours/days
 
+The Bevy adapter inherits Tier 3 coverage **transitively**: every Tier 3
+`runner ↔ JEOD` test has (or is permitted to skip via an explicit
+`KNOWN_PARITY_GAPS` entry) a `runner ↔ bevy` parity sibling at
+`crates/astrodyn_verif_parity/tests/bevy_parity_*.rs`, asserting
+bit-identical state via [`VerificationCaseParityExt::run_and_assert_parity`]
+(issue #389). The combination — `runner ↔ JEOD` within tolerance plus
+`runner ↔ bevy` bit-for-bit — establishes `bevy ↔ JEOD` within the same
+tolerance by transitivity. The
+`crates/astrodyn_verif_parity/tests/parity_coverage.rs` meta-test
+enforces the superset invariant: a new `tier3_*` topic that lands
+without either a parity wrapper or a `KNOWN_PARITY_GAPS` exemption fails
+CI here, preventing silent-regression of the transitivity argument.
+
 ## Fail Loudly (non-negotiable)
 
 Physics simulations have no graceful-degradation mode. A trajectory that

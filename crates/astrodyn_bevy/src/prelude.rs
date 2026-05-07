@@ -33,9 +33,9 @@ pub use crate::{
     GravitySourceC, GravityTorqueC, InertialFrameMarker, IntegrationFrameMarker, IntegratorTypeC,
     JointKinematicsC, MassPropertiesC, MultiDofJointKinematicsC, PfixFrameEntityC,
     PlanetFixedFrameMarker, PlanetFixedRotationC, RadiationForceC, RootFrameEntityR,
-    RotationalStateC, SimulationTimeR, SinusoidalJointKinematicsC, SourceInertialPositionC,
-    SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
-    VehicleConfigBevyExt,
+    RotationalStateC, ScenarioHandles, SimulationBuilderBevyExt, SimulationTimeR,
+    SinusoidalJointKinematicsC, SourceInertialPositionC, SourceInertialVelocityC,
+    StructuralTransformC, TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
 };
 // ECS-native frame-tree mission-code surface.
 // `RelativeFrameState` is the mission-facing API for cross-frame
