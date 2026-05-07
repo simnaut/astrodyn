@@ -13,7 +13,7 @@ if [ ! -f /generate_references.sh ]; then
     cat >&2 <<'USAGE'
 Error: /generate_references.sh not found in the container.
 
-The script must be bind-mounted at runtime. From the bevy_jeod root:
+The script must be bind-mounted at runtime. From the astrodyn_bevy root:
 
   docker run --rm \
     -v "$(pwd)/test_data:/output" \

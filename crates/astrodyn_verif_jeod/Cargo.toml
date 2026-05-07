@@ -1,0 +1,33 @@
+[package]
+name = "astrodyn_verif_jeod"
+description = "Tier 3 cross-validation tests against NASA JEOD reference trajectories"
+keywords = ["verification", "validation", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Marker feature mirroring `astrodyn_runner`'s `verification` so tier 3
+# tests can `#![cfg(feature = "verification")]`-gate themselves. Default-on
+# so `cargo nextest run -p astrodyn_verif_jeod` picks them up.
+default = ["verification"]
+verification = []
+
+[dependencies]
+astrodyn = { path = "../..", version = "0.1.0", features = ["jeod-source"] }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
+astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
+astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+log = { workspace = true }
+uom = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "astrodyn_atmosphere"
+description = "Atmospheric density models (exponential, MET) for astrodyn_bevy"
+readme = "README.md"
+keywords = ["atmosphere", "drag", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+uom = { workspace = true }
+
+[dev-dependencies]
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }

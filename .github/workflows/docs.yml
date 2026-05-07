@@ -31,15 +31,15 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps
 
-      - name: Add root index.html redirect to bevy_jeod
+      - name: Add root index.html redirect to astrodyn
         run: |
           cat > target/doc/index.html <<'EOF'
           <!DOCTYPE html>
           <meta charset="utf-8">
-          <title>bevy_jeod docs</title>
-          <meta http-equiv="refresh" content="0; url=bevy_jeod/index.html">
-          <link rel="canonical" href="bevy_jeod/index.html">
-          <p>Redirecting to <a href="bevy_jeod/index.html">bevy_jeod</a>…</p>
+          <title>astrodyn docs</title>
+          <meta http-equiv="refresh" content="0; url=astrodyn/index.html">
+          <link rel="canonical" href="astrodyn/index.html">
+          <p>Redirecting to <a href="astrodyn/index.html">astrodyn</a>…</p>
           EOF
 
       - name: Configure Pages

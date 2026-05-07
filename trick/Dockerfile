@@ -1,6 +1,6 @@
 # Build Trick + JEOD on Rocky Linux 9 for generating reference trajectories.
 #
-# Usage (from bevy_jeod project root, with trick and jeod as siblings):
+# Usage (from astrodyn project root, with trick and jeod as siblings):
 #   docker build -f trick/Dockerfile -t jeod-trick ..
 #   docker run --rm \
 #     -v $(pwd)/test_data:/output \
@@ -8,13 +8,13 @@
 #     jeod-trick
 #
 # The build context is the parent directory (..) so that both trick/ and jeod/
-# are accessible via COPY. BEVY_JEOD_DIR defaults to "bevy_jeod" but can be
+# are accessible via COPY. BEVY_JEOD_DIR defaults to "astrodyn" but can be
 # overridden if the repo was cloned under a different name:
 #   docker build -f trick/Dockerfile --build-arg BEVY_JEOD_DIR=my_clone -t jeod-trick ..
 
 FROM rockylinux/rockylinux:9
 
-ARG BEVY_JEOD_DIR=bevy_jeod
+ARG BEVY_JEOD_DIR=astrodyn
 
 # ── System dependencies (from Trick's test_linux.yml Rocky 9 config) ──
 RUN dnf -y install epel-release && \
@@ -61,8 +61,8 @@ VOLUME /output
 #
 # Wrapper entrypoint prints a clear usage message if the script is not
 # bind-mounted. Lives as `trick/entrypoint.sh` so the build context is the
-# parent directory and the COPY path is `bevy_jeod/trick/entrypoint.sh`
-# (the build-arg `BEVY_JEOD_DIR` defaults to `bevy_jeod` per the header).
+# parent directory and the COPY path is `astrodyn/trick/entrypoint.sh`
+# (the build-arg `BEVY_JEOD_DIR` defaults to `astrodyn` per the header).
 COPY ${BEVY_JEOD_DIR}/trick/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

@@ -1,14 +1,14 @@
 // Standalone JEOD gravity benchmark — computes point-mass gravity at test
 // positions from verif_out.txt and outputs CSV for cross-validation with
-// bevy_jeod. Does NOT require Trick or the JEOD test harness.
+// astrodyn_bevy. Does NOT require Trick or the JEOD test harness.
 //
 // Build:
 //   g++ -O2 -std=c++11 -I${JEOD_HOME}/models \
-//       -o jeod_gravity_benchmark jeod_gravity_benchmark.cc \
+//       -o astrodyn_gravity_benchmark astrodyn_gravity_benchmark.cc \
 //       -L${JEOD_HOME}/build -ljeod -lm
 //
 // Run:
-//   ./jeod_gravity_benchmark < ${JEOD_HOME}/models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt
+//   ./astrodyn_gravity_benchmark < ${JEOD_HOME}/models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt
 
 #include <cstdio>
 #include <cmath>

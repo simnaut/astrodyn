@@ -2,7 +2,7 @@
   "schema_version": 1,
   "vehicle": "STS_114",
   "source": "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/STS_114/",
-  "note": "Body initialization vectors. Regenerate with: cargo run -p jeod_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
+  "note": "Body initialization vectors. Regenerate with: cargo run -p astrodyn_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
   "reference_inertial": {"position": [1244471.94, 5655811.8, 3425518.88], "velocity": [-6003.553468, -1469.321965, 4590.57723]},
   "orbital_inits": [
     {

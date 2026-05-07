@@ -3,5 +3,5 @@
   "vector_count": 5001,
   "bytes": 240052,
   "format": "u32 count (LE) followed by count * 6 * f64 (LE) = pos[3] vel[3] in SI",
-  "note": "Regenerate with: cargo run -p jeod_test_data --bin extract_jeod_validation"
+  "note": "Regenerate with: cargo run -p astrodyn_test_data --bin extract_jeod_validation"
 }

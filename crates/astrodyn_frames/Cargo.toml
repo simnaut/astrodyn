@@ -1,0 +1,23 @@
+[package]
+name = "astrodyn_frames"
+description = "Reference frame tree and Earth rotation (RNP, nutation, precession) for astrodyn_bevy"
+readme = "README.md"
+keywords = ["reference-frame", "earth-rotation", "orbital-mechanics", "aerospace", "geodesy"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+
+[dev-dependencies]
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0", features = ["test-utils"] }
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }

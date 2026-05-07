@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate reference trajectory data from JEOD verification sims.
 # Runs inside the Docker container with Trick and JEOD built.
-# Outputs CSV files to /output/ for bevy_jeod Tier 3 cross-validation.
+# Outputs CSV files to /output/ for astrodyn_bevy Tier 3 cross-validation.
 #
 # Parallelization strategy:
 #   - SIM_dyncomp runs share one executable → run sequentially after one build
@@ -1356,14 +1356,14 @@ dr = trick.sim_services.DRAscii("timescale_ASCII")
 dr.set_cycle(60)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.tai.trunc_julian_time",
-    "jeod_time.tai.seconds",
-    "jeod_time.utc.trunc_julian_time",
-    "jeod_time.ut1.trunc_julian_time",
-    "jeod_time.tt.trunc_julian_time",
-    "jeod_time.tdb.trunc_julian_time",
-    "jeod_time.gmst.seconds",
-    "jeod_time.gps.trunc_julian_time",
+    "astrodyn_time.tai.trunc_julian_time",
+    "astrodyn_time.tai.seconds",
+    "astrodyn_time.utc.trunc_julian_time",
+    "astrodyn_time.ut1.trunc_julian_time",
+    "astrodyn_time.tt.trunc_julian_time",
+    "astrodyn_time.tdb.trunc_julian_time",
+    "astrodyn_time.gmst.seconds",
+    "astrodyn_time.gps.trunc_julian_time",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -1411,8 +1411,8 @@ for v in [
     "sv_dyn.body.composite_body.state.trans.velocity[1]",
     "sv_dyn.body.composite_body.state.trans.position[2]",
     "sv_dyn.body.composite_body.state.trans.velocity[2]",
-    "jeod_time.tai.seconds",
-    "jeod_time.tai.trunc_julian_time",
+    "astrodyn_time.tai.seconds",
+    "astrodyn_time.tai.trunc_julian_time",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -1789,7 +1789,7 @@ trick.add_data_record_group(dr)
 # (parent/integrated body), lm_dyn (child subtree), and s3_dyn
 # (intermediate detached subtree root during t=4 to t=5 — needed to
 # disambiguate chain-walk-from-S3-to-LM errors from S3 propagation
-# errors). The Rust port jeod_dynamics::attach::combine_states_at_attach
+# errors). The Rust port astrodyn_dynamics::attach::combine_states_at_attach
 # is replayed against the cm/lm values; the s3 columns drive the
 # tier3_sim_apollo_lm_state_vs_truth diagnostic.
 #
@@ -2310,11 +2310,11 @@ PID_GROUND_CONTACT=$LAST_BG_PID
 
 # ════════════════════════════════════════════════════════════════════
 # JEOD time verification SIMs (1-6) for Tier 3 time cross-validation.
-# Consumed by crates/jeod_runner/tests/tier3_sim_time_docker.rs.
+# Consumed by crates/astrodyn_runner/tests/tier3_sim_time_docker.rs.
 #
 # Object-path convention differs between sims:
-#   SIM_1-4  use `jeod_time.time_manager` / `time_tai` / `time_utc` / ...
-#   SIM_5-6  use `jeod_time.manager` / `tai` / `utc` / ...
+#   SIM_1-4  use `astrodyn_time.time_manager` / `time_tai` / `time_utc` / ...
+#   SIM_5-6  use `astrodyn_time.manager` / `tai` / `utc` / ...
 # This mirrors the S_define declarations for each sim exactly — any
 # mismatch causes Trick's DRAscii to silently omit the variable.
 # ════════════════════════════════════════════════════════════════════
@@ -2325,7 +2325,7 @@ dr = trick.sim_services.DRAscii("time_v1")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.time_manager.dyn_time.seconds",
+    "astrodyn_time.time_manager.dyn_time.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -2364,9 +2364,9 @@ dr = trick.sim_services.DRAscii("time_v2")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.time_manager.dyn_time.seconds",
-    "jeod_time.time_tai.trunc_julian_time",
-    "jeod_time.time_tai.seconds",
+    "astrodyn_time.time_manager.dyn_time.seconds",
+    "astrodyn_time.time_tai.trunc_julian_time",
+    "astrodyn_time.time_tai.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -2405,8 +2405,8 @@ dr = trick.sim_services.DRAscii("time_v3")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.time_manager.dyn_time.seconds",
-    "jeod_time.time_ude.seconds",
+    "astrodyn_time.time_manager.dyn_time.seconds",
+    "astrodyn_time.time_ude.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -2447,13 +2447,13 @@ dr = trick.sim_services.DRAscii("time_v4")
 dr.set_cycle(60)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.time_manager.dyn_time.seconds",
-    "jeod_time.time_tai.trunc_julian_time",
-    "jeod_time.time_tai.seconds",
-    "jeod_time.time_utc.trunc_julian_time",
-    "jeod_time.time_utc.seconds",
-    "jeod_time.time_ut1.trunc_julian_time",
-    "jeod_time.time_ut1.seconds",
+    "astrodyn_time.time_manager.dyn_time.seconds",
+    "astrodyn_time.time_tai.trunc_julian_time",
+    "astrodyn_time.time_tai.seconds",
+    "astrodyn_time.time_utc.trunc_julian_time",
+    "astrodyn_time.time_utc.seconds",
+    "astrodyn_time.time_ut1.trunc_julian_time",
+    "astrodyn_time.time_ut1.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -2493,22 +2493,22 @@ dr = trick.sim_services.DRAscii("time_v5")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.manager.dyn_time.seconds",
-    "jeod_time.tai.trunc_julian_time",
-    "jeod_time.tai.seconds",
-    "jeod_time.utc.trunc_julian_time",
-    "jeod_time.utc.seconds",
-    "jeod_time.ut1.trunc_julian_time",
-    "jeod_time.ut1.seconds",
-    "jeod_time.tt.trunc_julian_time",
-    "jeod_time.tt.seconds",
-    "jeod_time.tdb.trunc_julian_time",
-    "jeod_time.tdb.seconds",
-    "jeod_time.gmst.seconds",
-    "jeod_time.gps.trunc_julian_time",
-    "jeod_time.gps.seconds",
-    "jeod_time.metveh1.seconds",
-    "jeod_time.metveh2.seconds",
+    "astrodyn_time.manager.dyn_time.seconds",
+    "astrodyn_time.tai.trunc_julian_time",
+    "astrodyn_time.tai.seconds",
+    "astrodyn_time.utc.trunc_julian_time",
+    "astrodyn_time.utc.seconds",
+    "astrodyn_time.ut1.trunc_julian_time",
+    "astrodyn_time.ut1.seconds",
+    "astrodyn_time.tt.trunc_julian_time",
+    "astrodyn_time.tt.seconds",
+    "astrodyn_time.tdb.trunc_julian_time",
+    "astrodyn_time.tdb.seconds",
+    "astrodyn_time.gmst.seconds",
+    "astrodyn_time.gps.trunc_julian_time",
+    "astrodyn_time.gps.seconds",
+    "astrodyn_time.metveh1.seconds",
+    "astrodyn_time.metveh2.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
@@ -2548,9 +2548,9 @@ dr = trick.sim_services.DRAscii("time_v6")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "jeod_time.manager.dyn_time.seconds",
-    "jeod_time.tai.trunc_julian_time",
-    "jeod_time.tai.seconds",
+    "astrodyn_time.manager.dyn_time.seconds",
+    "astrodyn_time.tai.trunc_julian_time",
+    "astrodyn_time.tai.seconds",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)

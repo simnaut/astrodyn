@@ -1,0 +1,22 @@
+[package]
+name = "astrodyn_planet"
+description = "Planet definitions and presets (Earth, Moon, Sun, Mars) for astrodyn_bevy"
+readme = "README.md"
+keywords = ["planet", "ephemeris", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+uom = { workspace = true }
+
+[dev-dependencies]
+glam = { workspace = true }
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }

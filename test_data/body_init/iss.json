@@ -2,7 +2,7 @@
   "schema_version": 1,
   "vehicle": "ISS",
   "source": "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/",
-  "note": "Body initialization vectors. Regenerate with: cargo run -p jeod_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
+  "note": "Body initialization vectors. Regenerate with: cargo run -p astrodyn_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
   "reference_inertial": {"position": [1244540.53, 5655938.85, 3425643.22], "velocity": [-6003.833051, -1469.496044, 4590.511776]},
   "orbital_inits": [
     {

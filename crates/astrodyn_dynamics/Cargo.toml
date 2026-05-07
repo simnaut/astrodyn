@@ -1,0 +1,28 @@
+[package]
+name = "astrodyn_dynamics"
+description = "Rigid-body dynamics, integrators (RK4, RKF45, GJ, ABM4), mass tree, and body initialization"
+readme = "README.md"
+keywords = ["orbital-mechanics", "dynamics", "integrator", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+uom = { workspace = true }
+
+[dev-dependencies]
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0", features = ["test-utils"] }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
+sha2 = "0.10"

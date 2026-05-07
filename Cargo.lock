@@ -199,6 +199,231 @@ dependencies = [
 ]
 
 [[package]]
+name = "astrodyn"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_atmosphere",
+ "astrodyn_dynamics",
+ "astrodyn_ephemeris",
+ "astrodyn_frames",
+ "astrodyn_gravity",
+ "astrodyn_interactions",
+ "astrodyn_math",
+ "astrodyn_planet",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+ "log",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_atmosphere"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "glam 0.30.10",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_bevy"
+version = "0.1.0"
+dependencies = [
+ "astrodyn",
+ "astrodyn_dynamics",
+ "astrodyn_quantities",
+ "astrodyn_runner",
+ "astrodyn_test_data",
+ "bevy",
+ "bevy_reflect",
+ "glam 0.30.10",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_dynamics"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_frames",
+ "astrodyn_gravity",
+ "astrodyn_math",
+ "astrodyn_planet",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "glam 0.30.10",
+ "sha2",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_ephemeris"
+version = "0.1.0"
+dependencies = [
+ "anise",
+ "astrodyn_quantities",
+ "glam 0.30.10",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "astrodyn_frames"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+]
+
+[[package]]
+name = "astrodyn_gravity"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_dynamics",
+ "astrodyn_frames",
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+ "log",
+ "thiserror 2.0.18",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_interactions"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_atmosphere",
+ "astrodyn_dynamics",
+ "astrodyn_ephemeris",
+ "astrodyn_gravity",
+ "astrodyn_math",
+ "astrodyn_planet",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_math"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_ephemeris",
+ "astrodyn_planet",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "glam 0.30.10",
+ "thiserror 2.0.18",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_planet"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "glam 0.30.10",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_quantities"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "proptest",
+ "thiserror 2.0.18",
+ "typenum",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_runner"
+version = "0.1.0"
+dependencies = [
+ "astrodyn",
+ "astrodyn_atmosphere",
+ "astrodyn_dynamics",
+ "astrodyn_frames",
+ "astrodyn_gravity",
+ "astrodyn_interactions",
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+ "log",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_test_data"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_gravity",
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "glam 0.30.10",
+ "regex",
+ "thiserror 2.0.18",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_time"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_quantities",
+ "log",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_verif_jeod"
+version = "0.1.0"
+dependencies = [
+ "astrodyn",
+ "astrodyn_atmosphere",
+ "astrodyn_dynamics",
+ "astrodyn_frames",
+ "astrodyn_interactions",
+ "astrodyn_math",
+ "astrodyn_quantities",
+ "astrodyn_runner",
+ "astrodyn_test_data",
+ "astrodyn_time",
+ "glam 0.30.10",
+ "log",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_verif_parity"
+version = "0.1.0"
+dependencies = [
+ "astrodyn",
+ "astrodyn_bevy",
+ "astrodyn_dynamics",
+ "astrodyn_quantities",
+ "astrodyn_runner",
+ "astrodyn_test_data",
+ "bevy",
+ "glam 0.30.10",
+ "log",
+ "uom",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -647,21 +872,6 @@ dependencies = [
  "bevy_transform",
  "bevy_utils",
  "bevy_window",
-]
-
-[[package]]
-name = "bevy_jeod"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_reflect",
- "glam 0.30.10",
- "jeod_dynamics",
- "jeod_quantities",
- "jeod_runner",
- "jeod_sim",
- "jeod_test_data",
- "uom",
 ]
 
 [[package]]
@@ -2342,181 +2552,6 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
-
-[[package]]
-name = "jeod_atmosphere"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_quantities",
- "jeod_test_data",
- "uom",
-]
-
-[[package]]
-name = "jeod_dynamics"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_frames",
- "jeod_gravity",
- "jeod_math",
- "jeod_planet",
- "jeod_quantities",
- "jeod_test_data",
- "sha2",
- "uom",
-]
-
-[[package]]
-name = "jeod_ephemeris"
-version = "0.1.0"
-dependencies = [
- "anise",
- "glam 0.30.10",
- "jeod_quantities",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "jeod_frames"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_math",
- "jeod_quantities",
- "jeod_test_data",
- "jeod_time",
-]
-
-[[package]]
-name = "jeod_gravity"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_dynamics",
- "jeod_frames",
- "jeod_math",
- "jeod_quantities",
- "jeod_test_data",
- "jeod_time",
- "log",
- "thiserror 2.0.18",
- "uom",
-]
-
-[[package]]
-name = "jeod_interactions"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_ephemeris",
- "jeod_gravity",
- "jeod_math",
- "jeod_planet",
- "jeod_quantities",
- "jeod_test_data",
- "jeod_time",
- "uom",
-]
-
-[[package]]
-name = "jeod_math"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_ephemeris",
- "jeod_planet",
- "jeod_quantities",
- "jeod_test_data",
- "thiserror 2.0.18",
- "uom",
-]
-
-[[package]]
-name = "jeod_planet"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_math",
- "jeod_quantities",
- "jeod_test_data",
- "uom",
-]
-
-[[package]]
-name = "jeod_quantities"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "proptest",
- "thiserror 2.0.18",
- "typenum",
- "uom",
-]
-
-[[package]]
-name = "jeod_runner"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_frames",
- "jeod_gravity",
- "jeod_interactions",
- "jeod_math",
- "jeod_quantities",
- "jeod_sim",
- "jeod_test_data",
- "jeod_time",
- "log",
- "uom",
-]
-
-[[package]]
-name = "jeod_sim"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_ephemeris",
- "jeod_frames",
- "jeod_gravity",
- "jeod_interactions",
- "jeod_math",
- "jeod_planet",
- "jeod_quantities",
- "jeod_test_data",
- "jeod_time",
- "log",
- "uom",
-]
-
-[[package]]
-name = "jeod_test_data"
-version = "0.1.0"
-dependencies = [
- "glam 0.30.10",
- "jeod_gravity",
- "jeod_math",
- "jeod_quantities",
- "regex",
- "thiserror 2.0.18",
- "uom",
-]
-
-[[package]]
-name = "jeod_time"
-version = "0.1.0"
-dependencies = [
- "jeod_quantities",
- "log",
- "uom",
-]
 
 [[package]]
 name = "jni"

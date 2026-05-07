@@ -1,6 +1,6 @@
 {
   "source": "models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc",
-  "note": "All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p jeod_test_data --bin extract_jeod_validation",
+  "note": "All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p astrodyn_test_data --bin extract_jeod_validation",
   "cases": [
     {
       "matrix": [

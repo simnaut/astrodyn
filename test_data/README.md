@@ -21,7 +21,7 @@ curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 Standard NASA/JPL product covering 1899-2053. Used as the production ephemeris
 for all non-cross-validation scenarios.
 
-**Used by:** `jeod_ephemeris/tests/ephemeris_validation.rs`, all Tier 3
+**Used by:** `astrodyn_ephemeris/tests/ephemeris_validation.rs`, all Tier 3
 trajectory tests except Apollo 8 frame switch.
 
 #### DE405 (cross-validation only)
@@ -46,7 +46,7 @@ The conversion preserves all numerical data at full f64 precision. The resulting
 file passes ANISE's DAF validation and produces ephemeris states consistent with
 JPL Horizons to sub-millimeter precision.
 
-**Used by:** `jeod_runner/tests/tier3_apollo8_frame_switch.rs` only.
+**Used by:** `astrodyn_runner/tests/tier3_apollo8_frame_switch.rs` only.
 
 ---
 
@@ -59,9 +59,9 @@ JEOD 5.4.
 
 | File | JEOD Run | Gravity model | Used by |
 |------|----------|---------------|---------|
-| `dyncomp_run2_state.csv` | RUN_2 | Spherical (point-mass) | `jeod_runner/tests/tier3_sim_dyncomp_run2.rs` |
-| `dyncomp_run3a_state.csv` | RUN_3A | 4x4 spherical harmonics (GGM02C) | `jeod_runner/tests/tier3_sim_dyncomp_run3.rs` |
-| `dyncomp_run3b_state.csv` | RUN_3B | 8x8 spherical harmonics (GGM02C) | `jeod_runner/tests/tier3_sim_dyncomp_run3.rs` |
+| `dyncomp_run2_state.csv` | RUN_2 | Spherical (point-mass) | `astrodyn_runner/tests/tier3_sim_dyncomp_run2.rs` |
+| `dyncomp_run3a_state.csv` | RUN_3A | 4x4 spherical harmonics (GGM02C) | `astrodyn_runner/tests/tier3_sim_dyncomp_run3.rs` |
+| `dyncomp_run3b_state.csv` | RUN_3B | 8x8 spherical harmonics (GGM02C) | `astrodyn_runner/tests/tier3_sim_dyncomp_run3.rs` |
 
 Additional files generated but not currently consumed by tests:
 
@@ -153,7 +153,7 @@ wget -O test_data/moon_pa_de421_1900-2050.bpc \
   https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de421_1900-2050.bpc
 ```
 
-**Used by:** `crates/jeod_sim/tests/tier3_sim_earth_moon.rs` (Clementine lunar orbit,
+**Used by:** `crates/astrodyn/tests/tier3_sim_earth_moon.rs` (Clementine lunar orbit,
 LP150Q 60x60 gravity + cannonball SRP, dt=0.03125s — achieves 0.93 m parity over 7 days)
 
 ---
@@ -218,7 +218,7 @@ Column 5: position[2] {m}
 Column 6: velocity[2] {m/s}
 ```
 
-**Used by:** `crates/jeod_sim/tests/tier3_sim_mercury.rs` — validates that the
+**Used by:** `crates/astrodyn/tests/tier3_sim_mercury.rs` — validates that the
 relativistic correction produces a measurable trajectory divergence. The full
 perihelion advance measurement (~43 arcsec/century) requires propagating both
 trajectories and measuring the argument of periapsis drift over multiple

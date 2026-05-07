@@ -34,7 +34,7 @@
 #    audit finding H1 documented.
 #
 #    They are legitimately part of the typed-sibling boundary inside
-#    `crates/jeod_*/src/` — every typed sibling (`TranslationalStateTyped`,
+#    `crates/astrodyn_*/src/` — every typed sibling (`TranslationalStateTyped`,
 #    `MassPropertiesTyped`, `GravityAccelerationTyped`, …) implements a
 #    `from_untyped_unchecked` / `from_raw_si` bridge by definition. So
 #    `crates/**` is allowed for category (2).
@@ -63,12 +63,12 @@ marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
 # `_unchecked` bridges all live there by construction.
 # `src/components/**` is exempt — Bevy components' `From<Untyped>` impls
 # are the canonical insertion-time boundary; each one is the analogue
-# of jeod_dynamics's `from_untyped_unchecked`. (Pre-split history: this
+# of astrodyn_dynamics's `from_untyped_unchecked`. (Pre-split history: this
 # was a single `src/components.rs` file; the same boundary semantics
 # apply to every per-stage submodule under the new `src/components/`
 # directory.)
 # `src/lib.rs` is exempt — `spawn_bevy` performs insertion-time lifts
-# from `VehicleConfig` (still untyped in jeod_sim) to typed components.
+# from `VehicleConfig` (still untyped in astrodyn) to typed components.
 # All other files under `src/**` are policed.
 #
 # Annotations document each per-step bypass. The annotation may be:

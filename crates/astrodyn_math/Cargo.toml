@@ -1,0 +1,30 @@
+[package]
+name = "astrodyn_math"
+description = "Quaternion, Euler, geodetic, orbital-element, and LVLH math kernels for astrodyn_bevy"
+readme = "README.md"
+keywords = ["orbital-mechanics", "math", "quaternion", "geodetic", "aerospace"]
+categories = ["science", "aerospace", "mathematics"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+thiserror = { workspace = true }
+uom = { workspace = true }
+
+[features]
+test-utils = []
+
+[dev-dependencies]
+astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
+astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
+# `test-utils` exposes `astrodyn_quantities::frame::TestVehicle` for inline tests
+# that need a phantom vehicle tag (Vehicle is sealed in production).
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
