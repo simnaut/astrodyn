@@ -1,0 +1,43 @@
+[package]
+name = "astrodyn_verif_jeod"
+description = "JEOD cross-validation parsers, fixtures, scenario rigs, and Tier 3 trajectory tests"
+keywords = ["verification", "validation", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+exclude = [
+    "test_data/*.csv",
+    "test_data/*.out",
+    "test_data/jeod_inputs/**",
+    "assets/*.bsp",
+]
+
+[dependencies]
+astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
+glam = { workspace = true }
+log = { workspace = true }
+regex = "1"
+thiserror = { workspace = true }
+uom = { workspace = true }
+
+[[example]]
+name = "earth_moon"
+path = "examples/earth_moon.rs"
+
+[[example]]
+name = "mars_orbit"
+path = "examples/mars_orbit.rs"

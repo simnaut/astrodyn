@@ -34,42 +34,41 @@
 #    audit finding H1 documented.
 #
 #    They are legitimately part of the typed-sibling boundary inside
-#    `crates/jeod_*/src/` — every typed sibling (`TranslationalStateTyped`,
+#    `crates/astrodyn_*/src/` — every typed sibling (`TranslationalStateTyped`,
 #    `MassPropertiesTyped`, `GravityAccelerationTyped`, …) implements a
 #    `from_untyped_unchecked` / `from_raw_si` bridge by definition. So
 #    `crates/**` is allowed for category (2).
 #
-#    What's banned for category (2): the **Bevy adapter** (`src/**`).
-#    The audit (issue #172, finding H1) identified per-step `from_raw_si`
-#    lifts in `src/systems.rs` as the load-bearing failure mode of the
-#    typed-quantity facade — every system was extracting raw `DVec3`
-#    from a component, hand-tagging it `Inertial`, and dropping back to
-#    raw on exit, so the phantom never crossed the ECS boundary. The
-#    fix is to make Bevy components wrap the typed siblings directly;
-#    this guard prevents regression by refusing the bypass APIs in
-#    `src/`.
+#    What's banned for category (2): the **Bevy adapter**
+#    (`crates/astrodyn_bevy/src/**`). The audit (issue #172, finding H1)
+#    identified per-step `from_raw_si` lifts in the adapter's systems
+#    as the load-bearing failure mode of the typed-quantity facade —
+#    every system was extracting raw `DVec3` from a component,
+#    hand-tagging it `Inertial`, and dropping back to raw on exit, so
+#    the phantom never crossed the ECS boundary. The fix is to make
+#    Bevy components wrap the typed siblings directly; this guard
+#    prevents regression by refusing the bypass APIs in the adapter.
 #
-#    `// allowed: <reason>` annotations exempt individual `src/` lines
-#    when there is no choice (typically a JEOD-CSV-style boundary).
-#    Use sparingly and document each exemption in the PR.
+#    `// allowed: <reason>` annotations exempt individual adapter
+#    lines when there is no choice (typically a JEOD-CSV-style
+#    boundary). Use sparingly and document each exemption in the PR.
 set -euo pipefail
 
 # ── Category 1: marker-based (banned across crates/ + src/) ──
 marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
   | grep -v '// allowed:' || true)
 
-# ── Category 2: typed-quantity bypass constructors (banned across src/**) ──
-# `crates/**` is fully exempt — the typed siblings and their internal
-# `_unchecked` bridges all live there by construction.
-# `src/components/**` is exempt — Bevy components' `From<Untyped>` impls
-# are the canonical insertion-time boundary; each one is the analogue
-# of jeod_dynamics's `from_untyped_unchecked`. (Pre-split history: this
-# was a single `src/components.rs` file; the same boundary semantics
-# apply to every per-stage submodule under the new `src/components/`
-# directory.)
-# `src/lib.rs` is exempt — `spawn_bevy` performs insertion-time lifts
-# from `VehicleConfig` (still untyped in jeod_sim) to typed components.
-# All other files under `src/**` are policed.
+# ── Category 2: typed-quantity bypass constructors (banned across the Bevy adapter) ──
+# The Bevy adapter is `crates/astrodyn_bevy/src/`. Outside the adapter the
+# typed siblings and their internal `_unchecked` bridges live by
+# construction — those are the boundary itself, not a regression.
+# `crates/astrodyn_bevy/src/components/**` is exempt: Bevy components'
+# `From<Untyped>` impls are the canonical insertion-time boundary; each
+# one is the analogue of astrodyn_dynamics's `from_untyped_unchecked`.
+# `crates/astrodyn_bevy/src/lib.rs` is exempt — `spawn_bevy` performs
+# insertion-time lifts from `VehicleConfig` (still untyped in astrodyn)
+# to typed components.
+# All other files under `crates/astrodyn_bevy/src/**` are policed.
 #
 # Annotations document each per-step bypass. The annotation may be:
 # - inline on the same line as the bypass (`from_raw_si(...) // allowed: …`); or
@@ -82,10 +81,10 @@ marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
 # pure-comment line propagates to the next bypass match. An inline
 # `// allowed:` on a code line annotates **only that line** — it does
 # not exempt subsequent unrelated lines.
-src_files_to_scan=$(find src/ -name "*.rs" -type f \
-    -not -path 'src/components.rs' \
-    -not -path 'src/components/*' \
-    -not -path 'src/lib.rs' \
+src_files_to_scan=$(find crates/astrodyn_bevy/src/ -name "*.rs" -type f \
+    -not -path 'crates/astrodyn_bevy/src/components.rs' \
+    -not -path 'crates/astrodyn_bevy/src/components/*' \
+    -not -path 'crates/astrodyn_bevy/src/lib.rs' \
     | sort)
 
 bypass_matches=$(echo "$src_files_to_scan" | xargs awk '
@@ -122,8 +121,8 @@ fi
 
 if [ -n "$bypass_matches" ]; then
     echo "FAIL: typed-quantity bypass constructors in the Bevy adapter" >&2
-    echo "  (scanned: src/**, except the canonical boundary modules" >&2
-    echo "   src/components.rs and src/lib.rs)" >&2
+    echo "  (scanned: crates/astrodyn_bevy/src/**, except the canonical boundary modules" >&2
+    echo "   crates/astrodyn_bevy/src/components.rs and crates/astrodyn_bevy/src/lib.rs)" >&2
     echo "  Banned: from_untyped_unchecked / from_dmat3_unchecked / from_raw_si /" >&2
     echo "          from_seconds / (JeodQuat|Quat)::from_array / FrameTransform::from_matrix(" >&2
     echo "  These constructors mint a typed value from raw storage without" >&2
@@ -144,4 +143,4 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "OK: no escape-hatch markers or unsanctioned typed-quantity bypasses in src/"
+echo "OK: no escape-hatch markers or unsanctioned typed-quantity bypasses in the Bevy adapter"

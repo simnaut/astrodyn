@@ -3,7 +3,7 @@
 Builds NASA's [Trick](https://github.com/nasa/trick) simulation framework and
 [JEOD](https://github.com/nasa/jeod) inside a Rocky Linux 9 container, then
 runs JEOD verification sims to produce CSV reference trajectories for
-bevy_jeod's Tier 3 cross-validation tests.
+astrodyn_bevy's Tier 3 cross-validation tests.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ bevy_jeod's Tier 3 cross-validation tests.
 
 ## Build
 
-From the `bevy_jeod` project root:
+From the `astrodyn_bevy` project root:
 
 ```bash
 # Build the container (context is parent dir so trick/ and jeod/ are accessible)
@@ -27,7 +27,7 @@ This takes 15-30 minutes (compiling Trick + JEOD from source).
 ```bash
 # Run all JEOD verification sims and export CSVs to test_data/
 mkdir -p test_data
-docker run --rm -v $(pwd)/test_data:/output jeod-trick
+docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output jeod-trick
 ```
 
 The container runs these JEOD sims:
@@ -62,7 +62,7 @@ These are consumed by `cargo test` when the `test_data/` directory is present.
 To get a shell inside the container for interactive sim runs:
 
 ```bash
-docker run --rm -it -v $(pwd)/test_data:/output jeod-trick bash
+docker run --rm -it -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output jeod-trick bash
 cd /jeod/verif/SIM_dyncomp
 trick-CP                                    # compile
 ./S_main*.exe SET_test/RUN_2/input.py        # run from SIM root

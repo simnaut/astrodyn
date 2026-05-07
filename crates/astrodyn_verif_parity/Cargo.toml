@@ -1,0 +1,24 @@
+[package]
+name = "astrodyn_verif_parity"
+description = "Parity tests asserting bit-identical state between astrodyn_runner (arena) and astrodyn_bevy (ECS)"
+keywords = ["verification", "parity", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn_bevy = { path = "../astrodyn_bevy", version = "0.1.0" }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+bevy = { workspace = true }
+glam = { workspace = true }
+log = { workspace = true }
+uom = { workspace = true }

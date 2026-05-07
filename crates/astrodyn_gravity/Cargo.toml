@@ -1,0 +1,26 @@
+[package]
+name = "astrodyn_gravity"
+description = "Spherical-harmonics gravity (Gottlieb), tides, and third-body for astrodyn_bevy"
+readme = "README.md"
+keywords = ["gravity", "spherical-harmonics", "orbital-mechanics", "aerospace", "physics"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+uom = { workspace = true }
+
+[dev-dependencies]
+astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }

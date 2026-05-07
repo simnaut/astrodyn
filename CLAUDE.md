@@ -4,7 +4,7 @@
 
 Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineering
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
-See the [Strategy wiki page](https://github.com/simnaut/bevy_jeod/wiki/Strategy)
+See the [Strategy wiki page](https://github.com/simnaut/astrodyn/wiki/Strategy)
 for architecture and phase summaries. The original phased implementation plan
 (Phases 1–7) closed in April 2026; ongoing work is tracked as GitHub issues.
 
@@ -18,12 +18,16 @@ a regression fence that asserts `JEOD_HOME` and `JEOD_PATH` are both
 unset before running.
 
 You only need `$JEOD_HOME` when **regenerating fixtures** after a JEOD
-upgrade. The `extract_*` binaries under `crates/jeod_test_data/src/bin/`
-parse JEOD source into the binary fixtures committed under
-`test_data/gravity/`; the verbatim mirror under `test_data/jeod_inputs/`
-is refreshed via the `cp` recipe in
-`test_data/jeod_inputs/README.md`. Both flows accept either
-`$JEOD_HOME` or `--jeod-home <PATH>`.
+upgrade. The `extract_*` regen binaries are distributed by owner crate:
+`extract_grav_coeffs` and `extract_mars_data` live in
+`crates/astrodyn_gravity/src/bin/` (parsing JEOD `.cc` files into
+`crates/astrodyn_gravity/test_data/gravity/*.bin`),
+`extract_planet_pfixposn` lives in `crates/astrodyn_planet/src/bin/`,
+and `extract_body_init` / `extract_jeod_validation` live in
+`crates/astrodyn_verif_jeod/src/bin/`. The verbatim NASA JEOD source
+mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` is
+refreshed via the `cp` recipe in that directory's `README.md`. Both
+flows accept either `$JEOD_HOME` or `--jeod-home <PATH>`.
 
 For the Docker reference-CSV regen (Tier 3 baselines):
 
@@ -44,84 +48,85 @@ Docker reference-CSV regen flow.
 
 ## Three-Layer Architecture (non-negotiable)
 
-All physics lives in **`jeod_*`** crates (pure Rust, zero Bevy dependency).
-Orchestration lives in **`jeod_sim`** (composes `jeod_*` functions into pipeline
-stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in the
-**`bevy_jeod`** root package (`src/` — thin glue: component derives, systems
-that delegate to `jeod_sim` functions, plugin registration).
+All physics lives in **`astrodyn_*`** crates (pure Rust, zero Bevy dependency).
+Orchestration lives in **`astrodyn`** — the workspace **root crate** (`src/` at
+workspace root) — which composes `astrodyn_*` functions into pipeline stages
+and re-exports all types; zero Bevy dependency. Bevy wiring lives in
+**`astrodyn_bevy`** (`crates/astrodyn_bevy/` — thin glue: component derives,
+systems that delegate to `astrodyn` functions, plugin registration).
 
-The root package depends **only** on `jeod_sim` + `bevy` — never on `jeod_*`
-crates directly. **`jeod_sim` is the single API surface for the production
+`astrodyn_bevy` depends **only** on `astrodyn` + `bevy` — never on `astrodyn_*`
+crates directly. **`astrodyn` is the single API surface for the production
 path:** every Bevy system, every mission crate, every downstream consumer that
-ships in a real simulation reads the workspace through `jeod_sim` and only
-through `jeod_sim`. The narrower the production-path surface, the smaller the
+ships in a real simulation reads the workspace through `astrodyn` and only
+through `astrodyn`. The narrower the production-path surface, the smaller the
 contract that has to stay stable across phases.
 
 This rule is scoped to the production path because the workspace also contains
-a non-shipping test harness (`jeod_runner`) whose role is the inverse: it owns
+a non-shipping test harness (`astrodyn_runner`) whose role is the inverse: it owns
 its own state container and *needs* to construct concrete physics types
-itself. See [`bevy_jeod` vs `jeod_runner`](#bevy_jeod-vs-jeod_runner-two-parallel-consumers-of-jeod_sim)
+itself. See [`astrodyn_bevy` vs `astrodyn_runner`](#astrodyn_bevy-vs-astrodyn_runner-two-parallel-consumers-of-astrodyn)
 below for why that asymmetry is intentional and what each consumer is allowed
 to depend on.
 
 Never put physics algorithms directly in a Bevy system function. The system queries
-components, then calls a `jeod_sim` function. This keeps physics portable to other
+components, then calls a `astrodyn` function. This keeps physics portable to other
 ECS frameworks, WASM, or standalone batch computation.
 
-### `bevy_jeod` vs `jeod_runner`: two parallel consumers of `jeod_sim`
+### `astrodyn_bevy` vs `astrodyn_runner`: two parallel consumers of `astrodyn`
 
-The titular simulation environment is **`bevy_jeod`** (this root crate +
-`src/`). It is the production target — Bevy ECS is the chosen runtime for
-mission code, and the ECS world is the single source of truth for all
-state.
+The titular simulation environment is **`astrodyn_bevy`** (`crates/astrodyn_bevy/`).
+It is the production target — Bevy ECS is the chosen runtime for mission code,
+and the ECS world is the single source of truth for all state.
 
-**`jeod_runner` is a parallel non-Bevy consumer of `jeod_sim`**, not a
-dependency of `bevy_jeod`. It exists because the `jeod_*` and `jeod_sim`
+**`astrodyn_runner` is a parallel non-Bevy consumer of `astrodyn`**, not a
+dependency of `astrodyn_bevy`. It exists because the `astrodyn_*` and `astrodyn`
 crates have **zero Bevy dependency** by design (the layer rule above), so
 they can be exercised directly from a plain Rust binary that owns its own
-state. `jeod_runner` provides that owned-state harness for:
+state. `astrodyn_runner` provides that owned-state harness for:
 
-- **Tier 3 cross-validation tests** (`crates/jeod_runner/tests/tier3_*.rs`)
+- **Tier 3 cross-validation tests** (`crates/astrodyn_verif_jeod/tests/tier3_*.rs`)
   — propagating from JEOD initial conditions and comparing against
-  Trick reference CSVs without standing up a Bevy `App`.
+  Trick reference CSVs without standing up a Bevy `App`. The verif crate
+  drives `astrodyn_runner::Simulation` end-to-end.
 - **Batch propagation, scripting, and offline studies** that don't need
   ECS scheduling, parallelism, or Bevy plugins.
 
-`jeod_runner` and `bevy_jeod` sit *next to* each other in the dep graph —
-both depend on `jeod_sim` (and the wider `jeod_*` family); neither
-depends on the other. Any improvement that lands in `jeod_*` or
-`jeod_sim` (typed quantities, phantom-frame discipline, witness-gated
+`astrodyn_runner` and `astrodyn_bevy` sit *next to* each other in the dep graph —
+both depend on `astrodyn` (and the wider `astrodyn_*` family); neither
+depends on the other. Any improvement that lands in `astrodyn_*` or
+`astrodyn` (typed quantities, phantom-frame discipline, witness-gated
 constructors like `BodyAttitude<V>`, …) benefits both consumers
-identically. Any guarantee that lives only in `jeod_runner`'s
+identically. Any guarantee that lives only in `astrodyn_runner`'s
 `simulation/` submodule is, by construction, **not** available to Bevy
 mission code — so type-system work that targets a class of bugs
-(rather than a runner-internal helper) belongs in `jeod_quantities` or
-`jeod_dynamics`, not in `jeod_runner`.
+(rather than a runner-internal helper) belongs in `astrodyn_quantities` or
+`astrodyn_dynamics`, not in `astrodyn_runner`.
 
 The two consumers have **deliberately different dep-graph rights**, and
 the difference is non-negotiable in both directions:
 
-- **`bevy_jeod` and any mission crate** (production path) depend only on
-  `jeod_sim` plus `bevy`. They **must not** add a direct `jeod_*` physics
+- **`astrodyn_bevy` and any mission crate** (production path) depend only on
+  `astrodyn` plus `bevy`. They **must not** add a direct `astrodyn_*` physics
   dependency. The "single API surface" rule from the previous section
   applies here, full stop — every physics type that the production path
-  needs has to be reachable through `jeod_sim`. If something isn't, the
-  fix is to widen `jeod_sim`'s curated re-export surface, not to bypass it.
-- **`jeod_runner`** (in-workspace test harness) is allowed to depend
+  needs has to be reachable through `astrodyn`. If something isn't, the
+  fix is to widen `astrodyn`'s curated re-export surface, not to bypass it.
+- **`astrodyn_runner`** (in-workspace test harness) is allowed to depend
   directly on the physics crates it needs to populate its `Simulation`
-  state container — today that is `jeod_dynamics`, `jeod_gravity`,
-  `jeod_time`, `jeod_frames`, `jeod_interactions`, and `jeod_math`.
+  state container — today that is `astrodyn_dynamics`, `astrodyn_gravity`,
+  `astrodyn_time`, `astrodyn_frames`, `astrodyn_interactions`, and `astrodyn_math`.
   Those direct deps are intentional: the runner owns its own state and
   constructs concrete physics types by hand at the kernel boundary;
-  routing them through `jeod_sim` would force `jeod_sim` to expose
+  routing them through `astrodyn` would force `astrodyn` to expose
   internal vocabulary purely for one in-workspace consumer's benefit.
   The runner is *not* a mission consumer and is never published as one.
 
 Mission crates that target the production runtime depend on
-`bevy_jeod` (and transitively `jeod_sim`). They never depend on
-`jeod_runner`, and they never reach around `jeod_sim` to pull a
+`astrodyn_bevy` (and transitively `astrodyn`). They never depend on
+`astrodyn_runner`, and they never reach around `astrodyn` to pull a
 physics crate directly — if you find yourself writing
-`jeod_dynamics = …` in a mission `Cargo.toml`, that is the bug.
+`astrodyn_dynamics = …` in a mission `Cargo.toml`, that is the bug.
 
 ## Computational Independence (non-negotiable)
 
@@ -226,7 +231,7 @@ transitively via `anise` but not used directly.
 
 After the type-system refactor (#101), there are two layers to choose between:
 
-- **Public/mission-crate code** uses typed quantities from `jeod_quantities`:
+- **Public/mission-crate code** uses typed quantities from `astrodyn_quantities`:
   `Position<F: Frame>`, `Velocity<F>`, `Acceleration<F>`, `SecondsSince<S: TimeScale>`,
   `Quat<L, T>`, `NormalizedQuat`, `FrameTransform<From, To>`, and the `F64Ext`
   facade (`400.0.km()`, `51.6.deg()`, `420_000.0.kg()`). Mission code never sees
@@ -236,13 +241,13 @@ After the type-system refactor (#101), there are two layers to choose between:
   errors in physics language (e.g., *"expected `Position<RootInertial>`, found
   `Position<Ecef>` — apply a `FrameTransform<Ecef, RootInertial>` first"*).
 
-- **Internal physics-crate kernels** (the inside of `jeod_*` `*_typed` functions
+- **Internal physics-crate kernels** (the inside of `astrodyn_*` `*_typed` functions
   and the underlying `_inner`/`_impl` math) use raw `glam::DVec3`/`DQuat`/`DMat3`
   for arithmetic density. The typed siblings call `.raw_si()` at the boundary
   to drop into the kernel and re-wrap on exit. This keeps numerics fast and the
   public surface typed.
 
-See the [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System) for the contributor primer (phantom-tag pattern,
+See the [Type-System wiki page](https://github.com/simnaut/astrodyn/wiki/Type-System) for the contributor primer (phantom-tag pattern,
 adding a new frame/scale/quantity, reading compiler errors, escape hatches)
 and `examples/typed_mission.rs` for the canonical worked example.
 
@@ -384,9 +389,9 @@ cargo build --workspace
 cargo nextest run --workspace                                 # all tests
 cargo nextest run --workspace -E 'not test(tier3_)'           # unit + tier 2 (fast)
 cargo nextest run --workspace -E 'test(tier3_)'               # tier 3 only
-cargo nextest run -p jeod_math                                # single crate
-cargo nextest run -p jeod_gravity -E 'test(verif)'            # gravity verification only
-cargo nextest run -p jeod_runner --test tier3_sim_dyncomp_run2  # single Tier 3 test
+cargo nextest run -p astrodyn_math                                # single crate
+cargo nextest run -p astrodyn_gravity -E 'test(verif)'            # gravity verification only
+cargo nextest run -p astrodyn_runner --test tier3_sim_dyncomp_run2  # single Tier 3 test
 ```
 
 Plain `cargo test` also works but runs tests serially per binary:
@@ -398,8 +403,8 @@ cargo test --workspace -- --skip tier3_         # unit + tier 2
 
 All three test tiers (`cargo nextest run --workspace`) run without
 `$JEOD_HOME` set — `run_verification/sim_*.rs` reads everything from
-the committed mirror under `test_data/jeod_inputs/` plus the parsed
-gravity binaries under `test_data/gravity/`. The regen binaries
+the committed mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` plus the parsed
+gravity binaries under `crates/astrodyn_gravity/test_data/gravity/`. The regen binaries
 (`extract_*`) and the Docker reference-CSV flow are the only paths
 that still need `$JEOD_HOME`. `TRICK_HOME` follows the standard Trick
 environment convention and is required only by the Docker
@@ -415,7 +420,7 @@ Fix any issues before committing. This avoids lint-only CI failures.
 
 ### Cross-validation tolerances
 
-`CrossvalReport` (`crates/jeod_test_data/src/crossval.rs`) computes per-component
+`CrossvalReport` (`crates/astrodyn_verif_jeod/src/crossval.rs`) computes per-component
 max errors between our trajectory and JEOD's. It has no tolerance fields — tolerances
 live exclusively in the test source code.
 
@@ -424,7 +429,7 @@ Tests assert tolerances via `report.assert_position(tol)`, `report.assert_veloci
 plus `assert!(var < tol, "metric_name")` for extras added via
 `report.add_extra(name, val, unit)`.
 
-The report binary (`cargo run -p jeod_test_data --bin tier3_report`) extracts all
+The report binary (`cargo run -p astrodyn_verif_jeod --bin tier3_report`) extracts all
 tolerance values from test source files by regex-parsing the `assert_*` call sites
 and `assert!(var < LITERAL, "name")` patterns. JSON contains only errors — no
 tolerances.
@@ -437,7 +442,7 @@ When tightening tolerances after a code improvement: run the full test suite, in
 the JSON reports in `target/tier3_crossval/`, compute `error * 1.05` per component,
 and update the literal values in the test source.
 
-See `tests/README.md` "Baseline-freeze workflow" for the `test_data/baselines.json`
+See `crates/astrodyn_bevy/tests/README.md` "Baseline-freeze workflow" for the `crates/astrodyn_verif_jeod/test_data/baselines.json`
 gating policy, the `tier3_baseline_diff` check, and the refreeze workflow.
 
 ### Test tiers and CI
@@ -454,13 +459,13 @@ filtering. CI (`.github/workflows/ci.yml`) uses this:
 When adding new Tier 3 tests, always prefix the function name with `tier3_` so
 CI filtering picks it up automatically.
 
-See `tests/README.md` for tier conventions and the tolerance/baseline workflow.
+See `crates/astrodyn_bevy/tests/README.md` for tier conventions and the tolerance/baseline workflow.
 
 ## Generating Tier 3 Reference Data (Docker)
 
 JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
 Trick is cloned at `../trick`, JEOD at `../jeod`. See
-the [Tier3-Regeneration wiki page](https://github.com/simnaut/bevy_jeod/wiki/Tier3-Regeneration)
+the [Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration)
 for the full workflow, troubleshooting, and "adding a new sim" recipe.
 
 The canonical wrapper is the `xtask` binary (requires the
@@ -482,13 +487,13 @@ docker build -f trick/Dockerfile -t jeod-trick ..
 # Generate reference CSVs into test_data/ (incremental — skips existing outputs)
 mkdir -p test_data
 docker run --rm \
-  -v $(pwd)/test_data:/output \
+  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
   -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
   jeod-trick
 
 # Force regenerate all data (ignores existing outputs)
 docker run --rm -e FORCE=1 \
-  -v $(pwd)/test_data:/output \
+  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
   -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
   jeod-trick
 ```
@@ -500,7 +505,7 @@ new sims to `generate_references.sh`. Set `FORCE=1` to regenerate everything.
 
 The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
 JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
-`test_data/` and are consumed by `crates/jeod_runner/tests/tier3_sim_*.rs`.
+`test_data/` and are consumed by `crates/astrodyn_verif_jeod/tests/tier3_sim_*.rs`.
 
 **Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
 RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
@@ -508,7 +513,7 @@ RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
 **Phase 2 Tier 3 tests** (require reference CSVs from Docker):
 - RUN_3A: 4x4 spherical harmonics gravity, 8-hour ISS orbit
 - RUN_3B: 8x8 spherical harmonics gravity, 8-hour ISS orbit
-- Test: `crates/jeod_runner/tests/tier3_sim_dyncomp_run3.rs`
+- Test: `crates/astrodyn_verif_jeod/tests/tier3_sim_dyncomp_run3.rs`
 
 CSV column layout for `log_state_ASCII.csv`:
 - Column 0: `sys.exec.out.time {s}`
@@ -539,7 +544,7 @@ copy ctors). We catalog every invariant we encounter in
    `// JEOD_INV: GV.04 — degree <= source degree`. The tag text should
    accurately describe what the code does and note any divergence from JEOD.
 
-3. **CI coverage** (`tests/invariant_coverage.rs`): bidirectional test —
+3. **CI coverage** (`crates/astrodyn_bevy/tests/invariant_coverage.rs`): bidirectional test —
    every `enforced`/`partial`/`structural` invariant in the catalog must have
    at least one source tag, and every source tag must reference a catalog entry.
 
@@ -585,7 +590,7 @@ formula immediately.
 
 ## Building a Mission Crate
 
-A "mission crate" is a downstream crate that depends on `bevy_jeod` to model a
+A "mission crate" is a downstream crate that depends on `astrodyn_bevy` to model a
 specific scenario (an Earth-orbit constellation, a Mars approach, a station-
 keeping study). After the type-system refactor (#101), mission code reads like
 physics: typed building blocks compose via the typestate `VehicleBuilder`,
@@ -596,18 +601,18 @@ mismatches before they become silent numerical bugs.
 
 ```rust
 use bevy::prelude::*;
-use bevy_jeod::prelude::*;        // JeodPlugin, typed Components, JeodSet
-use bevy_jeod::recipes::*;        // earth, orbital_elements, vehicle, scenarios
+use astrodyn_bevy::prelude::*;        // JeodPlugin, typed Components, JeodSet
+use astrodyn_bevy::recipes::*;        // earth, orbital_elements, vehicle, scenarios
 ```
 
 **Compose a vehicle** with the typestate `VehicleBuilder` (re-exported by
-`bevy_jeod::prelude`). The compiler refuses `.three_dof_point_mass(...)`
+`astrodyn_bevy::prelude`). The compiler refuses `.three_dof_point_mass(...)`
 until a state is set, refuses `.rk4()` until mass is set, refuses `.build()`
 until an integrator is chosen.
 
 ```rust
-// `VehicleBuilder`, `GravityControl`, and `F64Ext` come from `bevy_jeod::prelude`.
-// `earth`, `orbital_elements`, `vehicle` come from `bevy_jeod::recipes`.
+// `VehicleBuilder`, `GravityControl`, and `F64Ext` come from `astrodyn_bevy::prelude`.
+// `earth`, `orbital_elements`, `vehicle` come from `astrodyn_bevy::recipes`.
 let mu = earth::point_mass().source.mu.m3_per_s2();
 let cfg = VehicleBuilder::new()
     .from_orbital_elements(orbital_elements::iss(), mu)
@@ -615,7 +620,7 @@ let cfg = VehicleBuilder::new()
     .rk4()
     .gravity(GravityControl::new_spherical(0_usize, false))
     .build();
-let vehicle_entity = cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth_entity]);
+let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth_entity]);
 ```
 
 **Compiler errors as physics**: passing a `Position<Ecef>` where
@@ -626,9 +631,9 @@ PhantomData type-mismatch wall.
 **Reference**:
 - Canonical worked example: `examples/typed_mission.rs`.
 - Contributor primer (phantom tags, adding new dimensions, escape hatches):
-  [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System).
+  [Type-System wiki page](https://github.com/simnaut/astrodyn/wiki/Type-System).
 - Architecture and phase history:
-  [Strategy wiki page](https://github.com/simnaut/bevy_jeod/wiki/Strategy)
+  [Strategy wiki page](https://github.com/simnaut/astrodyn/wiki/Strategy)
   §8 "Phase 8: Type-System Refactor".
 
 ## Common Pitfalls

@@ -1,0 +1,36 @@
+[package]
+name = "astrodyn_bevy"
+description = "Bevy ECS adapter for the astrodyn orbital-dynamics gateway"
+keywords = ["bevy", "orbital-mechanics", "simulation", "aerospace", "astrodyn"]
+categories = ["science", "simulation", "aerospace"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+astrodyn = { path = "../..", version = "0.1.0" }
+glam = { workspace = true }
+bevy = { workspace = true }
+bevy_reflect = { workspace = true }
+
+[dev-dependencies]
+glam = { workspace = true }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
+astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+# Examples consume `recipes::orbital_elements` and convert into the
+# Bevy components, which requires the typed orbital-init helper plus
+# uom unit constructors.
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+uom = { workspace = true }
+
+[[example]]
+name = "kepler_orbit"
+path = "examples/kepler_orbit.rs"
+
+[[example]]
+name = "typed_mission"
+path = "examples/typed_mission.rs"

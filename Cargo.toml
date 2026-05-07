@@ -1,48 +1,59 @@
 [package]
-name = "bevy_jeod"
-description = "Bevy ECS adapter for the JEOD orbital-dynamics port"
-keywords = ["bevy", "orbital-mechanics", "simulation", "aerospace", "jeod"]
-categories = ["science", "simulation", "aerospace"]
+name = "astrodyn"
+description = "Pipeline orchestration, VehicleBuilder, and recipes — single API surface for ECS adapters"
+keywords = ["orbital-mechanics", "simulation", "aerospace", "ecs", "physics"]
+categories = ["science", "aerospace", "simulation"]
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Workspace-only artifacts that don't belong in the published crate:
+# Trick / Docker reference-CSV regen tooling, the JEOD-invariant catalog
+# (lives next to the source it tags), workspace-level invariant tests,
+# CI workflows, and the xtask binary.
+exclude = [
+    "trick/**",
+    "docs/**",
+    "scripts/**",
+    "tests/**",
+    "xtask/**",
+    ".github/**",
+    "CHANGELOG.md",
+]
 
 [dependencies]
-jeod_sim = { path = "crates/jeod_sim", version = "0.1.0" }
+astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.1.0" }
+astrodyn_math = { path = "crates/astrodyn_math", version = "0.1.0" }
+astrodyn_dynamics = { path = "crates/astrodyn_dynamics", version = "0.1.0" }
+astrodyn_gravity = { path = "crates/astrodyn_gravity", version = "0.1.0" }
+astrodyn_time = { path = "crates/astrodyn_time", version = "0.1.0" }
+astrodyn_frames = { path = "crates/astrodyn_frames", version = "0.1.0" }
+astrodyn_atmosphere = { path = "crates/astrodyn_atmosphere", version = "0.1.0" }
+astrodyn_interactions = { path = "crates/astrodyn_interactions", version = "0.1.0" }
+astrodyn_ephemeris = { path = "crates/astrodyn_ephemeris", version = "0.1.0" }
+astrodyn_planet = { path = "crates/astrodyn_planet", version = "0.1.0" }
 glam = { workspace = true }
-bevy = { workspace = true }
-bevy_reflect = { workspace = true }
-
-[dev-dependencies]
-glam = { workspace = true }
-jeod_test_data = { path = "crates/jeod_test_data", version = "0.1.0" }
-jeod_sim = { path = "crates/jeod_sim", version = "0.1.0" }
-jeod_runner = { path = "crates/jeod_runner", version = "0.1.0" }
-# Examples consume `recipes::orbital_elements` and convert into the
-# Bevy components, which requires the typed orbital-init helper plus
-# uom unit constructors.
-jeod_dynamics = { path = "crates/jeod_dynamics", version = "0.1.0" }
-jeod_quantities = { path = "crates/jeod_quantities", version = "0.1.0" }
+log = { workspace = true }
 uom = { workspace = true }
 
 [workspace]
 resolver = "2"
 members = [
-    "crates/jeod_quantities",
-    "crates/jeod_math",
-    "crates/jeod_dynamics",
-    "crates/jeod_gravity",
-    "crates/jeod_frames",
-    "crates/jeod_planet",
-    "crates/jeod_time",
-    "crates/jeod_ephemeris",
-    "crates/jeod_atmosphere",
-    "crates/jeod_interactions",
-    "crates/jeod_test_data",
-    "crates/jeod_sim",
-    "crates/jeod_runner",
+    "crates/astrodyn_quantities",
+    "crates/astrodyn_math",
+    "crates/astrodyn_dynamics",
+    "crates/astrodyn_gravity",
+    "crates/astrodyn_frames",
+    "crates/astrodyn_planet",
+    "crates/astrodyn_time",
+    "crates/astrodyn_ephemeris",
+    "crates/astrodyn_atmosphere",
+    "crates/astrodyn_interactions",
+    "crates/astrodyn_bevy",
+    "crates/astrodyn_runner",
+    "crates/astrodyn_verif_jeod",
+    "crates/astrodyn_verif_parity",
     "xtask",
 ]
 
@@ -50,7 +61,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/simnaut/bevy_jeod"
+repository = "https://github.com/simnaut/astrodyn"
 
 [workspace.dependencies]
 glam = { version = "0.30", features = ["std"] }
@@ -77,17 +88,17 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 3
 
-[profile.dev.package.jeod_math]
+[profile.dev.package.astrodyn_math]
 opt-level = 3
-[profile.dev.package.jeod_gravity]
+[profile.dev.package.astrodyn_gravity]
 opt-level = 3
-[profile.dev.package.jeod_dynamics]
+[profile.dev.package.astrodyn_dynamics]
 opt-level = 3
-[profile.dev.package.jeod_ephemeris]
+[profile.dev.package.astrodyn_ephemeris]
 opt-level = 3
-[profile.dev.package.jeod_atmosphere]
+[profile.dev.package.astrodyn_atmosphere]
 opt-level = 3
-[profile.dev.package.jeod_interactions]
+[profile.dev.package.astrodyn_interactions]
 opt-level = 3
 
 [profile.test]
@@ -97,23 +108,15 @@ debug = "line-tables-only"
 [profile.test.package."*"]
 opt-level = 3
 
-[profile.test.package.jeod_math]
+[profile.test.package.astrodyn_math]
 opt-level = 3
-[profile.test.package.jeod_gravity]
+[profile.test.package.astrodyn_gravity]
 opt-level = 3
-[profile.test.package.jeod_dynamics]
+[profile.test.package.astrodyn_dynamics]
 opt-level = 3
-[profile.test.package.jeod_ephemeris]
+[profile.test.package.astrodyn_ephemeris]
 opt-level = 3
-[profile.test.package.jeod_atmosphere]
+[profile.test.package.astrodyn_atmosphere]
 opt-level = 3
-[profile.test.package.jeod_interactions]
+[profile.test.package.astrodyn_interactions]
 opt-level = 3
-
-[[example]]
-name = "kepler_orbit"
-path = "examples/kepler_orbit.rs"
-
-[[example]]
-name = "typed_mission"
-path = "examples/typed_mission.rs"

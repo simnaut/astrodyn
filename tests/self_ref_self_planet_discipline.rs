@@ -2,12 +2,12 @@
 //! appear at per-entity storage boundaries.
 //!
 //! Catalogued in `docs/JEOD_invariants.md` row TS.01. The wildcards
-//! `jeod_quantities::frame::SelfRef` and `jeod_quantities::frame::SelfPlanet`
+//! `astrodyn_quantities::frame::SelfRef` and `astrodyn_quantities::frame::SelfPlanet`
 //! exist because per-entity storage decides the vehicle/planet identity at
 //! runtime — Bevy `Component`s, `Message`s, runner `SimBody`/`VehicleConfig`/
 //! `VehicleOutput` fields, and the dynamic-registry-erased return types in
-//! `jeod_sim::derived` / `jeod_sim::atmosphere` / `jeod_sim::planet_config`.
-//! All other code paths (system functions, public APIs, `jeod_*` algorithm
+//! `astrodyn::derived` / `astrodyn::atmosphere` / `astrodyn::planet_config`.
+//! All other code paths (system functions, public APIs, `astrodyn_*` algorithm
 //! kernels) carry `<V: Vehicle>` / `<P: Planet>` parameters that flow from
 //! the call site, never `<SelfRef>` / `<SelfPlanet>` minted afresh in a
 //! system body.
@@ -35,7 +35,7 @@
 //! 3. **File-level annotation**: the file contains a `JEOD_INV: TS.01`
 //!    or `allowed:` mention anywhere in its first 80 lines (typically a
 //!    module-doc `//!` opener that documents the file as a storage
-//!    boundary, e.g. `src/components.rs`, `crates/jeod_runner/src/
+//!    boundary, e.g. `src/components.rs`, `crates/astrodyn_runner/src/
 //!    simulation/types.rs`).
 //!
 //! Documentation comments (`///`, `//!`) and string literals never trip
@@ -356,7 +356,7 @@ fn self_ref_self_planet_uses_are_at_storage_boundaries() {
 
 /// Direction 2: the documented allow-list files (Bevy component newtype
 /// module, runner state-types module, the typed-frame definitions
-/// module, the dynamic-registry-erased producers in `jeod_sim`) must
+/// module, the dynamic-registry-erased producers in `astrodyn`) must
 /// retain their file-level TS.01 markers — so a future cleanup can't
 /// silently strip the marker without the lint catching the regression
 /// that immediately follows.
@@ -372,7 +372,7 @@ fn canonical_storage_boundary_files_carry_ts01_marker() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pinned: &[(&str, &str)] = &[
         (
-            "src/components/mod.rs",
+            "crates/astrodyn_bevy/src/components/mod.rs",
             "Bevy `Component` newtype boundary — `<SelfRef>` tags on \
              RotationalStateC / MassPropertiesC / TotalForceC / \
              FrameDerivativesC / GravityTorqueC / StructuralTransformC / \
@@ -382,31 +382,31 @@ fn canonical_storage_boundary_files_carry_ts01_marker() {
              component module tree.",
         ),
         (
-            "crates/jeod_runner/src/simulation/types.rs",
+            "crates/astrodyn_runner/src/simulation/types.rs",
             "Runner storage boundary — `SimBody.flat_plate_state: \
              FlatPlateState<SelfRef>`, `SimBody.atmospheric_state: \
              AtmosphereState<SelfPlanet>`, `VehicleOutput.orbital_elements: \
              OrbitalElements<SelfPlanet>`.",
         ),
         (
-            "crates/jeod_quantities/src/frame.rs",
+            "crates/astrodyn_quantities/src/frame.rs",
             "Definition site for `SelfRef` and `SelfPlanet` — the \
              phantom markers themselves and their docstrings.",
         ),
         (
-            "crates/jeod_sim/src/derived.rs",
+            "src/derived.rs",
             "Dynamic-registry-erased return types: \
              `compute_orbital_elements -> OrbitalElements<SelfPlanet>`, \
              paired with the planet-pinned `_typed` siblings.",
         ),
         (
-            "crates/jeod_sim/src/atmosphere.rs",
+            "src/atmosphere.rs",
             "Dynamic-registry-erased return types: \
              `evaluate_atmosphere -> AtmosphereState<SelfPlanet>`, \
              paired with the planet-pinned `evaluate_atmosphere_typed`.",
         ),
         (
-            "crates/jeod_sim/src/planet_config.rs",
+            "src/planet_config.rs",
             "`PlanetConfig::mu_typed -> GravParam<SelfPlanet>` — \
              entity-resolved planet identity.",
         ),

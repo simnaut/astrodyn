@@ -1,0 +1,18 @@
+[package]
+name = "astrodyn_time"
+description = "Time scales (TAI/UTC/UT1/TDB/TT/GMST) and converters for astrodyn_bevy"
+readme = "README.md"
+keywords = ["time", "timescale", "tai", "utc", "aerospace"]
+categories = ["science", "aerospace", "date-and-time"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+log = { workspace = true }
+uom = { workspace = true }

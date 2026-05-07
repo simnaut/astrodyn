@@ -12,25 +12,26 @@ Initial public release. The original phased implementation plan
 
 ### Added
 
-- **Typed quantities** (`jeod_quantities`): phantom-tagged
+- **Typed quantities** (`astrodyn_quantities`): phantom-tagged
   `Position<F>`, `Velocity<F>`, `Acceleration<F>`,
   `SecondsSince<S>`, `Quat<L, T>`, `NormalizedQuat`,
   `FrameTransform<From, To>`, and the `F64Ext` facade
   (`400.0.km()`, `51.6.deg()`, `420_000.0.kg()`). Compile-time
   rejection of cross-frame mismatches and unit-dimensional errors.
-- **Mission API** (`bevy_jeod::prelude` + `bevy_jeod::recipes`):
+- **Mission API** (`astrodyn_bevy::prelude` + `astrodyn_bevy::recipes`):
   typestate `VehicleBuilder` (no-state / no-integrator gates),
   recipe modules for Earth/Moon/Sun/Mars, common orbital elements
   (ISS, GEO, GTO, Molniya), and vehicle masses.
-- **Pipeline** (`jeod_sim`): nine-stage integration loop —
-  TimeUpdate, EphemerisUpdate, EnvironmentSet (gravity, atmosphere),
-  InteractionSet (aero, SRP, gravity torque, contact, shadow),
-  ForceCollectionSet, IntegrationSet, DerivedStateSet. Single API
-  surface for ECS adapters.
-- **Bevy adapter** (`bevy_jeod`): `JeodPlugin`, `JeodSet` system-set
+- **Pipeline** (`astrodyn`): seven-stage integration loop —
+  `TimeUpdate`, `EphemerisUpdate`, `Environment` (gravity +
+  atmosphere), `Interaction` (aero, SRP, gravity torque, contact,
+  shadow), `ForceCollection`, `Integration` (with frame propagation
+  as the integrator's post-step), `DerivedState`. Single API surface
+  for ECS adapters.
+- **Bevy adapter** (`astrodyn_bevy`): `JeodPlugin`, `JeodSet` system-set
   enum, component bundles, and a thin systems layer that delegates
-  to `jeod_sim`.
-- **Standalone runner** (`jeod_runner`): `Simulation` propagator that
+  to `astrodyn`.
+- **Standalone runner** (`astrodyn_runner`): `Simulation` propagator that
   consumes the same `VehicleConfig` as the Bevy adapter — mission
   code can swap between Bevy and the runner without rebuilding the
   configuration.
@@ -50,11 +51,16 @@ Initial public release. The original phased implementation plan
 
 ### Crates
 
-Thirteen crates published at this version:
+Fourteen workspace crates at this version:
 
-- `jeod_quantities`, `jeod_math`, `jeod_frames`, `jeod_time`,
-  `jeod_planet`, `jeod_ephemeris`, `jeod_gravity`, `jeod_atmosphere`,
-  `jeod_dynamics`, `jeod_interactions`, `jeod_sim`, `jeod_runner`,
-  `jeod_test_data`, plus the root `bevy_jeod` crate.
+- `astrodyn` (workspace root, gateway / orchestration), `astrodyn_quantities`,
+  `astrodyn_math`, `astrodyn_frames`, `astrodyn_time`, `astrodyn_planet`,
+  `astrodyn_ephemeris`, `astrodyn_gravity`, `astrodyn_atmosphere`,
+  `astrodyn_dynamics`, `astrodyn_interactions`, `astrodyn_runner`,
+  `astrodyn_bevy` (Bevy ECS adapter).
+- Plus two `publish = false` verification crates: `astrodyn_verif_jeod`
+  (JEOD-source parsers + Tier 3 cross-validation tests +
+  `run_verification` scenario rigs) and `astrodyn_verif_parity`
+  (runner ↔ Bevy bit-identical parity tests).
 
-[0.1.0]: https://github.com/simnaut/bevy_jeod/releases/tag/v0.1.0
+[0.1.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.0

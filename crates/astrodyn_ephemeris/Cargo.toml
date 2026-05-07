@@ -1,0 +1,25 @@
+[package]
+name = "astrodyn_ephemeris"
+description = "General-purpose DE4xx (SPICE) binary ephemeris reader for orbital mechanics applications"
+readme = "README.md"
+keywords = ["ephemeris", "de421", "spice", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Keep the published .crate lean: assets/ holds large binary ephemerides
+# (de421.bsp ~17 MB, moon PA BPC ~2 MB) used by in-workspace tests and
+# downstream consumers via `assets_path`. Those consumers can ship their
+# own copy or vendor these from JPL; we don't want to upload ~20 MB on
+# every release.
+exclude = ["assets/*.bsp", "assets/*.bpc"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+anise = "0.9"
+glam = { workspace = true }
+thiserror = { workspace = true }

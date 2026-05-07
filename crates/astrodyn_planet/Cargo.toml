@@ -1,0 +1,25 @@
+[package]
+name = "astrodyn_planet"
+description = "Planet definitions and presets (Earth, Moon, Sun, Mars) for astrodyn_bevy"
+readme = "README.md"
+keywords = ["planet", "ephemeris", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+# `regex` is consumed only by the `extract_planet_pfixposn` regen binary;
+# excluded from publishes via `[package] exclude` if/when this crate is
+# published.
+regex = "1"
+uom = { workspace = true }
+
+[dev-dependencies]
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
