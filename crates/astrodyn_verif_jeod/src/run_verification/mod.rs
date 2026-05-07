@@ -1,13 +1,13 @@
 //! Phase 7 of #101 — `run_and_assert` machinery for Tier 3 verification.
 //!
-//! [`astrodyn::recipes::verification::VerificationCase`]
+//! [`crate::verification::VerificationCase`]
 //! lives in `astrodyn` as adapter-neutral data. Materializing the scenario
-//! into a runtime [`crate::Simulation`], loading the reference
+//! into a runtime [`astrodyn_runner::Simulation`], loading the reference
 //! CSV, propagating, and asserting tolerances is runner-specific — it
 //! lives here as the [`VerificationCaseExt`] trait.
 //!
 //! The trait dispatches on the [`CsvReference`] variant to pick the right
-//! loader from `astrodyn_verif_jeod::tier3_csv`, then delegates assertion to
+//! loader from `crate::tier3_csv`, then delegates assertion to
 //! [`CrossvalReport`]. Tolerances of `0.0` mean *skip the assertion for
 //! that component* — used for 3-DOF cases that have no rotational state.
 //!
@@ -18,7 +18,7 @@
 //! // reason: snippet declares a `#[test]` and depends on a JEOD reference CSV being present on disk; the Tier 3 test files in `crates/astrodyn_runner/tests/tier3_*.rs` are the runnable forms.
 //! ```ignore
 //! use astrodyn_runner::prelude::*;
-//! use astrodyn_runner::run_verification::sim_dyncomp;
+//! use crate::run_verification::sim_dyncomp;
 //!
 //! #[test]
 //! fn tier3_sim_dyncomp_run2_3dof() {
@@ -36,16 +36,16 @@ pub mod sim_tide_verif;
 pub mod sim_torque_simple;
 
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
-use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
-use astrodyn_verif_jeod::tier3_csv;
+use crate::crossval::{CrossvalReport, StateLog};
+use crate::tier3_csv;
 use glam::DVec3;
 use uom::si::time::second;
 
-use crate::builder::SimulationBuilderExt;
-use crate::{Simulation, VehicleOutput};
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::{Simulation, VehicleOutput};
 
 /// Forward `SimContext` to the runtime simulation so `pre_step` closures
 /// stored on a `VerificationCase` can drive source ephemeris updates
@@ -114,7 +114,7 @@ impl CsvRecords {
 /// asserts its tolerances.
 pub trait VerificationCaseExt {
     /// Build the scenario, load the reference CSV, propagate via
-    /// [`crate::Simulation::step_until`] up to the case's `duration`, and
+    /// [`astrodyn_runner::Simulation::step_until`] up to the case's `duration`, and
     /// assert tolerances on the resulting [`CrossvalReport`]. Panics on
     /// any tolerance breach.
     fn run_and_assert(&self);

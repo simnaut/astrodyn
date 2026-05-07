@@ -1,17 +1,17 @@
 //! `VerificationCase` constructors for the SIM_dyncomp Tier 3 family.
 //!
 //! Each constructor returns a fully-populated
-//! [`astrodyn::recipes::verification::VerificationCase`]
+//! [`crate::verification::VerificationCase`]
 //! whose scenario closure loads its initial conditions from JEOD source
 //! files (Modified_data/*.py, S_define, gravity coefficient files, plus
 //! the t=0 row of the matching reference CSV — all "JEOD source data"
 //! per CLAUDE.md). The scenario builds a [`SimulationBuilder`] that the
 //! `run_and_assert` machinery materializes into a runtime
-//! [`crate::Simulation`].
+//! [`astrodyn_runner::Simulation`].
 
 use std::path::PathBuf;
 
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
@@ -80,8 +80,8 @@ fn rot_from(init: &InitialConditions, case: &str) -> RotationalState {
 }
 
 fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
@@ -99,11 +99,11 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
 }
 
 fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
-    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
+    let mass_init = crate::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
@@ -214,7 +214,7 @@ fn lvlh_init_from_state_py(
     function_name: &str,
 ) -> (JeodQuat, DVec3, LvlhAngularVelocityFrame) {
     let lvlh =
-        astrodyn_verif_jeod::lvlh_init_data::load_lvlh_init_function(state_py, function_name);
+        crate::lvlh_init_data::load_lvlh_init_function(state_py, function_name);
     let sequence = match lvlh.euler_sequence.as_str() {
         // JEOD `trick.Orientation.Yaw_Pitch_Roll = 5`, ZYX axis order.
         // models/utils/orientation/include/orientation.hh:130
@@ -244,7 +244,7 @@ fn lvlh_init_from_state_py(
 /// reference CSV's t=0 quaternion. Exercises the LVLH-rot-init path
 /// end-to-end through the public `BodyAction` API.
 fn init_lvlh_rot_state(state_py: &std::path::Path) -> RotationalState {
-    let trans = astrodyn_verif_jeod::lvlh_init_data::load_trans_init_function(
+    let trans = crate::lvlh_init_data::load_trans_init_function(
         state_py,
         "set_trans_init_typical",
     );
@@ -273,13 +273,13 @@ fn init_lvlh_rot_state(state_py: &std::path::Path) -> RotationalState {
 /// velocity row — keeping both halves on the source-Python path
 /// avoids any reliance on the reference output.
 fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
     let state_py = sim_dir.join("Modified_data/state.py");
 
-    let trans = astrodyn_verif_jeod::lvlh_init_data::load_trans_init_function(
+    let trans = crate::lvlh_init_data::load_trans_init_function(
         &state_py,
         "set_trans_init_typical",
     );
@@ -344,8 +344,8 @@ pub fn run2_lvlh_rot_init_propagation() -> VerificationCase {
 // ── Shared helpers used by RUN_3+ (SH gravity, RNP rotation, time/UT1) ─────
 
 fn iss_mass_properties() -> MassProperties {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let mass_init = crate::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
@@ -374,8 +374,8 @@ fn iss_mass_properties() -> MassProperties {
 }
 
 fn sphere_mass_properties() -> MassProperties {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let mass_init = crate::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_sphere"),
     );
@@ -406,9 +406,9 @@ fn sphere_mass_properties() -> MassProperties {
 /// Simulation time anchored at the SIM_dyncomp epoch (parsed from
 /// `Modified_data/time.py`), with the UT1-TAI offset applied.
 fn dyncomp_time() -> SimulationTime {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let time_cfg =
-        astrodyn_verif_jeod::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+        crate::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
         .ut1_tai_offset()
@@ -461,8 +461,8 @@ fn earth_pm_with_rnp(mu: f64) -> GravitySourceEntry {
 // ── RUN_3A / RUN_3B: spherical-harmonics gravity (4x4 / 8x8) + RNP ─────────
 
 fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Gravity controls degree/order from RUN input chain.
     let mut grav_files: Vec<PathBuf> = vec![sim_dir.join("Modified_data/grav_controls.py")];
@@ -471,7 +471,7 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
         grav_files.push(sim_dir.join(format!("SET_test/{run_dir}/input.py")));
     }
     let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
-    let grav_cfg = astrodyn_verif_jeod::gravity_control::load_gravity_control(&grav_file_refs);
+    let grav_cfg = crate::gravity_control::load_gravity_control(&grav_file_refs);
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_sh_with_rnp());
@@ -574,8 +574,8 @@ fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Earth GGM05C mu, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
@@ -821,8 +821,8 @@ fn build_run7(
     with_drag: bool,
     case: &str,
 ) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Gravity controls degree/order from RUN input chain (RUN_7A is always
     // in the chain; RUN_7B/7D add an 8x8 override; 7C/7D add their own
@@ -836,7 +836,7 @@ fn build_run7(
         grav_files.push(sim_dir.join(format!("SET_test/{run_dir}/input.py")));
     }
     let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
-    let grav_cfg = astrodyn_verif_jeod::gravity_control::load_gravity_control(&grav_file_refs);
+    let grav_cfg = crate::gravity_control::load_gravity_control(&grav_file_refs);
 
     // Earth GGM02C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
@@ -1045,8 +1045,8 @@ pub fn run7d_sh8x8_3rd_body_drag() -> VerificationCase {
 // ── RUN_5B / RUN_5C: elliptical, no drag, gradient=true ────────────────────
 
 fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
@@ -1130,8 +1130,8 @@ fn build_run6_drag(
     case: &str,
     drag_config: DragConfig,
 ) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
     let mass_props = sphere_mass_properties();
@@ -1227,8 +1227,8 @@ pub fn run6b_drag() -> VerificationCase {
 // ── RUN_10A / RUN_10C / RUN_10D: gravity-gradient torque ───────────────────
 
 fn cylinder_mass_properties() -> MassProperties {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let mass_init = crate::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_cylinder"),
     );
@@ -1257,8 +1257,8 @@ fn cylinder_mass_properties() -> MassProperties {
 }
 
 fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
@@ -1335,8 +1335,8 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
 // ── RUN_5A: MET atmosphere validation (drag off, atmosphere live) ─────────
 
 fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
@@ -1404,8 +1404,8 @@ pub fn run5a_met() -> VerificationCase {
 /// rotated-frame variant). Uses `MassProperties::new(1.0)` (1 kg sphere
 /// with no explicit inertia) per JEOD's RUN_6B sphere replacement.
 fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 

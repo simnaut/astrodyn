@@ -25,8 +25,6 @@ pub mod branded;
 pub mod builder;
 pub mod error;
 pub mod prelude;
-#[cfg(feature = "verification")]
-pub mod run_verification;
 mod simulation;
 
 pub use branded::{BodyIdx, BrandedSimulation, SourceIdx};
@@ -38,10 +36,6 @@ pub use astrodyn::RotationModel;
 
 // Re-export the runner-side terminal-method extension trait from `builder`.
 pub use builder::SimulationBuilderExt;
-
-// Re-export the Phase-7 Tier 3 verification-case extension trait.
-#[cfg(feature = "verification")]
-pub use run_verification::VerificationCaseExt;
 
 // (Phase-10 cleanup, issue #253) The 12 types relocated from `astrodyn_runner`
 // to `astrodyn` in Phase 6 of #101 are no longer re-exported here. Consumers

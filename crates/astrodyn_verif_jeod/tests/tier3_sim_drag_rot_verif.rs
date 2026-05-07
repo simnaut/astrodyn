@@ -12,8 +12,8 @@
 //!
 //! Issue: #14
 
-use astrodyn_runner::prelude::*;
-use astrodyn_runner::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 
 // non-recipe: SIM_dyncomp RUN_6B with structural-to-body rotation; the test
 // content is the rotation-frame invariance, not a recipe vehicle.

@@ -51,6 +51,10 @@ pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;
 pub mod reference_state;
+pub mod run_verification;
 pub mod s_define;
 pub mod tier3_csv;
 pub mod time_config;
+pub mod verification;
+
+pub use run_verification::VerificationCaseExt;

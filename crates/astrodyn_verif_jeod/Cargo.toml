@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_verif_jeod"
-description = "JEOD cross-validation parsers, fixtures, and Tier 3 trajectory tests"
+description = "JEOD cross-validation parsers, fixtures, scenario rigs, and Tier 3 trajectory tests"
 keywords = ["verification", "validation", "aerospace", "simulation"]
 categories = ["science", "aerospace", "simulation"]
 readme = "README.md"
@@ -9,8 +9,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# Excluded from any (hypothetical) publish: large reference trajectories,
-# the JEOD-source mirror, and the JEOD-parity ephemeris kernel.
 exclude = [
     "test_data/*.csv",
     "test_data/*.out",
@@ -21,27 +19,24 @@ exclude = [
 [features]
 # `verification` gates `#![cfg(feature = "verification")]` on the tier 3
 # tests in this crate. Default-on so `cargo nextest run -p astrodyn_verif_jeod`
-# picks them up; downstream consumers that don't want the JEOD-source-backed
-# scaffolding can opt out with `--no-default-features`.
+# picks them up; downstream consumers can opt out with `--no-default-features`.
 default = ["verification"]
 verification = []
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
-astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
 astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 glam = { workspace = true }
 log = { workspace = true }
 regex = "1"
 thiserror = { workspace = true }
 uom = { workspace = true }
-
-[dev-dependencies]
-astrodyn = { path = "../..", version = "0.1.0" }
-astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
-astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
-astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
-astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
-astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
-astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }

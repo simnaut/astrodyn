@@ -26,7 +26,7 @@
 use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
@@ -107,8 +107,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 
 fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
     let mu_earth = load_mu_earth();
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP_DIR).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_DYNCOMP_DIR).join("S_define"),
     );
 
     // Load DE421 once for the t=0 sun position. The pre_step factory
@@ -239,8 +239,8 @@ const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 =
 
 fn sim_solar_beta_time() -> SimulationTime {
     let mut time = SimulationTime::new(SIM_SOLAR_BETA_EPOCH_TAI_TJT, default_leap_second_table());
-    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
+    let time_cfg = crate::time_config::load_time_config(
+        &crate::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
             .join("Modified_data/date_and_time.py"),
     );
     if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
@@ -250,8 +250,8 @@ fn sim_solar_beta_time() -> SimulationTime {
 }
 
 fn sim_solar_beta_dt() -> f64 {
-    astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("S_define"),
+    crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("S_define"),
     )
 }
 

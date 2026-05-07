@@ -6,13 +6,13 @@
 //! files rather than hardcoded, per issue #44.
 //!
 //! Phase 7 of #101 collapsed the per-test setup into the
-//! [`run_verification::sim_dyncomp`](astrodyn_runner::run_verification::sim_dyncomp)
+//! [`run_verification::sim_dyncomp`](astrodyn_verif_jeod::run_verification::sim_dyncomp)
 //! recipe family. The verification-case constructor encapsulates all JEOD
 //! source loading and `Simulation` setup; the test body is a one-liner that
 //! delegates to [`VerificationCaseExt::run_and_assert`].
 
-use astrodyn_runner::prelude::*;
-use astrodyn_runner::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 
 #[test]
 fn tier3_simulation_run2_3dof() {

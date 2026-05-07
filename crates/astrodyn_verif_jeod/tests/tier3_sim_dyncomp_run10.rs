@@ -6,7 +6,7 @@
 //! files rather than hardcoded, per issue #44.
 //!
 //! Phase 7 of #101 collapsed the propagation tests into the
-//! [`run_verification::sim_dyncomp`](astrodyn_runner::run_verification::sim_dyncomp)
+//! [`run_verification::sim_dyncomp`](astrodyn_verif_jeod::run_verification::sim_dyncomp)
 //! recipe family. The analytical libration-period validator
 //! (`tier3_reference_run10a_libration_period`) is archetype B (custom peak
 //! analysis on the JEOD CSV) and remains in this file.
@@ -14,8 +14,8 @@
 use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use astrodyn::JeodQuat;
-use astrodyn_runner::prelude::*;
-use astrodyn_runner::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 
 #[test]

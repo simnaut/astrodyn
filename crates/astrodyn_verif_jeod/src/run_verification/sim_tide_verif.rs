@@ -17,7 +17,7 @@
 use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
@@ -44,8 +44,8 @@ fn bsp_path() -> PathBuf {
 }
 
 fn dyncomp_time() -> SimulationTime {
-    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/time.py"),
+    let time_cfg = crate::time_config::load_time_config(
+        &crate::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/time.py"),
     );
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
@@ -73,8 +73,8 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
-    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Earth GGM05C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).

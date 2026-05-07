@@ -5,11 +5,11 @@
 //!
 //! Migrated from a 394-line bespoke parameterized loop to four recipe
 //! one-liners (#162). Recipes live in
-//! `astrodyn_runner::run_verification::sim_dyncomp::run7{a,b,c,d}_*`; the
+//! `astrodyn_verif_jeod::run_verification::sim_dyncomp::run7{a,b,c,d}_*`; the
 //! per-step DE421 update is shared via `run7_pre_step`.
 
-use astrodyn_runner::run_verification::sim_dyncomp;
-use astrodyn_runner::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_run7a_sh4x4_3rd_body() {

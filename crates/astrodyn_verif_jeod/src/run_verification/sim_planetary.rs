@@ -12,7 +12,7 @@
 //! SIM_Planetary stores them inline rather than in a separate
 //! Modified_data file.
 
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, InitialConditions, Tolerances, VerificationCase,
 };
 use astrodyn::{
@@ -30,8 +30,8 @@ fn load_mu_earth() -> f64 {
 }
 
 fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_PLANETARY).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_PLANETARY).join("S_define"),
     );
     let mu_earth = load_mu_earth();
 

@@ -15,7 +15,7 @@
 //! Scenarios that mirror JEOD verification simulations (Tier 3
 //! reference cases) need high-fidelity gravity / ephemeris / rotation
 //! kernels. Phase 6 of #101 routed those data dependencies into
-//! [`verification::reference_data`](super::verification::reference_data)
+//! `astrodyn_verif_jeod::verification::reference_data`
 //! so mission scenarios in this module function independently of any
 //! JEOD checkout. Tier 3 scenarios (and the examples that mirror
 //! them) compose `verification::reference_data::*` with the

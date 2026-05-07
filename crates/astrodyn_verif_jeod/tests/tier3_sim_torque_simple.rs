@@ -5,12 +5,12 @@
 //!
 //! Migrated from a 569-line bespoke parameterized loop to six recipe
 //! one-liners (#162). Recipes live in
-//! `astrodyn_runner::run_verification::sim_torque_simple::run0{1..6}`;
+//! `astrodyn_verif_jeod::run_verification::sim_torque_simple::run0{1..6}`;
 //! the per-step DE421 update is shared via the recipe's
 //! `pre_step` factory.
 
-use astrodyn_runner::run_verification::sim_torque_simple;
-use astrodyn_runner::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_torque_simple;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_torque_simple_run01() {

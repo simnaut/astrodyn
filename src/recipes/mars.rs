@@ -8,7 +8,7 @@
 //!
 //! Spherical-harmonics gravity for Mars (MRO110B2 et al.) requires
 //! loading JEOD coefficient files; that loader lives in
-//! [`verification::reference_data`](super::verification::reference_data).
+//! `astrodyn_verif_jeod::verification::reference_data`.
 
 use crate::sources::GravitySourceEntry;
 use crate::MARS;

@@ -17,10 +17,11 @@
 //! cargo run -p astrodyn_runner --example mars_orbit
 //! ```
 
-use astrodyn::recipes::{epoch, sun, vehicle, verification::reference_data};
+use astrodyn::recipes::{epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
 use astrodyn::{EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
+use astrodyn_verif_jeod::verification::reference_data;
 use glam::DVec3;
 
 // Dawn spacecraft initial state at Mars (from JEOD SIM_Mars RUN_dawn, t=0).

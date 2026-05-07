@@ -12,7 +12,7 @@
 //! Recipes here are JEOD-source-independent — they describe Earth via
 //! constants the Rust port owns. High-fidelity spherical-harmonics
 //! gravity that requires loading JEOD coefficient files lives in
-//! [`verification::reference_data`](super::verification::reference_data),
+//! `astrodyn_verif_jeod::verification::reference_data`,
 //! whose use is appropriate only for cross-validation against JEOD.
 //! Mission code that needs an SH source supplies its own
 //! [`SphericalHarmonicsData`](astrodyn_gravity::SphericalHarmonicsData) and

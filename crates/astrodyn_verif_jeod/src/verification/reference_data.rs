@@ -25,8 +25,8 @@
 
 use astrodyn_gravity::fixtures;
 
-use crate::sources::GravitySourceEntry;
-use crate::{EARTH, MARS, MOON};
+use astrodyn::GravitySourceEntry;
+use astrodyn::{EARTH, MARS, MOON};
 
 /// Earth with the GGM05C spherical-harmonics gravity field
 /// (degree=order=360).

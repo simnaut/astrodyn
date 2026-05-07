@@ -13,8 +13,8 @@
 //! Each test compares `body.solar_beta` against JEOD's logged
 //! `SIM_SolarBeta` reference column at every CSV record.
 
-use astrodyn_runner::run_verification::sim_solar_beta;
-use astrodyn_runner::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_solar_beta;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 /// Equatorial orbit; no J2 RAAN drift, so point-mass is sufficient.
 #[test]

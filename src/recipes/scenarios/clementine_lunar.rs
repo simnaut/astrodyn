@@ -24,7 +24,7 @@ use crate::SimulationBuilder;
 ///
 /// Mission code that wants high-fidelity Moon gravity (LP150Q) replaces
 /// the Moon entry with
-/// `astrodyn::recipes::verification::reference_data::moon_lp150q()` and
+/// `astrodyn_verif_jeod::verification::reference_data::moon_lp150q()` and
 /// adds a non-spherical control. That's appropriate only for Tier 3
 /// cross-validation (it requires `$JEOD_HOME`).
 ///

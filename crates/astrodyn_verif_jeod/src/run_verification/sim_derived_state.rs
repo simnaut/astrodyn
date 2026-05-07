@@ -7,7 +7,7 @@
 //! `DerivedStateConfig` flag is enabled and which CSV columns the
 //! extras comparator reads.
 
-use astrodyn::recipes::verification::{
+use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
 };
 use astrodyn::{
@@ -74,8 +74,8 @@ fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
 
 fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_ORBELEM_DIR).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_ORBELEM_DIR).join("S_define"),
     );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -130,8 +130,8 @@ pub fn orbelem_ecc() -> VerificationCase {
 
 fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
     );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -214,8 +214,8 @@ pub fn lvlh_equ() -> VerificationCase {
 // ── SIM_NED ────────────────────────────────────────────────────────────────
 
 fn ned_time() -> SimulationTime {
-    let verif_dir = astrodyn_verif_jeod::jeod_inputs::path(DERIVED_STATE_VERIF);
-    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
+    let verif_dir = crate::jeod_inputs::path(DERIVED_STATE_VERIF);
+    let time_cfg = crate::time_config::load_time_config(
         &verif_dir.join("Modified_data/date_and_time.py"),
     );
     let leap_table = default_leap_second_table();
@@ -228,8 +228,8 @@ fn ned_time() -> SimulationTime {
 
 fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
     );
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
@@ -383,8 +383,8 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
     // verif sim shares its time/integrator config with the dyncomp
     // RUN_2 trajectory it's driven from, so we read the same file the
     // existing test reads.
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
     );
 
     let q = init
@@ -421,8 +421,8 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
 
 fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
-        &astrodyn_verif_jeod::jeod_inputs::path(SIM_EULER_DIR).join("S_define"),
+    let dt = crate::s_define::load_dynamics_dt(
+        &crate::jeod_inputs::path(SIM_EULER_DIR).join("S_define"),
     );
 
     // SIM_Euler edge cases (ecc / equ) load the reference quaternion

@@ -8,7 +8,7 @@
 //!
 //! Spherical-harmonics gravity for the Moon (LP150Q et al.) requires
 //! loading JEOD coefficient files; the loader lives in
-//! [`verification::reference_data`](super::verification::reference_data).
+//! `astrodyn_verif_jeod::verification::reference_data`.
 //! Mission code that needs an SH source supplies its own data and
 //! builds the entry via [`GravitySourceEntry::central_body_sh`].
 

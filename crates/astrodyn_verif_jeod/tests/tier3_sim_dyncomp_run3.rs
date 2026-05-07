@@ -6,11 +6,11 @@
 //! from the JEOD source files rather than hardcoded, per issue #44.
 //!
 //! Phase 7 of #101 collapsed the per-test setup into the
-//! [`run_verification::sim_dyncomp`](astrodyn_runner::run_verification::sim_dyncomp)
+//! [`run_verification::sim_dyncomp`](astrodyn_verif_jeod::run_verification::sim_dyncomp)
 //! recipe family.
 
-use astrodyn_runner::prelude::*;
-use astrodyn_runner::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 
 #[test]
 fn tier3_simulation_run3a_sh4x4() {

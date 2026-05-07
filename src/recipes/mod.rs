@@ -42,19 +42,4 @@ pub mod scenarios;
 pub mod sun;
 pub mod vehicle;
 
-/// Tier 3 cross-validation scaffolding (workspace-internal).
-///
-/// Contains [`VerificationCase`](verification::VerificationCase) and
-/// the SH-gravity recipes that back it
-/// (`verification::reference_data::*`). Consumed by `astrodyn_runner`'s
-/// `run_verification` rigs and the workspace-internal examples; these
-/// types reach into committed test data under `test_data/` that ships
-/// only with this repository, so downstream mission code should not
-/// depend on this surface.
-///
-/// Hidden from rendered rustdoc so the published page surfaces only
-/// the mission-facing recipes.
-#[doc(hidden)] // allowed: workspace-internal Tier 3 scaffolding; see module docs and #249
-pub mod verification;
-
 pub use mission::Mission;

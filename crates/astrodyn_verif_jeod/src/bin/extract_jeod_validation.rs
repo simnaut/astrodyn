@@ -11,10 +11,10 @@
 //! - `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`
 //!   → verbatim copy at `test_data/gravity/grav_geospherical_verif_out.txt`
 //!   (40 lines, plain text; consumed by
-//!   `astrodyn_verif_jeod::gravity_verif::load_gravity_test_cases`).
+//!   `crate::gravity_verif::load_gravity_test_cases`).
 //! - `models/environment/time/data/Leap_Second.dat`
 //!   → verbatim copy at `test_data/time/Leap_Second.dat` (consumed by
-//!   `astrodyn_verif_jeod::leap_second::load_leap_second_table`).
+//!   `crate::leap_second::load_leap_second_table`).
 //! - `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/mass.py`
 //!   → verbatim copy at `test_data/body_init/iss_mass.py` (consumed by
 //!   `astrodyn_verif_jeod::mass_data::load_mass_data`).

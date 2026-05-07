@@ -13,7 +13,7 @@
 //! CSV path, propagation duration, and per-component tolerances into a
 //! single declarative unit. Tier 3 tests in Phase 7/8 collapse to:
 //!
-//! // reason: `run_and_assert` is defined by `astrodyn_runner::VerificationCaseExt`, which astrodyn cannot depend on without a circular workspace dependency.
+//! // reason: `run_and_assert` is defined by `crate::VerificationCaseExt`, which astrodyn cannot depend on without a circular workspace dependency.
 //! ```ignore
 //! #[test]
 //! fn tier3_dyncomp_run2_3dof() {
@@ -33,14 +33,14 @@
 //! extension trait, since materializing a [`SimulationBuilder`] into a
 //! runtime `astrodyn_runner::Simulation` is runner-specific. The runner-side
 //! trait also dispatches on the [`CsvReference`] variant, calling the
-//! matching loader from `astrodyn_verif_jeod::tier3_csv`.
+//! matching loader from `crate::tier3_csv`.
 
 pub mod reference_data;
 
 use glam::{DQuat, DVec3};
 use uom::si::f64::Time;
 
-use crate::SimulationBuilder;
+use astrodyn::SimulationBuilder;
 
 /// Adapter-neutral interface for the operations a `pre_step` hook needs.
 ///
@@ -109,7 +109,7 @@ pub type PreStepBuilder = fn(&InitialConditions) -> PreStepClosure;
 /// `[q0, q1, q2, q3]` where `q0` is the scalar. A JEOD quaternion
 /// `[q0, q1, q2, q3]` therefore maps to
 /// `DQuat { x: q1, y: q2, z: q3, w: q0 }`. Scenarios that need a
-/// [`crate::JeodQuat`] convert via `JeodQuat::from_glam`.
+/// [`astrodyn::JeodQuat`] convert via `JeodQuat::from_glam`.
 #[derive(Clone, Debug, Default)]
 pub struct InitialConditions {
     /// Reference time (seconds since the sim epoch). Always populated.
@@ -142,7 +142,7 @@ pub struct InitialConditions {
 pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
     /// position/velocity only — quaternion and ang_vel columns are
-    /// dropped at the `astrodyn_verif_jeod::crossval::StateLog` layer. Use
+    /// dropped at the `crate::crossval::StateLog` layer. Use
     /// this for scenarios that build a `astrodyn::VehicleConfig` without `rot`,
     /// so per-step compares don't synthesize spurious rotational
     /// reference values from CSV columns the simulation never produces.
@@ -150,7 +150,7 @@ pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 6-DOF reference:
     /// position/velocity *plus* `composite_body.quaternion` and
     /// `composite_body.ang_vel` are populated on the reference
-    /// `astrodyn_verif_jeod::crossval::StateLog`.
+    /// `crate::crossval::StateLog`.
     Dyncomp6Dof(&'static str),
     /// 21+-column SIM_OrbElem CSV (classical elements + state).
     Orbelem(&'static str),
@@ -252,13 +252,13 @@ pub struct Tolerances {
 /// Per-family extras comparator dispatched by `run_and_assert`.
 ///
 /// Each variant tags a family-specific extractor that pairs a
-/// [`crate::recipes::verification::CsvReference`]'s typed record at
+/// [`crate::verification::CsvReference`]'s typed record at
 /// step *k* with the runner-side `astrodyn_runner::VehicleOutput` at the
 /// same step, yielding `(name, abs_error)` pairs the runner
 /// accumulates as max errors and asserts against
 /// [`Tolerances::extras`].
 ///
-/// The runner-side dispatch lives in `astrodyn_runner::run_verification`
+/// The runner-side dispatch lives in `crate::run_verification`
 /// (it has access to typed records and `VehicleOutput`); this enum is
 /// adapter-neutral so `VerificationCase` itself stays in `astrodyn`.
 #[derive(Clone, Debug)]
@@ -312,7 +312,7 @@ pub enum ExtrasComparator {
 ///
 /// Phase 6 shipped the type; Phase 7+ populates `verification::*`
 /// constructors that produce one of these per existing Tier 3 test.
-/// `run_and_assert` is provided by `astrodyn_runner::run_verification`
+/// `run_and_assert` is provided by `crate::run_verification`
 /// because materializing the scenario into a runtime
 /// `astrodyn_runner::Simulation` is runner-specific.
 #[derive(Clone, Debug)]

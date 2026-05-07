@@ -9,8 +9,8 @@
 //! Both use point-mass Earth gravity, RK4 at the SIM_Euler S_define step size, 24h duration.
 //! Euler angles are validated against JEOD's logged quaternion data.
 
-use astrodyn_runner::prelude::*;
-use astrodyn_runner::run_verification::sim_derived_state;
+use astrodyn_verif_jeod::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_derived_state;
 
 #[test]
 fn tier3_simulation_euler_ecc() {

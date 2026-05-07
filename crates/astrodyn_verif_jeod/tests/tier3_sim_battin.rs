@@ -19,8 +19,8 @@
 //! no JEOD CSV reference for it — the comparison is internal between the
 //! two sibling sims.
 
-use astrodyn::recipes::verification::InitialConditions;
-use astrodyn_runner::run_verification::sim_dyncomp;
+use astrodyn_verif_jeod::verification::InitialConditions;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
 use glam::DVec3;

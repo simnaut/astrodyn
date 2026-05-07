@@ -9,7 +9,7 @@
 //!   stays at 1.0; matches the original example's behaviour)
 //!
 //! This example consumes
-//! [`recipes::verification::reference_data`](astrodyn::recipes::verification::reference_data),
+//! [`recipes::verification::reference_data`](astrodyn_verif_jeod::verification::reference_data),
 //! which reads the committed `test_data/gravity/moon_lp150q.bin`
 //! fixture for the Moon LP150Q gravity model. DE421 ephemeris and Moon
 //! libration come from the committed `crates/astrodyn_ephemeris/assets/de421.bsp` and
@@ -20,10 +20,11 @@
 //! cargo run -p astrodyn_runner --example earth_moon
 //! ```
 
-use astrodyn::recipes::{epoch, sun, vehicle, verification::reference_data};
+use astrodyn::recipes::{epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
 use astrodyn::{Ephemeris, EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
+use astrodyn_verif_jeod::verification::reference_data;
 use glam::DVec3;
 
 // Initial state from JEOD SIM_Earth_Moon RUN_clem at t=0 (Moon-centered inertial).

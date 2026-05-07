@@ -16,11 +16,11 @@
 //!
 //! Migrated from a 200-line bespoke per-step loop to this one-liner
 //! using the `pre_step` hook (#156, #162). The recipe constructor lives
-//! at `astrodyn_runner::run_verification::sim_solar_beta::solar_beta_run2`;
+//! at `astrodyn_verif_jeod::run_verification::sim_solar_beta::solar_beta_run2`;
 //! the per-step DE421 update is its `pre_step` factory.
 
-use astrodyn_runner::run_verification::sim_solar_beta;
-use astrodyn_runner::VerificationCaseExt;
+use astrodyn_verif_jeod::run_verification::sim_solar_beta;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_solar_beta() {
