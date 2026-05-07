@@ -13,7 +13,7 @@
 //!
 //! - [`accumulate_gravity`] — gravity accumulation across sources
 //! - [`evaluate_atmosphere`] — atmosphere evaluation pipeline
-//! - [`compute_drag`] — aerodynamic drag with frame transform
+//! - [`compute_ballistic_drag`] — aerodynamic drag with frame transform
 //! - [`compute_gravity_torque`] — gravity gradient torque with quaternion conversion
 //! - [`collect_and_resolve_forces`] — force/torque collection with frame transforms
 //! - [`integrate_body`] — RK4 integration with 6-DOF/3-DOF routing
