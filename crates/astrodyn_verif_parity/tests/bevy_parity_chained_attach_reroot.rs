@@ -38,7 +38,7 @@
 //! [`MassTreeR`]: astrodyn_bevy::MassTreeR
 
 use astrodyn::{MassProperties, MassTree};
-use astrodyn_bevy::{JeodPlugin, MassTreeR};
+use astrodyn_bevy::{AstrodynPlugin, MassTreeR};
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 
@@ -139,7 +139,7 @@ fn assert_trees_match(
     }
 }
 
-/// Build a Bevy `App` carrying a `JeodPlugin` + a fresh `MassTreeR`
+/// Build a Bevy `App` carrying a `AstrodynPlugin` + a fresh `MassTreeR`
 /// resource, then drive the chained-attach sequence by mutating the
 /// resource directly. Compares against an out-of-Bevy `MassTree` that
 /// runs the same sequence.
@@ -155,7 +155,7 @@ fn bevy_parity_chained_attach_reroot_storage() {
     // -- Bevy side --
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app.insert_resource(MassTreeR(MassTree::new()));
     let bevy_ids = {
         let mut tree_r = app.world_mut().resource_mut::<MassTreeR>();
@@ -193,7 +193,7 @@ fn bevy_parity_chained_attach_reroot_storage() {
 fn bevy_parity_chained_attach_reroot_intermediate_states() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app.insert_resource(MassTreeR(MassTree::new()));
 
     let (v1, v2, v3, root_after_first_attach, root_after_reroot, root_after_detach) = {

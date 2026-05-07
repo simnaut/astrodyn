@@ -25,7 +25,7 @@ use astrodyn::{
     BodyAction, DynamicsConfig, JeodQuat, LvlhAngularVelocityFrame, MassProperties, RotationalState,
 };
 use astrodyn_bevy::{
-    BodyActionEvent, GravitySourceC, JeodPlugin, MassPropertiesC, RotationalStateC,
+    AstrodynPlugin, BodyActionEvent, GravitySourceC, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_dynamics::body_init::{
@@ -50,7 +50,7 @@ fn reference_orbit() -> (DVec3, DVec3) {
 }
 
 /// `FixedUpdate` step duration. The body-action systems are pinned to
-/// `FixedUpdate` by `JeodPlugin`, so the test must drive that
+/// `FixedUpdate` by `AstrodynPlugin`, so the test must drive that
 /// schedule (not the default `Update`).
 const DT: f64 = 0.03125;
 
@@ -61,7 +61,7 @@ fn build_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -149,7 +149,7 @@ fn bevy_parity_init_lvlh_rot_writes_rotational_state_in_body_frame() {
         ),
     );
 
-    // `JeodPlugin` pins the body-action systems to `FixedUpdate`
+    // `AstrodynPlugin` pins the body-action systems to `FixedUpdate`
     // (not `Update`) so a `MinimalPlugins`-only test must drive the
     // fixed schedule explicitly: advance the `Time::<Fixed>` clock by
     // one DT, then run that schedule.

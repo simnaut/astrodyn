@@ -2,8 +2,8 @@
 //!
 //! Recomputes `inverse_mass` / `inverse_inertia` for every entity
 //! whose [`MassPropertiesC`](crate::components::MassPropertiesC) is
-//! marked `dirty`. Runs between [`JeodSet::TimeUpdate`](crate::JeodSet::TimeUpdate)
-//! and [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
+//! marked `dirty`. Runs between [`AstrodynSet::TimeUpdate`](crate::AstrodynSet::TimeUpdate)
+//! and [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate)
 //! so gravity, force collection, and integration see current mass
 //! properties.
 
@@ -18,7 +18,7 @@ use crate::components::*;
 /// staging, attach/detach) are reflected in the dynamics before the next
 /// derivative computation.
 ///
-/// Placed before `JeodSet::EphemerisUpdate` so gravity and force collection
+/// Placed before `AstrodynSet::EphemerisUpdate` so gravity and force collection
 /// see current mass properties.
 ///
 /// **Change-detection contract**: the dirty-flag check below is read through

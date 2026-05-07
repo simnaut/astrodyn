@@ -1,8 +1,8 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Mission-crate prelude: `use astrodyn_bevy::prelude::*;`.
 //!
-//! Brings into scope the typed Bevy Components, the [`JeodPlugin`] and
-//! [`JeodSet`] schedule sets, the [`VehicleConfigBevyExt`] terminal that
+//! Brings into scope the typed Bevy Components, the [`AstrodynPlugin`] and
+//! [`AstrodynSet`] schedule sets, the [`VehicleConfigBevyExt`] terminal that
 //! materializes a [`astrodyn::VehicleConfig`] onto a Bevy entity, and the
 //! [`F64Ext`] / [`Vec3Ext`] / [`Array3Ext`] facade traits so mission code
 //! can write `400.0.km()` and `DVec3::new(...).m_at::<RootInertial>()`.
@@ -26,15 +26,16 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyActionCommandsExt, BodyActionEvent,
-    BodyActionsR, BodyFrameMarker, ClosureJointKinematicsC, DetachedSubtreeStateC, DynamicsConfigC,
-    FrameAngVelC, FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker,
-    IntegrationFrameMarker, IntegratorTypeC, JeodPlugin, JeodSet, JointKinematicsC,
-    MassPropertiesC, MultiDofJointKinematicsC, PfixFrameEntityC, PlanetFixedFrameMarker,
-    PlanetFixedRotationC, RadiationForceC, RootFrameEntityR, RotationalStateC, SimulationTimeR,
-    SinusoidalJointKinematicsC, SourceInertialPositionC, SourceInertialVelocityC,
-    StructuralTransformC, TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
+    Abm4StateC, AerodynamicForceC, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
+    BodyActionCommandsExt, BodyActionEvent, BodyActionsR, BodyFrameMarker, ClosureJointKinematicsC,
+    DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC,
+    FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC,
+    GravitySourceC, GravityTorqueC, InertialFrameMarker, IntegrationFrameMarker, IntegratorTypeC,
+    JointKinematicsC, MassPropertiesC, MultiDofJointKinematicsC, PfixFrameEntityC,
+    PlanetFixedFrameMarker, PlanetFixedRotationC, RadiationForceC, RootFrameEntityR,
+    RotationalStateC, SimulationTimeR, SinusoidalJointKinematicsC, SourceInertialPositionC,
+    SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
+    VehicleConfigBevyExt,
 };
 // ECS-native frame-tree mission-code surface.
 // `RelativeFrameState` is the mission-facing API for cross-frame

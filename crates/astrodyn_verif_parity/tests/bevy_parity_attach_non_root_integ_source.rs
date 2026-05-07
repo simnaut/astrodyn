@@ -50,8 +50,8 @@ use astrodyn::{
     StageAttachInputs, TranslationalState, EARTH, MOON,
 };
 use astrodyn_bevy::{
-    AttachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC, GravityControlsC,
-    IntegSourceC, JeodPlugin, MassBodyIdC, MassPropertiesC, MassTreeR, PlanetBundle,
+    AstrodynPlugin, AttachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
+    GravityControlsC, IntegSourceC, MassBodyIdC, MassPropertiesC, MassTreeR, PlanetBundle,
     RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -132,7 +132,7 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let _earth = app
         .world_mut()

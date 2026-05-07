@@ -22,11 +22,11 @@
 //!
 //! # Schedule
 //!
-//! Runs in `JeodSet::ForceCollection`, **after**
+//! Runs in `AstrodynSet::ForceCollection`, **after**
 //! [`force_collection_system`](crate::systems::force_collection_system).
 //! [`composite_mass_system`](crate::mass_tree::composite_mass_system)
 //! must have already run earlier in the tick (it does, scheduled
-//! `before(JeodSet::EphemerisUpdate)`) so the per-entity
+//! `before(AstrodynSet::EphemerisUpdate)`) so the per-entity
 //! `MassPropertiesC.position` is the live composite CoM, which the
 //! aggregation walk's `pcm_to_ccm = child.composite_wrt_pstr.position
 //! − parent.composite.position` arithmetic depends on.
@@ -42,7 +42,7 @@
 //! the kinematic propagation that derives child poses from the root
 //! (the design-doc `propagate_state_from_root_system`) lives at
 //! [`crate::kinematic_propagation::propagate_state_from_root_system`]
-//! and runs earlier in the tick (pre-`JeodSet::Environment`) so the
+//! and runs earlier in the tick (pre-`AstrodynSet::Environment`) so the
 //! aggregation walk reads live attitudes.
 //!
 //! # Frame conventions inside the system
@@ -161,14 +161,14 @@ fn t_inertial_struct(
 /// `parents_q.is_empty()` so the cost is one query iteration over
 /// the empty set.
 ///
-/// # Order in `JeodSet::ForceCollection`
+/// # Order in `AstrodynSet::ForceCollection`
 ///
 /// Schedule this system **after**
 /// [`force_collection_system`](crate::systems::force_collection_system)
-/// within `JeodSet::ForceCollection`. Both must run before
-/// `JeodSet::Integration`. The
+/// within `AstrodynSet::ForceCollection`. Both must run before
+/// `AstrodynSet::Integration`. The
 /// [`composite_mass_system`](crate::mass_tree::composite_mass_system)
-/// runs earlier in the tick (before `JeodSet::EphemerisUpdate`) so the
+/// runs earlier in the tick (before `AstrodynSet::EphemerisUpdate`) so the
 /// per-entity composite CoM (`MassPropertiesC.position`) is already
 /// the post-Steiner value the parallel-axis arm consumes.
 // JEOD_INV: DB.16 — child forces propagated to parent recursively (composite-rigid-body upward walk)
@@ -229,7 +229,7 @@ pub fn wrench_aggregation_system(
     //     defense-in-depth.
     //
     //     [`propagate_state_from_root_system`](crate::kinematic_propagation::propagate_state_from_root_system)
-    //     runs earlier in the tick (pre-`JeodSet::Environment`) and
+    //     runs earlier in the tick (pre-`AstrodynSet::Environment`) and
     //     writes `RotationalStateC` (plus `TranslationalStateC`) on
     //     every kinematic chain member by deriving the child's state
     //     from the parent's state composed with
@@ -300,12 +300,12 @@ pub fn wrench_aggregation_system(
                      rooted at {root:?} that contains a non-identity rotation, but it has no \
                      `RotationalStateC`. This is a scheduling-contract violation: \
                      `propagate_state_from_root_system` is supposed to run earlier in \
-                     the tick (pre-`JeodSet::Environment`) and derive every kinematic \
+                     the tick (pre-`AstrodynSet::Environment`) and derive every kinematic \
                      child's `RotationalStateC` from its parent's attitude composed \
                      with `MassChildOf.t_parent_child`. If this assertion is firing, \
                      either:\n  \
                      1. The propagation system was unscheduled (custom `App` build that \
-                     doesn't include the `JeodPlugin`'s `FixedUpdate` system set, or a test \
+                     doesn't include the `AstrodynPlugin`'s `FixedUpdate` system set, or a test \
                      fixture that runs `wrench_aggregation_system` directly without first \
                      running `propagate_state_from_root_system` after `composite_mass_system`). \
                      Add `propagate_state_from_root_system.before(wrench_aggregation_system)` \
@@ -1294,7 +1294,7 @@ mod tests {
         // typed-quantities bypasses in production code paths, not
         // one-shot test-app setup of the Bevy `Time<Fixed>` resource.
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
-        app.add_plugins(crate::JeodPlugin);
+        app.add_plugins(crate::AstrodynPlugin);
 
         // Earth point-mass source.
         let earth = app

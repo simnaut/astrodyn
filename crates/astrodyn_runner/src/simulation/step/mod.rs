@@ -146,7 +146,7 @@ impl Simulation {
 
         // ── 3b. Kinematic state propagation (root → leaves), pre-integration ──
         // Mirrors the Bevy adapter's `propagate_state_from_root_system`
-        // schedule placement — `JeodSet::ForceCollection`, after mass
+        // schedule placement — `AstrodynSet::ForceCollection`, after mass
         // recompute and before any consumer that reads child attitudes
         // (the wrench walk in Bevy; defense-in-depth here, since the
         // runner's `collect_and_resolve_forces` is per-body without an

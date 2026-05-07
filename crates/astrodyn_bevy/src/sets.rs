@@ -1,4 +1,4 @@
-//! [`JeodSet`] — the Bevy `SystemSet` partition that mirrors JEOD's
+//! [`AstrodynSet`] — the Bevy `SystemSet` partition that mirrors JEOD's
 //! per-step pipeline.
 //!
 //! # Schedule as integration group
@@ -12,11 +12,11 @@
 //! - One `FixedUpdate` tick = one group advance at the schedule's fixed
 //!   `dt`. Every entity matched by the integrating system's query
 //!   shares that `dt` by construction — no per-body bookkeeping.
-//! - The seven [`JeodSet`] stages below run once per tick, in the order
+//! - The seven [`AstrodynSet`] stages below run once per tick, in the order
 //!   declared, mirroring JEOD's init/update pipeline (force collection →
 //!   integration → derived state).
 //! - **Multi-stage integrators (RK4, etc.) are an inner loop inside
-//!   [`JeodSet::Integration`], not multiple schedule passes.** A four-
+//!   [`AstrodynSet::Integration`], not multiple schedule passes.** A four-
 //!   stage RK4 evaluates four sub-steps within the integration system
 //!   for the same outer `FixedUpdate` tick.
 //! - Multi-body sims (Apollo, Earth–Moon) need no extra wiring: every
@@ -34,7 +34,7 @@
 use bevy::prelude::*;
 
 /// Bevy system-set partition mirroring JEOD's per-step pipeline. Stages
-/// run in declaration order; `JeodPlugin::build` configures the ordering
+/// run in declaration order; `AstrodynPlugin::build` configures the ordering
 /// when the plugin is added to the app.
 ///
 /// All seven stages execute together inside one `FixedUpdate` tick at
@@ -43,7 +43,7 @@ use bevy::prelude::*;
 // JEOD_INV: DM.04 — system set ordering mirrors JEOD init/update pipeline
 // JEOD_INV: DM.13 — EphemerisUpdate before Environment ensures ephemeris is current for gravity
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum JeodSet {
+pub enum AstrodynSet {
     /// Time scale update (TAI, UTC, TDB, GMST, etc.).
     TimeUpdate,
     /// Ephemeris update (planet positions from DE4xx data).

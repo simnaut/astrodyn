@@ -1,6 +1,6 @@
 //! Bevy integration test for [`astrodyn_bevy::systems::joint_kinematics_system`].
 //!
-//! Spawns a bare Bevy app with [`astrodyn_bevy::JeodPlugin`] and a single
+//! Spawns a bare Bevy app with [`astrodyn_bevy::AstrodynPlugin`] and a single
 //! frame entity carrying [`JointKinematicsC`], advances `FixedUpdate`
 //! N ticks, and asserts after each tick that the entity's
 //! [`FrameRotC`] / [`FrameAngVelC`] match the analytical answer:
@@ -36,7 +36,7 @@ fn step_once(app: &mut App) {
     app.world_mut().run_schedule(FixedUpdate);
 }
 
-/// Build a bare Bevy app with `JeodPlugin` and a single frame entity
+/// Build a bare Bevy app with `AstrodynPlugin` and a single frame entity
 /// carrying the given joint spec. Returns the app and the spawned
 /// entity. Bypasses the full vehicle / planet machinery — the joint
 /// kinematics system only depends on `SimulationTimeR` (advanced by
@@ -46,7 +46,7 @@ fn build_app_with_joint(spec: JointKinematicsSpec) -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     let entity = app
         .world_mut()
         // FrameTransC / FrameRotC / FrameAngVelC are auto-inserted via
@@ -203,7 +203,7 @@ fn joint_kinematics_does_not_touch_unrelated_frame_entities() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     // Spawn a bare frame entity (no JointKinematicsC).
     let entity = app
@@ -232,7 +232,7 @@ fn joint_kinematics_does_not_touch_unrelated_frame_entities() {
     assert_eq!(avd, DVec3::Z * 0.5);
 }
 
-/// The system runs in [`JeodSet::EphemerisUpdate`] alongside
+/// The system runs in [`AstrodynSet::EphemerisUpdate`] alongside
 /// `planet_fixed_rotation_system`. A direct call into the `astrodyn`
 /// kernel at the same simulation time must produce bit-identical
 /// output — the Bevy adapter is a thin glue layer with no extra math.
@@ -299,7 +299,7 @@ fn joint_kinematics_panics_on_non_unit_axis() {
 /// Minimal smoke test that `joint_kinematics_system` is reachable by
 /// name from outside the crate — the function must remain a public
 /// system function so mission code that wants a custom schedule can
-/// re-add it without re-importing through the `JeodPlugin` umbrella.
+/// re-add it without re-importing through the `AstrodynPlugin` umbrella.
 #[test]
 fn joint_kinematics_system_is_a_public_system_function() {
     fn _assert_is_system_fn() {
@@ -383,7 +383,7 @@ fn joint_kinematics_relative_frame_state_walk_matches_analytical() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let root_e = app
         .world_mut()
@@ -560,7 +560,7 @@ fn build_app_with_sinusoidal_joint(spec: SinusoidalJointKinematicsSpec) -> (App,
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(SinusoidalJointKinematicsC(spec)).id();
     (app, entity)
 }
@@ -667,7 +667,7 @@ fn closure_joint_kinematics_is_time_invariant_across_ticks() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(ClosureJointKinematicsC(spec)).id();
 
     step_once(&mut app);
@@ -719,7 +719,7 @@ fn multi_dof_joint_kinematics_two_stage_matches_kernel() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(MultiDofJointKinematicsC(chain)).id();
 
     let n_ticks = 8_usize;
@@ -780,7 +780,7 @@ fn sibling_kinematic_drivers_dispatch_disjoint_entity_sets() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let const_e = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
     let sin_e = app
@@ -871,7 +871,7 @@ fn closure_joint_kinematics_panics_on_non_unit_axis() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app.world_mut().spawn(ClosureJointKinematicsC(spec));
     step_once(&mut app);
 }
@@ -892,7 +892,7 @@ fn multi_dof_joint_kinematics_panics_on_non_unit_axis_in_stage() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app.world_mut().spawn(MultiDofJointKinematicsC(chain));
     step_once(&mut app);
 }
@@ -900,7 +900,7 @@ fn multi_dof_joint_kinematics_panics_on_non_unit_axis_in_stage() {
 /// Sibling joint-kinematics systems must be reachable by name from
 /// outside the crate — mission code that wants a custom schedule
 /// must be able to re-add them without re-importing through the
-/// `JeodPlugin` umbrella, matching the existing
+/// `AstrodynPlugin` umbrella, matching the existing
 /// `joint_kinematics_system` contract.
 #[test]
 fn sibling_joint_kinematics_systems_are_public() {
@@ -1013,14 +1013,14 @@ fn assert_entity_debug_shape(token: &str, msg: &str) {
     );
 }
 
-/// Build a fully-wired Bevy app with `JeodPlugin` so the
+/// Build a fully-wired Bevy app with `AstrodynPlugin` so the
 /// joint-kinematics `on_insert` hooks and the `PostStartup`
 /// validator are both installed.
 fn build_app_with_plugin() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app
 }
 

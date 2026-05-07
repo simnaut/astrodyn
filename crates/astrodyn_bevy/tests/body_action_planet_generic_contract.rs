@@ -25,8 +25,9 @@ use astrodyn::{
     VehicleBuilder, MARS,
 };
 use astrodyn_bevy::{
-    register_planet_systems, BodyActionCommandsExt, BodyActionEvent, JeodPlugin, MassPropertiesC,
-    PlanetBundle, SourceInertialPositionC, TranslationalStateC, VehicleConfigBevyExt,
+    register_planet_systems, AstrodynPlugin, BodyActionCommandsExt, BodyActionEvent,
+    MassPropertiesC, PlanetBundle, SourceInertialPositionC, TranslationalStateC,
+    VehicleConfigBevyExt,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -125,7 +126,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
     // Mars as the gravity source for the vehicle. `register_planet_systems::<Mars>`
@@ -268,7 +269,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
     let earth_planet = app
@@ -399,7 +400,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     // even when the calling system holds no `<P>` witness").
     //
     // This test:
-    //   - registers Earth (via `JeodPlugin`) and Mars (via
+    //   - registers Earth (via `AstrodynPlugin`) and Mars (via
     //     `register_planet_systems::<Mars>`),
     //   - spawns one Earth body and one Mars body, each with a
     //     queued `Add` whose name shares a unique tag for the Mars
@@ -415,7 +416,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
     let earth_planet = app
@@ -565,7 +566,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     // observable effect — the regression the deleted Earth-pinned
     // `should_panic` test was guarding against.
     //
-    // The mission here calls `JeodPlugin::build` (which registers
+    // The mission here calls `AstrodynPlugin::build` (which registers
     // Earth) and spawns a Mars body but *never* calls
     // `register_planet_systems::<Mars>`. The `add_for::<Mars>`
     // message must trip the
@@ -575,7 +576,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 
     let earth_planet = app
@@ -607,7 +608,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     };
 
     // Direct-writer path: an `add_for::<Mars>` lands in the message
-    // buffer. The fence system, registered by `JeodPlugin::build`
+    // buffer. The fence system, registered by `AstrodynPlugin::build`
     // and chained between the per-planet intakes and apply passes,
     // must observe it and panic.
     app.world_mut()
@@ -642,7 +643,7 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 
     let earth_planet = app

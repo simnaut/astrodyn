@@ -71,9 +71,9 @@ use astrodyn::{
     TranslationalState, VehicleConfig,
 };
 use astrodyn_bevy::{
-    AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC,
-    GravityControlsC, JeodPlugin, KinematicChildC, MassBodyIdC, MassChildOf, MassPropertiesC,
-    MassTreeR, RotationalStateC, TotalForceC, TranslationalStateC,
+    AstrodynPlugin, AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC,
+    FrameDerivativesC, GravityControlsC, KinematicChildC, MassBodyIdC, MassChildOf,
+    MassPropertiesC, MassTreeR, RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
@@ -253,7 +253,7 @@ fn build_bevy_app() -> (
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_v1 = tree.add_body("veh1".into(), veh1_mass());
@@ -604,7 +604,7 @@ fn assert_topology_match(
     }
 }
 
-/// Read the Bevy schedule's elapsed simtime. `JeodPlugin` advances
+/// Read the Bevy schedule's elapsed simtime. `AstrodynPlugin` advances
 /// `SimulationTimeR` every fixed-update step; the test reads it to
 /// keep both runtimes in lock-step on the attach event timing.
 fn bevy_sim_elapsed(app: &App) -> f64 {

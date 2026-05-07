@@ -30,8 +30,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::frame_param::{FrameOrigin, RelativeFrameState};
 use astrodyn_bevy::{
-    DynamicsConfigC, FrameEntityC, GravityControlsC, JeodPlugin, MassPropertiesC, PfixFrameEntityC,
-    PlanetBundle, RootFrameEntityR, RotationalStateC, TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, FrameEntityC, GravityControlsC, MassPropertiesC,
+    PfixFrameEntityC, PlanetBundle, RootFrameEntityR, RotationalStateC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -49,7 +49,7 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let planet_e = app
         .world_mut()
@@ -169,13 +169,13 @@ fn frame_origin_and_relative_frame_state_agree() {
 /// `Velocity<RootInertial>` values directly (no `.from_raw_si` /
 /// phantom-stamping at the call site). The system is registered
 /// (not run) — the purpose is to exercise the SystemParam wiring
-/// against the resources / queries `JeodPlugin` installs.
+/// against the resources / queries `AstrodynPlugin` installs.
 #[test]
 fn after_diff_mission_code_shape_compiles() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app.world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH));
 

@@ -64,10 +64,10 @@ pub(crate) fn body_integ_origin_in_root(
 /// state (~3.8e8 m / 1 km/s for lunar bodies).
 ///
 /// Pure root-integrated worlds (the common minimal-test shape: no
-/// `JeodPlugin`, so no `FrameEntityC` on bodies) keep working — the
+/// `AstrodynPlugin`, so no `FrameEntityC` on bodies) keep working — the
 /// `body_frame.is_none()` branch returns zero without consulting the
 /// root entity. Tests that exercise non-root-integrated bodies must
-/// register `JeodPlugin` (which inserts `RootFrameEntityR` and the
+/// register `AstrodynPlugin` (which inserts `RootFrameEntityR` and the
 /// frame-tree infrastructure) or supply an equivalent mock resource.
 pub(crate) fn body_integ_origin_in_root_lazy(
     body_frame: Option<&FrameEntityC>,
@@ -80,7 +80,7 @@ pub(crate) fn body_integ_origin_in_root_lazy(
     // a zero origin without consulting the frame tree:
     //
     //   * `body_frame.is_none()` — the body has no `FrameEntityC` at
-    //     all (minimal-test shape with no `JeodPlugin`); root-
+    //     all (minimal-test shape with no `AstrodynPlugin`); root-
     //     integrated by convention.
     //
     // A body that *does* carry `FrameEntityC` but whose frame entity
@@ -125,10 +125,10 @@ pub(crate) fn body_integ_origin_in_root_lazy(
         panic!(
             "RootFrameEntityR resource not present, but a body carries FrameEntityC \
              ({:?}) whose integ-frame parent is {integ_e:?} — the integ-origin shift \
-             cannot be computed without the root frame entity. JeodPlugin must be \
+             cannot be computed without the root frame entity. AstrodynPlugin must be \
              loaded for systems that lift integration-frame coordinates to \
              root-inertial (staging_system, step_detached_system). If your test \
-             intentionally omits JeodPlugin, also omit FrameEntityC from the body \
+             intentionally omits AstrodynPlugin, also omit FrameEntityC from the body \
              (root-integrated bodies skip this path entirely).",
             fe.0,
         )

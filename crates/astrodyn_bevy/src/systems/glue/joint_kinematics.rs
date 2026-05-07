@@ -1,7 +1,7 @@
 //! Glue: kinematic-joint drivers and stacked-spec exclusivity guards.
 //!
 //! The four constant-rate / sinusoidal / closure / multi-DOF driver
-//! systems run inside [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
+//! systems run inside [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate)
 //! (writing `FrameRotC` / `FrameAngVelC` on joint frame entities).
 //! The stacked-spec exclusivity guard runs in `PostStartup` and via
 //! `on_insert` lifecycle hooks installed at plugin build time so any
@@ -44,7 +44,7 @@ use crate::SimulationTimeR;
 /// `RelativeFrameState` SystemParam) sees the joint kinematics
 /// uniformly with planet-fixed kinematics.
 ///
-/// Scheduled in [`crate::JeodSet::EphemerisUpdate`] alongside
+/// Scheduled in [`crate::AstrodynSet::EphemerisUpdate`] alongside
 /// `planet_fixed_rotation_system` so the joint frame's rotation /
 /// angular velocity are current before any consumer that walks the
 /// frame tree (gravity, derived state, integration) reads them.
@@ -58,7 +58,7 @@ use crate::SimulationTimeR;
 /// components are a *parallelism signal* for Bevy's scheduler — they
 /// make this query structurally disjoint from the sinusoidal /
 /// closure / multi-DOF drivers so the four systems can dispatch in
-/// parallel under `JeodSet::EphemerisUpdate` without a runtime borrow
+/// parallel under `AstrodynSet::EphemerisUpdate` without a runtime borrow
 /// conflict on `FrameRotC` / `FrameAngVelC`. They are *not* the
 /// correctness mechanism that rejects stacked-spec entities.
 ///
@@ -103,7 +103,7 @@ pub fn joint_kinematics_system(
 /// that walk the frame tree see uniform output across the kinematic
 /// styles.
 ///
-/// Scheduled in [`crate::JeodSet::EphemerisUpdate`] alongside
+/// Scheduled in [`crate::AstrodynSet::EphemerisUpdate`] alongside
 /// `planet_fixed_rotation_system` and `joint_kinematics_system` —
 /// the joint frame's rotation / angular velocity must be current
 /// before any consumer that walks the frame tree (gravity, derived
@@ -149,7 +149,7 @@ pub fn sinusoidal_joint_kinematics_system(
 /// [`ClosureJointKinematicsC`]-tagged frame entities. The output is
 /// constant in time, so the system writes the same `FrameRotC` /
 /// `FrameAngVelC` value every step. Scheduled in
-/// [`crate::JeodSet::EphemerisUpdate`] alongside
+/// [`crate::AstrodynSet::EphemerisUpdate`] alongside
 /// `joint_kinematics_system` so the closure-pinned frame's rotation
 /// is materialized before any frame-tree consumer reads it.
 ///
@@ -190,7 +190,7 @@ pub fn closure_joint_kinematics_system(
 /// folds the per-stage `(rotation, ang_vel)` contributions through
 /// `RefFrameState::incr_right` so the output is bit-identical to a
 /// chain of N single-DOF joint entities walked through the frame
-/// tree. Scheduled in [`crate::JeodSet::EphemerisUpdate`] for the
+/// tree. Scheduled in [`crate::AstrodynSet::EphemerisUpdate`] for the
 /// same reason as the other joint-kinematics systems.
 ///
 /// The `Without<...>` filters mirror the contract documented on
@@ -231,7 +231,7 @@ pub fn multi_dof_joint_kinematics_system(
 /// [`closure_joint_kinematics_system`], [`multi_dof_joint_kinematics_system`])
 /// each carry `Without<...>` filters for the other three spec
 /// components so Bevy's scheduler can dispatch them in parallel under
-/// `JeodSet::EphemerisUpdate` without contending for `FrameRotC` /
+/// `AstrodynSet::EphemerisUpdate` without contending for `FrameRotC` /
 /// `FrameAngVelC`. That filter discipline turns an entity that
 /// accidentally carries two specs into a *silent drop* from every
 /// driver — its `FrameRotC` would never be written and the joint
@@ -449,8 +449,8 @@ fn on_insert_multi_dof_joint_kinematics_c(
 /// count of distinct kinematic specs is unchanged. Only stacking
 /// distinct specs panics.
 ///
-/// `JeodPlugin::build` calls this once during plugin setup. Tests
-/// that exercise the joint-kinematics pipeline without `JeodPlugin`
+/// `AstrodynPlugin::build` calls this once during plugin setup. Tests
+/// that exercise the joint-kinematics pipeline without `AstrodynPlugin`
 /// can call this directly to install the same guard.
 pub fn register_joint_kinematics_exclusivity_hooks(app: &mut App) {
     let world = app.world_mut();

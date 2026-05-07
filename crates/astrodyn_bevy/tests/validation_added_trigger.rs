@@ -6,7 +6,7 @@
 //! filter on the body query.
 //!
 //! This test exercises the late-addition path by:
-//!   1. Building an `App` with `JeodPlugin` and one Earth source plus one
+//!   1. Building an `App` with `AstrodynPlugin` and one Earth source plus one
 //!      vehicle attached at startup.
 //!   2. Running several `FixedUpdate` ticks so the startup body has been
 //!      validated and `Added` is no longer set on it.
@@ -33,7 +33,7 @@ fn build_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(JeodPlugin);
+        .add_plugins(AstrodynPlugin);
 
     // Spawn Earth + ISS body via Startup so the regular pipeline runs them.
     let earth_recipe = earth::point_mass();

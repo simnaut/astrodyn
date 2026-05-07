@@ -47,8 +47,8 @@ use astrodyn::{
     MOON,
 };
 use astrodyn_bevy::{
-    DynamicsConfigC, FrameAttachEvent, FrameAttachedC, FrameDerivativesC, FrameEntityC,
-    FrameTransC, GravityControlsC, IntegSourceC, JeodPlugin, MassPropertiesC, PlanetBundle,
+    AstrodynPlugin, DynamicsConfigC, FrameAttachEvent, FrameAttachedC, FrameDerivativesC,
+    FrameEntityC, FrameTransC, GravityControlsC, IntegSourceC, MassPropertiesC, PlanetBundle,
     RootFrameEntityR, RotationalStateC, SourceMutator, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -98,7 +98,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let _earth = app
         .world_mut()

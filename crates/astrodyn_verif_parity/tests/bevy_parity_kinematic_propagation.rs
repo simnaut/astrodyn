@@ -56,8 +56,8 @@ use astrodyn::{
     SixDofState, TranslationalState, VehicleConfig,
 };
 use astrodyn_bevy::{
-    AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC,
-    GravityControlsC, JeodPlugin, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
+    AstrodynPlugin, AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC,
+    FrameDerivativesC, GravityControlsC, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
     RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use astrodyn_dynamics::MassProperties;
@@ -190,7 +190,7 @@ fn build_bevy_app() -> (App, Entity, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let parent_id = tree.add_body("Parent".into(), parent_mass());

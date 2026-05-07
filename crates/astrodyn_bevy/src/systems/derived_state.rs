@@ -1,4 +1,4 @@
-//! Bevy systems for [`JeodSet::DerivedState`](crate::JeodSet::DerivedState).
+//! Bevy systems for [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState).
 //!
 //! Per-step derived states: orbital elements, Euler angles, LVLH frame,
 //! geodetic state, and solar beta angle.
@@ -21,7 +21,7 @@ use super::util::body_integ_origin_in_root;
 /// determines which bodies it processes (only those carrying
 /// `OrbitalElementsC<P>`).
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 pub fn orbital_elements_system<P: Planet>(
     mut query: Query<(
         &TranslationalStateC<P>,
@@ -54,7 +54,7 @@ pub fn orbital_elements_system<P: Planet>(
 
 /// Compute Euler angles for entities with `EulerAnglesConfigC`.
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 pub fn euler_angles_system(
     mut query: Query<(
         Option<&RotationalStateC>,
@@ -79,7 +79,7 @@ pub fn euler_angles_system(
 ///
 /// Presence of `LvlhFrameC` alone enables computation (no separate config needed).
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 pub fn lvlh_system<P: Planet>(mut query: Query<(&TranslationalStateC<P>, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
         // `TranslationalStateC<P>` already carries `PlanetInertial<P>`,
@@ -92,7 +92,7 @@ pub fn lvlh_system<P: Planet>(mut query: Query<(&TranslationalStateC<P>, &mut Lv
 
 /// Compute geodetic state for entities with `GeodeticConfigC`.
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 pub fn geodetic_system<P: Planet>(
     mut query: Query<(
         &TranslationalStateC<P>,
@@ -132,7 +132,7 @@ pub fn geodetic_system<P: Planet>(
 /// single-planet pipeline) match at the type level. Multi-planet
 /// instantiation registers a separate Sun-state component per planet.
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 #[allow(clippy::type_complexity)]
 pub fn solar_beta_system<P: Planet>(
     frame_origin: FrameOrigin,

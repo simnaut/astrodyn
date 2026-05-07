@@ -81,7 +81,7 @@ pub(crate) fn is_root_equivalent_entity(
 /// validated on the tick following their insertion.
 ///
 /// Generic over `P: Planet` so each planet-tagged pipeline gets its own
-/// validator. `JeodPlugin::build` registers `<astrodyn::Earth>` (preserving
+/// validator. `AstrodynPlugin::build` registers `<astrodyn::Earth>` (preserving
 /// single-planet-Earth behavior); `register_planet_systems::<P>` registers
 /// the additional instance for multi-planet missions. Each instantiation
 /// queries `Option<&TranslationalStateC<P>>` and

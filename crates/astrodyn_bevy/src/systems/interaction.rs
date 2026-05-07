@@ -1,13 +1,13 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
-//! Bevy systems for [`JeodSet::Interaction`](crate::JeodSet::Interaction).
+//! Bevy systems for [`AstrodynSet::Interaction`](crate::AstrodynSet::Interaction).
 //!
 //! Aerodynamic drag, gravity-gradient torque, solar radiation pressure
 //! (flat-plate + cannonball), and Earth lighting (eclipse / albedo).
 //!
 //! Note: `earth_lighting_system` is grouped with the other interaction-flavor
 //! kernels (it shares the shadow / illumination math used by SRP) but is
-//! registered into [`JeodSet::DerivedState`](crate::JeodSet::DerivedState)
-//! by [`crate::JeodPlugin`] / [`crate::register_planet_systems`] because
+//! registered into [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState)
+//! by [`crate::AstrodynPlugin`] / [`crate::register_planet_systems`] because
 //! its output is consumed downstream of force collection.
 
 use astrodyn::{Planet, Position, RootInertial, SelfRef};
@@ -21,7 +21,7 @@ use super::util::body_integ_origin_in_root;
 
 /// Compute aerodynamic drag for entities with all required components.
 ///
-/// Placed in `JeodSet::Interaction`.
+/// Placed in `AstrodynSet::Interaction`.
 // JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)
 #[allow(clippy::type_complexity)]
 pub fn aero_drag_system<P: Planet>(
@@ -71,7 +71,7 @@ pub fn aero_drag_system<P: Planet>(
 
 /// Compute gravity gradient torque.
 ///
-/// Placed in `JeodSet::Interaction`.
+/// Placed in `AstrodynSet::Interaction`.
 // JEOD_INV: IN.01 — GravityTorque.subject_body required (structural: query requires all components)
 // JEOD_INV: IN.02 — GravityTorque.active gates computation (structural: no GravityTorqueC -> no torque)
 pub fn gravity_torque_system(
@@ -130,7 +130,7 @@ fn compute_illum_factor<P: Planet>(
 /// solar-system body positions in the body's planet-inertial frame for
 /// the single-planet pipeline) match at the type level.
 ///
-/// Placed in `JeodSet::DerivedState`.
+/// Placed in `AstrodynSet::DerivedState`.
 #[allow(clippy::type_complexity)]
 pub fn earth_lighting_system<P: Planet>(
     frame_origin: FrameOrigin,
@@ -240,7 +240,7 @@ pub fn earth_lighting_system<P: Planet>(
 /// child state will route SRP through the live composite-derived
 /// values.
 ///
-/// Placed in `JeodSet::Interaction`.
+/// Placed in `AstrodynSet::Interaction`.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn flat_plate_srp_system<P: Planet>(
     frame_origin: FrameOrigin,
@@ -444,7 +444,7 @@ pub fn flat_plate_srp_system<P: Planet>(
 /// Optional shadow detection via `ShadowBodyC` entities.
 /// Writes force to `RadiationForceC` (torque is always zero for cannonball).
 ///
-/// Placed in `JeodSet::Interaction`.
+/// Placed in `AstrodynSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system<P: Planet>(
     frame_origin: FrameOrigin,

@@ -22,7 +22,7 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    GravitySourceC, JeodPlugin, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, GravitySourceC, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -82,7 +82,7 @@ pub fn new_bevy_app(dt: f64) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app
 }
 

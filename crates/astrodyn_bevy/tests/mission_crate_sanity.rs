@@ -55,7 +55,7 @@ fn mission_crate_sanity_iss_one_hour() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(JeodPlugin)
+        .add_plugins(AstrodynPlugin)
         .add_systems(Startup, setup_iss);
 
     // Run startup once.

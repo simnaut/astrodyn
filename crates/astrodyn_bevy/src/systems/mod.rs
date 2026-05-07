@@ -13,7 +13,7 @@
 //!
 //! # Submodule layout
 //!
-//! Per-stage modules host the [`JeodSet`](crate::JeodSet) pipeline
+//! Per-stage modules host the [`AstrodynSet`](crate::AstrodynSet) pipeline
 //! systems; the `glue` submodule hosts ECS plumbing systems
 //! (frame-tree registration, joint kinematics, mass-point sync,
 //! despawn observers, mass recompute) that wire alongside the

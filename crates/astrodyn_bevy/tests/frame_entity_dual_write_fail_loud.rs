@@ -24,7 +24,7 @@ use astrodyn::{
     VehicleBuilder, EARTH,
 };
 use astrodyn_bevy::{
-    FrameEntityC, FrameRotC, FrameTransC, JeodPlugin, PfixFrameEntityC, PlanetBundle,
+    AstrodynPlugin, FrameEntityC, FrameRotC, FrameTransC, PfixFrameEntityC, PlanetBundle,
     RotationModelC, VehicleConfigBevyExt,
 };
 use bevy::prelude::*;
@@ -33,7 +33,7 @@ use glam::DVec3;
 const DT: f64 = 60.0;
 
 /// Advance Fixed time by one DT and run the FixedUpdate schedule.
-/// `app.update()` only runs `Update`, but `JeodPlugin`'s dual-write
+/// `app.update()` only runs `Update`, but `AstrodynPlugin`'s dual-write
 /// systems live in `FixedUpdate`, so the bare update never exercises
 /// them.
 fn step_fixed(app: &mut App) {
@@ -47,7 +47,7 @@ fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app
 }
 

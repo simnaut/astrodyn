@@ -1,10 +1,10 @@
 //! Bevy systems that wire ECS plumbing alongside the seven
-//! [`JeodSet`](crate::JeodSet) pipeline stages — frame-tree
+//! [`AstrodynSet`](crate::AstrodynSet) pipeline stages — frame-tree
 //! registration / sync, kinematic-joint drivers and exclusivity
 //! guards, despawn observers, and the per-step mass recompute. Each
 //! system here is registered at a specific schedule slot by
-//! [`crate::JeodPlugin`] / [`crate::register_planet_systems`] rather
-//! than via `in_set(JeodSet::*)`.
+//! [`crate::AstrodynPlugin`] / [`crate::register_planet_systems`] rather
+//! than via `in_set(AstrodynSet::*)`.
 
 pub mod despawn_observers;
 pub mod frame_registration;

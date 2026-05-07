@@ -22,8 +22,9 @@ use astrodyn::{
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
-    DynamicsConfigC, FrameEntityC, FrameSwitchesC, GravityControlsC, JeodPlugin, MassPropertiesC,
-    PlanetBundle, RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, FrameEntityC, FrameSwitchesC, GravityControlsC,
+    MassPropertiesC, PlanetBundle, RotationalStateC, SourceInertialVelocityC, SourceMutator,
+    TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -76,7 +77,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -292,7 +293,7 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()

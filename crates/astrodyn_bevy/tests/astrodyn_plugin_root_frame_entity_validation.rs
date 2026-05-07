@@ -1,6 +1,6 @@
-//! `JeodPlugin` accepts caller-supplied [`RootFrameEntityR`] so a
+//! `AstrodynPlugin` accepts caller-supplied [`RootFrameEntityR`] so a
 //! mission can share the root frame entity with another subsystem
-//! (or so a second `JeodPlugin::build` call doesn't leak the root
+//! (or so a second `AstrodynPlugin::build` call doesn't leak the root
 //! entity and re-parent future frame entities under a different
 //! root). When a caller pre-installs the resource, the plugin must
 //! validate that the referenced entity is fit for the role: still
@@ -13,7 +13,7 @@
 //!
 //! 1. `RootFrameEntityR` references an entity that doesn't exist
 //!    (stale handle from a previous `App`, or the entity was
-//!    despawned before `JeodPlugin::build` ran).
+//!    despawned before `AstrodynPlugin::build` ran).
 //! 2. `RootFrameEntityR` references an entity missing the
 //!    `InertialFrameMarker`.
 //! 3. `RootFrameEntityR` references an entity missing one of the
@@ -31,29 +31,29 @@
 //! failure the "Fail Loudly" rule forbids.
 
 use astrodyn_bevy::{
-    FrameAngVelC, FrameRotC, FrameTransC, InertialFrameMarker, JeodPlugin, RootFrameEntityR,
+    AstrodynPlugin, FrameAngVelC, FrameRotC, FrameTransC, InertialFrameMarker, RootFrameEntityR,
 };
 use bevy::prelude::*;
 
 #[test]
 #[should_panic(expected = "references an entity that no longer exists in the world")]
-fn jeod_plugin_rejects_dangling_root_frame_entity() {
+fn astrodyn_plugin_rejects_dangling_root_frame_entity() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     // Spawn a placeholder, capture its id, then despawn it. The
     // resource now points at a tombstone — exactly the situation a
     // careless mission could create by spawning the root entity in
     // one `App` and re-using the id in another, or by despawning
-    // before `JeodPlugin::build` runs.
+    // before `AstrodynPlugin::build` runs.
     let stale = app.world_mut().spawn_empty().id();
     app.world_mut().entity_mut(stale).despawn();
     app.insert_resource(RootFrameEntityR(stale));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 }
 
 #[test]
 #[should_panic(expected = "is missing `InertialFrameMarker`")]
-fn jeod_plugin_rejects_root_frame_entity_without_inertial_marker() {
+fn astrodyn_plugin_rejects_root_frame_entity_without_inertial_marker() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     // All three frame components present, but the marker is missing
@@ -70,12 +70,12 @@ fn jeod_plugin_rejects_root_frame_entity_without_inertial_marker() {
         ))
         .id();
     app.insert_resource(RootFrameEntityR(entity));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 }
 
 #[test]
 #[should_panic(expected = "missing one or more of the required frame components")]
-fn jeod_plugin_rejects_root_frame_entity_missing_frame_components() {
+fn astrodyn_plugin_rejects_root_frame_entity_missing_frame_components() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     // Marker is present but `FrameRotC` / `FrameAngVelC` are not —
@@ -91,14 +91,14 @@ fn jeod_plugin_rejects_root_frame_entity_missing_frame_components() {
         ))
         .id();
     app.insert_resource(RootFrameEntityR(entity));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 }
 
 #[test]
-fn jeod_plugin_spawns_root_frame_entity_when_absent() {
+fn astrodyn_plugin_spawns_root_frame_entity_when_absent() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     let entity = app.world().resource::<RootFrameEntityR>().0;
     let world = app.world();
     assert!(
@@ -113,7 +113,7 @@ fn jeod_plugin_spawns_root_frame_entity_when_absent() {
 }
 
 #[test]
-fn jeod_plugin_preserves_valid_preseeded_root_frame_entity() {
+fn astrodyn_plugin_preserves_valid_preseeded_root_frame_entity() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     let preseeded = app
@@ -127,7 +127,7 @@ fn jeod_plugin_preserves_valid_preseeded_root_frame_entity() {
         ))
         .id();
     app.insert_resource(RootFrameEntityR(preseeded));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let after = app.world().resource::<RootFrameEntityR>().0;
     assert_eq!(
