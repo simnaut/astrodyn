@@ -51,12 +51,12 @@ use astrodyn_math::geodetic::{
     cartesian_to_geodetic_typed, cartesian_to_spherical, geodetic_to_cartesian_typed,
     spherical_to_cartesian, GeodeticState, GeodeticStateTyped, SphericalState,
 };
+use astrodyn_planet::geodetic_verif::{load_planet_fixed_verif_cases, PlanetFixedSeed};
 use astrodyn_planet::EARTH;
 use astrodyn_quantities::aliases::Position;
 use astrodyn_quantities::ext::F64Ext;
 use astrodyn_quantities::frame::{Earth, PlanetFixed};
 use astrodyn_quantities::qty3::Qty3;
-use astrodyn_test_data::planet_geodetic_verif::{load_planet_fixed_verif_cases, PlanetFixedSeed};
 use glam::DVec3;
 use uom::si::angle::radian;
 use uom::si::length::meter;

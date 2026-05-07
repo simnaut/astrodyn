@@ -68,7 +68,7 @@ use astrodyn_bevy::{
     BodyActionEvent, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
 };
-use astrodyn_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
+use astrodyn_verif_jeod::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -106,17 +106,17 @@ const MID_SIM_MASS_KG: f64 = 50_000.0;
 const MID_SIM_ADD_REMOVE_TIME: f64 = 240.0;
 
 fn test_data_dir() -> PathBuf {
-    // Resolve via the canonical astrodyn_test_data resolver, which knows
+    // Resolve via the canonical astrodyn_verif_jeod resolver, which knows
     // tier-3 reference CSVs live under `crates/astrodyn_verif_jeod/test_data/`.
     // Use a known fixture and strip the filename to recover the directory.
-    astrodyn_test_data::tier3_csv::test_data_path("dyncomp_run2_state.csv")
+    astrodyn_verif_jeod::tier3_csv::test_data_path("dyncomp_run2_state.csv")
         .parent()
         .expect("test_data_path returns a file inside test_data/")
         .to_path_buf()
 }
 
 /// Load the cross-validation reference CSV via the workspace's canonical
-/// `astrodyn_test_data::dyncomp_csv::load_dyncomp_csv` parser.
+/// `astrodyn_verif_jeod::dyncomp_csv::load_dyncomp_csv` parser.
 ///
 /// Reusing the canonical loader keeps the column layout in one place and
 /// inherits its fail-loud handling (missing file, parse failure, truncated

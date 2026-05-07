@@ -6,7 +6,7 @@
 //! infrastructure assembles from JEOD's `.cc` source files.
 //!
 //! Parsing JEOD's `.cc` source files lives in
-//! `astrodyn_test_data::jeod_cc` (a dev/test-only crate). `astrodyn_gravity`
+//! `astrodyn_gravity::jeod_cc` (a dev/test-only crate). `astrodyn_gravity`
 //! itself does not know how to parse JEOD source — only how to consume
 //! the binary format derived from it.
 

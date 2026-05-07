@@ -9,7 +9,7 @@
 //! The full trajectory SRP+shadow test is `tier3_sim_srp.rs` (SIM_3_ORBIT).
 //! This test validates the shadow geometry computation specifically.
 
-use astrodyn_test_data::tier3_csv::{load_shadow_calc_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_shadow_calc_csv, test_data_path};
 
 use astrodyn::{
     compute_shadow_fraction, solar_flux_at_distance, Ephemeris, EphemerisBody, GravityModel,
@@ -17,7 +17,7 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, ShadowBody, SrpModel, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::DVec3;
 
 /// Earth equatorial radius for shadow geometry (from JEOD planet/data/src/earth.cc).
@@ -43,8 +43,8 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
 
     // Epoch from models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC/Modified_data/date_and_time.py:
     // astrodyn_time.time_tai.set_date_and_time(1998, 12, 1, 0, 0, 31.0)  # i.e. UTC = 0:00:00
-    let time_cfg = astrodyn_test_data::time_config::TimeConfig {
-        initializer: astrodyn_test_data::time_config::TimeInitializer::Tai,
+    let time_cfg = astrodyn_verif_jeod::time_config::TimeConfig {
+        initializer: astrodyn_verif_jeod::time_config::TimeInitializer::Tai,
         utc_year: 1998,
         utc_month: 12,
         utc_day: 1,

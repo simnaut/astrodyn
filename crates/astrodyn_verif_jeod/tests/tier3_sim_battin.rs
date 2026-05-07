@@ -22,7 +22,7 @@
 use astrodyn::recipes::verification::InitialConditions;
 use astrodyn_runner::run_verification::sim_dyncomp;
 use astrodyn_runner::SimulationBuilderExt;
-use astrodyn_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
 use glam::DVec3;
 
 /// Simulation duration (seconds): 8 hours.

@@ -24,7 +24,7 @@ use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simulation {

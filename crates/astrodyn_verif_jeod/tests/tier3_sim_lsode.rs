@@ -48,7 +48,7 @@
 //! `lsode_first_order_ode_integrator` remain as future work. See
 //! `crates/astrodyn_dynamics/src/abm4.rs` for the doc rationale.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType, SimulationTime,
@@ -56,7 +56,7 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::DVec3;
 use std::path::Path;
 

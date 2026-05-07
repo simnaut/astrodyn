@@ -9,7 +9,7 @@
 //! 2. `tier3_mercury_perihelion_advance_rate` — measures ~43 arcsec/century from our code
 //! 3. `tier3_mercury_jeod_advance_rate` — validates JEOD CSVs (requires 774 MB files)
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
@@ -20,7 +20,7 @@ use astrodyn_runner::Simulation;
 use glam::DVec3;
 
 fn load_mu_sun() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_sun_spherical_mu()
+    astrodyn_gravity::fixtures::load_sun_spherical_mu()
 }
 
 /// Mercury at perihelion (approximate J2000 elements).

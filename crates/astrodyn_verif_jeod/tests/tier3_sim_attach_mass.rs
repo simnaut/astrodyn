@@ -43,8 +43,8 @@ fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -
     ];
     compute_matrix_from_euler_angles_typed(typed, sequence)
 }
-use astrodyn_test_data::apollo_mass_tree::{parse_print_tree, PrintedBody, PrintedTree};
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::apollo_mass_tree::{parse_print_tree, PrintedBody, PrintedTree};
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 
 // ════════════════════════════════════════════════════════════════════
 // Test data path / loading

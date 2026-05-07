@@ -34,7 +34,7 @@ pub fn load_orbital_test_vectors() -> Vec<CartesianStateVector> {
     let path = crate::tier3_csv::test_data_path("jeod_validation/orbital_vectors.bin");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| {
         panic!(
-            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \
+            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_jeod_validation",
             path.display(),
         )
@@ -42,7 +42,7 @@ pub fn load_orbital_test_vectors() -> Vec<CartesianStateVector> {
     parse_orbital_vectors_bin(&bytes).unwrap_or_else(|msg| {
         panic!(
             "Malformed orbital_vectors fixture at {}: {msg}. Regenerate with: \
-             cargo run -p astrodyn_test_data --bin extract_jeod_validation",
+             cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation",
             path.display(),
         )
     })

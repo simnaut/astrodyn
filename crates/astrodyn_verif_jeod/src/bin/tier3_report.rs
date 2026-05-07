@@ -1,7 +1,7 @@
 //! Generates a Markdown cross-validation error report from Tier 3 test results.
 //!
 //! Usage:
-//!   cargo run -p astrodyn_test_data --bin tier3_report -- [--freeze-baselines]
+//!   cargo run -p astrodyn_verif_jeod --bin tier3_report -- [--freeze-baselines]
 //!
 //! Reads JSON files from `target/tier3_crossval/` (written by `CrossvalReport`
 //! during `cargo test`) and extracts tolerances from test source files.
@@ -20,7 +20,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use astrodyn_test_data::crossval::json_escape;
+use astrodyn_verif_jeod::crossval::json_escape;
 
 /// Slice `content` by byte range, snapping endpoints to valid UTF-8 char
 /// boundaries. Needed because test source files can contain multi-byte chars

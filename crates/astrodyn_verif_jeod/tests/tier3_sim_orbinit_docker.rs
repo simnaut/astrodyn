@@ -24,7 +24,7 @@
 //! The SIM disables polar motion (`earth.rnp.enable_polar = False`).
 //! Gravity uses `earth_GGM05C` with `mu = 3.9860044150e14 m^3/s^2`.
 
-use astrodyn_test_data::tier3_csv::{load_orbinit_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
 
 use astrodyn::{default_leap_second_table, TranslationalState};
 use astrodyn_dynamics::init_from_mean_anomaly;
@@ -97,11 +97,11 @@ fn assert_orbinit_match(
     pos_tol: f64,
     vel_tol: f64,
 ) {
-    let mu_earth = astrodyn_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
     // Load JEOD orbital elements input from the committed body_init fixture
     // (originally extracted from Modified_data/<vehicle>/<init_name>.py).
-    let init = astrodyn_test_data::orbital_init::load_orbital_init(vehicle, init_name);
+    let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(vehicle, init_name);
 
     // JEOD input.py for set01 uses time_periapsis (M = n * t_peri).
     let t_peri = init
@@ -270,7 +270,7 @@ fn tier3_orbinit_docker_run0401_sts_trans_state() {
     // The JEOD input.py sets position and velocity directly; initialization
     // should be a pass-through to the body state. Inputs come from the
     // committed `test_data/body_init/sts_114.json` fixture.
-    let trans = astrodyn_test_data::orbital_init::load_trans_state(
+    let trans = astrodyn_verif_jeod::orbital_init::load_trans_state(
         "STS_114",
         "trans_TransState_inertial_body",
     );

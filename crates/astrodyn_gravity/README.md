@@ -43,7 +43,7 @@ no Bevy dependency.
 
 Coefficient files at JEOD source paths like
 [`earth_GGM05C.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/data/include/earth_GGM05C.hh)
-are parsed by `astrodyn_test_data::jeod_cc` into the binary fixtures
+are parsed by `astrodyn_gravity::jeod_cc` into the binary fixtures
 committed under `test_data/gravity/`; production gravity does not parse
 JEOD source.
 

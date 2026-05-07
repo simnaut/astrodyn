@@ -8,7 +8,7 @@
 //! this crate for the regen step.
 //!
 //! Every test that previously called
-//! `astrodyn_test_data::jeod_cc::load_from_jeod_cc(...)` to read a JEOD
+//! `astrodyn_gravity::jeod_cc::load_from_jeod_cc(...)` to read a JEOD
 //! checkout at test time should call one of these loaders instead so the
 //! test runs with `JEOD_HOME` unset.
 //!
@@ -27,34 +27,31 @@
 //! Earth coefficients (GGM02C / GGM05C / GEMT1):
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_grav_coeffs
+//! cargo run -p astrodyn_gravity --bin extract_grav_coeffs
 //! ```
 //!
 //! Mars / Sun / Moon coefficients:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_mars_data
+//! cargo run -p astrodyn_gravity --bin extract_mars_data
 //! ```
 //!
 //! Commit the updated `test_data/gravity/*.bin` and the sidecar
 //! `*.json` metadata files together.
 
-use astrodyn_gravity::SphericalHarmonicsData;
+use crate::SphericalHarmonicsData;
 use std::path::PathBuf;
 
-/// Resolve a path under `crates/astrodyn_gravity/test_data/gravity/`.
-///
-/// Walks up from `CARGO_MANIFEST_DIR` until it finds `Cargo.lock`, then joins
-/// the gravity-coefficient fixtures committed in the gravity crate.
+/// Resolve a fixture path under `astrodyn_gravity/test_data/gravity/`.
 fn fixture_path(filename: &str) -> PathBuf {
-    crate::tier3_csv::workspace_root()
-        .join("crates/astrodyn_gravity/test_data/gravity")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data/gravity")
         .join(filename)
 }
 
 fn load_fixture(label: &str) -> SphericalHarmonicsData {
     let path = fixture_path(&format!("{label}.bin"));
-    astrodyn_gravity::coefficients::load_binary(&path).unwrap_or_else(|e| {
+    crate::coefficients::load_binary(&path).unwrap_or_else(|e| {
         let regen_bin = match label {
             "ggm02c" | "ggm05c" | "gemt1" => "extract_grav_coeffs",
             "mars_mro110b2" | "moon_lp150q" | "moon_grail150" | "sun_spherical" => {
@@ -64,7 +61,7 @@ fn load_fixture(label: &str) -> SphericalHarmonicsData {
         };
         panic!(
             "Failed to load gravity fixture {label} from {}: {e:?}.\n\
-             Regenerate via: cargo run -p astrodyn_test_data --bin {regen_bin}",
+             Regenerate via: cargo run -p astrodyn_verif_jeod --bin {regen_bin}",
             path.display(),
         )
     })

@@ -105,8 +105,8 @@ use astrodyn::{
 };
 use astrodyn_atmosphere::met as met_atmosphere;
 use astrodyn_runner::{RotationModel, Simulation, SimulationBuilderExt};
-use astrodyn_test_data::crossval::CrossvalReport;
-use astrodyn_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
+use astrodyn_verif_jeod::crossval::CrossvalReport;
+use astrodyn_verif_jeod::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 use glam::{DMat3, DVec3};
 
 const SIM_DYNCOMP_RELPATH: &str = "verif/SIM_dyncomp";
@@ -219,10 +219,10 @@ struct Lifecycle {
 /// solar flux per `solar_flux.py`) + ISS drag (Cd=2.0, area=1400 m²) +
 /// gravity-gradient torque on the ISS mass at the elliptical-orbit IC.
 fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
-    let sim_dir = astrodyn_test_data::jeod_inputs::path(SIM_DYNCOMP_RELPATH);
+    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP_RELPATH);
 
     // ── Mass properties — set_mass_iss + add_mass_pt ──
-    let mass_init = astrodyn_test_data::mass_data::load_mass_from_file(
+    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
@@ -251,7 +251,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
 
     // ── Time + ephemeris setup, anchored at the dyncomp epoch ──
     let time_cfg =
-        astrodyn_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+        astrodyn_verif_jeod::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
         .ut1_tai_offset()
@@ -261,9 +261,9 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
 
     // ── Earth gravity (GGM05C 8×8 SH per RUN_attach_to_ref_frame
     //     `vehicle.earth_grav_control.degree=8, order=8`) ──
-    let earth_sh = astrodyn_test_data::gravity_fixtures::load_ggm05c();
-    let mu_sun = astrodyn_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_test_data::gravity_fixtures::load_moon_grail150_mu();
+    let earth_sh = astrodyn_gravity::fixtures::load_ggm05c();
+    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
 
     // Initial Sun / Moon positions at the dyncomp epoch, refreshed each
     // step by the pre-step closure in `pre_step_closure`.

@@ -72,7 +72,7 @@ use astrodyn::{
     VehicleBuilder,
 };
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
 
 const SIM_DURATION_S: f64 = 100.0;

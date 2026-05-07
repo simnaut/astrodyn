@@ -211,7 +211,6 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "astrodyn_time",
  "glam 0.30.10",
  "log",
@@ -223,7 +222,7 @@ name = "astrodyn_atmosphere"
 version = "0.1.0"
 dependencies = [
  "astrodyn_quantities",
- "astrodyn_test_data",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
  "uom",
 ]
@@ -236,7 +235,7 @@ dependencies = [
  "astrodyn_dynamics",
  "astrodyn_quantities",
  "astrodyn_runner",
- "astrodyn_test_data",
+ "astrodyn_verif_jeod",
  "bevy",
  "bevy_reflect",
  "glam 0.30.10",
@@ -252,7 +251,7 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_test_data",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
  "sha2",
  "uom",
@@ -274,8 +273,8 @@ version = "0.1.0"
 dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "astrodyn_time",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
 ]
 
@@ -287,7 +286,6 @@ dependencies = [
  "astrodyn_frames",
  "astrodyn_math",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "astrodyn_time",
  "glam 0.30.10",
  "log",
@@ -306,8 +304,8 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "astrodyn_time",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
  "uom",
 ]
@@ -319,7 +317,7 @@ dependencies = [
  "astrodyn_ephemeris",
  "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_test_data",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
  "thiserror 2.0.18",
  "uom",
@@ -331,8 +329,8 @@ version = "0.1.0"
 dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "glam 0.30.10",
+ "regex",
  "uom",
 ]
 
@@ -359,23 +357,10 @@ dependencies = [
  "astrodyn_interactions",
  "astrodyn_math",
  "astrodyn_quantities",
- "astrodyn_test_data",
  "astrodyn_time",
+ "astrodyn_verif_jeod",
  "glam 0.30.10",
  "log",
- "uom",
-]
-
-[[package]]
-name = "astrodyn_test_data"
-version = "0.1.0"
-dependencies = [
- "astrodyn_gravity",
- "astrodyn_math",
- "astrodyn_quantities",
- "glam 0.30.10",
- "regex",
- "thiserror 2.0.18",
  "uom",
 ]
 
@@ -395,15 +380,18 @@ dependencies = [
  "astrodyn",
  "astrodyn_atmosphere",
  "astrodyn_dynamics",
+ "astrodyn_ephemeris",
  "astrodyn_frames",
+ "astrodyn_gravity",
  "astrodyn_interactions",
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_runner",
- "astrodyn_test_data",
  "astrodyn_time",
  "glam 0.30.10",
  "log",
+ "regex",
+ "thiserror 2.0.18",
  "uom",
 ]
 
@@ -414,9 +402,10 @@ dependencies = [
  "astrodyn",
  "astrodyn_bevy",
  "astrodyn_dynamics",
+ "astrodyn_gravity",
  "astrodyn_quantities",
  "astrodyn_runner",
- "astrodyn_test_data",
+ "astrodyn_verif_jeod",
  "bevy",
  "glam 0.30.10",
  "log",

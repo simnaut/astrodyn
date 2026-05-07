@@ -11,12 +11,12 @@
 //! (`tier3_reference_run10a_libration_period`) is archetype B (custom peak
 //! analysis on the JEOD CSV) and remains in this file.
 
-use astrodyn_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use astrodyn::JeodQuat;
 use astrodyn_runner::prelude::*;
 use astrodyn_runner::run_verification::sim_dyncomp;
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 
 #[test]
 fn tier3_simulation_run10a_gravity_torque() {

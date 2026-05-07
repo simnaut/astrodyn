@@ -180,8 +180,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn srp_time(modified_data_dir: &str) -> SimulationTime {
-    let cfg = astrodyn_test_data::time_config::load_time_config(
-        &astrodyn_test_data::jeod_inputs::path(modified_data_dir)
+    let cfg = astrodyn_verif_jeod::time_config::load_time_config(
+        &astrodyn_verif_jeod::jeod_inputs::path(modified_data_dir)
             .join("Modified_data/date_and_time.py"),
     );
     SimulationTime::new(cfg.tai_tjt(), default_leap_second_table())
@@ -204,11 +204,11 @@ fn build_srp(
     integration_order: ThermalIntegrationOrder,
     sun_update: SunUpdate,
 ) -> SimulationBuilder {
-    let sim_dir = astrodyn_test_data::jeod_inputs::path(sim_subdir);
+    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(sim_subdir);
 
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_test_data::gravity_fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
     let time = srp_time(sim_subdir);
     let epoch_tai_tjt = time.tai_tjt_at_epoch;

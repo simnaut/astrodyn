@@ -12,7 +12,7 @@
 //! Regenerate with:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_body_init -- \
+//! cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
 //!     --jeod-home $JEOD_HOME
 //! ```
 //!
@@ -150,7 +150,7 @@ pub fn load_vehicle_bundle(vehicle: &str) -> &'static BodyInitBundle {
         let path = crate::tier3_csv::test_data_path(&filename);
         let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!(
-                "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \
+                "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_verif_jeod \
                  --bin extract_body_init -- --jeod-home $JEOD_HOME",
                 path.display(),
             )
@@ -158,7 +158,7 @@ pub fn load_vehicle_bundle(vehicle: &str) -> &'static BodyInitBundle {
         let bundle = parse_bundle_json(&content).unwrap_or_else(|e| {
             panic!(
                 "Malformed body-init fixture {}: {e}. Regenerate with: \
-                 cargo run -p astrodyn_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
+                 cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home $JEOD_HOME",
                 path.display(),
             )
         });
@@ -166,7 +166,7 @@ pub fn load_vehicle_bundle(vehicle: &str) -> &'static BodyInitBundle {
             bundle.vehicle,
             vehicle,
             "body-init fixture {} contains vehicle {:?} but {:?} was requested. \
-             Regenerate with: cargo run -p astrodyn_test_data --bin extract_body_init -- \
+             Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
              --jeod-home $JEOD_HOME",
             path.display(),
             bundle.vehicle,
@@ -205,7 +205,7 @@ pub(crate) fn parse_bundle_json(s: &str) -> Result<BodyInitBundle, String> {
     if schema_version != EXPECTED_SCHEMA_VERSION {
         return Err(format!(
             "unsupported schema_version {schema_version}; this build expects \
-             {EXPECTED_SCHEMA_VERSION}. Regenerate with: cargo run -p astrodyn_test_data \
+             {EXPECTED_SCHEMA_VERSION}. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_body_init -- --jeod-home $JEOD_HOME"
         ));
     }

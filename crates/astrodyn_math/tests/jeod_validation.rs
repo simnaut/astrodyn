@@ -6,7 +6,7 @@
 
 use astrodyn_math::JeodQuat;
 use astrodyn_math::OrbitalElements;
-use astrodyn_test_data::{euler_test, orbital_data, orbital_init, reference_state};
+use astrodyn_verif_jeod::{euler_test, orbital_data, orbital_init, reference_state};
 
 /// Earth's gravitational parameter (m^3/s^2) from JEOD `earth_GGM05C.cc`.
 /// Sourced from `astrodyn_planet::presets::EARTH.mu` — the canonical constant.

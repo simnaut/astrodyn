@@ -14,9 +14,12 @@ all-features = true
 
 [dependencies]
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+# `regex` is consumed only by the `extract_planet_pfixposn` regen binary;
+# excluded from publishes via `[package] exclude` if/when this crate is
+# published.
+regex = "1"
 uom = { workspace = true }
 
 [dev-dependencies]
-glam = { workspace = true }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }

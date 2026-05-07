@@ -5,7 +5,7 @@
 //! Two bodies are propagated force-free through `Simulation::step()`, and
 //! LVLH-relative state is computed at each checkpoint.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::VehicleConfig;
 use astrodyn::{

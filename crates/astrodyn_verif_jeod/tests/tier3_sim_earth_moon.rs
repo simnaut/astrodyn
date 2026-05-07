@@ -12,7 +12,7 @@
 //! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
 //! - No drag, no gravity torque
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
@@ -20,15 +20,15 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, SrpModel, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 fn load_mu_sun() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_sun_spherical_mu()
+    astrodyn_gravity::fixtures::load_sun_spherical_mu()
 }
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
@@ -99,7 +99,7 @@ fn tier3_simulation_earth_moon_clem() {
     let mut sim = Simulation::new(time, 0.03125); // 32 Hz, matching JEOD S_define
 
     // Load LP150Q spherical harmonics for Moon (matching JEOD's SIM_Earth_Moon)
-    let sh_data = astrodyn_test_data::gravity_fixtures::load_moon_lp150q();
+    let sh_data = astrodyn_gravity::fixtures::load_moon_lp150q();
     let moon_mu = sh_data.mu;
 
     // Moon rotation from DE421 BPC libration data, updated per step.

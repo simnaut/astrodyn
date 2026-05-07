@@ -125,9 +125,9 @@ jobs:
       - name: Run Tier 3 tests (exclude earth_moon ~17 min)
         run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
       - name: Generate cross-validation report
-        run: cargo run -p astrodyn_test_data --bin tier3_report
+        run: cargo run -p astrodyn_verif_jeod --bin tier3_report
       - name: Enforce Tier 3 baseline invariance
-        run: cargo run -p astrodyn_test_data --bin tier3_baseline_diff -- --allow-missing-from .github/tier3-allow-missing.txt
+        run: cargo run -p astrodyn_verif_jeod --bin tier3_baseline_diff -- --allow-missing-from .github/tier3-allow-missing.txt
       - name: Upload cross-validation report
         uses: actions/upload-artifact@v4
         with:
@@ -153,9 +153,9 @@ jobs:
       - name: Run all Tier 3 tests (including earth_moon)
         run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
-        run: cargo run -p astrodyn_test_data --bin tier3_report
+        run: cargo run -p astrodyn_verif_jeod --bin tier3_report
       - name: Enforce Tier 3 baseline invariance
-        run: cargo run -p astrodyn_test_data --bin tier3_baseline_diff -- --allow-missing-from .github/tier3-allow-missing.txt
+        run: cargo run -p astrodyn_verif_jeod --bin tier3_baseline_diff -- --allow-missing-from .github/tier3-allow-missing.txt
       - name: Upload cross-validation report (full)
         uses: actions/upload-artifact@v4
         with:

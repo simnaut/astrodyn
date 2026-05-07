@@ -17,7 +17,7 @@ is committed at
 mirror is identical to JEOD's tree, so `diff -r ../jeod/<rel>
 crates/astrodyn_verif_jeod/test_data/jeod_inputs/<rel>` confirms an unmodified copy.
 
-Resolve a path from Rust via `astrodyn_test_data::jeod_inputs::path("<rel>")`.
+Resolve a path from Rust via `astrodyn_verif_jeod::jeod_inputs::path("<rel>")`.
 
 ## Refresh after a JEOD upgrade
 
@@ -45,7 +45,7 @@ cp "$JEOD/$REL" "crates/astrodyn_verif_jeod/test_data/jeod_inputs/$REL"
 ```
 
 Reference it from a Tier 3 rig with
-`astrodyn_test_data::jeod_inputs::path("path/relative/to/jeod/root")`.
+`astrodyn_verif_jeod::jeod_inputs::path("path/relative/to/jeod/root")`.
 
 ## Currently committed inputs
 

@@ -9,7 +9,7 @@
 //!   RUN_0301: Orbital elements in planet-fixed frame (STS-114)
 //!   RUN_0401: Cartesian state in inertial frame (STS-114)
 
-use astrodyn_test_data::tier3_csv::{load_orbinit_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
@@ -21,7 +21,7 @@ use glam::DVec3;
 
 #[test]
 fn tier3_simulation_orbinit_cross_consistency() {
-    let mu_earth = astrodyn_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
     let runs: Vec<(&str, &str)> = vec![
         ("orbinit_0101_orbinit.csv", "RUN_0101 (STS-114 inertial OE)"),

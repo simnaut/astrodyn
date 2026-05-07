@@ -49,8 +49,8 @@ fn bsp_path() -> PathBuf {
 }
 
 fn dyncomp_time() -> SimulationTime {
-    let time_cfg = astrodyn_test_data::time_config::load_time_config(
-        &astrodyn_test_data::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/time.py"),
+    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/time.py"),
     );
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
@@ -61,8 +61,8 @@ fn dyncomp_time() -> SimulationTime {
 }
 
 fn iss_mass_props() -> MassProperties {
-    let mass_init = astrodyn_test_data::mass_data::load_mass_from_file(
-        &astrodyn_test_data::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/mass.py"),
+    let mass_init = astrodyn_verif_jeod::mass_data::load_mass_from_file(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
     let inertia = DMat3::from_cols(
@@ -115,14 +115,14 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBuilder {
-    let sim_dir = astrodyn_test_data::jeod_inputs::path(SIM_DYNCOMP);
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let sim_dir = astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Earth GGM05C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_grav = astrodyn_test_data::gravity_fixtures::load_ggm05c();
-    let mu_sun = astrodyn_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_test_data::gravity_fixtures::load_moon_grail150_mu();
+    let earth_grav = astrodyn_gravity::fixtures::load_ggm05c();
+    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
 
     let needs_pfix = cfg.earth_nonspherical || cfg.gradient_degree > 0;
     let earth_source = if needs_pfix {

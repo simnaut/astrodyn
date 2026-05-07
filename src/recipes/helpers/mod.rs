@@ -9,7 +9,7 @@
 //!
 //! These are **propagation utilities** only — schema-flexible CSV
 //! readers (which are reference-data plumbing, not propagation) live
-//! in `astrodyn_test_data::tier3_csv` (the typed Phase 7 catalogue, with
+//! in `astrodyn_verif_jeod::tier3_csv` (the typed Phase 7 catalogue, with
 //! `dyncomp_csv` as its current entry). Tests that don't fit a
 //! standard scenario but share these mid-loop bookkeeping patterns
 //! reach for the corresponding submodule below.
@@ -34,7 +34,7 @@
 //!   wrapper for attach / detach tests.
 //! - [`custom_csv`]: schema-flexible CSV reader for ad-hoc test
 //!   formats that don't yet have a dedicated typed loader in
-//!   `astrodyn_test_data::tier3_csv`.
+//!   `astrodyn_verif_jeod::tier3_csv`.
 
 pub mod attach_detach_helpers;
 pub mod custom_csv;

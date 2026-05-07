@@ -15,11 +15,8 @@
 //! Reads from committed fixtures under `test_data/gravity/`; runs without
 //! `$JEOD_HOME` set.
 
-use astrodyn_gravity::SphericalHarmonicsData;
-use astrodyn_test_data::{
-    gravity_fixtures,
-    gravity_verif::{load_gravity_test_cases, GravityTestCase},
-};
+use astrodyn_gravity::verif::{load_gravity_test_cases, GravityTestCase};
+use astrodyn_gravity::{fixtures, SphericalHarmonicsData};
 use glam::{DMat3, DVec3};
 
 #[test]
@@ -84,7 +81,7 @@ fn tier2_grav_geospherical_point_mass_sanity() {
     // grav_geospherical test itself references). This matches
     // `tier2_grav_geospherical_full_validation` below and avoids a literal
     // duplicate of the JEOD-source value.
-    let data = gravity_fixtures::load_ggm02c();
+    let data = fixtures::load_ggm02c();
     let mu_earth = data.mu;
 
     for case in &cases {
@@ -214,7 +211,7 @@ fn evaluate_case(data: &SphericalHarmonicsData, case: &GravityTestCase) -> (DVec
 fn tier2_grav_geospherical_full_validation() {
     // Load GGM02C from the committed fixture (the test was built against
     // GGM02C, not GGM05C).
-    let mut data = gravity_fixtures::load_ggm02c();
+    let mut data = fixtures::load_ggm02c();
     // JEOD test overrides tide_free = true (main.cc line 95).
     data.tide_free = true;
 
@@ -299,7 +296,7 @@ fn tier2_grav_geospherical_full_validation() {
 /// ~9.83 m/s^2 surface accelerations.
 #[test]
 fn tier2_grav_geospherical_surface_gravity_ggm02c() {
-    let data = gravity_fixtures::load_ggm02c();
+    let data = fixtures::load_ggm02c();
 
     // Equatorial surface.
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);

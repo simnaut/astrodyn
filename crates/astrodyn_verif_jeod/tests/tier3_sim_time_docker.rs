@@ -19,7 +19,7 @@
 //! `tier3_sim_timescale.rs`; here we cover the complementary
 //! `RUN_UDE_initialized` variant plus all the other SIM_1..6 sims.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn_time::leap_second::default_leap_second_table;
 use astrodyn_time::{TimeManager, TimeScaleId};

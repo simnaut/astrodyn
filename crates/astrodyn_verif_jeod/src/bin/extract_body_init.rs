@@ -3,13 +3,13 @@
 //!
 //! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses the body-init
 //! Python files for each scenario, and writes the JSON consumed by
-//! `astrodyn_test_data::reference_state::*` and
-//! `astrodyn_test_data::orbital_init::*` at runtime.
+//! `astrodyn_verif_jeod::reference_state::*` and
+//! `astrodyn_verif_jeod::orbital_init::*` at runtime.
 //!
 //! Run after a JEOD upgrade or whenever a scenario file is added/amended:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_body_init -- \
+//! cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
 //!     --jeod-home /path/to/jeod
 //! ```
 //!
@@ -38,11 +38,11 @@
 
 use std::io::Write;
 
-use astrodyn_test_data::body_init_fixtures::{
+use astrodyn_verif_jeod::body_init_fixtures::{
     OrbitalInitRecord, ReferenceStateRecord, TransStateRecord,
 };
-use astrodyn_test_data::orbital_init::{parse_orbital_init_py, parse_trans_state_py};
-use astrodyn_test_data::reference_state::parse_reference_state_py;
+use astrodyn_verif_jeod::orbital_init::{parse_orbital_init_py, parse_trans_state_py};
+use astrodyn_verif_jeod::reference_state::parse_reference_state_py;
 
 /// Vehicles and the init records to extract for each.
 const SCENARIOS: &[Scenario] = &[
@@ -174,7 +174,7 @@ fn resolve_jeod_root(args: &[String]) -> Option<std::path::PathBuf> {
 }
 
 fn body_init_dir() -> std::path::PathBuf {
-    astrodyn_test_data::tier3_csv::test_data_path("body_init")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/body_init")
 }
 
 fn read_required(path: &std::path::Path) -> String {
@@ -211,7 +211,7 @@ fn write_bundle(out: &mut std::fs::File, bundle: &ScenarioBundle) {
     .unwrap();
     writeln!(
         out,
-        "  \"note\": \"Body initialization vectors. Regenerate with: cargo run -p astrodyn_test_data \
+        "  \"note\": \"Body initialization vectors. Regenerate with: cargo run -p astrodyn_verif_jeod \
          --bin extract_body_init -- --jeod-home $JEOD_HOME\","
     )
     .unwrap();

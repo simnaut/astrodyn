@@ -28,7 +28,7 @@
 //! Tests **must panic** (not skip) when reference CSVs are absent, per
 //! `CLAUDE.md`. The panic message includes the exact Docker command.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
     evaluate_contact_pair, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,

@@ -29,7 +29,7 @@ Bevy runtime depends on `astrodyn_bevy`, never on `astrodyn_runner`.
 
 ## Features
 
-- `verification` (default) — pulls in `astrodyn_test_data` and exposes the
+- `verification` (default) — pulls in `astrodyn_verif_jeod` and exposes the
   `run_verification::*` Tier-3 case machinery. `--no-default-features`
   drops the JEOD-source-backed fixtures and gives a smaller runner.
 

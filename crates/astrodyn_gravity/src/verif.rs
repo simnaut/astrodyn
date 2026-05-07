@@ -50,11 +50,11 @@ pub struct GravityTestCase {
 /// Panics with a fail-loudly diagnostic if the fixture is missing or
 /// malformed; the message includes the regen command.
 pub fn load_gravity_test_cases() -> Vec<GravityTestCase> {
-    let path = crate::tier3_csv::workspace_root()
-        .join("crates/astrodyn_gravity/test_data/gravity/grav_geospherical_verif_out.txt");
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data/gravity/grav_geospherical_verif_out.txt");
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \
+            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_jeod_validation",
             path.display(),
         )

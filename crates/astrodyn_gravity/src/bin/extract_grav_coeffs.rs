@@ -3,7 +3,7 @@
 //!
 //! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses each
 //! `models/environment/gravity/data/src/earth_GGM*.cc` file via
-//! [`astrodyn_test_data::jeod_cc::load_from_jeod_cc`], and writes
+//! [`astrodyn_gravity::jeod_cc::load_from_jeod_cc`], and writes
 //! `test_data/gravity/{ggm02c,ggm05c}.bin` using the production
 //! [`astrodyn_gravity::coefficients::save_binary`] format. A sidecar
 //! `{label}.json` records source provenance (path, file size, mu, degree,
@@ -12,8 +12,8 @@
 //! Run after a JEOD upgrade or whenever the coefficient files change:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_grav_coeffs
-//! cargo run -p astrodyn_test_data --bin extract_grav_coeffs -- \
+//! cargo run -p astrodyn_gravity --bin extract_grav_coeffs
+//! cargo run -p astrodyn_gravity --bin extract_grav_coeffs -- \
 //!     --jeod-home /path/to/jeod --out-dir test_data/gravity
 //! ```
 //!
@@ -23,7 +23,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use astrodyn_gravity::coefficients::save_binary;
-use astrodyn_test_data::jeod_cc;
+use astrodyn_gravity::jeod_cc;
 
 /// One coefficient source to extract.
 struct Source {
@@ -145,9 +145,8 @@ fn resolve_out_dir(args: &[String]) -> PathBuf {
             return PathBuf::from(p);
         }
     }
-    // Default: <workspace>/crates/astrodyn_gravity/test_data/gravity
-    astrodyn_test_data::tier3_csv::workspace_root()
-        .join("crates/astrodyn_gravity/test_data/gravity")
+    // Default: <astrodyn_gravity-manifest>/test_data/gravity
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/gravity")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -181,7 +180,7 @@ fn write_metadata(
     writeln!(f, "  \"tide_free_delta\": {:?},", tide_free_delta).unwrap();
     writeln!(
         f,
-        "  \"generated_by\": \"cargo run -p astrodyn_test_data --bin extract_grav_coeffs\","
+        "  \"generated_by\": \"cargo run -p astrodyn_gravity --bin extract_grav_coeffs\","
     )
     .unwrap();
     writeln!(

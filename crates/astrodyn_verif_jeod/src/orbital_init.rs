@@ -9,7 +9,7 @@
 //! Regenerate with:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_body_init -- \
+//! cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
 //!     --jeod-home $JEOD_HOME
 //! ```
 //!
@@ -82,7 +82,7 @@ pub fn load_orbital_init(vehicle: &str, init_name: &str) -> OrbitalInitData {
             panic!(
                 "body_init fixture for {vehicle} is missing orbital_init {init_name:?}. \
                  Add the scenario to extract_body_init.rs SCENARIOS and regenerate with: \
-                 cargo run -p astrodyn_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME"
+                 cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home $JEOD_HOME"
             )
         });
     OrbitalInitData::from(rec)
@@ -267,7 +267,7 @@ pub fn load_trans_state(vehicle: &str, init_name: &str) -> TransStateData {
             panic!(
                 "body_init fixture for {vehicle} is missing trans_state {init_name:?}. \
                  Add the scenario to extract_body_init.rs SCENARIOS and regenerate with: \
-                 cargo run -p astrodyn_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME"
+                 cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home $JEOD_HOME"
             )
         });
     TransStateData {

@@ -5,7 +5,7 @@
 //! computation, and compares orbital elements against JEOD reference.
 
 use astrodyn::recipes::helpers::state_helpers::angle_diff;
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
@@ -16,7 +16,7 @@ use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 /// Full record parsed from the verification CSV (all 21 columns).

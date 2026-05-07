@@ -4,7 +4,7 @@
 //! data over 2 hours at 60s intervals, using `Simulation::step()` to advance
 //! time through the full pipeline.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::SimulationTime;
 use astrodyn_runner::Simulation;

@@ -21,10 +21,10 @@
 //! - `RUN_one_plate_torque`                — `CalcCoef{ε=0.0}` (two plates offset to `z=1 m`)
 //! - `RUN_orbiter`                         — `CalcCoef{ε=0.0}` (6-plate shuttle orbiter)
 
-use astrodyn_test_data::tier3_csv::{load_drag_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_drag_csv, test_data_path};
 
 use astrodyn_interactions::{compute_flat_plate_aero, AeroCoeffMethod, AeroFacet, AeroGasParams};
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::DVec3;
 
 // ── JEOD SIM_VER_DRAG configuration (Modified_data/input_common.py) ──

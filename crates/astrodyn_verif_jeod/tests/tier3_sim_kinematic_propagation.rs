@@ -79,7 +79,7 @@ use astrodyn::{
 };
 use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
 
 fn test_data_dir() -> PathBuf {

@@ -13,7 +13,7 @@
 //! - order 12, dt=1s
 //! - order 8, dt=10s
 
-use astrodyn_test_data::tier3_csv::{load_gj_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_gj_csv, test_data_path};
 
 use astrodyn::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
@@ -21,7 +21,7 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 
 /// Non-standard μ used by SIM_GJ_test (set in input_common.py).
 const MU_GJ_TEST: f64 = 5.76e14;

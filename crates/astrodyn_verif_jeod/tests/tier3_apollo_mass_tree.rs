@@ -251,7 +251,7 @@ fn test_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
 }
 
-fn load_reference(filename: &str) -> astrodyn_test_data::apollo_mass_tree::PrintedTree {
+fn load_reference(filename: &str) -> astrodyn_verif_jeod::apollo_mass_tree::PrintedTree {
     let path = test_data_dir().join(filename);
     assert!(
         path.exists(),
@@ -261,7 +261,7 @@ fn load_reference(filename: &str) -> astrodyn_test_data::apollo_mass_tree::Print
     );
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
-    astrodyn_test_data::apollo_mass_tree::parse_print_tree(&content)
+    astrodyn_verif_jeod::apollo_mass_tree::parse_print_tree(&content)
 }
 
 /// Compute per-body composite errors and track max across all phases.
@@ -284,7 +284,7 @@ impl MaxErrors {
         &mut self,
         tree: &MassTree,
         body_id: usize,
-        ref_body: &astrodyn_test_data::apollo_mass_tree::PrintedBody,
+        ref_body: &astrodyn_verif_jeod::apollo_mass_tree::PrintedBody,
         phase: &str,
     ) {
         let body = tree.get(body_id);
@@ -474,7 +474,7 @@ fn tier3_apollo_mass_tree() {
     check_all_bodies(&tree, "apollo_Final.out", "Final", ids, &mut errors);
 
     // Write CrossvalReport so tier3_report picks up the results.
-    let mut report = astrodyn_test_data::crossval::CrossvalReport::compute(
+    let mut report = astrodyn_verif_jeod::crossval::CrossvalReport::compute(
         "tier3_apollo_mass_tree",
         &[], // No trajectory data — mass tree is discrete, not a time series
         &[],

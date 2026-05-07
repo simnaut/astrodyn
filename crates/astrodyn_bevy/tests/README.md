@@ -92,7 +92,7 @@ hazard, not a style preference.
 
 ## `CrossvalReport` API
 
-`crates/astrodyn_test_data/src/crossval.rs` is the harness for every Tier 3 test
+`crates/astrodyn_verif_jeod/src/crossval.rs` is the harness for every Tier 3 test
 that compares a propagated trajectory against a JEOD reference CSV.
 
 - `StateLog { time, position, velocity, acceleration, quaternion, ang_vel, ang_accel }`
@@ -149,14 +149,14 @@ Baselines are **not silently widened**. Loosening a baseline requires a
 PR comment citing the physical justification — a code change that
 legitimately moves the error, not a tolerance papering over a regression.
 
-The check is automated by `crates/astrodyn_test_data/src/bin/tier3_baseline_diff.rs`:
+The check is automated by `crates/astrodyn_verif_jeod/src/bin/tier3_baseline_diff.rs`:
 
 ```bash
 # Run the Tier 3 suite to populate target/tier3_crossval/*.json
 cargo nextest run --workspace -E 'test(tier3_)'
 
 # Compare against the frozen baseline
-cargo run -p astrodyn_test_data --bin tier3_baseline_diff
+cargo run -p astrodyn_verif_jeod --bin tier3_baseline_diff
 ```
 
 Use `--allow-missing NAME` (or `--allow-missing-from FILE`) to declare
@@ -171,7 +171,7 @@ the PR body and refreeze:
 cargo nextest run --workspace -E 'test(tier3_)'
 
 # Refreeze the snapshot
-cargo run -p astrodyn_test_data --bin tier3_report -- --freeze-baselines
+cargo run -p astrodyn_verif_jeod --bin tier3_report -- --freeze-baselines
 ```
 
 Commit the updated `test_data/baselines.json` and `test_data/baselines.md`

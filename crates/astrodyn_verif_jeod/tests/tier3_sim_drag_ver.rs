@@ -33,12 +33,12 @@
 //!   follow-on task; the reference CSV (`drag_const_drag.csv`) is generated
 //!   and retained for that work.
 
-use astrodyn_test_data::tier3_csv::{load_drag_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_drag_csv, test_data_path};
 
 use astrodyn::SelfPlanet;
 use astrodyn_atmosphere::AtmosphereState;
 use astrodyn_interactions::{compute_ballistic_drag, DragConfig};
-use astrodyn_test_data::crossval::CrossvalReport;
+use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
 
 /// JEOD input_common.py: atmospheric density in kg/m³.

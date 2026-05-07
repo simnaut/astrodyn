@@ -66,7 +66,7 @@ fn bsp_path() -> PathBuf {
 
 fn load_mu_earth() -> f64 {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 fn earth_point_mass(mu: f64) -> GravitySourceEntry {
@@ -107,8 +107,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 
 fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
     let mu_earth = load_mu_earth();
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_DYNCOMP_DIR).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_DYNCOMP_DIR).join("S_define"),
     );
 
     // Load DE421 once for the t=0 sun position. The pre_step factory
@@ -239,8 +239,8 @@ const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 =
 
 fn sim_solar_beta_time() -> SimulationTime {
     let mut time = SimulationTime::new(SIM_SOLAR_BETA_EPOCH_TAI_TJT, default_leap_second_table());
-    let time_cfg = astrodyn_test_data::time_config::load_time_config(
-        &astrodyn_test_data::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
+    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
             .join("Modified_data/date_and_time.py"),
     );
     if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
@@ -250,14 +250,14 @@ fn sim_solar_beta_time() -> SimulationTime {
 }
 
 fn sim_solar_beta_dt() -> f64 {
-    astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("S_define"),
+    astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("S_define"),
     )
 }
 
 fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (sun_t0, _) = ephemeris
@@ -316,7 +316,7 @@ pub fn solar_beta_equ() -> VerificationCase {
 
 fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
     // Earth GGM05C SH from the committed fixture (Wave 1 of #232).
-    let sh_data = astrodyn_test_data::gravity_fixtures::load_ggm05c();
+    let sh_data = astrodyn_gravity::fixtures::load_ggm05c();
     let mu_earth = sh_data.mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");

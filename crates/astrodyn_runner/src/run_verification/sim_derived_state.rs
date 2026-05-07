@@ -38,7 +38,7 @@ fn load_mu_earth() -> f64 {
     // fixture (Wave 1 of #232). Matches the value in JEOD's
     // `models/environment/gravity/data/src/earth_GGM05C.cc` exactly so
     // baselines stay bit-stable.
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
@@ -74,8 +74,8 @@ fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
 
 fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_ORBELEM_DIR).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_ORBELEM_DIR).join("S_define"),
     );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -130,8 +130,8 @@ pub fn orbelem_ecc() -> VerificationCase {
 
 fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
     );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -214,8 +214,8 @@ pub fn lvlh_equ() -> VerificationCase {
 // ── SIM_NED ────────────────────────────────────────────────────────────────
 
 fn ned_time() -> SimulationTime {
-    let verif_dir = astrodyn_test_data::jeod_inputs::path(DERIVED_STATE_VERIF);
-    let time_cfg = astrodyn_test_data::time_config::load_time_config(
+    let verif_dir = astrodyn_verif_jeod::jeod_inputs::path(DERIVED_STATE_VERIF);
+    let time_cfg = astrodyn_verif_jeod::time_config::load_time_config(
         &verif_dir.join("Modified_data/date_and_time.py"),
     );
     let leap_table = default_leap_second_table();
@@ -228,8 +228,8 @@ fn ned_time() -> SimulationTime {
 
 fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
     );
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
@@ -383,8 +383,8 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
     // verif sim shares its time/integrator config with the dyncomp
     // RUN_2 trajectory it's driven from, so we read the same file the
     // existing test reads.
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path("verif/SIM_dyncomp/S_define"),
     );
 
     let q = init
@@ -421,8 +421,8 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
 
 fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_EULER_DIR).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_EULER_DIR).join("S_define"),
     );
 
     // SIM_Euler edge cases (ecc / equ) load the reference quaternion

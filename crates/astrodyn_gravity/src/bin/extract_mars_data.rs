@@ -6,14 +6,14 @@
 //! `models/environment/gravity/data/src/sun_spherical.cc`, and
 //! `models/environment/gravity/data/src/moon_LP150Q.cc`, and writes the
 //! committed binary blobs and JSON metadata sidecars consumed by
-//! `astrodyn_test_data::gravity_fixtures`.
+//! `astrodyn_gravity::fixtures`.
 //!
 //! Run after a JEOD upgrade or whenever the source data changes:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_mars_data
+//! cargo run -p astrodyn_gravity --bin extract_mars_data
 //! # or with an explicit JEOD path:
-//! cargo run -p astrodyn_test_data --bin extract_mars_data -- --jeod-home /path/to/jeod
+//! cargo run -p astrodyn_gravity --bin extract_mars_data -- --jeod-home /path/to/jeod
 //! ```
 //!
 //! Outputs:
@@ -42,8 +42,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use astrodyn_gravity::coefficients::save_binary;
+use astrodyn_gravity::jeod_cc::{load_from_jeod_cc, load_mu_from_jeod_cc};
 use astrodyn_gravity::SphericalHarmonicsData;
-use astrodyn_test_data::jeod_cc::{load_from_jeod_cc, load_mu_from_jeod_cc};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -64,7 +64,7 @@ fn main() {
 
     let jeod_rev = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
 
-    let out_dir = workspace_root().join("crates/astrodyn_gravity/test_data/gravity");
+    let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/gravity");
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
         panic!("Cannot create {}: {e}", out_dir.display());
     });
@@ -249,7 +249,7 @@ fn extract_sun(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
 }
 
 /// Parse `radius` from a JEOD `.cc` gravity file. Mirrors `load_mu_from_jeod_cc`
-/// in `astrodyn_test_data::jeod_cc` but for the `radius` field.
+/// in `astrodyn_gravity::jeod_cc` but for the `radius` field.
 fn load_radius_from_jeod_cc(path: &Path) -> Result<f64, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("I/O: {e}"))?;
     for line in content.lines() {
@@ -293,15 +293,6 @@ fn resolve_jeod_root(args: &[String]) -> Option<PathBuf> {
         return Some(PathBuf::from(p));
     }
     None
-}
-
-fn workspace_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR is .../crates/astrodyn_test_data; workspace root is two parents up.
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .map(PathBuf::from)
-        .expect("workspace root: CARGO_MANIFEST_DIR has at least two ancestors")
 }
 
 fn read_git_rev(jeod_root: &Path) -> Option<String> {
@@ -351,7 +342,7 @@ fn write_metadata(
     }
     writeln!(
         f,
-        "  \"regen_command\": \"cargo run -p astrodyn_test_data --bin extract_mars_data\","
+        "  \"regen_command\": \"cargo run -p astrodyn_gravity --bin extract_mars_data\","
     )
     .unwrap();
     writeln!(f, "  \"note\": {}", json_str(note)).unwrap();

@@ -28,7 +28,7 @@ pub struct MassInitData {
 /// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/mass.py`,
 /// kept in plain Python so reviewers can diff against upstream. Refresh
 /// after a JEOD upgrade via
-/// `cargo run -p astrodyn_test_data --bin extract_jeod_validation`.
+/// `cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation`.
 ///
 /// Parses Python assignments of the form:
 /// - `properties.mass = 100000.0`
@@ -43,7 +43,7 @@ pub fn load_mass_data(vehicle: &str) -> MassInitData {
     let path = crate::tier3_csv::test_data_path(&filename);
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \
+            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_jeod_validation",
             path.display(),
         )

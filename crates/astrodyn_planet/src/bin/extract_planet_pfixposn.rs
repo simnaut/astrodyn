@@ -5,12 +5,12 @@
 //! three `add_read` blocks from
 //! `models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py`,
 //! and writes the committed JSON consumed by
-//! `astrodyn_test_data::planet_geodetic_verif::load_planet_fixed_verif_cases`.
+//! `astrodyn_planet::geodetic_verif::load_planet_fixed_verif_cases`.
 //!
 //! Run after a JEOD upgrade or whenever the SIM's input is amended:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_planet_pfixposn -- \
+//! cargo run -p astrodyn_planet --bin extract_planet_pfixposn -- \
 //!     --jeod-home /path/to/jeod
 //! ```
 //!
@@ -51,8 +51,8 @@ fn main() {
         cases.len(),
     );
 
-    let out_path = astrodyn_test_data::tier3_csv::workspace_root()
-        .join("crates/astrodyn_planet/test_data/planet_pfixposn_seeds.json");
+    let out_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data/planet_pfixposn_seeds.json");
     let mut f = std::fs::File::create(&out_path)
         .unwrap_or_else(|e| panic!("Cannot create {}: {e}", out_path.display()));
     write_json(&mut f, &cases);
@@ -181,7 +181,7 @@ fn write_json(out: &mut std::fs::File, cases: &[Case]) {
     writeln!(out, "  \"jeod_version\": \"5.4\",").unwrap();
     writeln!(
         out,
-        "  \"note\": \"PlanetFixedPosition verification seeds. Regenerate with: cargo run -p astrodyn_test_data --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME\","
+        "  \"note\": \"PlanetFixedPosition verification seeds. Regenerate with: cargo run -p astrodyn_planet --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME\","
     )
     .unwrap();
     writeln!(out, "  \"cases\": [").unwrap();

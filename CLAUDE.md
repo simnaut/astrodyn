@@ -18,7 +18,7 @@ a regression fence that asserts `JEOD_HOME` and `JEOD_PATH` are both
 unset before running.
 
 You only need `$JEOD_HOME` when **regenerating fixtures** after a JEOD
-upgrade. The `extract_*` binaries under `crates/astrodyn_test_data/src/bin/`
+upgrade. The `extract_*` binaries under `crates/astrodyn_verif_jeod/src/bin/`
 parse JEOD source into the binary fixtures committed under
 `test_data/gravity/`; the verbatim mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/`
 is refreshed via the `cp` recipe in
@@ -416,7 +416,7 @@ Fix any issues before committing. This avoids lint-only CI failures.
 
 ### Cross-validation tolerances
 
-`CrossvalReport` (`crates/astrodyn_test_data/src/crossval.rs`) computes per-component
+`CrossvalReport` (`crates/astrodyn_verif_jeod/src/crossval.rs`) computes per-component
 max errors between our trajectory and JEOD's. It has no tolerance fields — tolerances
 live exclusively in the test source code.
 
@@ -425,7 +425,7 @@ Tests assert tolerances via `report.assert_position(tol)`, `report.assert_veloci
 plus `assert!(var < tol, "metric_name")` for extras added via
 `report.add_extra(name, val, unit)`.
 
-The report binary (`cargo run -p astrodyn_test_data --bin tier3_report`) extracts all
+The report binary (`cargo run -p astrodyn_verif_jeod --bin tier3_report`) extracts all
 tolerance values from test source files by regex-parsing the `assert_*` call sites
 and `assert!(var < LITERAL, "name")` patterns. JSON contains only errors — no
 tolerances.

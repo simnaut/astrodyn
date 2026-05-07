@@ -10,7 +10,7 @@
 //! Regenerate with:
 //!
 //! ```bash
-//! cargo run -p astrodyn_test_data --bin extract_body_init -- \
+//! cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
 //!     --jeod-home $JEOD_HOME
 //! ```
 //!
@@ -78,7 +78,7 @@ pub fn load_reference_state(vehicle: &str, frame: &str) -> ReferenceState {
             },
             None => panic!(
                 "body_init fixture for {vehicle} is missing `reference_inertial`. \
-                 Regenerate with: cargo run -p astrodyn_test_data --bin extract_body_init \
+                 Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_body_init \
                  -- --jeod-home $JEOD_HOME"
             ),
         },

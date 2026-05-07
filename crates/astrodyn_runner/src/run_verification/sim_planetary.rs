@@ -26,12 +26,12 @@ const SIM_PLANETARY: &str = "models/dynamics/derived_state/verif/SIM_Planetary";
 
 fn load_mu_earth() -> f64 {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
-    let dt = astrodyn_test_data::s_define::load_dynamics_dt(
-        &astrodyn_test_data::jeod_inputs::path(SIM_PLANETARY).join("S_define"),
+    let dt = astrodyn_verif_jeod::s_define::load_dynamics_dt(
+        &astrodyn_verif_jeod::jeod_inputs::path(SIM_PLANETARY).join("S_define"),
     );
     let mu_earth = load_mu_earth();
 

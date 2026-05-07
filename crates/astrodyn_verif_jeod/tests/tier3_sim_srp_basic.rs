@@ -6,7 +6,7 @@
 //! steps to exercise the SRP pipeline, and compares force/torque against
 //! JEOD's reference CSV at each timestep.
 
-use astrodyn_test_data::tier3_csv::{load_srp_basic_csv, test_data_path};
+use astrodyn_verif_jeod::tier3_csv::{load_srp_basic_csv, test_data_path};
 
 use astrodyn::{
     FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,

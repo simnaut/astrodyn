@@ -9,14 +9,14 @@
 //! (`test_data/gravity/ggm02c.bin`) — does not require `JEOD_HOME`.
 
 use astrodyn_dynamics::{rk4_translational_step, TranslationalState};
+use astrodyn_gravity::fixtures;
 use astrodyn_math::OrbitalElements;
-use astrodyn_test_data::gravity_fixtures;
 use glam::DVec3;
 use std::f64::consts::PI;
 
 #[test]
 fn j2_nodal_regression_rate() {
-    let sh_data = gravity_fixtures::load_ggm02c();
+    let sh_data = fixtures::load_ggm02c();
     let mu = sh_data.mu;
     let r_eq = sh_data.radius;
 

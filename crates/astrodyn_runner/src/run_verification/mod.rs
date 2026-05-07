@@ -7,7 +7,7 @@
 //! lives here as the [`VerificationCaseExt`] trait.
 //!
 //! The trait dispatches on the [`CsvReference`] variant to pick the right
-//! loader from `astrodyn_test_data::tier3_csv`, then delegates assertion to
+//! loader from `astrodyn_verif_jeod::tier3_csv`, then delegates assertion to
 //! [`CrossvalReport`]. Tolerances of `0.0` mean *skip the assertion for
 //! that component* — used for 3-DOF cases that have no rotational state.
 //!
@@ -39,8 +39,8 @@ use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff
 use astrodyn::recipes::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
-use astrodyn_test_data::tier3_csv;
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::tier3_csv;
 use glam::DVec3;
 use uom::si::time::second;
 

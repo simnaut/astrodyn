@@ -9,28 +9,6 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[features]
-# `jeod-source` is workspace-internal: it exposes the
-# `recipes::verification` Tier 3 cross-validation scaffolding (gravity
-# recipes backed by `test_data/gravity/*.bin` plus the
-# `VerificationCase` / `Tolerances` / `CsvReference` types). The
-# fixture binaries live at the workspace root of *this repository* and
-# are not packaged with the crate, so the recipes only work in-repo —
-# enabling this feature from a downstream workspace will panic at
-# runtime when the loader can't find the binaries. The corresponding
-# Rust module is also hidden from rendered rustdoc so it doesn't leak
-# into the published page. `astrodyn_runner`'s `run_verification` rigs and the
-# in-repo examples are the only intended consumers; mission code
-# should not enable this feature.
-jeod-source = ["dep:astrodyn_test_data"]
-
-# Hide the workspace-internal `jeod-source` feature from docs.rs builds
-# so the published documentation surfaces only the mission-facing
-# recipes.
-[package.metadata.docs.rs]
-no-default-features = true
-features = []
-
 [dependencies]
 astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.1.0" }
 astrodyn_math = { path = "crates/astrodyn_math", version = "0.1.0" }
@@ -42,18 +20,9 @@ astrodyn_atmosphere = { path = "crates/astrodyn_atmosphere", version = "0.1.0" }
 astrodyn_interactions = { path = "crates/astrodyn_interactions", version = "0.1.0" }
 astrodyn_ephemeris = { path = "crates/astrodyn_ephemeris", version = "0.1.0" }
 astrodyn_planet = { path = "crates/astrodyn_planet", version = "0.1.0" }
-# Optional: only pulled in when the `jeod-source` feature is enabled.
-# Used by `recipes::verification::reference_data` to load committed
-# gravity-coefficient binaries via `astrodyn_test_data::gravity_fixtures`.
-# `astrodyn_test_data` is the dev/test-data crate; this is the single
-# non-dev consumer.
-astrodyn_test_data = { path = "crates/astrodyn_test_data", version = "0.1.0", optional = true }
 glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
-
-[dev-dependencies]
-astrodyn_test_data = { path = "crates/astrodyn_test_data", version = "0.1.0" }
 
 [workspace]
 resolver = "2"
@@ -68,7 +37,6 @@ members = [
     "crates/astrodyn_ephemeris",
     "crates/astrodyn_atmosphere",
     "crates/astrodyn_interactions",
-    "crates/astrodyn_test_data",
     "crates/astrodyn_bevy",
     "crates/astrodyn_runner",
     "crates/astrodyn_verif_jeod",

@@ -76,10 +76,10 @@ use astrodyn_atmosphere::met::GeoIndexType;
 use astrodyn_dynamics::{MassBodyId, MassProperties, MassTree};
 use astrodyn_math::JeodQuat;
 use astrodyn_runner::{RotationModel, Simulation, SimulationBuilderExt};
-use astrodyn_test_data::apollo_truth::{
+use astrodyn_verif_jeod::apollo_truth::{
     load_apollo_attach_truth, nearest_truth_at, ApolloTruthError, ApolloTruthRow,
 };
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::{DMat3, DVec3};
 use std::path::PathBuf;
 
@@ -324,9 +324,9 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
     // Earth: 8x8 GGM05C non-spherical, with the Earth-RNP rotation model so
     // the planet-fixed frame updates each step (matches JEOD's
     // `earth_GGM05C_MET_RNP.sm`).
-    let earth_grav = astrodyn_test_data::gravity_fixtures::load_ggm05c();
-    let mu_moon = astrodyn_test_data::gravity_fixtures::load_moon_grail150_mu();
-    let mu_sun = astrodyn_test_data::gravity_fixtures::load_sun_spherical_mu();
+    let earth_grav = astrodyn_gravity::fixtures::load_ggm05c();
+    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
 
     // Note: SIM_Apollo's Modified_data/Earth/params.py overrides Earth mu
     // to the historic 3.98600436e14 value, but `set_vehicle_grav_controls`
@@ -816,7 +816,7 @@ fn event_short_label(event: Event) -> &'static str {
 }
 
 /// Walk up from CARGO_MANIFEST_DIR until we find Cargo.lock — that's the
-/// workspace root. Mirrors the helper in `astrodyn_test_data::crossval`.
+/// workspace root. Mirrors the helper in `astrodyn_verif_jeod::crossval`.
 fn workspace_target_tier3_dir() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {

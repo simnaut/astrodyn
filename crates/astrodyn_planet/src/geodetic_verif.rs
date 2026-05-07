@@ -13,7 +13,7 @@
 //!
 //! The seeds were extracted once, committed at `test_data/planet_pfixposn_seeds.json`,
 //! and read back here without touching JEOD source. Regenerate with
-//! `cargo run -p astrodyn_test_data --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME`.
+//! `cargo run -p astrodyn_planet --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME`.
 //!
 //! JEOD's verification methodology for these conversions is round-trip
 //! closure (see `verif/unit_tests/Cartesian_to_AltLatLong_to_Cartesian/main.cc`,
@@ -70,18 +70,18 @@ pub enum PlanetFixedSeed {
 /// Panics if the JSON file is missing or malformed; the panic names the
 /// regen command per CLAUDE.md "Fail Loudly".
 pub fn load_planet_fixed_verif_cases() -> Vec<PlanetFixedSeed> {
-    let path = crate::tier3_csv::workspace_root()
-        .join("crates/astrodyn_planet/test_data/planet_pfixposn_seeds.json");
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data/planet_pfixposn_seeds.json");
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "Cannot read {}: {e}. Regenerate with `cargo run -p astrodyn_test_data \
+            "Cannot read {}: {e}. Regenerate with `cargo run -p astrodyn_planet \
              --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME`.",
             path.display(),
         )
     });
     parse_seeds_json(&content).unwrap_or_else(|e| {
         panic!(
-            "Malformed seeds in {}: {e}. Regenerate with `cargo run -p astrodyn_test_data \
+            "Malformed seeds in {}: {e}. Regenerate with `cargo run -p astrodyn_verif_jeod \
              --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME`.",
             path.display(),
         )

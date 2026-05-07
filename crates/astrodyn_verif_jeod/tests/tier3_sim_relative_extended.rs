@@ -32,7 +32,7 @@ use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_ggm05c().mu
+    astrodyn_gravity::fixtures::load_ggm05c().mu
 }
 
 /// Construct a Simulation with a single point-mass Earth at the origin and

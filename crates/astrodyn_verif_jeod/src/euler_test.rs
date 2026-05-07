@@ -38,7 +38,7 @@ pub fn load_euler_test_cases() -> Vec<EulerTestCase> {
     let path = crate::tier3_csv::test_data_path("jeod_validation/euler_cases.json");
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_test_data \
+            "Cannot read {}: {e}. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_jeod_validation",
             path.display(),
         )
@@ -46,7 +46,7 @@ pub fn load_euler_test_cases() -> Vec<EulerTestCase> {
     parse_euler_cases_json(&content).unwrap_or_else(|msg| {
         panic!(
             "Malformed Euler-cases fixture at {}: {msg}. Regenerate with: \
-             cargo run -p astrodyn_test_data --bin extract_jeod_validation",
+             cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation",
             path.display(),
         )
     })
@@ -84,7 +84,7 @@ pub fn parse_euler_cases_json(s: &str) -> Result<Vec<EulerTestCase>, String> {
 pub fn encode_euler_cases_json(cases: &[EulerTestCase]) -> String {
     let mut buf = String::new();
     buf.push_str("{\n  \"source\": \"models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc\",\n");
-    buf.push_str("  \"note\": \"All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p astrodyn_test_data --bin extract_jeod_validation\",\n");
+    buf.push_str("  \"note\": \"All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation\",\n");
     buf.push_str("  \"cases\": [\n");
     for (i, c) in cases.iter().enumerate() {
         buf.push_str("    {\n");

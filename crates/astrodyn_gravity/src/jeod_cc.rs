@@ -14,7 +14,7 @@
 
 use std::path::Path;
 
-use astrodyn_gravity::SphericalHarmonicsData;
+use crate::SphericalHarmonicsData;
 
 /// Errors from parsing a JEOD C++ gravity data file.
 #[derive(Debug, thiserror::Error)]

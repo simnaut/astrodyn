@@ -231,7 +231,7 @@ pub use astrodyn_ephemeris::{assets as ephemeris_assets, Ephemeris, EphemerisBod
 // astrodyn_gravity: relativistic-correction submodule consumed by mission
 // code that builds relativistic-source lists. The JEOD `.cc`
 // source-file parser (`load_from_jeod_cc`, `load_mu_from_jeod_cc`)
-// lives in the dev/test crate `astrodyn_test_data::jeod_cc` — production
+// lives in the dev/test crate `astrodyn_gravity::jeod_cc` — production
 // gravity does not parse JEOD source.
 pub use astrodyn_gravity::relativistic;
 

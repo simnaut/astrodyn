@@ -16,23 +16,16 @@ features = []
 [features]
 # Default-on: enables the `run_verification` module and its
 # `VerificationCaseExt` extension trait. Tier 3 tests
-# (`crates/astrodyn_runner/tests/tier3_*.rs`) require this feature; CI runs
+# (`crates/astrodyn_verif_jeod/tests/tier3_*.rs`) require this feature; CI runs
 # with the default feature set so they pick it up automatically.
 #
 # Production / mission consumers that don't need the verification rigs
 # can opt out with `--no-default-features`. That build excludes the
-# `run_verification` module and drops the `astrodyn_test_data` /
-# `astrodyn/jeod-source` dependencies entirely, leaving `astrodyn_runner`
+# `run_verification` module and drops the `astrodyn_verif_jeod` /
+# `astrodyn_atmosphere` dependencies entirely, leaving `astrodyn_runner`
 # JEOD-source-free.
 default = ["verification"]
-# `astrodyn_atmosphere` is gated by `verification` because the only `src/`
-# consumer (`run_verification/sim_dyncomp.rs`) lives under the same
-# feature; tests pull it in unconditionally via `[dev-dependencies]`.
-verification = [
-    "dep:astrodyn_test_data",
-    "dep:astrodyn_atmosphere",
-    "astrodyn/jeod-source",
-]
+verification = ["dep:astrodyn_verif_jeod", "dep:astrodyn_atmosphere"]
 
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
@@ -43,13 +36,14 @@ astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
 astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
-# `astrodyn_test_data` powers `run_verification::*` (Tier 3 verification-case
-# machinery). Optional and gated behind the `verification` feature so a
-# `--no-default-features` build of `astrodyn_runner` ships JEOD-source-free.
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0", optional = true }
+# `astrodyn_verif_jeod` powers `run_verification::*` (Tier 3 verification-case
+# machinery — CrossvalReport, tier3_csv, JEOD-source parsers). Optional and
+# gated behind the `verification` feature so a `--no-default-features`
+# build of `astrodyn_runner` ships JEOD-source-free.
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0", optional = true }
 # `astrodyn_atmosphere` is consumed by `run_verification::sim_dyncomp` for
 # the MET atmosphere model wiring, so it is optional and gated behind
-# the `verification` feature alongside `astrodyn_test_data`.
+# the `verification` feature alongside `astrodyn_verif_jeod`.
 astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0", optional = true }
 glam = { workspace = true }
 log = { workspace = true }
@@ -57,11 +51,10 @@ uom = { workspace = true }
 
 [dev-dependencies]
 astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
-# Tier 3 tests under `tests/tier3_*.rs` use `astrodyn_test_data` directly
-# (e.g. for `tier3_csv` loaders); kept as an explicit dev-dep so
-# disabling the `verification` feature does not also disable the test
-# harness's CSV ingestion.
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+# Tier 3 tests use `astrodyn_verif_jeod` directly (CrossvalReport, tier3_csv
+# loaders); kept as an explicit dev-dep so disabling the `verification`
+# feature does not also disable the test harness's CSV ingestion.
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
 
 [[example]]
 name = "batch_propagation"

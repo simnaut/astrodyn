@@ -33,20 +33,9 @@
 //! extension trait, since materializing a [`SimulationBuilder`] into a
 //! runtime `astrodyn_runner::Simulation` is runner-specific. The runner-side
 //! trait also dispatches on the [`CsvReference`] variant, calling the
-//! matching loader from `astrodyn_test_data::tier3_csv`.
+//! matching loader from `astrodyn_verif_jeod::tier3_csv`.
 
-#[cfg(feature = "jeod-source")]
-#[path = "reference_data.rs"]
 pub mod reference_data;
-
-/// Stub `reference_data` module used when JEOD-source-backed loaders are
-/// unavailable.
-///
-/// Keeps the public `verification::reference_data` path present for
-/// rustdoc and intra-doc links in builds that do not enable the
-/// `jeod-source` feature.
-#[cfg(not(feature = "jeod-source"))]
-pub mod reference_data {}
 
 use glam::{DQuat, DVec3};
 use uom::si::f64::Time;
@@ -153,7 +142,7 @@ pub struct InitialConditions {
 pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
     /// position/velocity only — quaternion and ang_vel columns are
-    /// dropped at the `astrodyn_test_data::crossval::StateLog` layer. Use
+    /// dropped at the `astrodyn_verif_jeod::crossval::StateLog` layer. Use
     /// this for scenarios that build a `astrodyn::VehicleConfig` without `rot`,
     /// so per-step compares don't synthesize spurious rotational
     /// reference values from CSV columns the simulation never produces.
@@ -161,7 +150,7 @@ pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 6-DOF reference:
     /// position/velocity *plus* `composite_body.quaternion` and
     /// `composite_body.ang_vel` are populated on the reference
-    /// `astrodyn_test_data::crossval::StateLog`.
+    /// `astrodyn_verif_jeod::crossval::StateLog`.
     Dyncomp6Dof(&'static str),
     /// 21+-column SIM_OrbElem CSV (classical elements + state).
     Orbelem(&'static str),

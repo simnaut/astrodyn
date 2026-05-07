@@ -24,8 +24,8 @@ pub use super::dyncomp_csv::{load_dyncomp_csv, DyncompRecord, FrameDerivs, Frame
 /// `jeod_validation/`. Cross-cutting fixtures (gravity coefficients,
 /// leap-second table, ephemerides, planet seeds) are *not* under this
 /// path — they live with their owner crates and have dedicated
-/// resolvers (e.g. [`gravity_fixtures::gravity_path`],
-/// [`leap_second::leap_second_path`]).
+/// resolvers in their owner crates (e.g. `astrodyn_gravity::fixtures`,
+/// `astrodyn_planet::geodetic_verif`).
 pub fn test_data_path(filename: &str) -> PathBuf {
     workspace_root()
         .join("crates/astrodyn_verif_jeod/test_data")

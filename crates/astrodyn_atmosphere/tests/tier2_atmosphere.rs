@@ -24,7 +24,7 @@
 //! 0 differs from row 1 — is fully exercised.
 
 use astrodyn_atmosphere::met::{GeoIndexType, MetAtmosphere};
-use astrodyn_test_data::{atmosphere_verif::load_met_run_csv, tier3_csv::test_data_path};
+use astrodyn_verif_jeod::{atmosphere_verif::load_met_run_csv, tier3_csv::test_data_path};
 
 /// Common solar-activity configuration used by every `SIM_MET` RUN.
 /// Matches `models/environment/atmosphere/MET/verif/SIM_MET/SET_test/input_core.py`.

@@ -32,6 +32,7 @@
 
 pub use astrodyn_quantities::prelude::*;
 
+pub mod geodetic_verif;
 pub mod planet;
 pub mod presets;
 

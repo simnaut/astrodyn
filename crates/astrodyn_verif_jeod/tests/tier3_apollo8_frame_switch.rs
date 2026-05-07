@@ -19,7 +19,7 @@ use astrodyn::{
 };
 use astrodyn_math::JeodQuat;
 use astrodyn_runner::Simulation;
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::{DMat3, DQuat, DVec3};
 
 // ── Constants from Modified_data/vehicle.py ──

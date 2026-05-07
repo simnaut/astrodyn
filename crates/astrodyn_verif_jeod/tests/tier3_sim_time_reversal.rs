@@ -6,7 +6,7 @@
 //!
 //! RUN_1: spherical Earth gravity, RK4 at 0.03125 s.
 
-use astrodyn_test_data::tier3_csv::test_data_path;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
@@ -17,7 +17,7 @@ use astrodyn_runner::Simulation;
 use glam::DVec3;
 
 fn load_mu_earth_gemt1() -> f64 {
-    astrodyn_test_data::gravity_fixtures::load_gemt1().mu
+    astrodyn_gravity::fixtures::load_gemt1().mu
 }
 
 #[allow(dead_code)] // position/velocity used by run1, not by time-only run3a/run8b

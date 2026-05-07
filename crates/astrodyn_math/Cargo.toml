@@ -22,7 +22,7 @@ uom = { workspace = true }
 test-utils = []
 
 [dev-dependencies]
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
 astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
 astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
 # `test-utils` exposes `astrodyn_quantities::frame::TestVehicle` for inline tests

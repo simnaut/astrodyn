@@ -105,7 +105,7 @@ cargo nextest run --workspace -E 'test(tier3_)'       # Tier 3
 `$JEOD_HOME` — every tier (unit, Tier 2, Tier 3) reads from committed
 fixtures under `test_data/`. `$JEOD_HOME` is required only when
 regenerating those fixtures via the `extract_*` binaries under
-`crates/astrodyn_test_data/src/bin/` or refreshing the verbatim mirror at
+`crates/astrodyn_verif_jeod/src/bin/` or refreshing the verbatim mirror at
 `crates/astrodyn_verif_jeod/test_data/jeod_inputs/`. See
 [`CLAUDE.md`](../../CLAUDE.md) for the full build / test / regen workflow.
 

@@ -14,8 +14,9 @@ repository.workspace = true
 astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_bevy = { path = "../astrodyn_bevy", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
 astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 bevy = { workspace = true }
 glam = { workspace = true }

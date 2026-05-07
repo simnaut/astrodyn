@@ -1,7 +1,7 @@
 //! Schema-flexible CSV reader for ad-hoc test formats.
 //!
-//! The typed CSV catalogue lives in `astrodyn_test_data::tier3_csv` (and
-//! its predecessor `astrodyn_test_data::dyncomp_csv`); those loaders own
+//! The typed CSV catalogue lives in `astrodyn_verif_jeod::tier3_csv` (and
+//! its predecessor `astrodyn_verif_jeod::dyncomp_csv`); those loaders own
 //! the standard JEOD reference logs (`SIM_dyncomp`, `SIM_LVLH`, …).
 //! This module provides the one-off / line-by-line escape hatch for
 //! archetype-B tests whose format is unique enough that defining a

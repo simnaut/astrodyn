@@ -9,15 +9,15 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
-use astrodyn_test_data::crossval::{CrossvalReport, StateLog};
-use astrodyn_test_data::mass_data::MassInitData;
-use astrodyn_test_data::tier3_csv::{dyncomp_to_state_log_6dof, load_dyncomp_csv, test_data_path};
+use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::mass_data::MassInitData;
+use astrodyn_verif_jeod::tier3_csv::{dyncomp_to_state_log_6dof, load_dyncomp_csv, test_data_path};
 use glam::{DMat3, DVec3};
 
 /// Build [`MassProperties`] from parsed JEOD mass-init data (test-only helper).
 ///
 /// Inlined here because `MassProperties` lives in `astrodyn_dynamics` (a real
-/// dep of `astrodyn_test_data` would create a cycle), and the helper is used
+/// dep of `astrodyn_verif_jeod` would create a cycle), and the helper is used
 /// only by Tier 3 mass-fixture tests.
 fn mass_props_from_init(init: &MassInitData) -> MassProperties {
     let inertia = DMat3::from_cols(
@@ -44,7 +44,7 @@ fn setup_run9(
     init_ang_vel: DVec3,
 ) -> (
     Simulation,
-    Vec<astrodyn_test_data::dyncomp_csv::DyncompRecord>,
+    Vec<astrodyn_verif_jeod::dyncomp_csv::DyncompRecord>,
     f64,
 ) {
     let csv_path = test_data_path(csv_name);
@@ -59,7 +59,7 @@ fn setup_run9(
     // Dynamics timestep: 0.03125 s (32 Hz) per
     // verif/SIM_dyncomp/S_define `#define DYNAMICS`.
     let dt = 0.03125_f64;
-    let mu_earth = astrodyn_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
 
     // ISS mass properties from
     // verif/SIM_dyncomp/Modified_data/mass.py `def set_mass_iss()`.

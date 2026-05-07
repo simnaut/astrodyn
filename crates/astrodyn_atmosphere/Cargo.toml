@@ -18,4 +18,4 @@ glam = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]
-astrodyn_test_data = { path = "../astrodyn_test_data", version = "0.1.0" }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }

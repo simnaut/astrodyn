@@ -17,7 +17,7 @@
 //! regime where we want the tightest guard).
 //!
 //! Usage:
-//!   cargo run -p astrodyn_test_data --bin tier3_baseline_diff \
+//!   cargo run -p astrodyn_verif_jeod --bin tier3_baseline_diff \
 //!       [--allow-missing NAME]... [--allow-missing-from FILE]
 //!
 //! `--allow-missing` declares a baseline test that is *intentionally* absent
@@ -548,7 +548,7 @@ fn main() -> ExitCode {
             eprintln!("  + {t}");
         }
         eprintln!(
-            "  (re-freeze with `cargo run -p astrodyn_test_data --bin tier3_report -- --freeze-baselines`)"
+            "  (re-freeze with `cargo run -p astrodyn_verif_jeod --bin tier3_report -- --freeze-baselines`)"
         );
         eprintln!();
     }
