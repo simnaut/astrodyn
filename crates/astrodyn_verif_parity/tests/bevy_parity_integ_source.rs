@@ -19,8 +19,8 @@ use astrodyn::{
     TranslationalState, Vec3Ext, VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::{
-    register_planet_systems, DynamicsConfigC, FlatPlateConfigC, GravityControlsC, IntegSourceC,
-    JeodPlugin, MassPropertiesC, PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC,
+    register_planet_systems, AstrodynPlugin, DynamicsConfigC, FlatPlateConfigC, GravityControlsC,
+    IntegSourceC, MassPropertiesC, PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC,
     SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, SunMarker,
     TranslationalStateC,
 };
@@ -115,11 +115,11 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`
     // — its integration frame is `PlanetInertial<Moon>`. Register the
     // Moon-instantiated systems so the body is matched by the
-    // integration / gravity / frame / staging pipeline. JeodPlugin
+    // integration / gravity / frame / staging pipeline. AstrodynPlugin
     // alone only registers the `<Earth>` instantiation; the
     // `<Moon>`-tagged body would silently fall out of every system
     // without this call.
@@ -268,7 +268,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems so the body is matched by
     // the integration / gravity / frame / staging pipeline.
@@ -394,7 +394,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -537,7 +537,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems (including
     // `solar_beta_system::<Moon>`, which expects `TranslationalStateC<Moon>`
@@ -556,7 +556,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 
     // Sun carries `TranslationalStateC` tagged with both `<Earth>` and
     // `<Moon>`: `<Earth>` is required by the validation system (which
-    // is `<Earth>`-instantiated by `JeodPlugin`); `<Moon>` is required
+    // is `<Earth>`-instantiated by `AstrodynPlugin`); `<Moon>` is required
     // by `solar_beta_system::<Moon>`'s
     // `Query<&TranslationalStateC<Moon>, With<SunMarker>>`. Bevy stores
     // them as distinct components on the same entity. The numeric
@@ -750,7 +750,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems (the SRP system unifies
     // body and Sun queries on the same `<Moon>` tag).

@@ -1,5 +1,5 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
-//! Bevy systems for [`JeodSet::Integration`](crate::JeodSet::Integration).
+//! Bevy systems for [`AstrodynSet::Integration`](crate::AstrodynSet::Integration).
 //!
 //! State integration (RK4 / Gauss-Jackson / ABM4), mass-tree staging
 //! (attach / detach), detached-subtree free-flight propagation, and
@@ -41,7 +41,7 @@ use super::util::body_integ_origin_in_root_lazy;
 /// `compute_relative_state` algorithm in `astrodyn_frames` with the
 /// runner's arena).
 ///
-/// Runs in `JeodSet::Integration` after [`crate::sync_body_to_frame_system`].
+/// Runs in `AstrodynSet::Integration` after [`crate::sync_body_to_frame_system`].
 /// Bodies without [`FrameSwitchesC`] entries (or whose entries are
 /// all `active = false`) are skipped.
 // JEOD_INV: DB.14 — distance-based integration-frame switch reparents
@@ -827,7 +827,7 @@ struct CrossIntegReparentEntry {
 /// shifted by `(old_integ_origin - new_integ_origin)` (root-inertial
 /// coordinates) to keep this contract. Skipping the rewrite would let
 /// consumers running between `staging_system` and the next
-/// `propagate_state_from_root_system` (the entire `JeodSet::Interaction`
+/// `propagate_state_from_root_system` (the entire `AstrodynSet::Interaction`
 /// set — `aero_drag_system`, `gravity_torque_system`, the SRP systems —
 /// plus `force_collection_system`) read pre-attach numerics through
 /// post-attach topology and silently mix coordinates across distinct
@@ -852,13 +852,13 @@ struct CrossIntegReparentEntry {
 /// **Why `FrameTransC` is staged immediately + post-integration
 /// re-derived**: the `FrameTransC` write here is load-bearing for the
 /// staging → integration window: `staging_system` is ordered
-/// `.after(JeodSet::Environment).before(JeodSet::Interaction)`, so
+/// `.after(AstrodynSet::Environment).before(AstrodynSet::Interaction)`, so
 /// within the attach tick every consumer that reads frame state via
-/// `RelativeFrameState` *after* staging — the `JeodSet::Interaction`
+/// `RelativeFrameState` *after* staging — the `AstrodynSet::Interaction`
 /// set (drag, SRP, gravity-torque), `force_collection_system` /
-/// `wrench_aggregation_system` in `JeodSet::ForceCollection`, and
-/// `integration_system` in `JeodSet::Integration` — sees this value.
-/// `JeodSet::Environment` already ran for this tick and operated on
+/// `wrench_aggregation_system` in `AstrodynSet::ForceCollection`, and
+/// `integration_system` in `AstrodynSet::Integration` — sees this value.
+/// `AstrodynSet::Environment` already ran for this tick and operated on
 /// pre-attach `FrameTransC`; the attach physics applies starting at the
 /// next Environment pass (tick N+1). After integration,
 /// `sync_body_to_frame_system` overwrites `FrameTransC` from the
@@ -872,8 +872,8 @@ struct CrossIntegReparentEntry {
 /// on `FrameTransC`; making the write immediate would require a
 /// `ParamSet` split that doesn't pay back its complexity. Bevy 0.18's
 /// `auto_insert_apply_deferred` (default-on) flushes this `Commands`
-/// batch at the `staging_system → JeodSet::Interaction` set boundary,
-/// given `staging_system.before(JeodSet::Interaction)`, so the deferred
+/// batch at the `staging_system → AstrodynSet::Interaction` set boundary,
+/// given `staging_system.before(AstrodynSet::Interaction)`, so the deferred
 /// write is observed by every post-staging consumer above without a
 /// manual `ApplyDeferred`.
 ///
@@ -1099,7 +1099,7 @@ pub fn staging_system<P: Planet>(
     tree: Option<ResMut<crate::MassTreeR>>,
     // JEOD_INV: TS.01 — Bevy adapter message-bus storage boundary: the
     // canonical runtime-resolved `AttachEvent<SelfRef, SelfRef>` reader
-    // pair with the registration in `JeodPlugin::build`.
+    // pair with the registration in `AstrodynPlugin::build`.
     mut attach_events: bevy::ecs::message::MessageReader<
         crate::AttachEvent<astrodyn::SelfRef, astrodyn::SelfRef>,
     >,
@@ -1536,7 +1536,7 @@ pub fn staging_system<P: Planet>(
         //      Falls back to comparing against `known_source_frames`
         //      when `RootFrameEntityR` is absent (low-level tests
         //      that drive `staging_system` directly without
-        //      `JeodPlugin`).
+        //      `AstrodynPlugin`).
         //
         //   3. **Normalize root-equivalent topology for equality.**
         //      In `astrodyn_runner` the central body's inertial frame
@@ -1557,13 +1557,13 @@ pub fn staging_system<P: Planet>(
         // (steps 1, 1.5, and 2) run unconditionally — they protect
         // invariants that hold without any reference to root-equivalence
         // semantics, so a low-level test (or a partial app build) that
-        // drove `staging_system` directly without `JeodPlugin` still
+        // drove `staging_system` directly without `AstrodynPlugin` still
         // sees the same misconfigurations rejected. Only the
         // root-equivalence equality fold (step 3) requires
         // `RootFrameEntityR` and is therefore conditional on its
         // presence; without root the equality fold is skipped, but no
         // production path reaches that branch with `RootFrameEntityR`
-        // absent (`JeodPlugin::build` always inserts it).
+        // absent (`AstrodynPlugin::build` always inserts it).
         //
         // Skipped per-event when *both* bodies lack `FrameEntityC`
         // and neither is dynamic — see step 1's narrowed mass-only
@@ -1601,7 +1601,7 @@ pub fn staging_system<P: Planet>(
                                  must be parented under its integration-frame entity \
                                  (root frame entity, or a registered source's frame \
                                  entity). `register_body_frames_system` inserts that \
-                                 ChildOf when it runs in the JeodPlugin schedules \
+                                 ChildOf when it runs in the AstrodynPlugin schedules \
                                  (Startup, PreUpdate, FixedUpdate); a missing parent \
                                  here means the frame tree is corrupt. Underlying \
                                  query error: {err:?}",
@@ -1625,7 +1625,7 @@ pub fn staging_system<P: Planet>(
                              registration race — the body was spawned mid-tick \
                              after register_body_frames_system already ran in \
                              PreUpdate / FixedUpdate (before \
-                             JeodSet::EphemerisUpdate), so its frame-tree node \
+                             AstrodynSet::EphemerisUpdate), so its frame-tree node \
                              has not been spawned yet by the time staging_system \
                              runs. Spawn the body before the first FixedUpdate \
                              step (e.g. in Startup or PreUpdate ahead of \
@@ -1822,7 +1822,7 @@ pub fn staging_system<P: Planet>(
             // skip just this final equality — the structural
             // fail-loud checks above have already run unconditionally,
             // and production paths always set the resource via
-            // `JeodPlugin::build`.
+            // `AstrodynPlugin::build`.
             if let Some(root_e) = root_e_opt {
                 let fold_root_equivalent = |parent: Entity| -> Entity {
                     if crate::validation::is_root_equivalent_entity(

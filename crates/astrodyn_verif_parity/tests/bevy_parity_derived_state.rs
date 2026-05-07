@@ -29,7 +29,7 @@ fn tier3_bevy_derived_states() {
     // ── Bevy App ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -175,7 +175,7 @@ fn tier3_bevy_geodetic_derived_state() {
     // ── Bevy ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -291,7 +291,7 @@ fn tier3_bevy_eccentric_derived_states() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -454,7 +454,7 @@ fn tier3_bevy_polar_geodetic() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -564,7 +564,7 @@ fn tier3_bevy_equatorial_solar_beta() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()

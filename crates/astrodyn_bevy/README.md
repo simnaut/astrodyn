@@ -68,7 +68,7 @@ fn setup(mut commands: Commands) {
 
 fn main() {
     App::new()
-        .add_plugins((MinimalPlugins, JeodPlugin))
+        .add_plugins((MinimalPlugins, AstrodynPlugin))
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
         .add_systems(Startup, setup)
         .run();

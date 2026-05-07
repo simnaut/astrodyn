@@ -15,8 +15,8 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC, IntegratorTypeC,
-    JeodPlugin, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC,
+    IntegratorTypeC, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -99,7 +99,7 @@ fn run_gj_parity(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     // Set time_scale_factor on the SimulationTimeR resource.
     app.world_mut()

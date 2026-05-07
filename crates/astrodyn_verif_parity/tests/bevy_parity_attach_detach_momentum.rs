@@ -32,10 +32,10 @@ use astrodyn::{
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
-    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
+    AstrodynPlugin, AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
     FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GravityAccelerationC,
-    GravityControlsC, GravitySourceC, IntegSourceC, JeodPlugin, MassBodyIdC, MassPropertiesC,
-    MassTreeR, RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    GravityControlsC, GravitySourceC, IntegSourceC, MassBodyIdC, MassPropertiesC, MassTreeR,
+    RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -63,7 +63,7 @@ fn build_two_body_world(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -1201,7 +1201,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -1419,7 +1419,7 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
     // body-frame entity. `staging_system` writes the merged state
     // into `TranslationalStateC`; `sync_body_to_frame_system`
     // mirrors that into `FrameTransC` later in the same tick (in
-    // `JeodSet::Integration`). The first `step()` call above
+    // `AstrodynSet::Integration`). The first `step()` call above
     // already covered both, so the walk below sees the post-merge
     // value. A regression that mismatches the lift / lower (e.g.
     // forgets to lower the result through the parent's integ
@@ -1562,7 +1562,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -1808,7 +1808,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -2010,7 +2010,7 @@ fn bevy_detached_body_skips_force_pipeline() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     // Mass tree (required for attach/detach).
     let mut tree = MassTree::new();
@@ -2704,7 +2704,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -2989,7 +2989,7 @@ fn bevy_attach_root_equivalent_parents_succeed() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3135,7 +3135,7 @@ fn bevy_attach_malformed_frame_node_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3236,7 +3236,7 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3363,7 +3363,7 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3478,7 +3478,7 @@ fn bevy_attach_mass_only_no_frame_entity_succeeds() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3589,7 +3589,7 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3664,7 +3664,7 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
 /// The opposite case — an entity carrying *both* eligibility
 /// components but lacking `FrameEntityC` — is a registration race,
 /// not a mass-only configuration. `register_body_frames_system` runs
-/// before `JeodSet::EphemerisUpdate`; `staging_system` runs later
+/// before `AstrodynSet::EphemerisUpdate`; `staging_system` runs later
 /// in the same `FixedUpdate` (after `Environment`, before
 /// `Interaction`). A body spawned mid-tick after the registration
 /// pass already ran will not yet carry `FrameEntityC` even though its
@@ -3696,7 +3696,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3798,7 +3798,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3897,7 +3897,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("Parent".into(), parent_mass);
@@ -3960,12 +3960,12 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
         .expect("run staging_system");
 }
 
-/// **Fence runs without `JeodPlugin`: dynamic-child-on-mass-only-parent
+/// **Fence runs without `AstrodynPlugin`: dynamic-child-on-mass-only-parent
 /// still panics.**
 ///
-/// `RootFrameEntityR` is inserted by `JeodPlugin::build` only — a
+/// `RootFrameEntityR` is inserted by `AstrodynPlugin::build` only — a
 /// low-level test (or a partial app) that runs `staging_system`
-/// directly without `JeodPlugin` does not have the resource. The
+/// directly without `AstrodynPlugin` does not have the resource. The
 /// fence's *root-equivalence equality fold* needs the resource (it
 /// folds `Earth.inertial`-style direct-child-of-root frames onto
 /// root before comparing parent/child integ frames), but the
@@ -3976,11 +3976,11 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
 /// reference to the root entity.
 ///
 /// This test pins that contract: stand up a mass-tree world *without*
-/// `JeodPlugin` (so `RootFrameEntityR` is absent), forge the
+/// `AstrodynPlugin` (so `RootFrameEntityR` is absent), forge the
 /// FrameEntityC presence pattern of "dynamic child on mass-only
 /// parent" (which the fence rejects with JEOD's `attach_validate_parent`
 /// diagnostic), invoke `staging_system` directly, and verify the same
-/// panic that fires with `JeodPlugin` still fires here.
+/// panic that fires with `AstrodynPlugin` still fires here.
 #[test]
 #[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
 fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
@@ -3995,11 +3995,11 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    // Crucially: NO `app.add_plugins(JeodPlugin);` — this regression
+    // Crucially: NO `app.add_plugins(AstrodynPlugin);` — this regression
     // pins the fence's behaviour when `RootFrameEntityR` is absent.
     // Register the AttachEvent / DetachEvent message resources by
     // hand so `staging_system` can read its event reader without
-    // panicking on "Requested resource does not exist". `JeodPlugin`
+    // panicking on "Requested resource does not exist". `AstrodynPlugin`
     // does this in `build`; this regression deliberately bypasses it.
     app.add_message::<AttachEvent<astrodyn::SelfRef, astrodyn::SelfRef>>();
     app.add_message::<DetachEvent>();
@@ -4074,7 +4074,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
     assert!(
         !app.world().contains_resource::<RootFrameEntityR>(),
         "fixture broken: RootFrameEntityR is unexpectedly present — \
-         this regression pins fence behaviour without JeodPlugin"
+         this regression pins fence behaviour without AstrodynPlugin"
     );
 
     app.world_mut()
@@ -4092,14 +4092,14 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
         .expect("run staging_system");
 }
 
-/// **Fence runs without `JeodPlugin`: legitimate mass-only attach
+/// **Fence runs without `AstrodynPlugin`: legitimate mass-only attach
 /// still succeeds.**
 ///
 /// Companion to the negative regression above: the structural
 /// fail-loud checks must reject misconfigurations regardless of
 /// `RootFrameEntityR`'s presence, but they must *not* reject
 /// legitimate mass-only attaches in the same low-level setup.
-/// `JeodPlugin`-less callers running pure mass-tree composition
+/// `AstrodynPlugin`-less callers running pure mass-tree composition
 /// (no frame tree) must still see the mass-tree composite recompute
 /// and integrator reset run as expected.
 ///
@@ -4114,10 +4114,10 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
-    // No `add_plugins(JeodPlugin)` — the fence must not depend on
+    // No `add_plugins(AstrodynPlugin)` — the fence must not depend on
     // `RootFrameEntityR` for the mass-only carve-out path. Register
     // the AttachEvent / DetachEvent message resources by hand
-    // (normally done by `JeodPlugin::build`) so `staging_system`'s
+    // (normally done by `AstrodynPlugin::build`) so `staging_system`'s
     // event reader can run.
     app.add_message::<AttachEvent<astrodyn::SelfRef, astrodyn::SelfRef>>();
     app.add_message::<DetachEvent>();
@@ -4147,7 +4147,7 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     assert!(
         !app.world().contains_resource::<RootFrameEntityR>(),
         "fixture broken: RootFrameEntityR is unexpectedly present — \
-         this regression pins fence behaviour without JeodPlugin"
+         this regression pins fence behaviour without AstrodynPlugin"
     );
 
     app.world_mut()
@@ -4168,7 +4168,7 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     let expected = parent_mass.mass + child_mass.mass;
     assert!(
         (composite_mass - expected).abs() < 1e-12,
-        "mass-only attach without JeodPlugin: parent composite mass \
+        "mass-only attach without AstrodynPlugin: parent composite mass \
          {composite_mass} != expected {expected} — the mass-tree \
          composite recompute did not run, indicating the attach was \
          rejected by the fence despite the mass-only carve-out."

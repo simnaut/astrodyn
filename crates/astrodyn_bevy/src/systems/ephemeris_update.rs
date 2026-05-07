@@ -1,4 +1,4 @@
-//! Bevy systems for [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate).
+//! Bevy systems for [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate).
 //!
 //! Planet-fixed rotation (RNP), DE4xx ephemeris updates, and tidal ΔC20.
 
@@ -315,7 +315,7 @@ pub fn tidal_update_system<P: Planet>(
 /// they orbit. See `register_planet_systems` for downstream multi-planet
 /// instantiation.
 ///
-/// Placed in `JeodSet::EphemerisUpdate`.
+/// Placed in `AstrodynSet::EphemerisUpdate`.
 #[allow(clippy::type_complexity)]
 pub fn ephemeris_update_system<P: Planet>(
     ephemeris: Option<Res<crate::EphemerisR>>,

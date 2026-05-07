@@ -339,25 +339,25 @@ These Python files come in three parsability tiers:
 
 ## JEOD Integration Loop (maps to FixedUpdate)
 
-JEOD's per-step pipeline collapses to **seven** `JeodSet` variants
+JEOD's per-step pipeline collapses to **seven** `AstrodynSet` variants
 (`src/sets.rs`), not nine. Two adjacent JEOD steps share a single set
 where the bundling is natural — gravity + atmosphere both run in
 `Environment`, and frame propagation rides inside the `Integration`
 system as its post-step rather than as a separate schedule pass.
 
 ```
-JEOD step                        →  JeodSet variant
-1. Time update                   →  JeodSet::TimeUpdate
-2. Ephemeris update              →  JeodSet::EphemerisUpdate
+JEOD step                        →  AstrodynSet variant
+1. Time update                   →  AstrodynSet::TimeUpdate
+2. Ephemeris update              →  AstrodynSet::EphemerisUpdate
 3. Gravity computation         ┐
-                               ├─→  JeodSet::Environment
+                               ├─→  AstrodynSet::Environment
 4. Atmosphere update           ┘
-5. Aero / SRP / gravity torque   →  JeodSet::Interaction
-6. Force collection              →  JeodSet::ForceCollection
+5. Aero / SRP / gravity torque   →  AstrodynSet::Interaction
+6. Force collection              →  AstrodynSet::ForceCollection
 7. State integration           ┐
-                               ├─→  JeodSet::Integration
+                               ├─→  AstrodynSet::Integration
 8. Frame propagation           ┘    (post-step inside the integration system)
-9. Derived states                →  JeodSet::DerivedState
+9. Derived states                →  AstrodynSet::DerivedState
 ```
 
 Multi-stage integrators (RK4 = 4 stages) run as an inner loop within the
@@ -601,7 +601,7 @@ mismatches before they become silent numerical bugs.
 
 ```rust
 use bevy::prelude::*;
-use astrodyn_bevy::prelude::*;        // JeodPlugin, typed Components, JeodSet
+use astrodyn_bevy::prelude::*;        // AstrodynPlugin, typed Components, AstrodynSet
 use astrodyn_bevy::recipes::*;        // earth, orbital_elements, vehicle, scenarios
 ```
 

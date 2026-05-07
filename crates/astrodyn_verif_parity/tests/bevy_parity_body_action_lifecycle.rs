@@ -65,7 +65,7 @@ use astrodyn::{
     TranslationalState,
 };
 use astrodyn_bevy::{
-    BodyActionEvent, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
+    AstrodynPlugin, BodyActionEvent, GravityControlsC, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
@@ -142,7 +142,7 @@ fn build_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -362,7 +362,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
     // `tier3_sim_dyncomp_run2`'s identical configuration converges to
     // ~1.4e-6 m / ~1.5e-9 m/s in `tolerances`; over a 5-minute run the
     // position error doesn't exceed ~1e-5 m. The Bevy adapter inherits
-    // the same physics through `JeodPlugin`, so we hold a 5%-margined
+    // the same physics through `AstrodynPlugin`, so we hold a 5%-margined
     // 1.0e-4 m / 1.0e-7 m/s tolerance — strict enough to catch a
     // lifecycle-API regression that introduces visible drift.
     let tol_pos = 1.0e-4_f64;
@@ -437,7 +437,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
         Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     };
     use astrodyn_bevy::{
-        Abm4StateC, DynamicsConfigC, GravitySourceC, IntegratorTypeC, JeodPlugin,
+        Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
         SourceInertialPositionC,
     };
 
@@ -449,7 +449,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -592,7 +592,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
         Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     };
     use astrodyn_bevy::{
-        Abm4StateC, DynamicsConfigC, GravitySourceC, IntegratorTypeC, JeodPlugin,
+        Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
         SourceInertialPositionC,
     };
 
@@ -604,7 +604,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()
@@ -769,7 +769,7 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()

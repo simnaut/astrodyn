@@ -41,7 +41,7 @@ use astrodyn::{
     EARTH, MOON,
 };
 use astrodyn_bevy::{
-    FrameEntityC, FrameSwitchesC, IntegSourceC, JeodPlugin, PlanetBundle, RotationalStateC,
+    AstrodynPlugin, FrameEntityC, FrameSwitchesC, IntegSourceC, PlanetBundle, RotationalStateC,
     SourceInertialVelocityC, SourceMutator, TranslationalStateC, VehicleConfigBevyExt,
 };
 use astrodyn_runner::Simulation;
@@ -330,7 +330,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let earth = app
         .world_mut()

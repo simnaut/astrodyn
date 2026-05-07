@@ -28,7 +28,7 @@ fn tier3_bevy_point_mass_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()

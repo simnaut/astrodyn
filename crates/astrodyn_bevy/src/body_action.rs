@@ -85,9 +85,9 @@
 //!
 //! # Scheduling
 //!
-//! [`body_action_system`] is wired by [`crate::JeodPlugin`] to run in
-//! the `FixedUpdate` schedule between [`crate::JeodSet::TimeUpdate`]
-//! and [`crate::JeodSet::EphemerisUpdate`]. That ordering matches
+//! [`body_action_system`] is wired by [`crate::AstrodynPlugin`] to run in
+//! the `FixedUpdate` schedule between [`crate::AstrodynSet::TimeUpdate`]
+//! and [`crate::AstrodynSet::EphemerisUpdate`]. That ordering matches
 //! JEOD: actions resolve before ephemeris / gravity / integration
 //! consume the new state.
 //!
@@ -102,7 +102,7 @@
 //! time messages still land before any pipeline consumer reads the
 //! body's mutable state: the FixedUpdate intake on the first tick
 //! observes them and applies before
-//! [`crate::JeodSet::EphemerisUpdate`].
+//! [`crate::AstrodynSet::EphemerisUpdate`].
 //!
 //! Both [`body_action_system`] and [`crate::mass_update_system`] live
 //! in that same TimeUpdate→EphemerisUpdate gap, so the plugin pins
@@ -131,7 +131,7 @@ use crate::components::{
 /// (`BodyActionsR<P>` queue + `body_action_intake_system::<P>` +
 /// `body_action_system::<P>`) has been registered with the Bevy `App`.
 ///
-/// `crate::JeodPlugin::build` inserts `TypeId::of::<astrodyn::Earth>()`;
+/// `crate::AstrodynPlugin::build` inserts `TypeId::of::<astrodyn::Earth>()`;
 /// `crate::register_planet_systems::<P>` inserts `TypeId::of::<P>()`
 /// when wiring an additional planet pipeline. The
 /// [`BodyActionEvent::Add`] writer surfaces — both
@@ -152,7 +152,7 @@ pub struct RegisteredPlanetsR {
 impl RegisteredPlanetsR {
     /// Record that planet `P`'s body-action pipeline has been wired.
     /// Called by `register_planet_systems::<P>` (and by
-    /// `JeodPlugin::build` for Earth).
+    /// `AstrodynPlugin::build` for Earth).
     #[inline]
     pub fn register<P: Planet>(&mut self) {
         self.planets.insert(TypeId::of::<P>());
@@ -294,7 +294,7 @@ impl BodyActionEvent {
     /// `P`'s [`BodyActionsR<P>`] queue. The `<P>` witness routes the
     /// pending entry to the per-planet intake system registered by
     /// [`crate::register_planet_systems::<P>`] (or by
-    /// [`crate::JeodPlugin`] for `P = astrodyn::Earth`).
+    /// [`crate::AstrodynPlugin`] for `P = astrodyn::Earth`).
     ///
     /// A translational `BodyAction` requires the subject entity to
     /// carry a matching `TranslationalStateC<P>` slot — a queue
@@ -328,7 +328,7 @@ impl BodyActionEvent {
 /// in insertion order.
 ///
 /// One queue exists per planet `<P>` registered with the plugin:
-/// [`crate::JeodPlugin`] inserts `BodyActionsR<astrodyn::Earth>`, and
+/// [`crate::AstrodynPlugin`] inserts `BodyActionsR<astrodyn::Earth>`, and
 /// [`crate::register_planet_systems::<P>`] inserts the matching
 /// `BodyActionsR<P>` for any additional planet. Mission code does
 /// not need to touch this resource directly — send a
@@ -489,7 +489,7 @@ pub fn body_action_unregistered_planet_fence_system(
                  during `App` setup for the planet whose body this action targets, \
                  before writing `BodyActionEvent::add_for::<P>` (or use \
                  `BodyActionCommandsExt::add_body_action_for::<P>`, which performs \
-                 the same registration check at the call site). `JeodPlugin::build` \
+                 the same registration check at the call site). `AstrodynPlugin::build` \
                  pre-registers `astrodyn::Earth`; additional planets must be \
                  registered explicitly.",
             );
@@ -803,9 +803,9 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
                      buffer would never be drained for this `<P>` and the action would \
                      silently age out of the double-buffer. \
                      Fix: call `astrodyn_bevy::register_planet_systems::<{planet}>(&mut app)` \
-                     during `App` setup (after `app.add_plugins(JeodPlugin)`), before \
+                     during `App` setup (after `app.add_plugins(AstrodynPlugin)`), before \
                      queuing actions for `{planet}`-integrated bodies. \
-                     `JeodPlugin::build` pre-registers `astrodyn::Earth`; additional \
+                     `AstrodynPlugin::build` pre-registers `astrodyn::Earth`; additional \
                      planets must be registered explicitly.",
                     planet = std::any::type_name::<P>(),
                 );
@@ -872,7 +872,7 @@ mod tests {
         app.add_message::<BodyActionEvent>();
         // The unit tests in this module exercise the Earth-tagged
         // queue path. Per-planet `BodyActionsR<P>` registration in
-        // production lives in `JeodPlugin::build` (Earth) and
+        // production lives in `AstrodynPlugin::build` (Earth) and
         // `register_planet_systems::<P>` (other planets); here we
         // wire the Earth instantiation manually to keep the unit
         // tests free of the full plugin scaffolding.

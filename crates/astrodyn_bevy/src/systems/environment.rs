@@ -1,4 +1,4 @@
-//! Bevy systems for [`JeodSet::Environment`](crate::JeodSet::Environment).
+//! Bevy systems for [`AstrodynSet::Environment`](crate::AstrodynSet::Environment).
 //!
 //! Gravity computation (point-mass + spherical harmonics + relativistic
 //! corrections + tidal ΔC20) and atmosphere evaluation.
@@ -188,7 +188,7 @@ pub fn atmosphere_update_system<P: Planet>(
             if !query.is_empty() {
                 panic!(
                     "MET atmosphere requires SimulationTimeR resource for TJT. \
-                     Ensure JeodPlugin is added (it provides SimulationTimeR)."
+                     Ensure AstrodynPlugin is added (it provides SimulationTimeR)."
                 );
             }
         }

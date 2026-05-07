@@ -13,9 +13,9 @@ use astrodyn::{
     MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
-    Abm4StateC, AttachEvent, DetachEvent, DynamicsConfigC, GravityControlsC, GravitySourceC,
-    IntegratorTypeC, JeodPlugin, MassBodyIdC, MassPropertiesC, MassTreeR, SourceInertialPositionC,
-    TranslationalStateC,
+    Abm4StateC, AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GravityControlsC,
+    GravitySourceC, IntegratorTypeC, MassBodyIdC, MassPropertiesC, MassTreeR,
+    SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -62,7 +62,7 @@ fn build_two_body_app(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_a = tree.add_body("BodyA".into(), MassProperties::new(1000.0));
@@ -225,7 +225,7 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_top = tree.add_body("Top".into(), MassProperties::new(1000.0));

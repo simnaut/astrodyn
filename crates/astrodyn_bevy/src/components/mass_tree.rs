@@ -158,7 +158,7 @@ pub struct MassPointRef(pub Entity);
 /// each step lives at
 /// [`crate::kinematic_propagation::propagate_state_from_root_system`]
 /// (design-doc Section 15.3) and runs earlier in
-/// `JeodSet::ForceCollection` so the wrench walk reads live
+/// `AstrodynSet::ForceCollection` so the wrench walk reads live
 /// attitudes; non-root children's `TranslationalStateC` /
 /// `RotationalStateC` are overwritten each step with the derived
 /// value.

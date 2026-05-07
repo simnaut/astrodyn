@@ -15,7 +15,7 @@ use astrodyn::{
     JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
-    DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC, JeodPlugin,
+    AstrodynPlugin, DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC,
     MassPropertiesC, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -62,7 +62,7 @@ fn build_app() -> (App, Entity, Entity) {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
 
     // Unified JEOD plugin: sets up system ordering, gravity, integration, time, etc.
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     // Spawn planet entity (gravity source at origin).
     let planet = app
@@ -225,7 +225,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let planet = app
         .world_mut()

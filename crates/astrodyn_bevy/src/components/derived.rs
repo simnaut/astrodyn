@@ -12,7 +12,7 @@ use bevy::prelude::*;
 ///
 /// The `gravity_source` entity is queried for `GravitySourceC` to obtain `mu`.
 /// Presence of this component + `OrbitalElementsC` on an entity enables
-/// per-step orbital elements computation in `JeodSet::DerivedState`.
+/// per-step orbital elements computation in `AstrodynSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
 #[require(OrbitalElementsC::<Earth>)]
 pub struct OrbitalElementsConfigC {
@@ -23,7 +23,7 @@ pub struct OrbitalElementsConfigC {
 /// Configuration for Euler angle decomposition.
 ///
 /// Presence of this component + `EulerAnglesC` on an entity enables
-/// per-step Euler angle computation in `JeodSet::DerivedState`.
+/// per-step Euler angle computation in `AstrodynSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
 #[require(EulerAnglesC)]
 pub struct EulerAnglesConfigC {
@@ -36,7 +36,7 @@ pub struct EulerAnglesConfigC {
 /// The `planet` entity is queried for `PlanetFixedRotationC` and `PlanetC`
 /// to obtain the rotation matrix and ellipsoid radii.
 /// Presence of this component + `GeodeticStateC` on an entity enables
-/// per-step geodetic computation in `JeodSet::DerivedState`.
+/// per-step geodetic computation in `AstrodynSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
@@ -95,7 +95,7 @@ pub struct SolarBetaC(pub f64);
 ///
 /// Requires `SunMarker` and `MoonMarker` entities to exist in the world.
 /// Presence of this component + `EarthLightingStateC` on an entity enables
-/// per-step earth lighting computation in `JeodSet::DerivedState`.
+/// per-step earth lighting computation in `AstrodynSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
 #[require(EarthLightingStateC)]
 pub struct EarthLightingConfigC {

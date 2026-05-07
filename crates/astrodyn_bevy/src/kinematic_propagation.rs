@@ -29,8 +29,8 @@
 //! `crates/astrodyn_runner/src/simulation/step/mod.rs`:
 //!
 //! - Pre-integration (this fn) — pinned between
-//!   [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
-//!   and [`JeodSet::Environment`](crate::JeodSet::Environment),
+//!   [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate)
+//!   and [`AstrodynSet::Environment`](crate::AstrodynSet::Environment),
 //!   **after**
 //!   [`composite_mass_system`](crate::mass_tree::composite_mass_system)
 //!   (which writes the live composite CoM into each entity's
@@ -38,23 +38,23 @@
 //!   [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
 //!   (so a frame-attached mass-tree root has its parent-frame-derived
 //!   state available before the kinematic walk reads it). Pinning the
-//!   walk before `JeodSet::Environment` lets gravity / atmosphere /
+//!   walk before `AstrodynSet::Environment` lets gravity / atmosphere /
 //!   interaction force producers (drag, SRP, gravity-torque) read
 //!   freshly-derived child state rather than a one-tick-stale
 //!   composition. Upstream of
 //!   [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
 //!   by construction (wrench is in
-//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection),
+//!   [`AstrodynSet::ForceCollection`](crate::AstrodynSet::ForceCollection),
 //!   which runs after Environment + Interaction); the wrench-aggregation
 //!   guard that requires `RotationalStateC` on every member of a
 //!   rotated chain remains pure defense-in-depth — every kinematic
 //!   child gets its `RotationalStateC` written before the guard
 //!   checks for it.
 //! - Post-integration ([`propagate_state_from_root_post_integration_system`])
-//!   — runs in [`JeodSet::Integration`](crate::JeodSet::Integration),
+//!   — runs in [`AstrodynSet::Integration`](crate::AstrodynSet::Integration),
 //!   after `frame_switch_system` and after the post-integration
 //!   frame-attached propagation, and before
-//!   [`JeodSet::DerivedState`](crate::JeodSet::DerivedState). Without
+//!   [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState). Without
 //!   this pass, kinematic descendants of a freshly-integrated (or
 //!   freshly frame-attached) root would lag by one tick — derived
 //!   states (`orbital_elements_system`, `geodetic_system`, …) would
@@ -117,10 +117,10 @@ use crate::mass_tree::MassTreeView;
 /// (mass-tree composite recompute) and
 /// [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
 /// (frame-attached parent state), and **before**
-/// [`JeodSet::Environment`](crate::JeodSet::Environment) so gravity /
+/// [`AstrodynSet::Environment`](crate::AstrodynSet::Environment) so gravity /
 /// atmosphere observe the freshly-derived child state, and ahead of
 /// [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
-/// in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
+/// in [`AstrodynSet::ForceCollection`](crate::AstrodynSet::ForceCollection)
 /// (which the pre-Environment placement satisfies by construction).
 /// The plugin wires this ordering automatically; tests that compose
 /// a custom subset of systems must replicate it.
@@ -274,7 +274,7 @@ pub fn propagate_state_from_root_system<P: Planet>(
         // First-tick-after-attach (marker not yet installed) is
         // handled by the next tick's propagation: `wrench_aggregation_system`
         // runs immediately after this system in
-        // `JeodSet::ForceCollection`, observes the `MassChildOf`
+        // `AstrodynSet::ForceCollection`, observes the `MassChildOf`
         // edge, and inserts `KinematicChildC` via Commands. The
         // marker becomes visible on the *next* schedule run, at
         // which point the steady-state writeback covers the entity.
@@ -322,7 +322,7 @@ pub fn propagate_state_from_root_system<P: Planet>(
 /// (or freshly frame-attached) root would lag by one tick — the
 /// pre-integration sweep observed the *previous* tick's integrated
 /// root. Derived-state consumers in
-/// [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) would then
+/// [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState) would then
 /// observe stale child state.
 ///
 /// Distinct fn from the pre-integration sibling so Bevy's

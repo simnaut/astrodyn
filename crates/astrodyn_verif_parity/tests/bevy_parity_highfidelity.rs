@@ -36,7 +36,7 @@ fn tier3_bevy_sh4x4_rnp() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -141,7 +141,7 @@ fn tier3_bevy_tidal_sh4x4() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()
@@ -277,7 +277,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
-    app.add_plugins(astrodyn_bevy::JeodPlugin);
+    app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
         .world_mut()

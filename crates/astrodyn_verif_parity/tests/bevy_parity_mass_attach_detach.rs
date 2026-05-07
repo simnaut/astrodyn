@@ -413,7 +413,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
     app.add_message::<AttachEvent<astrodyn::SelfRef, astrodyn::SelfRef>>();
     app.add_message::<DetachEvent>();
     // composite first, then staging — matches the production schedule
-    // ordering in JeodPlugin::build (composite_mass_system runs in
+    // ordering in AstrodynPlugin::build (composite_mass_system runs in
     // the EphemerisUpdate stage, staging_system in the Interaction
     // stage).
     app.add_systems(

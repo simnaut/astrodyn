@@ -13,7 +13,7 @@ use astrodyn::{
     TranslationalState,
 };
 use astrodyn_bevy::{
-    DynamicsConfigC, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
+    AstrodynPlugin, DynamicsConfigC, GravityControlsC, MassPropertiesC, RotationalStateC,
     TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
@@ -27,7 +27,7 @@ fn new_bevy_app(dt: f64) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
     app
 }
 

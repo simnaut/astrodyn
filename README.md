@@ -37,7 +37,7 @@ for the layered-architecture rules.
   `vehicle`, `scenarios`. Mission-facing only; the JEOD-source-backed
   Tier 3 verification scaffolding lives in `astrodyn_verif_jeod`.
 - Per-stage pipeline functions (`accumulate_gravity`,
-  `validate_body`, …) that mirror the `JeodSet` schedule slot the
+  `validate_body`, …) that mirror the `AstrodynSet` schedule slot the
   Bevy adapter exposes.
 - Frame-tree orchestration helpers shared by `astrodyn_bevy` and
   `astrodyn_runner`: `SourceFrameIds` (root + per-source frame IDs),

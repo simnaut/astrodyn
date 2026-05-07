@@ -39,8 +39,8 @@
 //! ### Schedule placement
 //!
 //! - [`frame_attach_system`] is pinned between
-//!   [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate) and
-//!   [`JeodSet::Environment`](crate::JeodSet::Environment) so
+//!   [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate) and
+//!   [`AstrodynSet::Environment`](crate::AstrodynSet::Environment) so
 //!   attach/detach events take effect on the same tick they were
 //!   dispatched and the propagation pass below sees the freshly-
 //!   processed events. Mirrors the runner's pre-stage-3a event
@@ -48,10 +48,10 @@
 //! - [`propagate_frame_attached_state_system`] runs *after*
 //!   `frame_attach_system` (so freshly-attached bodies pick up the
 //!   frame composition the same tick they were attached) and
-//!   *before* [`JeodSet::Environment`](crate::JeodSet::Environment)
+//!   *before* [`AstrodynSet::Environment`](crate::AstrodynSet::Environment)
 //!   so gravity / atmosphere read the parent-frame-derived body
 //!   state rather than a one-tick-stale composition. Pre-Environment
-//!   placement also keeps [`JeodSet::Interaction`](crate::JeodSet::Interaction)
+//!   placement also keeps [`AstrodynSet::Interaction`](crate::AstrodynSet::Interaction)
 //!   consumers (drag, SRP, gravity-torque) and the pre-integration
 //!   kinematic walk
 //!   ([`propagate_state_from_root_system`](crate::propagate_state_from_root_system))
@@ -61,12 +61,12 @@
 //!   Mirrors stage 3a of the runner's `Simulation::step_internal` in
 //!   `crates/astrodyn_runner/src/simulation/step/mod.rs`.
 //! - [`propagate_frame_attached_state_post_integration_system`] runs
-//!   in [`JeodSet::Integration`](crate::JeodSet::Integration) *after*
+//!   in [`AstrodynSet::Integration`](crate::AstrodynSet::Integration) *after*
 //!   `sync_body_to_frame_system` and `frame_switch_system` (so the
 //!   frame-tree state the kernel reads reflects the just-finished
 //!   intra-step updates: ephemeris advance, planet-fixed rotation
 //!   update, frame-switch reparent), and *before*
-//!   [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) (so
+//!   [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState) (so
 //!   `orbital_elements_system` / `geodetic_system` / `lvlh_system` /
 //!   `solar_beta_system` / `earth_lighting_system` observe the
 //!   parent reference frame's *current* state rather than a
@@ -97,8 +97,8 @@ use glam::DVec3;
 ///
 /// Bevy adapter for `Simulation::attach_to_frame` /
 /// `Simulation::detach_from_frame`. Schedule placement: pinned
-/// between [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
-/// and [`JeodSet::Environment`](crate::JeodSet::Environment) so
+/// between [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate)
+/// and [`AstrodynSet::Environment`](crate::AstrodynSet::Environment) so
 /// attach/detach events take effect on the same tick they're
 /// dispatched and the per-tick propagation pass downstream sees the
 /// freshly-processed events.
@@ -377,11 +377,11 @@ pub fn frame_attach_system<P: Planet>(
 /// Bevy adapter for `Simulation::propagate_frame_attached_state`. Runs
 /// after `frame_attach_system` (so events processed this tick take
 /// effect immediately) and before
-/// [`JeodSet::Environment`](crate::JeodSet::Environment) so gravity
+/// [`AstrodynSet::Environment`](crate::AstrodynSet::Environment) so gravity
 /// and atmosphere read the freshly-derived parent-frame composition
 /// rather than a one-tick-stale body state. The pre-Environment slot
 /// also fronts every downstream consumer that reads body state
-/// in-tick: [`JeodSet::Interaction`](crate::JeodSet::Interaction)
+/// in-tick: [`AstrodynSet::Interaction`](crate::AstrodynSet::Interaction)
 /// (drag / SRP / gravity-torque), the pre-integration kinematic
 /// walk ([`propagate_state_from_root_system`](crate::propagate_state_from_root_system)),
 /// and [`integration_system`](crate::systems::integration_system)
@@ -683,7 +683,7 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
 /// Re-runs the same parent-frame → body composition after
 /// `integration_system` + `sync_body_to_frame_system` + `frame_switch_system`
 /// have landed, so any consumer reading body state in
-/// [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) sees a
+/// [`AstrodynSet::DerivedState`](crate::AstrodynSet::DerivedState) sees a
 /// frame-attached body whose state reflects the just-finished frame-tree
 /// updates and the parent reference frame's current state. Mirrors
 /// stage 8c of the runner's `Simulation::step_internal` (see
@@ -751,7 +751,7 @@ mod tests {
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, KinematicChildC,
         MassChildOf, MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
     };
-    use crate::JeodPlugin;
+    use crate::AstrodynPlugin;
     use astrodyn::{MassProperties, RotationalState, TranslationalState};
     use bevy::prelude::FixedUpdate;
     use bevy::time::{Fixed, Time};
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn attach_event_inserts_marker() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -820,7 +820,7 @@ mod tests {
     #[test]
     fn detach_event_removes_marker() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -862,7 +862,7 @@ mod tests {
     #[should_panic(expected = "already had a FrameAttachEvent processed earlier in this tick")]
     fn duplicate_attach_event_in_same_tick_panics() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -895,7 +895,7 @@ mod tests {
     #[should_panic(expected = "already had a FrameDetachEvent processed earlier in this tick")]
     fn duplicate_detach_event_in_same_tick_panics() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -930,7 +930,7 @@ mod tests {
     #[should_panic(expected = "is not a frame entity")]
     fn attach_event_with_non_frame_parent_panics() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         let body = spawn_test_body(&mut app);
         // Bare entity — no FrameTransC / FrameRotC / FrameAngVelC.
@@ -964,7 +964,7 @@ mod tests {
     #[should_panic(expected = "is not a valid body entity")]
     fn attach_event_with_non_body_target_panics() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         // Bare entity — no TranslationalStateC. Stands in for a
         // caller that mistakenly passed a frame entity, a source
@@ -995,7 +995,7 @@ mod tests {
     #[should_panic(expected = "is not a valid body entity")]
     fn attach_event_with_frame_entity_target_panics() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         // Use the root frame as the (invalid) body target. The root
         // frame is a frame entity (carries the FrameTransC / FrameRotC
@@ -1038,7 +1038,7 @@ mod tests {
     #[test]
     fn frame_attached_parent_propagates_before_kinematic_child() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JeodPlugin));
+        app.add_plugins((MinimalPlugins, AstrodynPlugin));
 
         // Use the root frame (which sits at the origin and has zero
         // velocity) as the parent reference frame. The captured offset

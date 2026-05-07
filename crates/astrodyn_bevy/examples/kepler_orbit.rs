@@ -16,8 +16,8 @@
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{GravityControl, GravityControls, MassProperties, TranslationalState};
 use astrodyn_bevy::{
-    DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    JeodPlugin, JeodSet, MassPropertiesC, SourceInertialPositionC, TotalForceC,
+    AstrodynPlugin, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
     TranslationalStateC,
 };
 use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
@@ -80,9 +80,9 @@ fn main() {
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(JeodPlugin)
+        .add_plugins(AstrodynPlugin)
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, print_state.after(JeodSet::Integration))
+        .add_systems(FixedUpdate, print_state.after(AstrodynSet::Integration))
         .insert_resource(StepCounter(0))
         .insert_resource(MaxSteps(max_steps))
         .run();

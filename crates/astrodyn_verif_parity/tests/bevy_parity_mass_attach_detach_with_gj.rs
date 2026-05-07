@@ -16,8 +16,8 @@ use astrodyn::{
     GravitySource, IntegratorType, MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
-    AttachEvent, DetachEvent, DynamicsConfigC, GaussJacksonStateC, GravityControlsC,
-    GravitySourceC, IntegratorTypeC, JeodPlugin, MassBodyIdC, MassPropertiesC, MassTreeR,
+    AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GaussJacksonStateC,
+    GravityControlsC, GravitySourceC, IntegratorTypeC, MassBodyIdC, MassPropertiesC, MassTreeR,
     SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -52,7 +52,7 @@ fn build_two_body_app(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     // Mass tree resource — required for `staging_system` to be a no-op-free
     // path through the attach/detach handler. Both bodies share this tree.
@@ -173,9 +173,9 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
 
     // Run one more step so staging_system processes the event before
     // integration. `staging_system` is registered with
-    // `.after(JeodSet::Environment).before(JeodSet::Interaction)` in
-    // `JeodPlugin::build` (`src/lib.rs`) — there is no dedicated
-    // `JeodSet::Staging` variant; staging is wedged between Environment
+    // `.after(AstrodynSet::Environment).before(AstrodynSet::Interaction)` in
+    // `AstrodynPlugin::build` (`src/lib.rs`) — there is no dedicated
+    // `AstrodynSet::Staging` variant; staging is wedged between Environment
     // and Interaction so mass-tree changes affect the current step's
     // interactions and integration.
     step_bevy(&mut app, 1, sim_dt);
@@ -211,7 +211,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
-    app.add_plugins(JeodPlugin);
+    app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
     let id_top = tree.add_body("Top".into(), MassProperties::new(1000.0));

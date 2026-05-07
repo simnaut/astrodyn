@@ -1,17 +1,17 @@
 //! Schedule-order regression: a frame-attached body's
-//! `JeodSet::Environment` consumers (gravity, atmosphere) must observe
+//! `AstrodynSet::Environment` consumers (gravity, atmosphere) must observe
 //! the post-`propagate_frame_attached_state_system` body state, not a
 //! one-tick-stale composition.
 //!
 //! Pre-fix: the per-tick frame-attached propagation lived in
-//! `JeodSet::ForceCollection`, so gravity (in `JeodSet::Environment`,
+//! `AstrodynSet::ForceCollection`, so gravity (in `AstrodynSet::Environment`,
 //! which runs strictly before ForceCollection) and the
-//! `JeodSet::Interaction` force producers (drag, SRP, gravity-torque)
+//! `AstrodynSet::Interaction` force producers (drag, SRP, gravity-torque)
 //! read the body's pre-tick `TranslationalStateC` — for a body that
 //! had just been frame-attached this tick, that meant the default-zero
 //! state, not the parent-frame-derived offset. The fix moves the
-//! propagation pass between `JeodSet::EphemerisUpdate` and
-//! `JeodSet::Environment` so all downstream consumers see the
+//! propagation pass between `AstrodynSet::EphemerisUpdate` and
+//! `AstrodynSet::Environment` so all downstream consumers see the
 //! freshly-derived state on the same tick.
 //!
 //! This test exercises the gravity path because it is the simplest

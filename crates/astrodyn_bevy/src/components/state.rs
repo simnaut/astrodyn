@@ -80,7 +80,7 @@ use bevy::prelude::*;
 /// read or write `TranslationalStateC<P>` (gravity, atmosphere, drag,
 /// SRP, integration, frame-switch, derived states, mass-tree staging,
 /// kinematic and frame-attached propagation, etc.) are themselves
-/// generic over `<P: Planet>`. [`crate::JeodPlugin`] registers the
+/// generic over `<P: Planet>`. [`crate::AstrodynPlugin`] registers the
 /// `<astrodyn::Earth>` instantiation at startup, preserving the
 /// single-planet pipeline for missions that don't need multi-planet
 /// integration. A multi-planet mission calls

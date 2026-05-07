@@ -1,11 +1,11 @@
 //! Glue: frame-tree source / body / pfix registration and per-step
 //! source ↔ body ↔ frame-entity synchronization.
 //!
-//! These systems run outside the seven [`JeodSet`](crate::JeodSet)
+//! These systems run outside the seven [`AstrodynSet`](crate::AstrodynSet)
 //! pipeline stages — they wire the frame-tree ECS hierarchy that the
 //! pipeline systems read. Spawned in `Startup` / `PreUpdate` /
-//! `FixedUpdate` (before [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate))
-//! by [`crate::JeodPlugin`] so late-spawned entities are picked up
+//! `FixedUpdate` (before [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate))
+//! by [`crate::AstrodynPlugin`] so late-spawned entities are picked up
 //! before any pipeline consumer reads their state.
 
 use astrodyn::Planet;
@@ -291,7 +291,7 @@ pub fn register_pfix_frames_system<P: Planet>(
 ///    spawned this way via `SunBundle` / `MoonBundle`).
 /// 3. Otherwise leave the frame entity's velocity unchanged.
 ///
-/// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
+/// Runs in `AstrodynSet::EphemerisUpdate` after `ephemeris_update_system`
 /// (which writes the ECS components from DE4xx) so the frame-entity
 /// sync sees the latest values.
 #[allow(clippy::type_complexity)]
@@ -353,7 +353,7 @@ pub fn sync_source_to_frame_system<P: Planet>(
 /// is then queryable via `Query<&ChildOf>` on the body's frame entity
 /// (no explicit integration-frame handle component).
 ///
-/// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
+/// Runs at `Startup` and again before `AstrodynSet::EphemerisUpdate` to
 /// catch dynamically-spawned bodies. Filters by
 /// `Without<FrameEntityC>` so the registration is one-time per body.
 #[allow(clippy::type_complexity)]
@@ -481,7 +481,7 @@ pub fn register_body_frames_system<P: Planet>(
 ///
 /// Runs in the same scheduling slots as
 /// [`register_body_frames_system`] (Startup, PreUpdate, FixedUpdate
-/// before `JeodSet::EphemerisUpdate`) so the invariant is restored
+/// before `AstrodynSet::EphemerisUpdate`) so the invariant is restored
 /// before any consumer (gravity, force collection, integration) reads
 /// the back-pointer this tick.
 ///
@@ -529,7 +529,7 @@ pub fn sync_body_mass_point_ref_system(
 /// [`crate::frame_param::FrameOrigin`] queries see current body state
 /// when evaluating switch distances and computing cross-frame state.
 ///
-/// Runs in `JeodSet::Integration` after `integration_system` and
+/// Runs in `AstrodynSet::Integration` after `integration_system` and
 /// before `frame_switch_system`.
 ///
 /// The `With<DynamicsConfigC>` filter narrows the iteration to actual

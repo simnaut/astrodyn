@@ -1,5 +1,5 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
-//! Bevy system for [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection).
+//! Bevy system for [`AstrodynSet::ForceCollection`](crate::AstrodynSet::ForceCollection).
 //!
 //! Aggregates per-step force / torque contributions from the interaction
 //! systems into [`TotalForceC`] / [`FrameDerivativesC`] for the integrator.

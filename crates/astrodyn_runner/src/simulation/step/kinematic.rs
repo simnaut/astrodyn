@@ -30,7 +30,7 @@
 //! Called from `Simulation::step_internal` **after** stage 3 (per-body
 //! mass-property recompute, so `composite_properties.position` is
 //! live) and **before** stage 6 (interactions / force collection).
-//! This matches the Bevy adapter's `JeodSet::ForceCollection`
+//! This matches the Bevy adapter's `AstrodynSet::ForceCollection`
 //! placement: kinematic children's attitudes are installed before any
 //! per-step physics that would consume them. The runner has no upward
 //! wrench-aggregation walk yet, so the placement is mostly about

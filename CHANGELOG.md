@@ -28,7 +28,7 @@ Initial public release. The original phased implementation plan
   shadow), `ForceCollection`, `Integration` (with frame propagation
   as the integrator's post-step), `DerivedState`. Single API surface
   for ECS adapters.
-- **Bevy adapter** (`astrodyn_bevy`): `JeodPlugin`, `JeodSet` system-set
+- **Bevy adapter** (`astrodyn_bevy`): `AstrodynPlugin`, `AstrodynSet` system-set
   enum, component bundles, and a thin systems layer that delegates
   to `astrodyn`.
 - **Standalone runner** (`astrodyn_runner`): `Simulation` propagator that
