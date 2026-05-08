@@ -38,6 +38,20 @@
 //! per-tick state as `astrodyn_runner::Simulation::step_until` for the same
 //! scenario. Bit-identity is the contract; see
 //! `crates/astrodyn_verif_parity/tests/bevy_parity_*.rs`.
+//!
+//! ## Single-planet limitation
+//!
+//! The bridge is **single-planet today**: every body in the scenario
+//! integrates in the `<P>`-tagged
+//! [`PlanetInertial`](astrodyn::PlanetInertial) frame chosen at the
+//! `populate_app::<P>` call site. Multi-planet scenarios that need
+//! Earth-and-Moon (Apollo, `earth_moon`) or Heliocentric variants
+//! (Mercury, Mars, broad `planetary`) integrate in two distinct
+//! planet-inertial frames and don't fit the generic. Those scenarios
+//! are tracked as `KNOWN_PARITY_GAPS` in
+//! `crates/astrodyn_verif_parity/tests/parity_coverage.rs` until a
+//! non-generic dispatch lands. Until then, mission code (and the
+//! parity trait) must keep `<P>` consistent across the whole scenario.
 
 use bevy::prelude::*;
 use glam::DVec3;
@@ -78,17 +92,22 @@ pub struct ScenarioHandles {
 /// by rustdoc).
 ///
 /// `<P: Planet>` selects the planet whose
-/// [`PlanetInertial`](astrodyn::PlanetInertial) frame the bodies integrate
-/// in. Today every shipped scenario is single-planet; multi-planet
-/// scenarios (`apollo*`, `earth_moon`, …) are tracked as bridge-side gaps.
+/// [`PlanetInertial`](astrodyn::PlanetInertial) frame **every** body in the
+/// scenario integrates in. Multi-planet scenarios that integrate in two
+/// distinct planet-inertial frames (`apollo*`, `earth_moon`, `mars_orbit`,
+/// `mercury`, `planetary`) don't fit this generic — they're tracked as
+/// `KNOWN_PARITY_GAPS` entries until a non-generic dispatch lands. See
+/// the module-level "Single-planet limitation" docstring for the full
+/// constraint.
 ///
 /// # Returns
 ///
 /// On success, [`ScenarioHandles`] keyed parallel to the builder's
-/// `sources` / `bodies` vecs. On failure, the same
-/// [`Vec<ValidationError>`](astrodyn::ValidationError) shape that
-/// `Simulation::from_builder` returns — both runtimes share the same
-/// validation pass via runner-side `Simulation::validate()` first.
+/// `sources` / `bodies` vecs. The `Result` carries the same
+/// [`Vec<ValidationError>`](astrodyn::ValidationError) shape
+/// `Simulation::from_builder` uses, reserved for a future Bevy-native
+/// validator (see the trait method's `# Validation` section for what
+/// `populate_app` does and does not check today).
 ///
 /// # Side effects
 ///
@@ -99,10 +118,22 @@ pub struct ScenarioHandles {
 pub trait SimulationBuilderBevyExt: Sized {
     /// Materialize this builder into the given Bevy [`App`] under planet `P`.
     ///
-    /// Runs `Simulation::from_builder` first (so any validation error is
-    /// surfaced before any Bevy mutation), then mirrors the same field-set
-    /// into the `App` world. Callers can immediately step the app via
-    /// `Time::<Fixed>::advance_by` + `run_schedule(FixedUpdate)`.
+    /// Mirrors every field of [`SimulationBuilder`] into the `App` world
+    /// (resources for time / ephemeris / polar motion / atmosphere,
+    /// entities for sources and vehicles, mass-tree pre-allocation +
+    /// `MassChildOf` edges, integrator-state auto-init). Callers can
+    /// immediately step the app via `Time::<Fixed>::advance_by` +
+    /// `run_schedule(FixedUpdate)`.
+    ///
+    /// # Validation
+    ///
+    /// `populate_app` does **not** run runner-side `Simulation::from_builder`
+    /// validation; the `Result` shape exists so a future Bevy-native
+    /// validator can land without an API break. Direct callers that
+    /// need validation should build (and discard) a runner `Simulation`
+    /// from the same scenario factory first — see the parity trait in
+    /// `astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`
+    /// for the canonical pattern.
     fn populate_app<P: Planet>(
         self,
         app: &mut App,
@@ -114,21 +145,14 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         self,
         app: &mut App,
     ) -> Result<ScenarioHandles, Vec<ValidationError>> {
-        // Run runner-side validation first. The cheapest way to share the
-        // exact same validation pipeline is to actually build a
-        // `Simulation` from a clone of the builder; we throw it away
-        // afterwards. Cloning `SimulationBuilder` requires hand-cloning
-        // each field — most fields are `Clone`, but `GravitySourceEntry`
-        // is not. Rather than maintain a parallel validator, we accept
-        // the duplication: the bridge takes `self` by value, so the
-        // caller is expected to hand a freshly-constructed builder; the
-        // runner side consumes it in the parity-test path right after.
-        //
-        // A future refactor could lift the validation pass to operate on
-        // `&SimulationBuilder` directly. Until then, the parity-test
-        // path calls the scenario factory twice (once for the runner,
-        // once here), which is the existing pattern in
-        // `verif_jeod::run_verification::mod.rs`.
+        // No Bevy-native validator yet — see the trait method's
+        // `# Validation` doc for the contract. The parity trait pairs
+        // each `populate_app` call with a runner-side
+        // `Simulation::from_builder` on a fresh builder from the same
+        // factory, so validation errors surface there before any
+        // bit-identity assertion runs. Direct callers (mission code
+        // not going through the parity trait) must validate
+        // themselves until a Bevy-native validator lands.
 
         // Time + dt resources. `AstrodynPlugin::build` calls
         // `init_resource::<SimulationTimeR>()` which constructs a
@@ -187,16 +211,8 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         );
 
         for (idx, (name, entry)) in sources.into_iter().enumerate() {
-            let entity = spawn_source::<P>(app, idx, &name, entry, sun_source, moon_source);
-            // Per-source ephemeris body mapping: when `Some`, the
-            // `ephemeris_update_system` rewrites this source's
-            // `SourceInertialPositionC` each tick from `EphemerisR`.
-            if let Some(Some((target, observer))) = source_ephem_bodies.get(idx) {
-                app.world_mut().entity_mut(entity).insert(EphemerisBodyC {
-                    target: *target,
-                    observer: *observer,
-                });
-            }
+            let ephem = source_ephem_bodies.get(idx).copied().flatten();
+            let entity = spawn_source::<P>(app, idx, &name, entry, sun_source, moon_source, ephem);
             source_entities.push(entity);
         }
 
@@ -228,6 +244,23 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         // entities with `MassBodyIdC(id)` already attached, matching
         // the existing parity tests' explicit pre-allocation pattern.
         let has_tree = mass_tree_names.iter().any(|n| n.is_some());
+        // Fail-loudly fence: an attachment without a registered tree
+        // would silently drop on the floor under the
+        // `if has_tree { … }` branch below. The
+        // `SimulationBuilder::attach_bodies` validator already rejects
+        // that combination at builder-time, so reaching this assertion
+        // means a caller hand-constructed `mass_tree_attachments` with
+        // no matching `mass_tree_names`. Mirror the runner's
+        // `attach_preserving_initial_state` precondition (both
+        // children must be registered) at the bridge boundary.
+        assert!(
+            has_tree || mass_tree_attachments.is_empty(),
+            "populate_app: SimulationBuilder has {} pending mass-tree \
+             attachment(s) but no body is registered with a mass-tree name. \
+             Call `register_in_mass_tree(idx, name)` on each participating \
+             body before `attach_bodies(...)`.",
+            mass_tree_attachments.len(),
+        );
         let (mass_tree, mass_ids): (Option<MassTree>, Vec<Option<MassBodyId>>) = if has_tree {
             let mut tree = MassTree::new();
             let mut ids: Vec<Option<MassBodyId>> = Vec::with_capacity(bodies.len());
@@ -341,7 +374,10 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
 /// `idx` is the source's index in `SimulationBuilder::sources`; the marker
 /// comparison reads `sun_source` / `moon_source` directly to decide whether to
 /// tag this entity, mirroring `Simulation::sun_source = Some(idx)` on the
-/// runner side.
+/// runner side. `ephem` is the matching slot from
+/// `SimulationBuilder::source_ephem_bodies[idx]`, attached as
+/// [`EphemerisBodyC`] when `Some` so `ephemeris_update_system` rewrites
+/// the source's `SourceInertialPositionC` each tick.
 fn spawn_source<P: Planet>(
     app: &mut App,
     idx: usize,
@@ -349,6 +385,7 @@ fn spawn_source<P: Planet>(
     entry: astrodyn::GravitySourceEntry,
     sun_source: Option<usize>,
     moon_source: Option<usize>,
+    ephem: Option<(astrodyn::EphemerisBody, astrodyn::EphemerisBody)>,
 ) -> Entity {
     let astrodyn::GravitySourceEntry {
         source,
@@ -413,6 +450,9 @@ fn spawn_source<P: Planet>(
     }
     if Some(idx) == moon_source {
         entity_cmds.insert(MoonMarker);
+    }
+    if let Some((target, observer)) = ephem {
+        entity_cmds.insert(EphemerisBodyC { target, observer });
     }
 
     entity_cmds.id()

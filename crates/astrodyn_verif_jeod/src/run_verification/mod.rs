@@ -556,7 +556,48 @@ fn load_reference(
             };
             (states, typed)
         }
+        CsvReference::TimesOnly(_) => {
+            // Cadence-only path: read column 0 of each non-header row
+            // and emit `StateLog`s with only `time` populated. Used by
+            // recipes whose CSV has a layout no per-variant loader
+            // models — typical when the parity trait drives the recipe
+            // and the assertion is runner ↔ bevy bit-identity, not
+            // tolerance-bounded against the JEOD-logged columns.
+            let times = load_times_only(path);
+            let states = times
+                .iter()
+                .map(|&t| StateLog {
+                    time: t,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            (states, CsvRecords::Times(times))
+        }
     }
+}
+
+/// Read column 0 (`sys.exec.out.time {s}`) from a JEOD reference CSV
+/// and return the per-row times. Skips the header row and any blank
+/// trailing lines. Used by [`CsvReference::TimesOnly`] dispatch.
+fn load_times_only(path: &std::path::Path) -> Vec<f64> {
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("load_times_only: read {} failed: {e}", path.display()));
+    let mut times = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let first = line.split(',').next().unwrap_or("").trim();
+        let t: f64 = first.parse().unwrap_or_else(|e| {
+            panic!(
+                "load_times_only: line {} of {}: parsing time column `{first}` failed: {e}",
+                i + 1,
+                path.display(),
+            )
+        });
+        times.push(t);
+    }
+    times
 }
 
 /// Per-family extras max-error accumulator used by `run_and_assert`.

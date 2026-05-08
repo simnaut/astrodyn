@@ -40,7 +40,6 @@ use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::run_verification::sim_gj;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 use bevy::prelude::*;
-use glam::DVec3;
 
 // ── Trajectory variants (recipe-based, mirroring tier3_sim_gj.rs) ──
 
@@ -70,14 +69,6 @@ fn tier3_bevy_parity_gj_dt10() {
 }
 
 // ── Bootstrap-only variants (no JEOD reference; hand-rolled) ──
-
-/// GJ test initial state matching SIM_GJ_test: r₀=[9e6,0,0], v₀=[0,8000,0].
-fn gj_trans() -> TranslationalState {
-    TranslationalState {
-        position: DVec3::new(9e6, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 8000.0, 0.0),
-    }
-}
 
 fn step_bevy(app: &mut App, n: usize, dt: f64) {
     for _ in 0..n {
@@ -136,7 +127,7 @@ fn run_gj_bootstrap_parity(
     time_scale_factor: f64,
     n_steps: usize,
 ) {
-    let trans = gj_trans();
+    let trans = sim_gj::gj_initial_state();
 
     // ── Bevy ──
     let mut app = App::new();

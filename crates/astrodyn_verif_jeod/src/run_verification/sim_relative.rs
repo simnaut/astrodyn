@@ -21,12 +21,13 @@
 //!
 //! ## CSV reference
 //!
-//! The recipes route through [`CsvReference::OrbInit`] for cadence
-//! lookup only. The `relative_*_relative.csv` reference files have a
-//! 57-column interleaved-state layout that the OrbInit loader cannot
-//! parse correctly, but the parity trait reads only `record.time` from
-//! the CSV (initial conditions are hardcoded in each scenario factory),
-//! so the misparsed position/velocity columns at t=0 are never read.
+//! The recipes route through [`CsvReference::TimesOnly`] for cadence
+//! lookup. The `relative_*_relative.csv` reference files have a
+//! 57-column interleaved-state layout that no per-variant loader
+//! models, but the parity trait reads only `record.time` from the CSV
+//! (initial conditions are hardcoded in each scenario factory), so a
+//! cadence-only dispatch is exactly what's needed and `TimesOnly`
+//! parses just column 0.
 //!
 //! The tier3 sibling does need the full CSV layout; it uses a
 //! private hand-rolled `load_relative_csv` parser, not the recipe path.
@@ -194,7 +195,7 @@ pub fn relative_ab_rot_ab_trans() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_relative_ab_rot_ab_trans",
         scenario: build_ab_rot_ab_trans,
-        reference: CsvReference::OrbInit("relative_ab_rot_ab_trans_relative.csv"),
+        reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
         tolerances: zero_tolerances(),
         extras: None,
@@ -207,7 +208,7 @@ pub fn relative_no_rot_ab_trans() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_relative_no_rot_ab_trans",
         scenario: build_no_rot_ab_trans,
-        reference: CsvReference::OrbInit("relative_no_rot_ab_trans_relative.csv"),
+        reference: CsvReference::TimesOnly("relative_no_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
         tolerances: zero_tolerances(),
         extras: None,
@@ -220,7 +221,7 @@ pub fn relative_a_rot_no_trans() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_relative_a_rot_no_trans",
         scenario: build_a_rot_no_trans,
-        reference: CsvReference::OrbInit("relative_a_rot_no_trans_relative.csv"),
+        reference: CsvReference::TimesOnly("relative_a_rot_no_trans_relative.csv"),
         duration: full_csv_duration(),
         tolerances: zero_tolerances(),
         extras: None,
@@ -233,7 +234,7 @@ pub fn lvlhrel_test0() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_lvlhrel_test0",
         scenario: build_lvlhrel_test0,
-        reference: CsvReference::OrbInit("relative_ab_rot_ab_trans_relative.csv"),
+        reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
         tolerances: zero_tolerances(),
         extras: None,
@@ -246,7 +247,7 @@ pub fn lvlhrel_test1() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_lvlhrel_test1",
         scenario: build_lvlhrel_test1,
-        reference: CsvReference::OrbInit("relative_ab_rot_ab_trans_relative.csv"),
+        reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
         tolerances: zero_tolerances(),
         extras: None,

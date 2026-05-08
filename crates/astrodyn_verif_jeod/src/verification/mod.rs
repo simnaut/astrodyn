@@ -187,6 +187,24 @@ pub enum CsvReference {
     OrbInit(&'static str),
     /// 8-column SIM_tide_verif CSV (time + pos + vel + dC20).
     Tide(&'static str),
+    /// CSV consumed for time-cadence only — the per-variant loaders
+    /// don't know how to parse the body of this file (or it carries
+    /// columns the cross-validation report would misinterpret), so the
+    /// dispatcher reads only column 0 (`sys.exec.out.time {s}`) and
+    /// emits [`crate::crossval::StateLog`]s with `position` /
+    /// `velocity` left as `None`.
+    ///
+    /// Use this when a recipe needs to step at JEOD's reference
+    /// cadence but the assertion is parity-only (runner ↔ bevy
+    /// bit-identity through
+    /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`])
+    /// rather than tolerance-bounded against JEOD-logged state. The
+    /// matching tier3 sibling can keep using a hand-rolled loader for
+    /// its own column layout — only the parity trait routes through
+    /// this variant.
+    ///
+    /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`]: https://github.com/simnaut/bevy_jeod/blob/main/crates/astrodyn_verif_parity/src/lib.rs
+    TimesOnly(&'static str),
 }
 
 impl CsvReference {
@@ -208,7 +226,8 @@ impl CsvReference {
             | CsvReference::AtmosTraj(s)
             | CsvReference::AeroTraj(s)
             | CsvReference::OrbInit(s)
-            | CsvReference::Tide(s) => s,
+            | CsvReference::Tide(s)
+            | CsvReference::TimesOnly(s) => s,
         }
     }
 }

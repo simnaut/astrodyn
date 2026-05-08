@@ -115,13 +115,17 @@ impl VerificationCaseParityExt for VerificationCase {
 
         // 2. Derive `InitialConditions` from the t=0 row and build the
         //    scenario into both runtimes from the *same* factory. The
-        //    fn pointer is `Copy`, so we call it twice with no extra
-        //    cost.
+        //    fn pointer is `Copy`, so we call it twice (once per
+        //    runtime) with no extra cost. The runner-side builder is
+        //    also our source for `dt` — captured before `.build()`
+        //    consumes it, so we don't need a third factory call just
+        //    to read the integrator timestep.
         let init = initial_conditions_from(&ref_states[0]);
-        let mut runner_sim = (self.scenario)(&init)
+        let runner_builder = (self.scenario)(&init);
+        let dt = runner_builder.dt;
+        let mut runner_sim = runner_builder
             .build()
             .unwrap_or_else(|e| panic!("`{}`: runner build failed: {e:?}", self.name));
-        let dt = (self.scenario)(&init).dt;
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
