@@ -418,7 +418,7 @@ pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
         let mut inputs = inputs;
         integrate_bodies_contact_coupled(&mut inputs, scratch, gravity_fn, contact_eval, dt);
     }
-    for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans.into_iter()) {
+    for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans) {
         // allowed: typed-sibling boundary writeback. See note above.
         *typed_ref = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw);
     }
