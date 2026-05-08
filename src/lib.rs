@@ -13,7 +13,7 @@
 //!
 //! - [`accumulate_gravity`] — gravity accumulation across sources
 //! - [`evaluate_atmosphere`] — atmosphere evaluation pipeline
-//! - [`compute_drag`] — aerodynamic drag with frame transform
+//! - [`compute_ballistic_drag`] — aerodynamic drag with frame transform
 //! - [`compute_gravity_torque`] — gravity gradient torque with quaternion conversion
 //! - [`collect_and_resolve_forces`] — force/torque collection with frame transforms
 //! - [`integrate_body`] — RK4 integration with 6-DOF/3-DOF routing
@@ -112,15 +112,14 @@ pub use gravity::{
 };
 pub use integrable::IntegrableObject;
 pub use integration::{
-    integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
-    reset_integrators, CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
+    integrate_bodies_contact_coupled, integrate_bodies_contact_coupled_typed, integrate_body,
+    integrate_body_coupled, integrate_body_coupled_typed, integrate_body_typed, reset_integrators,
+    CoupledBodyInput, CoupledBodyInputTyped, CoupledIntegScratch, CoupledStageEval,
 };
 pub use integrator::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use interactions::{
-    compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
-    compute_gravity_torque, compute_gravity_torque_typed, evaluate_contact_pair,
-    evaluate_ground_contact_pair, ContactPairEval, FlatPlateStageInputs, FlatPlateState,
-    GroundContactPairEval, ThermalIntegrationOrder,
+    evaluate_contact_pair, evaluate_ground_contact_pair, ContactPairEval, FlatPlateStageInputs,
+    FlatPlateState, GroundContactPairEval, ThermalIntegrationOrder,
 };
 pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
@@ -168,7 +167,7 @@ pub use astrodyn_dynamics::{
     recompute_composites_via_storage, shift_wrench_to_parent, DetachedSubtreeState, DynamicsConfig,
     FrameAttachInputs, FrameDerivatives, GravityAcceleration, MassBodyId, MassNodeOutputs,
     MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
-    SixDofState, TotalForce, TranslationalState, Wrench,
+    SixDofState, SixDofStateTyped, TotalForce, TranslationalState, Wrench,
 };
 
 // astrodyn_dynamics typed siblings: ECS components built on the typed
@@ -194,7 +193,9 @@ pub use astrodyn_atmosphere::AtmosphereState;
 
 // astrodyn_interactions: config, result types, and computation functions
 pub use astrodyn_interactions::{
-    compute_earth_lighting, compute_earth_lighting_typed, compute_flat_plate_srp_thermal,
+    compute_ballistic_drag, compute_ballistic_drag_typed, compute_cannonball_srp,
+    compute_cannonball_srp_typed, compute_earth_lighting, compute_earth_lighting_typed,
+    compute_flat_plate_srp_thermal, compute_gravity_torque, compute_gravity_torque_typed,
     compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, DragConfig, DragConfigTyped,
     EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
     LightingBody, LightingParams, RadiationForce, SOLAR_RADIUS,
@@ -221,7 +222,9 @@ pub use astrodyn_time::{
 
 // astrodyn_frames: planet rotation (used by ephemeris stage and mission
 // code that sets up Mars/Moon planetary configurations).
-pub use astrodyn_frames::rotation_j2000::compute_t_parent_this_from_tjt_with_polar;
+pub use astrodyn_frames::rotation_j2000::{
+    compute_t_parent_this_from_tjt_with_polar, compute_t_parent_this_from_tjt_with_polar_typed,
+};
 pub use astrodyn_frames::rotation_mars;
 pub use astrodyn_frames::rotation_moon;
 

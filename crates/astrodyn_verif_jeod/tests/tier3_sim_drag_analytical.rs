@@ -90,12 +90,16 @@ fn make_drag_sim(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(MassProperties::new(mass)),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(MassProperties::new(mass).into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -514,12 +518,16 @@ fn make_drag_sim_with_wind(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(MassProperties::new(mass)),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(MassProperties::new(mass).into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

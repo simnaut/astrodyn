@@ -82,12 +82,16 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
         trans: TranslationalState {
             position: DVec3::new(1.5e11, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::new(0.0, 0.0, 0.05),
-        }),
-        mass: Some(mass),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::new(0.0, 0.0, 0.05),
+            }
+            .into(),
+        ),
+        mass: Some(mass.into()),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp],

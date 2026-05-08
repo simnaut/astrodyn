@@ -167,10 +167,9 @@ pub fn evaluate_atmosphere(
 ///
 /// Bit-identical kernel — wraps the raw f64 implementation via
 /// `.raw_si()` at the boundary. Returns `AtmosphereState<P>` so the
-/// wind vector and any downstream consumer (`compute_drag_typed`,
-/// `compute_ballistic_drag_typed`) can structurally enforce that the
-/// vehicle's planet-inertial velocity matches the wind's planet at
-/// the type level.
+/// wind vector and any downstream consumer (`compute_ballistic_drag_typed`)
+/// can structurally enforce that the vehicle's planet-inertial
+/// velocity matches the wind's planet at the type level.
 pub fn evaluate_atmosphere_typed<P: Planet>(
     config: &AtmosphereConfig,
     position: Position<PlanetInertial<P>>,

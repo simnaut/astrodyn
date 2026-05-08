@@ -70,10 +70,11 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                     )
                 });
                 let rotation = *earth_rotation.get_or_insert_with(|| {
-                    // allowed: matrix is JEOD's RNP-derived rotation; the
-                    // RootInertial → PlanetFixed<P> phantoms match the
-                    // kernel by construction (system instantiation pins P).
-                    astrodyn::FrameTransform::from_matrix(mat)
+                    astrodyn::compute_t_parent_this_from_tjt_with_polar_typed::<P>(
+                        sim_time.gmst_seconds,
+                        sim_time.tt_tjt(),
+                        polar_params,
+                    )
                 });
                 rot.0 = rotation;
                 raw_matrix = Some(mat);
@@ -82,7 +83,10 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                 let tt_s_since_j2000 =
                     (sim_time.tt_tjt() - astrodyn::J2000_TT_TJT) * astrodyn::SECONDS_PER_DAY;
                 let mat = astrodyn::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
-                // allowed: matrix from JEOD-ported IAU Mars rotation formula
+                // allowed: matrix from JEOD-ported IAU Mars rotation formula; the
+                // typed sibling pins `<PlanetFixed<Mars>>`, but the system's
+                // storage is `<PlanetFixed<P>>` (P resolved at registration);
+                // the lift here is the legitimate cross-P boundary.
                 rot.0 = astrodyn::FrameTransform::from_matrix(mat);
                 raw_matrix = Some(mat);
             }
@@ -91,7 +95,7 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                 let tdb_s_since_j2000 =
                     (tdb_jd - astrodyn::J2000_TT_JD) * astrodyn::SECONDS_PER_DAY;
                 let mat = astrodyn::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
-                // allowed: matrix from JEOD-ported IAU Moon rotation formula
+                // allowed: same cross-P kernel-output boundary as the Mars branch above.
                 rot.0 = astrodyn::FrameTransform::from_matrix(mat);
                 raw_matrix = Some(mat);
             }

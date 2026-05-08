@@ -21,8 +21,8 @@
 use std::time::Duration;
 
 use astrodyn::{
-    BodyAction, GravityControl, JeodQuat, MassProperties, RotationalState, TranslationalState,
-    VehicleBuilder, MARS,
+    BodyAction, GravityControl, JeodQuat, MassProperties, RootInertial, RotationalState,
+    TranslationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, MARS,
 };
 use astrodyn_bevy::{
     register_planet_systems, AstrodynPlugin, BodyActionCommandsExt, BodyActionEvent,
@@ -34,14 +34,14 @@ use glam::DVec3;
 
 const DT: f64 = 0.1;
 
-fn body_state_initial() -> TranslationalState {
+fn body_state_initial() -> TranslationalStateTyped<RootInertial> {
     // 4_000 km circular-ish state around Mars (Mars radius ≈ 3389.5
     // km; this is a low Mars orbit). Numerics aren't load-bearing —
     // the test only needs a non-degenerate state to confirm the
     // queue path overwrites it.
-    TranslationalState {
-        position: DVec3::new(4_000_000.0, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 3500.0, 0.0),
+    TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(4_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+        velocity: DVec3::new(0.0, 3500.0, 0.0).m_per_s_at::<RootInertial>(),
     }
 }
 
@@ -84,7 +84,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -144,7 +144,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .insert(SourceInertialPositionC::default());
 
     let cfg = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -179,7 +179,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .unwrap()
         .0
         .to_untyped();
-    assert_eq!(pre_state.position, body_state_initial().position);
+    assert_eq!(pre_state.position, body_state_initial().position.raw_si());
 
     // Confirm a `MassPropertiesC` is present (required by the
     // body_action_system query's With<DynamicsConfigC> filter and the
@@ -230,7 +230,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
          drift of {drift} m from the replacement state, expected < 1 km \
          (one DT of orbital propagation). Post-state: {post_state:?}",
     );
-    let from_initial = (post_state.position - body_state_initial().position).length();
+    let from_initial = (post_state.position - body_state_initial().position.raw_si()).length();
     assert!(
         from_initial > 1_000_000.0,
         "body_action_system::<Mars> must move the body away from its \
@@ -285,15 +285,15 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        .with_translational(TranslationalStateTyped::<RootInertial> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+            velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -353,7 +353,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     // bound that still excludes any silent route through an
     // Earth-tagged apply (which would teleport the body 4 Mm to the
     // Earth replacement position).
-    let mars_drift = (mars_post.position - body_state_initial().position).length();
+    let mars_drift = (mars_post.position - body_state_initial().position.raw_si()).length();
     assert!(
         mars_drift < 10_000.0,
         "Mars body must NOT see the Earth-tagged init's position — \
@@ -432,15 +432,15 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
-        .with_state(body_state_initial())
+        .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
         .build();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        .with_translational(TranslationalStateTyped::<RootInertial> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+            velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -516,7 +516,8 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .unwrap()
         .0
         .to_untyped();
-    let mars_drift_from_initial = (mars_post.position - body_state_initial().position).length();
+    let mars_drift_from_initial =
+        (mars_post.position - body_state_initial().position.raw_si()).length();
     assert!(
         mars_drift_from_initial < 10_000.0,
         "Planet-agnostic Remove must drop the Mars-tagged Add before \
@@ -591,9 +592,9 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     // the Mars `Add` message is the only misconfiguration on this
     // tick.
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        .with_translational(TranslationalStateTyped::<RootInertial> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+            velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -654,9 +655,9 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
         ))
         .id();
     let cfg_earth = VehicleBuilder::new()
-        .with_state(TranslationalState {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7000.0, 0.0),
+        .with_translational(TranslationalStateTyped::<RootInertial> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+            velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()

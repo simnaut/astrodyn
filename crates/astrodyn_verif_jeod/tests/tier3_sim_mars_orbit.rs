@@ -145,7 +145,8 @@ fn tier3_simulation_mars_dawn() {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(mars, 110, 110, false),

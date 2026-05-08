@@ -341,14 +341,17 @@ impl SimBody {
         let shadow_body = config.shadow_body.map(|sb| (sb.source_idx, sb.radius));
 
         Self {
-            // VehicleConfig::trans is documented as integration-frame; wrap
-            // the untyped storage with the IntegrationFrame phantom so
-            // root-inertial consumers must shift via `to_inertial`. See #255.
-            trans: TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &config.trans,
-            ),
-            rot: config.rot,
-            mass: config.mass,
+            // VehicleConfig::trans is typed `<RootInertial>`; the
+            // runner re-tags as `<IntegrationFrame>` because integration
+            // runs in the body's integration frame (numerically
+            // coincides with root for root-integrated bodies). See #255.
+            trans: config.trans.relabel_to::<IntegrationFrame>(),
+            // VehicleConfig stores typed `<SelfRef>` rot/mass at the
+            // mission boundary; the runner is a non-shipping consumer
+            // (CLAUDE.md "two parallel consumers") and stores raw types
+            // in SimBody, so drop to untyped here.
+            rot: config.rot.map(|r| r.to_untyped()),
+            mass: config.mass.map(|m| m.to_untyped()),
             mass_body_id: None,
             kinematic_only: false,
             frame_attach: None,
@@ -367,8 +370,8 @@ impl SimBody {
             t_struct_body: config.t_struct_body,
             compute_gravity_torque: config.compute_gravity_gradient,
             atmospheric_state: AtmosphereState::<SelfPlanet>::default(),
-            external_force: config.external_force,
-            external_torque: config.external_torque,
+            external_force: config.external_force.raw_si(),
+            external_torque: config.external_torque.raw_si(),
             external_force_struct: DVec3::ZERO,
             external_torque_struct: DVec3::ZERO,
 

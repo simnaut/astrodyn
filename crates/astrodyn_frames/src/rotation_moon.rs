@@ -96,6 +96,20 @@ pub fn compute_moon_rotation(tdb_seconds_since_j2000: f64) -> DMat3 {
     rz2 * rx * rz1
 }
 
+/// Typed sibling of [`compute_moon_rotation`] returning the rotation
+/// already wrapped as
+/// `FrameTransform<RootInertial, PlanetFixed<Moon>>`. Pinned to
+/// Moon by definition — this kernel is the IAU Moon rotation formula.
+pub fn compute_moon_rotation_typed(
+    tdb_seconds_since_j2000: f64,
+) -> astrodyn_quantities::frame_transform::FrameTransform<
+    astrodyn_quantities::frame::RootInertial,
+    astrodyn_quantities::frame::PlanetFixed<astrodyn_quantities::frame::Moon>,
+> {
+    let mat = compute_moon_rotation(tdb_seconds_since_j2000);
+    astrodyn_quantities::frame_transform::FrameTransform::from_matrix(mat)
+}
+
 // Helper functions for the remaining E arguments not stored as variables
 fn e5_sin(d: f64) -> f64 {
     ((358.473 + 0.985_600_3 * d) * DEG2RAD).sin()

@@ -156,6 +156,18 @@ impl<P: Planet> From<TranslationalState> for TranslationalStateC<P> {
     }
 }
 
+impl<P: Planet> From<TranslationalStateTyped<RootInertial>> for TranslationalStateC<P> {
+    /// Insertion-time boundary from the gateway's
+    /// `<RootInertial>`-typed `VehicleConfig.trans` into the Bevy
+    /// component's `<PlanetInertial<P>>` storage. Pure phantom relabel
+    /// (numerics bit-identical) — no `from_*_unchecked` bypass needed
+    /// because the gateway-side phantom is already asserted.
+    #[inline]
+    fn from(state: TranslationalStateTyped<RootInertial>) -> Self {
+        Self(state.relabel_to::<PlanetInertial<P>>())
+    }
+}
+
 /// Rotational state (attitude quaternion + body-frame angular
 /// velocity / acceleration) for the body being integrated.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
@@ -185,6 +197,17 @@ impl From<RotationalState> for RotationalStateC {
     }
 }
 
+impl From<RotationalStateTyped<SelfRef>> for RotationalStateC {
+    /// Wrap an already-typed `<SelfRef>` rotational state directly. The
+    /// inner phantom matches the storage phantom — this is the
+    /// production path from `VehicleConfig.rot`, which is typed
+    /// end-to-end (issue #388 follow-up).
+    #[inline]
+    fn from(state: RotationalStateTyped<SelfRef>) -> Self {
+        Self(state)
+    }
+}
+
 /// Body mass, center of mass, and inertia tensor (with cached
 /// inverses). Required on any entity that produces a force or torque
 /// requiring acceleration conversion.
@@ -208,6 +231,17 @@ impl From<MassProperties> for MassPropertiesC {
     #[inline]
     fn from(mp: MassProperties) -> Self {
         Self::from_untyped(mp)
+    }
+}
+
+impl From<MassPropertiesTyped<SelfRef>> for MassPropertiesC {
+    /// Wrap an already-typed `<SelfRef>` mass properties directly. The
+    /// inner phantom matches the storage phantom — this is the
+    /// production path from `VehicleConfig.mass`, which is typed
+    /// end-to-end (issue #388 follow-up).
+    #[inline]
+    fn from(mp: MassPropertiesTyped<SelfRef>) -> Self {
+        Self(mp)
     }
 }
 

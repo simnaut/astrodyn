@@ -36,8 +36,8 @@
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    IntegratorType, MassProperties as SimMassProperties, RotationalState, SimulationTime,
-    TranslationalState, VehicleConfig,
+    IntegratorType, MassProperties as SimMassProperties, RootInertial, RotationalState,
+    SimulationTime, TranslationalState, Vec3Ext, VehicleConfig,
 };
 use astrodyn_dynamics::{combine_states_at_attach, AttachCombineInputs};
 use astrodyn_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
@@ -92,9 +92,9 @@ fn build_pair(
     // Empty gravity controls: the kernel's accumulate path returns
     // zero acceleration, which is what we want.
     let parent_idx = sim.add_body(VehicleConfig {
-        trans: parent_trans,
-        rot: parent_rot,
-        mass: Some(parent_mass),
+        trans: parent_trans.into(),
+        rot: parent_rot.map(Into::into),
+        mass: Some(parent_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -102,9 +102,9 @@ fn build_pair(
         ..Default::default()
     });
     let child_idx = sim.add_body(VehicleConfig {
-        trans: child_trans,
-        rot: child_rot,
-        mass: Some(child_mass),
+        trans: child_trans.into(),
+        rot: child_rot.map(Into::into),
+        mass: Some(child_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -604,9 +604,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
     );
 
     let a_idx = sim.add_body(VehicleConfig {
-        trans: a_trans,
-        rot: a_rot,
-        mass: Some(a_mass),
+        trans: a_trans.into(),
+        rot: a_rot.map(Into::into),
+        mass: Some(a_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -614,9 +614,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let b_idx = sim.add_body(VehicleConfig {
-        trans: b_trans,
-        rot: b_rot,
-        mass: Some(b_mass),
+        trans: b_trans.into(),
+        rot: b_rot.map(Into::into),
+        mass: Some(b_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -624,9 +624,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let c_idx = sim.add_body(VehicleConfig {
-        trans: c_trans,
-        rot: c_rot,
-        mass: Some(c_mass),
+        trans: c_trans.into(),
+        rot: c_rot.map(Into::into),
+        mass: Some(c_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -817,7 +817,7 @@ fn runner_detach_lifts_through_integ_origin() {
                 mu: 0.0, // disable gravity so the test guards orchestration only
                 model: GravityModel::PointMass,
             },
-            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(SSB_TO_EARTH),
+            position: SSB_TO_EARTH.m_at::<RootInertial>(),
             velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
             t_inertial_pfix: None,
             rotation_model: RotationModel::None,
@@ -829,9 +829,9 @@ fn runner_detach_lifts_through_integ_origin() {
     );
 
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans,
-        rot: parent_rot,
-        mass: Some(parent_mass),
+        trans: parent_trans.into(),
+        rot: parent_rot.map(Into::into),
+        mass: Some(parent_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -840,9 +840,9 @@ fn runner_detach_lifts_through_integ_origin() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans,
-        rot: child_rot,
-        mass: Some(child_mass),
+        trans: child_trans.into(),
+        rot: child_rot.map(Into::into),
+        mass: Some(child_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -994,9 +994,9 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         },
     );
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans,
-        rot: Some(parent_rot),
-        mass: Some(parent_mass),
+        trans: parent_trans.into(),
+        rot: Some(parent_rot.into()),
+        mass: Some(parent_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(_inertial, false)],
@@ -1004,9 +1004,9 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans,
-        rot: Some(child_rot),
-        mass: Some(child_mass),
+        trans: child_trans.into(),
+        rot: Some(child_rot.into()),
+        mass: Some(child_mass.into()),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(_inertial, false)],

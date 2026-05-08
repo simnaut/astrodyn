@@ -122,8 +122,9 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
         trans: TranslationalState {
             position: init.position,
             velocity: DVec3::ZERO,
-        },
-        mass: Some(astrodyn::MassProperties::new(1.0)),
+        }
+        .into(),
+        mass: Some(astrodyn::MassProperties::new(1.0).into()),
         shadow_body: Some(ShadowBody {
             source_idx: earth,
             radius: R_EARTH,

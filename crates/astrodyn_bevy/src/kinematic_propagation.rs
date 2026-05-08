@@ -87,7 +87,6 @@ use std::collections::HashMap;
 
 use astrodyn::{
     propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, Planet,
-    RotationalStateTyped, SelfRef, TranslationalStateTyped,
 };
 
 use crate::components::{
@@ -296,12 +295,8 @@ pub fn propagate_state_from_root_system<P: Planet>(
                 // integration frame, and the `<RootInertial>` lift is
                 // applied at *shift sites* via `to_inertial(&origin)`
                 // — never silently here.
-                rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
-                trans_c.0 =
-                    // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(
-                        &state.trans,
-                    );
+                rot_c.0 = state.rot.into();
+                trans_c.0 = state.trans.into();
             }
         }
     }

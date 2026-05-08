@@ -25,7 +25,7 @@
 
 use glam::DVec3;
 
-use astrodyn::{Position, Velocity};
+use astrodyn::Vec3Ext;
 use astrodyn_frames::FrameId;
 use astrodyn_quantities::IntegOrigin;
 
@@ -71,6 +71,23 @@ impl Simulation {
         (state.trans.position, state.trans.velocity)
     }
 
+    /// Typed sibling of [`Self::frame_origin`] returning the frame
+    /// origin already wrapped in [`IntegOrigin`]. The frame phantom is
+    /// `RootInertial` because the result expresses the query frame's
+    /// origin in root-relative coordinates and the runner's root is
+    /// inertial by construction.
+    pub fn frame_origin_typed(&self, frame_id: FrameId) -> IntegOrigin {
+        let (pos, vel) = astrodyn::frame_orchestration::frame_origin(
+            &self.frame_tree,
+            self.root_frame_id,
+            frame_id,
+        );
+        IntegOrigin {
+            position: pos.m_at::<astrodyn::RootInertial>(),
+            velocity: vel.m_per_s_at::<astrodyn::RootInertial>(),
+        }
+    }
+
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
     fn step_internal(&mut self, dt: f64) -> Result<(), StepError> {
@@ -113,13 +130,7 @@ impl Simulation {
         let body_integ_origins: Vec<IntegOrigin> = self
             .bodies
             .iter()
-            .map(|b| {
-                let (p, v) = self.frame_origin(b.integ_frame_id);
-                IntegOrigin {
-                    position: Position::from_raw_si(p),
-                    velocity: Velocity::from_raw_si(v),
-                }
-            })
+            .map(|b| self.frame_origin_typed(b.integ_frame_id))
             .collect();
 
         // ── 3a. Frame-attached body propagation (parent frame → body), pre-integration ──
@@ -182,13 +193,7 @@ impl Simulation {
         let body_integ_origins_post: Vec<IntegOrigin> = self
             .bodies
             .iter()
-            .map(|b| {
-                let (p, v) = self.frame_origin(b.integ_frame_id);
-                IntegOrigin {
-                    position: Position::from_raw_si(p),
-                    velocity: Velocity::from_raw_si(v),
-                }
-            })
+            .map(|b| self.frame_origin_typed(b.integ_frame_id))
             .collect();
 
         // ── 8c. Frame-attached body propagation, post-integration ──

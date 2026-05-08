@@ -3,7 +3,7 @@
 //! Per-step derived states: orbital elements, Euler angles, LVLH frame,
 //! geodetic state, and solar beta angle.
 
-use astrodyn::{Planet, Position, RootInertial, Velocity};
+use astrodyn::{Planet, RootInertial};
 use bevy::prelude::*;
 
 use crate::components::*;
@@ -178,8 +178,8 @@ pub fn solar_beta_system<P: Planet>(
         // for root-integrated bodies (where the shift is zero).
         let (integ_origin, integ_origin_vel) =
             body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
-        let body_pos_rel = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: integ-origin shift adds origin offset on the next line; relabel is a phantom-tag attachment matching the runner's `body.trans.to_inertial(&o)` boundary.
-        let body_vel_rel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same boundary as `body_pos_rel`.
+        let body_pos_rel = state.position.relabel_to::<RootInertial>();
+        let body_vel_rel = state.velocity.relabel_to::<RootInertial>();
         let body_pos = body_pos_rel + integ_origin;
         let body_vel = body_vel_rel + integ_origin_vel;
         // Sun is registered through `SunBundle` and integrates in the
@@ -187,7 +187,7 @@ pub fn solar_beta_system<P: Planet>(
         // numerically root-inertial; the relabel here is the boundary
         // step that pins the framing convention at the consumer call
         // site rather than asserting it once at registration.
-        let sun_pos = Position::<RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun is root-integrated by SunBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
+        let sun_pos = sun_state.position.relabel_to::<RootInertial>();
         beta.0 = astrodyn::compute_body_solar_beta_typed(body_pos, body_vel, sun_pos).value;
     }
 }

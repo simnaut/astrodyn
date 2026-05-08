@@ -89,7 +89,7 @@ pub use kinematic_propagation::{
     compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,
     KinematicChildOutputs,
 };
-pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
+pub use mass::{MassProperties, MassPropertiesTyped, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
 };
@@ -104,7 +104,7 @@ pub use rkf45::{
 };
 pub use rotational::{
     compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
-    SixDofState,
+    RotationalStateTyped, SixDofState, SixDofStateTyped,
 };
 pub use state::TranslationalState;
 pub use subtree::DetachedSubtreeState;

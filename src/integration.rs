@@ -13,7 +13,7 @@ use glam::DVec3;
 use crate::integrator::IntegratorType;
 use astrodyn_math::JeodQuat;
 use astrodyn_quantities::aliases::{Acceleration, Force, Position, Torque, Velocity};
-use astrodyn_quantities::frame::{BodyFrame, RootInertial, Vehicle};
+use astrodyn_quantities::frame::{BodyFrame, Frame, Vehicle};
 use uom::si::f64::Time;
 
 use crate::integrable::IntegrableObject;
@@ -334,6 +334,93 @@ pub fn integrate_bodies_contact_coupled(
         body.rot.quaternion = JeodQuat::new(qfinal[0], qfinal[1], qfinal[2], qfinal[3]);
         // JEOD_INV: DB.09 — quaternion normalized after every integration step
         astrodyn_dynamics::normalize_integ(&mut body.rot.quaternion);
+    }
+}
+
+/// Typed per-body input for [`integrate_bodies_contact_coupled_typed`].
+///
+/// Mirrors [`CoupledBodyInput`] but carries
+/// [`TranslationalStateTyped<F>`]. Each field is a `&'a mut` /
+/// `&'a` reference, so a `Vec<CoupledBodyInputTyped<'a, F>>` captures
+/// disjoint per-body borrows that can be split into the parallel
+/// arrays the kernel consumes.
+pub struct CoupledBodyInputTyped<'a, F: Frame> {
+    /// Translational state to advance (mutated in place).
+    pub trans: &'a mut TranslationalStateTyped<F>,
+    /// Rotational state to advance (mutated in place). 6-DOF only.
+    pub rot: &'a mut RotationalState,
+    /// Mass properties.
+    pub mass: &'a MassProperties,
+    /// Constant non-gravity, non-contact inertial force over the step.
+    pub non_grav_non_contact_force: DVec3,
+    /// Constant body-frame torque from non-contact sources.
+    pub non_contact_torque_body: DVec3,
+}
+
+/// Typed sibling of [`integrate_bodies_contact_coupled`].
+///
+/// Each body's `trans` flows end-to-end as
+/// [`TranslationalStateTyped<F>`]; the typed sibling allocates a
+/// transient untyped buffer for the kernel, runs the multi-body RK4
+/// step, and writes the integrated states back through the typed
+/// references. The `gravity_fn` and `contact_eval` closures continue
+/// to receive untyped intermediate state (RK4 stage scratch is
+/// integrator-internal).
+///
+/// Generic over `F: Frame` so consumers in different integration
+/// frames share a single entry point.
+///
+/// Takes `Vec<CoupledBodyInputTyped<'a, F>>` by value so each per-body
+/// `&'a mut` reference can be moved out into the parallel arrays the
+/// kernel needs; the typed `trans` references are retained and
+/// re-borrowed for the writeback after the kernel returns.
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
+    bodies: Vec<CoupledBodyInputTyped<'a, F>>,
+    scratch: &mut CoupledIntegScratch,
+    gravity_fn: impl FnMut(usize, DVec3, DVec3, f64) -> DVec3,
+    contact_eval: impl FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
+    dt: f64,
+) {
+    // allowed: typed-sibling boundary. Build the parallel untyped Vec
+    // the kernel expects, then write back. The kernel internals are
+    // shared with the gateway pipeline; the bypass machinery lives in
+    // the gateway by design (see `integrate_body_typed` for the wider
+    // rationale).
+    let n = bodies.len();
+    let mut raw_trans: Vec<TranslationalState> = Vec::with_capacity(n);
+    let mut typed_trans_refs: Vec<&'a mut TranslationalStateTyped<F>> = Vec::with_capacity(n);
+    let mut rots: Vec<&'a mut RotationalState> = Vec::with_capacity(n);
+    let mut masses: Vec<&'a MassProperties> = Vec::with_capacity(n);
+    let mut forces: Vec<DVec3> = Vec::with_capacity(n);
+    let mut torques: Vec<DVec3> = Vec::with_capacity(n);
+    for typed in bodies {
+        raw_trans.push(typed.trans.to_untyped());
+        typed_trans_refs.push(typed.trans);
+        rots.push(typed.rot);
+        masses.push(typed.mass);
+        forces.push(typed.non_grav_non_contact_force);
+        torques.push(typed.non_contact_torque_body);
+    }
+    {
+        let inputs: Vec<CoupledBodyInput<'_>> = raw_trans
+            .iter_mut()
+            .zip(rots)
+            .enumerate()
+            .map(|(i, (raw, rot))| CoupledBodyInput {
+                trans: raw,
+                rot,
+                mass: masses[i],
+                non_grav_non_contact_force: forces[i],
+                non_contact_torque_body: torques[i],
+            })
+            .collect();
+        let mut inputs = inputs;
+        integrate_bodies_contact_coupled(&mut inputs, scratch, gravity_fn, contact_eval, dt);
+    }
+    for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans) {
+        // allowed: typed-sibling boundary writeback. See note above.
+        *typed_ref = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw);
     }
 }
 
@@ -881,6 +968,51 @@ pub fn integrate_body_coupled<V: astrodyn_quantities::frame::Vehicle>(
     );
 }
 
+/// Typed sibling of [`integrate_body_coupled`].
+///
+/// Identical kernel — `body.trans` flows end-to-end as
+/// [`TranslationalStateTyped<F>`]; the typed sibling unwraps to the raw
+/// kernel storage on entry and re-wraps on exit. The `stage_fn` closure
+/// continues to receive untyped `&TranslationalState` because RK4
+/// stage state is integrator-internal scratch.
+///
+/// Generic over `<V: Vehicle, F: Frame>` so the gateway pipeline
+/// (`<_, RootInertial>`) and the runner (`<_, IntegrationFrame>`) share
+/// one entry point.
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_body_coupled_typed<V: astrodyn_quantities::frame::Vehicle, F: Frame>(
+    config: &DynamicsConfig,
+    trans: &mut TranslationalStateTyped<F>,
+    rot: Option<&mut RotationalState>,
+    mass: Option<&MassProperties>,
+    stage_fn: impl FnMut(
+        &TranslationalState,
+        Option<&RotationalState>,
+        &FlatPlateState<V>,
+        f64,
+    ) -> CoupledStageEval,
+    thermal: &mut FlatPlateState<V>,
+    dt: f64,
+    time_scale_factor: f64,
+) {
+    // allowed: typed-sibling boundary — round-trips body.trans through
+    // the untyped kernel storage. See `integrate_body_typed` for why
+    // this orchestration boundary stays in the gateway.
+    let mut raw_trans = trans.to_untyped();
+    integrate_body_coupled(
+        config,
+        &mut raw_trans,
+        rot,
+        mass,
+        stage_fn,
+        thermal,
+        dt,
+        time_scale_factor,
+    );
+    // allowed: typed-sibling boundary writeback. See note above.
+    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
+}
+
 /// 6-DOF coupled RK4: translational + rotational + thermal.
 ///
 /// # Quaternion drift across stages
@@ -1042,34 +1174,30 @@ fn integrate_coupled_sixdof<V: astrodyn_quantities::frame::Vehicle>(
 ///
 /// Identical kernel — wraps the entry boundary so callers pass typed
 /// quantities. The `trans` parameter takes a mutable
-/// [`TranslationalStateTyped<RootInertial>`] so the inertial-frame
-/// constraint is enforced at compile time; the wrapper unwraps to the
-/// raw kernel storage on entry and writes the integrated state back
-/// at exit. The `gravity_fn` closure is also typed: it receives an
-/// intermediate position / velocity in [`RootInertial`] and returns an
-/// [`Acceleration<RootInertial>`]. No new arithmetic — only `.raw_si()` /
-/// `from_raw_si` at the edges.
+/// [`TranslationalStateTyped<F>`] so the integration-frame constraint
+/// is enforced at compile time; the wrapper unwraps to the raw kernel
+/// storage on entry and writes the integrated state back at exit. The
+/// `gravity_fn` closure is also typed: it receives an intermediate
+/// position / velocity in `F` and returns an `Acceleration<F>`. No new
+/// arithmetic — only `.raw_si()` / `from_raw_si` at the edges.
 ///
 /// `dt` becomes [`uom::si::f64::Time`]. The dimensionless
 /// `time_scale_factor` (JEOD's `TimeDyn::scale_factor`) stays an
 /// `f64` ratio per Phase 5's design note (#107).
 ///
-/// Per-vehicle frame phantom `V` ties the torque to
-/// [`BodyFrame<V>`]; the body's translational state must be in
-/// [`RootInertial`] (enforced by the [`TranslationalStateTyped<RootInertial>`]
-/// parameter type).
+/// Generic over the integration frame `F` and the vehicle phantom `V`
+/// — production callers integrate in `RootInertial` (the gateway
+/// stage); the runner integrates in `IntegrationFrame` (per-body
+/// integration frame). The torque parameter ties to
+/// [`BodyFrame<V>`] regardless of `F`.
 #[allow(clippy::too_many_arguments)]
-pub fn integrate_body_typed<V: Vehicle>(
+pub fn integrate_body_typed<V: Vehicle, F: Frame>(
     config: &DynamicsConfig,
-    trans: &mut TranslationalStateTyped<RootInertial>,
+    trans: &mut TranslationalStateTyped<F>,
     rot: Option<&mut RotationalState>,
     mass: Option<&MassProperties>,
-    gravity_fn: impl Fn(
-        Position<RootInertial>,
-        Velocity<RootInertial>,
-        f64,
-    ) -> Acceleration<RootInertial>,
-    non_grav_force: Force<RootInertial>,
+    gravity_fn: impl Fn(Position<F>, Velocity<F>, f64) -> Acceleration<F>,
+    non_grav_force: Force<F>,
     torque: Torque<BodyFrame<V>>,
     dt: Time,
     time_scale_factor: f64,
@@ -1078,10 +1206,21 @@ pub fn integrate_body_typed<V: Vehicle>(
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
 ) {
     use uom::si::time::second;
+    // allowed: typed-sibling boundary at the gateway-owned `IntegratorType`
+    // wrapper. The integrator orchestration (`integrate_body`,
+    // `integrate_body_coupled`, multi-stage RK4/Gauss-Jackson/ABM4) is
+    // gateway-resident because it composes gateway-only types
+    // (`crate::integrator::IntegratorType` wrapper, `FlatPlateState`,
+    // `IntegrableObject`) and surfaces Bevy/runner-aware diagnostics. The
+    // typed sibling unwraps `Position`/`Velocity` for the caller-supplied
+    // `gravity_fn` closure on each integrator stage; lifting the raw
+    // intermediate position is unavoidable here. See issue #388 — the
+    // kernel itself is the documented orchestration boundary, not a
+    // candidate for relocation into `astrodyn_dynamics`.
     let raw_gravity_fn = |pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
         gravity_fn(
-            Position::<RootInertial>::from_raw_si(pos),
-            Velocity::<RootInertial>::from_raw_si(vel),
+            Position::<F>::from_raw_si(pos), // allowed: integrator-stage boundary, see note above
+            Velocity::<F>::from_raw_si(vel), // allowed: integrator-stage boundary, see note above
             time_frac,
         )
         .raw_si()
@@ -1101,7 +1240,9 @@ pub fn integrate_body_typed<V: Vehicle>(
         gj_state,
         abm4_state,
     );
-    *trans = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&raw_trans);
+    // allowed: typed-sibling boundary writing the raw integrator output
+    // back into the typed `trans`. See note above.
+    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
 }
 
 /// Compute total translational acceleration from a stage evaluation.

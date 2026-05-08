@@ -197,15 +197,20 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
     let w = init.ang_vel.expect("torque_simple: 6-DOF init.ang_vel");
 
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: astrodyn::JeodQuat::from_glam(q),
-            ang_vel_body: w,
-        }),
-        mass: Some(iss_mass_props()),
+        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+            &TranslationalState {
+                position: init.position,
+                velocity: init.velocity,
+            },
+        ),
+        rot: Some(
+            RotationalState {
+                quaternion: astrodyn::JeodQuat::from_glam(q),
+                ang_vel_body: w,
+            }
+            .into(),
+        ),
+        mass: Some(iss_mass_props().into()),
         gravity_controls: GravityControls {
             controls: vec![
                 earth_ctrl,

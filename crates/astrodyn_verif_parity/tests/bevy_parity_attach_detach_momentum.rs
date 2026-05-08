@@ -2418,9 +2418,9 @@ fn bevy_runner_parity_attach_detach_momentum() {
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
-        trans: parent_trans,
-        rot: Some(parent_rot),
-        mass: Some(parent_mass),
+        trans: parent_trans.into(),
+        rot: Some(parent_rot.into()),
+        mass: Some(parent_mass.into()),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
@@ -2428,9 +2428,9 @@ fn bevy_runner_parity_attach_detach_momentum() {
         ..Default::default()
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
-        trans: child_trans,
-        rot: Some(child_rot),
-        mass: Some(child_mass),
+        trans: child_trans.into(),
+        rot: Some(child_rot.into()),
+        mass: Some(child_mass.into()),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
@@ -2854,9 +2854,9 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
-        trans: parent_trans,
-        rot: Some(parent_rot),
-        mass: Some(parent_mass),
+        trans: parent_trans.into(),
+        rot: Some(parent_rot.into()),
+        mass: Some(parent_mass.into()),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(runner_source_a, false)],
@@ -2865,9 +2865,9 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         ..Default::default()
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
-        trans: child_trans,
-        rot: Some(child_rot),
-        mass: Some(child_mass),
+        trans: child_trans.into(),
+        rot: Some(child_rot.into()),
+        mass: Some(child_mass.into()),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(runner_source_b, false)],

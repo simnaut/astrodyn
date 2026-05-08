@@ -30,12 +30,8 @@ impl Simulation {
         Option<Position<RootInertial>>,
     ) {
         // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
-        let sun_pos = self
-            .sun_source
-            .map(|idx| Position::<RootInertial>::from_raw_si(self.source_position(idx)));
-        let moon_pos = self
-            .moon_source
-            .map(|idx| Position::<RootInertial>::from_raw_si(self.source_position(idx)));
+        let sun_pos = self.sun_source.map(|idx| self.source_position_typed(idx));
+        let moon_pos = self.moon_source.map(|idx| self.source_position_typed(idx));
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
@@ -43,7 +39,7 @@ impl Simulation {
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             // JEOD_INV: RF.10 — SRP / shadow consume root-inertial position
             // (because `sun_position` is root-inertial). Drag, by contrast,
-            // is *not* in the shift class: `compute_drag` subtracts
+            // is *not* in the shift class: `compute_ballistic_drag` subtracts
             // `atmos.wind` (computed via `omega × atmosphere_position` in
             // the atmosphere planet's frame) from the vehicle velocity,
             // so the velocity must match the same planet-centered frame —
@@ -71,12 +67,11 @@ impl Simulation {
             // shift site; see comment above).
             body.aero_force = None;
             if let Some(ref drag_config) = body.drag {
-                body.aero_force = Some(astrodyn::compute_drag(
+                body.aero_force = Some(astrodyn::compute_ballistic_drag(
                     drag_config,
                     &body.atmospheric_state,
                     body.trans.velocity.raw_si(),
-                    body.rot.as_ref(),
-                    body.t_struct_body,
+                    &t_inertial_struct,
                 ));
             }
 
@@ -259,9 +254,10 @@ impl Simulation {
             body.gravity_torque = None;
             if body.compute_gravity_torque {
                 if let (Some(ref rot), Some(ref mass)) = (&body.rot, &body.mass) {
+                    let t_parent_this = rot.quaternion.left_quat_to_transformation();
                     body.gravity_torque = Some(astrodyn::compute_gravity_torque(
                         &body.gravity_accel.grav_grad,
-                        rot,
+                        &t_parent_this,
                         &mass.inertia,
                     ));
                 }

@@ -30,17 +30,19 @@ pub fn mercury_relativistic() -> SimulationBuilder {
     let sun_idx = sb.add_source("Sun", sun::point_mass());
 
     // Mercury at perihelion (~46 Gm from Sun, ~58.98 km/s).
-    use astrodyn_dynamics::TranslationalState;
-    let trans = TranslationalState {
-        position: DVec3::new(46.0e9, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 58_980.0, 0.0),
+    use astrodyn_dynamics::state::TranslationalStateTyped;
+    use astrodyn_quantities::ext::Vec3Ext;
+    use astrodyn_quantities::frame::RootInertial;
+    let trans = TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(46.0e9, 0.0, 0.0).m_at::<RootInertial>(),
+        velocity: DVec3::new(0.0, 58_980.0, 0.0).m_per_s_at::<RootInertial>(),
     };
 
     let mut ctrl = GravityControl::new_spherical(sun_idx, false);
     ctrl.relativistic = true;
 
     let vehicle = VehicleBuilder::new()
-        .with_state(trans)
+        .with_translational(trans)
         .three_dof_point_mass(uom::si::f64::Mass::new::<uom::si::mass::kilogram>(3.301e23))
         .rk4()
         .gravity(ctrl)

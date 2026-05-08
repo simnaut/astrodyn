@@ -73,7 +73,7 @@ fn roundtrip_via_simulation(
     );
 
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -206,7 +206,7 @@ fn tier3_orbinit_roundtrip_circular() {
     );
 
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

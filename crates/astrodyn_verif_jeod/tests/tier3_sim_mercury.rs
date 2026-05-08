@@ -73,7 +73,8 @@ fn propagate_mercury_periapses(
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },
@@ -272,7 +273,8 @@ fn tier3_simulation_mercury_relativistic_effect() {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(sun_n, false)],
         },
@@ -303,7 +305,8 @@ fn tier3_simulation_mercury_relativistic_effect() {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },

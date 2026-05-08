@@ -63,14 +63,15 @@ pub fn clementine_lunar() -> SimulationBuilder {
     let mu_moon = constants::mu_moon().value;
     let v = (mu_moon / r).sqrt();
 
-    use astrodyn_dynamics::TranslationalState;
-    let trans = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 0.0, v), // polar orbit
+    use astrodyn_dynamics::state::TranslationalStateTyped;
+    use astrodyn_quantities::frame::RootInertial;
+    let trans = TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(r, 0.0, 0.0).m_at::<RootInertial>(),
+        velocity: DVec3::new(0.0, 0.0, v).m_per_s_at::<RootInertial>(), // polar orbit
     };
 
     let vehicle = VehicleBuilder::new()
-        .with_state(trans)
+        .with_translational(trans)
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(moon_idx, false))

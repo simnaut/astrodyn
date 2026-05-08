@@ -16,18 +16,16 @@
 //! lint at `tests/self_ref_self_planet_discipline.rs` enforces this
 //! globally.
 
-use glam::{DMat3, DQuat, DVec3};
+use glam::{DQuat, DVec3};
 
-use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, RotationalState};
+use crate::{EulerSequence, LvlhFrame, OrbitalElements, RotationalState};
 use astrodyn_math::OrbitalError;
 use astrodyn_quantities::aliases::{Position, Velocity};
-use astrodyn_quantities::dims::{GravParam, SpecificAngMomDim};
+use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::ext::Vec3Ext;
 use astrodyn_quantities::frame::{BodyFrame, Lvlh, RootInertial, SelfPlanet, Vehicle};
-use astrodyn_quantities::qty3::Qty3;
 use uom::si::angle::radian;
-use uom::si::f64::{Angle, Length};
-use uom::si::length::meter;
+use uom::si::f64::Angle;
 
 /// Relative state between two bodies.
 ///
@@ -446,54 +444,7 @@ pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     )
 }
 
-/// Compute geodetic state (latitude, longitude, altitude) from inertial position.
-///
-/// Rotates the inertial position into the planet-fixed frame using the given
-/// transformation matrix, then delegates to
-/// [`astrodyn_math::GeodeticState::from_planet_fixed`] (sole owner of the JEOD
-/// Borkowski iteration kernel). Bit-identical numerics to the typed sibling
-/// [`compute_body_geodetic_typed`].
-pub fn compute_body_geodetic(
-    position: DVec3,
-    t_inertial_pfix: &DMat3,
-    r_eq: f64,
-    r_pol: f64,
-) -> GeodeticState {
-    let pos_pfix = *t_inertial_pfix * position;
-    GeodeticState::from_planet_fixed(pos_pfix, r_eq, r_pol)
-}
-
-/// Compute the solar beta angle (angle between orbit plane and Sun direction).
-///
-/// Computes the orbital angular momentum vector `h = r × v`, then delegates
-/// to [`astrodyn_math::solar_beta_angle_typed`].
-///
-/// # Panics
-///
-/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
-/// orbit) or if the Sun position coincides with the body position.
-pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
-    let h = position.cross(velocity);
-    let rel_sun = sun_position - position;
-
-    assert!(
-        h.length_squared() > 0.0,
-        "compute_body_solar_beta: orbital angular momentum is zero; \
-         solar beta angle is undefined"
-    );
-    assert!(
-        rel_sun.length_squared() > 0.0,
-        "compute_body_solar_beta: sun_position coincides with position; \
-         solar beta angle is undefined"
-    );
-
-    // Delegate to the typed kernel (which clamps & normalizes internally) and
-    // unwrap the typed `Angle` to radians for f64 storage. Bit-identical to
-    // the historical f64 path.
-    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
-    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
-    astrodyn_math::solar_beta_angle_typed(h_typed, sun_typed).get::<radian>()
-}
+pub use astrodyn_math::{compute_body_geodetic, compute_body_solar_beta};
 
 /// Compute the relative state between two bodies.
 ///
@@ -697,68 +648,14 @@ pub fn compute_body_lvlh_frame_typed<P: astrodyn_quantities::frame::Planet>(
     LvlhFrame::compute(position, velocity)
 }
 
-/// Typed sibling of [`compute_body_geodetic`].
-///
-/// Accepts a typed inertial position and ellipsoid radii, applies the
-/// inertial-to-planet-fixed rotation, then delegates to
-/// [`astrodyn_math::GeodeticState::from_planet_fixed`] (sole owner of the JEOD
-/// Borkowski iteration kernel). Returns the f64 [`GeodeticState`] used by
-/// Bevy components; bit-identical to the f64 surface.
-pub fn compute_body_geodetic_typed<P: astrodyn_quantities::frame::Planet>(
-    position: Position<astrodyn_quantities::frame::PlanetInertial<P>>,
-    t_inertial_pfix: &DMat3,
-    r_eq: Length,
-    r_pol: Length,
-) -> GeodeticState {
-    let pos_pfix = *t_inertial_pfix * position.raw_si();
-    GeodeticState::from_planet_fixed(pos_pfix, r_eq.get::<meter>(), r_pol.get::<meter>())
-}
-
-/// Typed sibling of [`compute_body_solar_beta`].
-///
-/// Accepts inertial-frame typed position/velocity/sun position and returns
-/// the solar beta angle as a typed [`Angle`]. Bit-identical to the f64
-/// surface — this wrapper computes `h = r × v` and delegates to the typed
-/// `solar_beta_angle_typed` kernel.
-///
-/// # Panics
-///
-/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
-/// orbit) or if the Sun position coincides with the body position.
-pub fn compute_body_solar_beta_typed(
-    position: Position<RootInertial>,
-    velocity: Velocity<RootInertial>,
-    sun_position: Position<RootInertial>,
-) -> Angle {
-    let pos = position.raw_si();
-    let vel = velocity.raw_si();
-    let sun = sun_position.raw_si();
-    let h = pos.cross(vel);
-    let rel_sun = sun - pos;
-
-    assert!(
-        h.length_squared() > 0.0,
-        "compute_body_solar_beta_typed: orbital angular momentum is zero; \
-         solar beta angle is undefined"
-    );
-    assert!(
-        rel_sun.length_squared() > 0.0,
-        "compute_body_solar_beta_typed: sun_position coincides with position; \
-         solar beta angle is undefined"
-    );
-
-    // Construct typed angular-momentum and unit-direction quantities for the
-    // typed kernel. The kernel normalizes internally — direction-only inputs
-    // are accepted, so the unnormalized `rel_sun` works as a Position<RootInertial>.
-    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
-    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
-    astrodyn_math::solar_beta_angle_typed(h_typed, sun_typed)
-}
+pub use astrodyn_math::{compute_body_geodetic_typed, compute_body_solar_beta_typed};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::GeodeticState;
     use astrodyn_quantities::frame::SelfRef;
+    use glam::DMat3;
 
     /// Verify that `compute_body_geodetic` correctly applies the inertial-to-
     /// planet-fixed rotation before computing geodetic coordinates.

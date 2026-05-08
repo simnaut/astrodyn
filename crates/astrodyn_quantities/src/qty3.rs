@@ -83,6 +83,35 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
     pub fn zero() -> Self {
         Self::from_raw_si(DVec3::ZERO)
     }
+
+    /// Relabel the frame phantom from `F` to `F2` without changing the
+    /// underlying numeric values.
+    ///
+    /// This is a pure phantom-tag swap — the SI-unit components are
+    /// preserved bit-identically. The method exists so call sites that
+    /// need to assert "the same vector lives in a different conceptual
+    /// frame" (e.g., RF.10 non-shift relabels, integ-origin shift
+    /// preludes that already added the offset, atmosphere
+    /// `IntegrationFrame` ↔ `PlanetInertial<P>` boundaries) can do so
+    /// without round-tripping through raw `DVec3` and re-wrapping via
+    /// `from_raw_si`. The relabel is **caller-asserted**, mirroring
+    /// `from_raw_si` — there is no runtime check that `F` and `F2` are
+    /// the same physical frame; the caller is responsible for the
+    /// invariant.
+    ///
+    /// Use this in preference to `from_raw_si(self.raw_si())` whenever
+    /// the source already carries a typed phantom and the destination
+    /// is a different (caller-asserted equivalent) frame, so the
+    /// escape-hatch lint can stay clean.
+    #[inline(always)]
+    pub fn relabel_to<F2: Frame>(self) -> Qty3<D, F2> {
+        Qty3 {
+            x: self.x,
+            y: self.y,
+            z: self.z,
+            _f: PhantomData,
+        }
+    }
 }
 
 // Manual Copy/Clone/PartialEq to avoid the derive macro demanding `D: Copy`.

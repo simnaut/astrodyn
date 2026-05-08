@@ -225,6 +225,17 @@ impl<F: Frame, V: Vehicle> FrameDerivativesTyped<F, V> {
     }
 }
 
+impl<F: Frame, V: Vehicle> From<FrameDerivatives> for FrameDerivativesTyped<F, V> {
+    /// Lift an untyped [`FrameDerivatives`] into the typed form,
+    /// asserting the caller's frame phantom `F` (translational) and
+    /// vehicle phantom `V` (rotational). Documented test/scenario /
+    /// kernel-output boundary lift.
+    #[inline]
+    fn from(d: FrameDerivatives) -> Self {
+        Self::from_untyped_unchecked(&d)
+    }
+}
+
 /// Per-body dynamics-mode toggles consumed by the integrator.
 ///
 /// Mirrors JEOD's `DynBody.translational_dynamics` /

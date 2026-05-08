@@ -173,7 +173,8 @@ fn tier3_simulation_earth_moon_clem() {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(moon, 60, 60, false),
@@ -182,7 +183,7 @@ fn tier3_simulation_earth_moon_clem() {
             ],
         },
         // Clementine mass: 424 kg (from Modified_data/mass.py)
-        mass: Some(astrodyn::MassProperties::new(424.0)),
+        mass: Some(astrodyn::MassProperties::new(424.0).into()),
         // Cannonball SRP matching JEOD Clementine: cx_area=2.1432 m²,
         // albedo=1.0, diffuse=0.27 (from Modified_data/radiation_pressure.py)
         srp: Some(SrpModel::Cannonball {

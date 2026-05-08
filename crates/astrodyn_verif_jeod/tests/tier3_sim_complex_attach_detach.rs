@@ -338,25 +338,25 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, dt);
 
     let v1 = sim.add_body(VehicleConfig {
-        trans: veh1_initial_trans(),
-        rot: Some(veh1_initial_rot()),
-        mass: Some(veh1_mass()),
+        trans: veh1_initial_trans().into(),
+        rot: Some(veh1_initial_rot().into()),
+        mass: Some(veh1_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: veh2_initial_trans(),
-        rot: Some(veh2_initial_rot()),
-        mass: Some(veh2_mass()),
+        trans: veh2_initial_trans().into(),
+        rot: Some(veh2_initial_rot().into()),
+        mass: Some(veh2_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: veh3_initial_trans(),
-        rot: Some(veh3_initial_rot()),
-        mass: Some(veh3_mass()),
+        trans: veh3_initial_trans().into(),
+        rot: Some(veh3_initial_rot().into()),
+        mass: Some(veh3_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()

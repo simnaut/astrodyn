@@ -39,8 +39,8 @@ use glam::DVec3;
 
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, RotationModel, SimulationBuilder, SimulationTime,
-    TranslationalState, VehicleConfig, EARTH,
+    GravitySource, GravitySourceEntry, RootInertial, RotationModel, SimulationBuilder,
+    SimulationTime, TranslationalState, Vec3Ext, VehicleConfig, EARTH,
 };
 use astrodyn_atmosphere::exponential::ExponentialAtmosphere;
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
@@ -104,7 +104,7 @@ fn earth_at_offset(mu: f64) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(SSB_TO_EARTH_OFFSET),
+        position: SSB_TO_EARTH_OFFSET.m_at::<RootInertial>(),
         velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
         t_inertial_pfix: Some(glam::DMat3::IDENTITY),
         rotation_model: RotationModel::None,
@@ -123,7 +123,7 @@ fn sun_source(position_in_root: DVec3) -> GravitySourceEntry {
             mu: 0.0, // no gravitational pull from Sun in this test
             model: GravityModel::PointMass,
         },
-        position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(position_in_root),
+        position: position_in_root.m_at::<RootInertial>(),
         velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
         t_inertial_pfix: None,
         rotation_model: RotationModel::None,
@@ -156,7 +156,7 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
     };
 
     let mut cfg = VehicleConfig {
-        trans,
+        trans: trans.into(),
         rot: None,
         mass: None,
         gravity_controls: GravityControls {

@@ -145,17 +145,17 @@ fn build_runner_sim() -> (astrodyn_runner::Simulation, usize, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
     let parent_idx = sim.add_body(VehicleConfig {
-        trans: parent_trans(),
-        rot: Some(parent_rot()),
-        mass: Some(parent_mass()),
+        trans: parent_trans().into(),
+        rot: Some(parent_rot().into()),
+        mass: Some(parent_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let child_idx = sim.add_body(VehicleConfig {
-        trans: child_initial_trans(),
-        rot: Some(child_initial_rot()),
-        mass: Some(child_mass()),
+        trans: child_initial_trans().into(),
+        rot: Some(child_initial_rot().into()),
+        mass: Some(child_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()

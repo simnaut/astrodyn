@@ -103,12 +103,16 @@ fn setup_run9(
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init_ang_vel,
-        }),
-        mass: Some(mass_props),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+                ang_vel_body: init_ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

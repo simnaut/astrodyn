@@ -62,7 +62,7 @@ fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
 
 fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

@@ -75,6 +75,79 @@ pub fn solar_beta_angle_typed(
     Angle::new::<radian>(beta)
 }
 
+/// Compute the solar beta angle from raw position / velocity / Sun position.
+///
+/// Computes the orbital angular momentum vector `h = r × v`, then delegates
+/// to [`solar_beta_angle_typed`].
+///
+/// # Panics
+///
+/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
+/// orbit) or if the Sun position coincides with the body position.
+pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
+    let h = position.cross(velocity);
+    let rel_sun = sun_position - position;
+
+    assert!(
+        h.length_squared() > 0.0,
+        "compute_body_solar_beta: orbital angular momentum is zero; \
+         solar beta angle is undefined"
+    );
+    assert!(
+        rel_sun.length_squared() > 0.0,
+        "compute_body_solar_beta: sun_position coincides with position; \
+         solar beta angle is undefined"
+    );
+
+    // Delegate to the typed kernel (which clamps & normalizes internally) and
+    // unwrap the typed `Angle` to radians for f64 storage. Bit-identical to
+    // the historical f64 path.
+    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
+    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
+    solar_beta_angle_typed(h_typed, sun_typed).get::<radian>()
+}
+
+/// Typed sibling of [`compute_body_solar_beta`].
+///
+/// Accepts inertial-frame typed position/velocity/sun position and returns
+/// the solar beta angle as a typed [`Angle`]. Bit-identical to the f64
+/// surface — this wrapper computes `h = r × v` and delegates to the typed
+/// [`solar_beta_angle_typed`] kernel.
+///
+/// # Panics
+///
+/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
+/// orbit) or if the Sun position coincides with the body position.
+pub fn compute_body_solar_beta_typed(
+    position: Position<RootInertial>,
+    velocity: astrodyn_quantities::aliases::Velocity<RootInertial>,
+    sun_position: Position<RootInertial>,
+) -> Angle {
+    let pos = position.raw_si();
+    let vel = velocity.raw_si();
+    let sun = sun_position.raw_si();
+    let h = pos.cross(vel);
+    let rel_sun = sun - pos;
+
+    assert!(
+        h.length_squared() > 0.0,
+        "compute_body_solar_beta_typed: orbital angular momentum is zero; \
+         solar beta angle is undefined"
+    );
+    assert!(
+        rel_sun.length_squared() > 0.0,
+        "compute_body_solar_beta_typed: sun_position coincides with position; \
+         solar beta angle is undefined"
+    );
+
+    // Construct typed angular-momentum and unit-direction quantities for the
+    // typed kernel. The kernel normalizes internally — direction-only inputs
+    // are accepted, so the unnormalized `rel_sun` works as a Position<RootInertial>.
+    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
+    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
+    solar_beta_angle_typed(h_typed, sun_typed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -91,7 +91,7 @@ fn build_solar_beta_sim(
     sim.sun_source = Some(sun);
 
     sim.add_body(VehicleConfig {
-        trans: body_state,
+        trans: body_state.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

@@ -9,7 +9,7 @@
 //! structs out of `astrodyn_runner`; the runner and the future Bevy adapter both
 //! consume this single description.
 
-use glam::{DMat3, DVec3};
+use glam::DMat3;
 
 use crate::integrator::IntegratorType;
 use crate::interactions::FlatPlateState;
@@ -17,7 +17,9 @@ use crate::EulerSequence;
 use astrodyn_gravity::GravityControls;
 use astrodyn_interactions::DragConfig;
 
-use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_dynamics::state::TranslationalStateTyped;
+use astrodyn_dynamics::{MassPropertiesTyped, RotationalStateTyped};
+use astrodyn_quantities::frame::{RootInertial, SelfRef};
 
 // ── Frame switching ─────────────────────────────────────────────────────
 
@@ -153,12 +155,28 @@ pub struct DerivedStateConfig {
 /// standalone runner exposes one; the Bevy adapter reads components).
 pub struct VehicleConfig {
     // ── Initial state ──
-    /// Translational state: position and velocity in the inertial frame.
-    pub trans: TranslationalState,
-    /// Rotational state: quaternion and angular velocity. `None` for 3-DOF bodies.
-    pub rot: Option<RotationalState>,
-    /// Mass properties. `None` for massless test particles (gravity-only).
-    pub mass: Option<MassProperties>,
+    /// Translational state in the root-inertial frame, typed
+    /// end-to-end. The runner re-tags as `<IntegrationFrame>` at
+    /// `SimBody::new`; the Bevy adapter relabels to
+    /// `<PlanetInertial<P>>` via the `From<TranslationalStateTyped<RootInertial>>`
+    /// component impl. Mission code that constructs `VehicleConfig`
+    /// directly via struct literal can pass an untyped
+    /// `TranslationalState` via `.into()` (the
+    /// `From<TranslationalState> for TranslationalStateTyped<F>` impl
+    /// in `astrodyn_dynamics` lifts at the boundary).
+    pub trans: TranslationalStateTyped<RootInertial>,
+    /// Rotational state (typed). `None` for 3-DOF bodies. The vehicle
+    /// phantom is the runtime-resolved wildcard `<SelfRef>` (JEOD_INV
+    /// `TS.01`); the runner / Bevy adapter drops to raw at the
+    /// construction boundary. Mission code can pass an untyped
+    /// `RotationalState` via `.into()` (the
+    /// `From<RotationalState> for RotationalStateTyped<V>` impl in
+    /// `astrodyn_dynamics` lifts at the boundary).
+    pub rot: Option<RotationalStateTyped<SelfRef>>,
+    /// Mass properties (typed). `None` for massless test particles
+    /// (gravity-only). Phantom is `<SelfRef>` (JEOD_INV `TS.01`);
+    /// mission code can pass an untyped `MassProperties` via `.into()`.
+    pub mass: Option<MassPropertiesTyped<SelfRef>>,
 
     // ── Dynamics ──
     /// Integration method. Defaults to `IntegratorType::Rk4`.
@@ -185,10 +203,16 @@ pub struct VehicleConfig {
     pub derived: DerivedStateConfig,
 
     // ── External loads ──
-    /// External force in the inertial frame (N). Defaults to zero.
-    pub external_force: DVec3,
-    /// External torque in the body frame (N·m). Defaults to zero.
-    pub external_torque: DVec3,
+    /// External force in the root-inertial frame, typed end-to-end.
+    pub external_force:
+        astrodyn_quantities::aliases::Force<astrodyn_quantities::frame::RootInertial>,
+    /// External torque in the body frame, typed against the wildcard
+    /// vehicle phantom `<SelfRef>` at this storage boundary
+    /// (per-vehicle phantom is runtime-resolved by the runner / Bevy
+    /// adapter; documented under JEOD_INV `TS.01`).
+    pub external_torque: astrodyn_quantities::aliases::Torque<
+        astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+    >,
 
     // ── Frame switching ──
     /// Gravity source whose inertial frame is used for integration.
@@ -214,7 +238,7 @@ pub struct VehicleConfig {
 impl Default for VehicleConfig {
     fn default() -> Self {
         Self {
-            trans: TranslationalState::default(),
+            trans: TranslationalStateTyped::<RootInertial>::default(),
             rot: None,
             mass: None,
             integrator: IntegratorType::default(),
@@ -225,8 +249,12 @@ impl Default for VehicleConfig {
             srp: None,
             shadow_body: None,
             derived: DerivedStateConfig::default(),
-            external_force: DVec3::ZERO,
-            external_torque: DVec3::ZERO,
+            external_force: astrodyn_quantities::aliases::Force::<
+                astrodyn_quantities::frame::RootInertial,
+            >::zero(),
+            external_torque: astrodyn_quantities::aliases::Torque::<
+                astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+            >::zero(),
             integ_source: None,
             frame_switches: Vec::new(),
         }

@@ -77,9 +77,12 @@ pub use euler_angles::{
     ALL_SEQUENCES,
 };
 pub use geodetic::{
-    cartesian_to_geodetic_typed, geodetic_to_cartesian_typed, GeodeticState, GeodeticStateTyped,
+    cartesian_to_geodetic_typed, compute_body_geodetic, compute_body_geodetic_typed,
+    geodetic_to_cartesian_typed, GeodeticState, GeodeticStateTyped,
 };
 pub use lvlh::{compute_lvlh_frame_typed, LvlhFrame};
 pub use orbital_elements::OrbitalElements;
-pub use solar_beta::solar_beta_angle_typed;
+pub use solar_beta::{
+    compute_body_solar_beta, compute_body_solar_beta_typed, solar_beta_angle_typed,
+};
 pub use types::*;

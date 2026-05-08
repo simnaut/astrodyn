@@ -196,7 +196,8 @@ fn run_integ_test(
         trans: TranslationalState {
             position: init.prop_position,
             velocity: init.prop_velocity,
-        },
+        }
+        .into(),
         integrator,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

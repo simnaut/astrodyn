@@ -45,6 +45,7 @@ pub mod aero_drag;
 pub mod contact;
 pub mod earth_lighting;
 pub mod flat_plate_aero;
+pub mod forces;
 pub mod gravity_torque;
 pub mod radiation_pressure;
 pub mod shadow;
@@ -62,6 +63,7 @@ pub use earth_lighting::{
     LightingParams,
 };
 pub use flat_plate_aero::*;
+pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use gravity_torque::{compute_gravity_torque, compute_gravity_torque_typed};
 pub use radiation_pressure::*;
 pub use shadow::*;

@@ -146,6 +146,28 @@ pub fn compute_t_parent_this_from_tjt_with_polar(
     compute_t_parent_this_with_polar(gmst_seconds, tt_centuries, polar)
 }
 
+/// Typed sibling of [`compute_t_parent_this_from_tjt_with_polar`]
+/// returning the rotation already wrapped as a typed
+/// `FrameTransform<RootInertial, PlanetFixed<P>>`. Generic over the
+/// planet phantom `P` so consumers in different planet pipelines
+/// (Earth / Mars / Moon) share one entry shape.
+///
+/// Documents the rotation kernel as the structural source of truth for
+/// the phantom: the matrix is computed in this crate and wrapped at
+/// the boundary, so adapter callers (Bevy / runner) don't have to
+/// re-wrap via `FrameTransform::from_matrix`.
+pub fn compute_t_parent_this_from_tjt_with_polar_typed<P: astrodyn_quantities::frame::Planet>(
+    gmst_seconds: f64,
+    tt_tjt: f64,
+    polar: Option<(f64, f64)>,
+) -> astrodyn_quantities::frame_transform::FrameTransform<
+    astrodyn_quantities::frame::RootInertial,
+    astrodyn_quantities::frame::PlanetFixed<P>,
+> {
+    let mat = compute_t_parent_this_from_tjt_with_polar(gmst_seconds, tt_tjt, polar);
+    astrodyn_quantities::frame_transform::FrameTransform::from_matrix(mat)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

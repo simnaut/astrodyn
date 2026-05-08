@@ -89,7 +89,7 @@ fn tier3_bevy_solar_beta_equ() {
     sim.ephemeris = Some(eph_sim);
 
     sim.add_body(VehicleConfig {
-        trans: equ_trans,
+        trans: equ_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -182,7 +182,7 @@ fn tier3_bevy_solar_beta_obliquity() {
     sim.ephemeris = Some(eph_sim);
 
     sim.add_body(VehicleConfig {
-        trans: obl_trans,
+        trans: obl_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -364,9 +364,17 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     }
 
     sim.add_body(VehicleConfig {
-        trans,
-        rot: if sixdof { Some(tumble_rot()) } else { None },
-        mass: if sixdof { Some(iss_mass()) } else { None },
+        trans: trans.into(),
+        rot: if sixdof {
+            Some(tumble_rot().into())
+        } else {
+            None
+        },
+        mass: if sixdof {
+            Some(iss_mass().into())
+        } else {
+            None
+        },
         gravity_controls: GravityControls {
             controls: sim_controls,
         },
@@ -556,7 +564,7 @@ fn tier3_bevy_mars_dawn() {
     sim_sun_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
-        trans: mars_trans,
+        trans: mars_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(mars_idx, false), sim_sun_ctrl],
         },
@@ -633,7 +641,7 @@ fn tier3_bevy_mercury_relativistic() {
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
-        trans: mercury_trans,
+        trans: mercury_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
@@ -734,7 +742,7 @@ fn tier3_bevy_relativistic_moving_source() {
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
-        trans: mercury_trans,
+        trans: mercury_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
@@ -896,8 +904,8 @@ fn tier3_bevy_earth_moon_clem() {
     sim_moon_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
-        trans: clem_trans,
-        mass: Some(mass_props),
+        trans: clem_trans.into(),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth_idx, false),

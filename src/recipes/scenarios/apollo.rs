@@ -70,14 +70,15 @@ pub fn apollo_translunar() -> SimulationBuilder {
     // CSM in a 200 km parking orbit, equatorial.
     let r = 6_578_137.0; // Earth radius + 200 km
     let v = (constants::mu_ggm05c().value / r).sqrt();
-    use astrodyn_dynamics::TranslationalState;
-    let csm_state = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v, 0.0),
+    use astrodyn_dynamics::state::TranslationalStateTyped;
+    use astrodyn_quantities::frame::RootInertial;
+    let csm_state = TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(r, 0.0, 0.0).m_at::<RootInertial>(),
+        velocity: DVec3::new(0.0, v, 0.0).m_per_s_at::<RootInertial>(),
     };
 
     let csm = VehicleBuilder::new()
-        .with_state(csm_state)
+        .with_translational(csm_state)
         .three_dof_point_mass(vehicle::apollo_csm_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(earth_idx, false))

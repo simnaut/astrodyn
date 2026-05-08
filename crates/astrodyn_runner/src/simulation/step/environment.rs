@@ -139,24 +139,21 @@ impl Simulation {
             // `<SelfPlanet>` result through unchanged; the Bevy
             // adapter, which stores `AtmosphericStateC<P>`, moves the
             // planet-tagged value through unchanged.
-            let body_iter = self
-                .bodies
-                .iter_mut()
-                .enumerate()
-                .filter(|(_, body)| body.drag.is_some())
-                .map(|(body_idx, body)| {
-                    let inputs = AtmosphereBodyInputs {
-                        position:
-                            astrodyn::Position::<astrodyn::PlanetInertial<SelfPlanet>>::from_raw_si(
-                                body.trans.position.raw_si(),
-                            ), // allowed: atmosphere RF.10 non-shift boundary — body integrates in the atmosphere planet's inertial frame, so relabel `IntegrationFrame` → `PlanetInertial<SelfPlanet>` is bit-identical
+            let body_iter =
+                self.bodies
+                    .iter_mut()
+                    .enumerate()
+                    .filter(|(_, body)| body.drag.is_some())
+                    .map(|(body_idx, body)| {
+                        let inputs = AtmosphereBodyInputs {
+                        position: astrodyn::Position::<astrodyn::PlanetInertial<SelfPlanet>>::from_raw_si(body.trans.position.raw_si()), // allowed: atmosphere RF.10 non-shift boundary — body integrates in the atmosphere planet's inertial frame, so relabel `IntegrationFrame` → `PlanetInertial<SelfPlanet>` is bit-identical
                     };
-                    let slot = &mut body.atmospheric_state;
-                    let store = move |result: astrodyn::AtmosphereState<SelfPlanet>| {
-                        *slot = result;
-                    };
-                    (body_idx, inputs, store)
-                });
+                        let slot = &mut body.atmospheric_state;
+                        let store = move |result: astrodyn::AtmosphereState<SelfPlanet>| {
+                            *slot = result;
+                        };
+                        (body_idx, inputs, store)
+                    });
 
             run_atmosphere_stage::<SelfPlanet, _, _, _>(body_iter, atmos_config, t_pfix, tai_tjt);
         }

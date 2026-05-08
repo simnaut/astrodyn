@@ -237,7 +237,12 @@ fn build_ref_attach_sim() -> Simulation {
     let mut sb = SimulationBuilder::new(epoch::j2000(), DT_S);
     let _earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
-        .with_state(TranslationalState { position, velocity })
+        .with_translational(astrodyn::TranslationalStateTyped::<
+            astrodyn_quantities::frame::RootInertial,
+        >::from_untyped_unchecked(&TranslationalState {
+            position,
+            velocity,
+        }))
         .sixdof(
             RotationalState {
                 quaternion: q_init,

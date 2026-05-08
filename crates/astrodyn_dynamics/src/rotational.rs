@@ -9,12 +9,12 @@
 
 use core::marker::PhantomData;
 
-use crate::state::TranslationalState;
+use crate::state::{TranslationalState, TranslationalStateTyped};
 use astrodyn_math::quaternion::NORM_LIMIT;
 use astrodyn_math::JeodQuat;
 use astrodyn_quantities::aliases::AngularVelocity;
 use astrodyn_quantities::body_attitude::BodyAttitude;
-use astrodyn_quantities::frame::{BodyFrame, Vehicle};
+use astrodyn_quantities::frame::{BodyFrame, Frame, RootInertial, Vehicle};
 use astrodyn_quantities::quat::NormalizedQuat;
 use glam::{DMat3, DVec3};
 
@@ -47,6 +47,84 @@ pub struct SixDofState {
     pub trans: TranslationalState,
     /// Attitude quaternion + angular velocity.
     pub rot: RotationalState,
+}
+
+/// Typed sibling of [`SixDofState`] carrying a vehicle phantom `V` on
+/// the rotational half and a frame phantom `F` on the translational
+/// half. Composes [`TranslationalStateTyped<F>`] and
+/// [`RotationalStateTyped<V>`] without introducing new arithmetic —
+/// both halves carry their own `to_untyped` / `from_untyped_unchecked`
+/// boundaries already.
+///
+/// Provided as a documented composition-time type for callers that
+/// build packed 6-DOF state to compare or diff (e.g. integration
+/// regression tests, parity helpers). The integrator kernels in this
+/// crate continue to operate on raw [`SixDofState`] internally — RK4
+/// stage scratch is integrator-internal and the typed sibling's
+/// purpose is the API edge, not the kernel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SixDofStateTyped<V: Vehicle, F: Frame = RootInertial> {
+    /// Translational position + velocity, frame-tagged with `F`.
+    pub trans: TranslationalStateTyped<F>,
+    /// Attitude (`BodyAttitude<V>`) + angular velocity (`AngularVelocity<BodyFrame<V>>`).
+    pub rot: RotationalStateTyped<V>,
+}
+
+impl<V: Vehicle, F: Frame> Default for SixDofStateTyped<V, F> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            trans: TranslationalStateTyped::<F>::default(),
+            rot: RotationalStateTyped::<V>::default(),
+        }
+    }
+}
+
+impl<V: Vehicle, F: Frame> SixDofStateTyped<V, F> {
+    /// Drop both phantoms and emit the untyped storage form. Numeric
+    /// values are preserved exactly.
+    #[inline]
+    pub fn to_untyped(&self) -> SixDofState {
+        SixDofState {
+            trans: self.trans.to_untyped(),
+            rot: self.rot.to_untyped(),
+        }
+    }
+
+    /// Lift an untyped [`SixDofState`] into the typed form, asserting
+    /// the caller's frame phantom `F` and vehicle phantom `V` are
+    /// correct. The rotational half re-validates the quaternion's unit
+    /// norm; see [`RotationalStateTyped::from_untyped_unchecked`].
+    #[inline]
+    pub fn from_untyped_unchecked(s: &SixDofState) -> Self {
+        Self {
+            trans: TranslationalStateTyped::<F>::from_untyped_unchecked(&s.trans),
+            rot: RotationalStateTyped::<V>::from_untyped_unchecked(&s.rot),
+        }
+    }
+
+    /// Relabel the translational frame phantom from `F` to `F2` without
+    /// changing numeric values. Mirrors
+    /// [`TranslationalStateTyped::relabel_to`] — the rotational half
+    /// is unaffected because its phantoms (vehicle / body-frame) don't
+    /// depend on the translational frame.
+    #[inline]
+    pub fn relabel_to<F2: Frame>(self) -> SixDofStateTyped<V, F2> {
+        SixDofStateTyped {
+            trans: self.trans.relabel_to::<F2>(),
+            rot: self.rot,
+        }
+    }
+}
+
+impl<V: Vehicle, F: Frame> From<SixDofState> for SixDofStateTyped<V, F> {
+    /// Lift the documented test/scenario boundary from untyped
+    /// [`SixDofState`] into the typed form. Mirrors
+    /// [`From<TranslationalState> for TranslationalStateTyped<F>`].
+    #[inline]
+    fn from(s: SixDofState) -> Self {
+        Self::from_untyped_unchecked(&s)
+    }
 }
 
 /// Typed sibling of [`RotationalState`] parameterized by a vehicle marker
@@ -115,6 +193,19 @@ impl<V: Vehicle> RotationalStateTyped<V> {
             ang_vel_body: AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
             _v: PhantomData,
         }
+    }
+}
+
+impl<V: Vehicle> From<RotationalState> for RotationalStateTyped<V> {
+    /// Lift an untyped [`RotationalState`] into the typed form,
+    /// asserting the caller's vehicle phantom `V`. Mirrors
+    /// [`From<TranslationalState> for TranslationalStateTyped<F>`] —
+    /// the documented test/scenario / BodyAction-payload boundary.
+    /// Re-validates quaternion unit-norm via
+    /// `from_untyped_unchecked`.
+    #[inline]
+    fn from(s: RotationalState) -> Self {
+        Self::from_untyped_unchecked(&s)
     }
 }
 

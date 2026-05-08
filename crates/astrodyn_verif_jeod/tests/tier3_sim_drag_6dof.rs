@@ -83,12 +83,16 @@ fn make_6dof_drag_sim(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
-        rot: Some(RotationalState {
-            quaternion: quat,
-            ang_vel_body: ang_vel,
-        }),
-        mass: Some(mass_props),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: quat,
+                ang_vel_body: ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

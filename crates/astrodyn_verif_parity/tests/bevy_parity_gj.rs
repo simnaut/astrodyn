@@ -153,7 +153,7 @@ fn run_gj_parity(
     let earth_idx = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],

@@ -93,7 +93,7 @@ use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 use std::collections::{HashMap, HashSet};
 
-use astrodyn::{aggregate_wrenches_via_storage, EdgeGeometry, MassStorage, Wrench};
+use astrodyn::{aggregate_wrenches_via_storage, EdgeGeometry, MassStorage, Vec3Ext, Wrench};
 
 use crate::components::{
     Abm4StateC, DynamicsConfigC, FrameDerivativesC, GaussJacksonStateC, GravityAccelerationC,
@@ -488,27 +488,14 @@ pub fn wrench_aggregation_system(
                 .map_or(DMat3::IDENTITY, |s| *s.0.matrix_ref());
             let force_inertial = t_inertial_struct.transpose() * agg.force;
             let torque_body = t_struct_body * agg.torque;
-            // allowed: wrench-aggregation kernel boundary; `agg.force`
-            // arrives as a raw `DVec3` in the root's structural
-            // frame from the kernel walk, then rotated to inertial
-            // here. Re-wrapping is the canonical re-entry into the
-            // typed surface (mirrors `force_collection_system`'s
-            // root-exit boundary write).
-            tf.0.force = astrodyn::Force::<astrodyn::RootInertial>::from_raw_si(force_inertial);
-            // allowed: same wrench-kernel boundary; `torque_body`
-            // is the structural→body rotation of the kernel's
-            // root-struct-frame torque sum, in raw `DVec3`.
-            tf.0.torque = astrodyn::Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
-                torque_body,
-            );
+            // Wrench-aggregation kernel boundary: re-tag the
+            // raw-DVec3 outputs of the rotation arithmetic into the
+            // typed accumulator slots via `Vec3Ext::n_at` / `nm_at`.
+            tf.0.force = force_inertial.n_at::<astrodyn::RootInertial>();
+            tf.0.torque = torque_body.nm_at::<astrodyn::BodyFrame<astrodyn::SelfRef>>();
         } else {
-            // allowed: zeroing a typed accumulator; raw zero is
-            // unambiguous in any frame phantom.
-            tf.0.force = astrodyn::Force::<astrodyn::RootInertial>::from_raw_si(DVec3::ZERO);
-            // allowed: same.
-            tf.0.torque = astrodyn::Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
-                DVec3::ZERO,
-            );
+            tf.0.force = astrodyn::Force::<astrodyn::RootInertial>::zero();
+            tf.0.torque = astrodyn::Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::zero();
         }
     }
 
@@ -554,13 +541,9 @@ pub fn wrench_aggregation_system(
                     rot_accel: DVec3::ZERO,
                 }
             };
-            // allowed: typed↔untyped kernel boundary; the
-            // `compute_frame_derivatives` kernel returns a raw
-            // `FrameDerivatives` and re-wrapping is the canonical
-            // boundary pattern (mirrors `force_collection_system`).
-            fd.0 = astrodyn::FrameDerivativesTyped::<astrodyn::RootInertial, astrodyn::SelfRef>::from_untyped_unchecked(
-                &new_derivs,
-            );
+            // Typed↔untyped kernel boundary; use the
+            // `From<FrameDerivatives>` impl for the typed accumulator.
+            fd.0 = new_derivs.into();
         } else {
             fd.0 = astrodyn::FrameDerivativesTyped::<astrodyn::RootInertial, astrodyn::SelfRef>::default();
         }
@@ -614,19 +597,13 @@ mod tests {
     /// force". Centralising the lift here keeps the `// allowed:`
     /// boundary annotation in one place.
     fn ext_force_in_root_inertial(v: DVec3) -> ExternalForceC {
-        // allowed: test-fixture constructor lifts a raw DVec3 into the
-        // typed `Force<RootInertial>` accumulator; mirror of the
-        // canonical insertion-time bridge in src/components.rs's
-        // `ExternalForceC::From<...>`-equivalent test usage.
-        ExternalForceC(astrodyn::Force::<astrodyn::RootInertial>::from_raw_si(v))
+        ExternalForceC(v.n_at::<astrodyn::RootInertial>())
     }
 
     /// Construct a typed body-frame [`ExternalTorqueC`] from a raw
     /// `DVec3`. Same rationale as [`ext_force_in_root_inertial`].
     fn ext_torque_in_body(v: DVec3) -> ExternalTorqueC {
-        // allowed: test-fixture constructor — lifts a raw DVec3 into typed Torque<BodyFrame<SelfRef>> for spawn args.
-        let t = astrodyn::Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(v);
-        ExternalTorqueC(t)
+        ExternalTorqueC(v.nm_at::<astrodyn::BodyFrame<astrodyn::SelfRef>>())
     }
 
     fn run_pipeline(app: &mut App) {

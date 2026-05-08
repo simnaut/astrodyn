@@ -431,12 +431,16 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
         trans: TranslationalState {
             position: row0.position,
             velocity: row0.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: row0.quaternion,
-            ang_vel_body: row0.ang_vel_body,
-        }),
-        mass: Some(cm_only_mass),
+        }
+        .into(),
+        rot: Some(
+            RotationalState {
+                quaternion: row0.quaternion,
+                ang_vel_body: row0.ang_vel_body,
+            }
+            .into(),
+        ),
+        mass: Some(cm_only_mass.into()),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth, GRAV_DEGREE, GRAV_ORDER, false),
