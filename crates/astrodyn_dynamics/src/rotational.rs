@@ -196,6 +196,19 @@ impl<V: Vehicle> RotationalStateTyped<V> {
     }
 }
 
+impl<V: Vehicle> From<RotationalState> for RotationalStateTyped<V> {
+    /// Lift an untyped [`RotationalState`] into the typed form,
+    /// asserting the caller's vehicle phantom `V`. Mirrors
+    /// [`From<TranslationalState> for TranslationalStateTyped<F>`] —
+    /// the documented test/scenario / BodyAction-payload boundary.
+    /// Re-validates quaternion unit-norm via
+    /// `from_untyped_unchecked`.
+    #[inline]
+    fn from(s: RotationalState) -> Self {
+        Self::from_untyped_unchecked(&s)
+    }
+}
+
 /// Compute rotational acceleration from Euler's rigid-body equation.
 ///
 /// Faithful port of JEOD `dyn_body_collect.cc` lines 238-267:

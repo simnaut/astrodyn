@@ -222,7 +222,9 @@ pub use astrodyn_time::{
 
 // astrodyn_frames: planet rotation (used by ephemeris stage and mission
 // code that sets up Mars/Moon planetary configurations).
-pub use astrodyn_frames::rotation_j2000::compute_t_parent_this_from_tjt_with_polar;
+pub use astrodyn_frames::rotation_j2000::{
+    compute_t_parent_this_from_tjt_with_polar, compute_t_parent_this_from_tjt_with_polar_typed,
+};
 pub use astrodyn_frames::rotation_mars;
 pub use astrodyn_frames::rotation_moon;
 

@@ -195,6 +195,20 @@ pub fn compute_mars_rotation(tt_seconds_since_j2000: f64) -> DMat3 {
     (p * nut.matrix * r).transpose()
 }
 
+/// Typed sibling of [`compute_mars_rotation`] returning the rotation
+/// already wrapped as
+/// `FrameTransform<RootInertial, PlanetFixed<Mars>>`. Pinned to
+/// Mars by definition — this kernel is the IAU Mars rotation formula.
+pub fn compute_mars_rotation_typed(
+    tt_seconds_since_j2000: f64,
+) -> astrodyn_quantities::frame_transform::FrameTransform<
+    astrodyn_quantities::frame::RootInertial,
+    astrodyn_quantities::frame::PlanetFixed<astrodyn_quantities::frame::Mars>,
+> {
+    let mat = compute_mars_rotation(tt_seconds_since_j2000);
+    astrodyn_quantities::frame_transform::FrameTransform::from_matrix(mat)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

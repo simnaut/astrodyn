@@ -619,13 +619,11 @@ pub fn body_action_system<P: Planet>(
                         entity = action.entity, name = action.name, planet = std::any::type_name::<P>(),
                     )
                 });
-            // allowed: action-fire boundary — `BodyAction::apply_translational` returns the
-            // ECS-agnostic `TranslationalState` (the kernels in `astrodyn_dynamics::body_init`
-            // are untyped). Lifting back to the typed `<PlanetInertial<Earth>>` storage
-            // is a one-time relabel at the action-fire boundary, identical in shape to the
-            // `VehicleConfig::spawn_bevy` initial-state lift in `lib.rs`. Not a per-step
-            // bypass.
-            comp.0 = astrodyn::TranslationalStateTyped::from_untyped_unchecked(&state);
+            // Action-fire boundary — `BodyAction::apply_translational`
+            // returns the ECS-agnostic `TranslationalState`. Use the
+            // `From<TranslationalState>` impl in `astrodyn_dynamics`
+            // (witness-asserted) to lift to the typed slot in one step.
+            comp.0 = state.into();
             state_mutated = true;
         }
         if let Some(state) = action.action.apply_rotational() {
@@ -638,11 +636,9 @@ pub fn body_action_system<P: Planet>(
                         action.entity, action.name,
                     )
                 });
-            // allowed: same action-fire boundary as the translational branch above.
-            // `RotationalState` is the ECS-agnostic untyped form; the typed
-            // `<SelfRef>` re-tag here is a one-time witness reinstatement at the
-            // mutation site, not a per-step lift.
-            comp.0 = astrodyn::RotationalStateTyped::from_untyped_unchecked(&state);
+            // Same action-fire boundary as the translational branch
+            // above; use the `From<RotationalState>` impl.
+            comp.0 = state.into();
             state_mutated = true;
         }
         if let Some(props) = action.action.apply_mass() {
@@ -667,12 +663,10 @@ pub fn body_action_system<P: Planet>(
             // `dirty` here is the safe action-fire contract: the
             // recompute is a `dirty`-guarded no-op when nothing
             // changed.
-            // allowed: action-fire boundary — `MassProperties` is the ECS-agnostic
-            // untyped form returned by `BodyAction::apply_mass`. The
-            // `MassPropertiesTyped<SelfRef>` re-tag is a one-time relabel matching
-            // the `MassPropertiesC::from(MassProperties)` pattern used at spawn
-            // time. Not a per-step bypass.
-            comp.0 = astrodyn::MassPropertiesTyped::from_untyped_unchecked(&props);
+            // Action-fire boundary — `MassProperties` is the
+            // ECS-agnostic untyped form. Use the `From<MassProperties>`
+            // impl to lift to the typed slot.
+            comp.0 = props.into();
             comp.0.dirty = true;
             mass_mutated = true;
         }

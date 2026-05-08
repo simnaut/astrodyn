@@ -311,6 +311,16 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     }
 }
 
+impl<V: Vehicle> From<MassProperties> for MassPropertiesTyped<V> {
+    /// Lift an untyped [`MassProperties`] into the typed form,
+    /// asserting the caller's vehicle phantom `V`. Documented
+    /// test/scenario / BodyAction-payload boundary.
+    #[inline]
+    fn from(mp: MassProperties) -> Self {
+        Self::from_untyped_unchecked(&mp)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

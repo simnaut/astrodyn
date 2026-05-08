@@ -46,7 +46,7 @@
 //! }
 //! ```
 
-use astrodyn::Planet;
+use astrodyn::{Planet, Vec3Ext};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -340,8 +340,9 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
 
         // SourceMutator's public API takes a raw user-supplied DVec3
         // (mirroring `astrodyn_runner::Simulation::set_source_position`);
-        // this is the typed-API boundary for the user → ECS conversion.
-        let typed_pos = astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
+        // `Vec3Ext::m_at` is the named typed-construction-from-meters
+        // primitive at the user → ECS boundary.
+        let typed_pos = position.m_at::<astrodyn::RootInertial>();
 
         // SourceInertialPositionC and TranslationalStateC must exist
         // for a registered gravity source — `register_source_frames_system`
@@ -384,9 +385,8 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
         // planet-inertial frame at the storage boundary. Bit-identical
         // numerics — only the phantom tag changes; the system
         // instantiation's `<P>` parameter pins the storage convention.
-        let pos_si = typed_pos.raw_si();
-        // allowed: source-mutator boundary, RootInertial → PlanetInertial<P> relabel
-        ts.0.position = astrodyn::Position::<astrodyn::PlanetInertial<P>>::from_raw_si(pos_si);
+        // Relabel root-inertial → planet-inertial<P> via Qty3::relabel_to.
+        ts.0.position = typed_pos.relabel_to::<astrodyn::PlanetInertial<P>>();
     }
 
     /// Set the inertial position and velocity of `source`. Mirrors
@@ -415,9 +415,10 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
 
         // SourceMutator's public API takes raw user-supplied DVec3s
         // (mirroring `astrodyn_runner::Simulation::set_source_state`);
-        // this is the typed-API boundary for the user → ECS conversion.
-        let typed_pos = astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
-        let typed_vel = astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(velocity); // allowed: user-DVec3 → typed boundary
+        // `Vec3Ext::m_at` / `m_per_s_at` are the named typed-construction
+        // primitives at the user → ECS boundary.
+        let typed_pos = position.m_at::<astrodyn::RootInertial>();
+        let typed_vel = velocity.m_per_s_at::<astrodyn::RootInertial>();
 
         // Position + translational writes are part of the registered-source
         // contract: SourceInertialPositionC is required by
@@ -466,14 +467,11 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
         });
         // `TranslationalStateC<P>` stores `<PlanetInertial<P>>`; the
         // user-supplied `typed_pos` / `typed_vel` are `<RootInertial>`.
-        // Relabel to the `<P>`-tagged planet-inertial frame at the
-        // storage boundary — bit-identical numerics; the system
-        // instantiation's `<P>` parameter pins the storage convention.
-        ts.0.position =
-            astrodyn::Position::<astrodyn::PlanetInertial<P>>::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<P> relabel
-        let vel_si = typed_vel.raw_si();
-        // allowed: same boundary as ts.0.position above
-        ts.0.velocity = astrodyn::Velocity::<astrodyn::PlanetInertial<P>>::from_raw_si(vel_si);
+        // Relabel via Qty3::relabel_to (bit-identical numerics; the
+        // system instantiation's `<P>` parameter pins the storage
+        // convention).
+        ts.0.position = typed_pos.relabel_to::<astrodyn::PlanetInertial<P>>();
+        ts.0.velocity = typed_vel.relabel_to::<astrodyn::PlanetInertial<P>>();
     }
 
     fn assert_not_central(&self, source: Entity, method: &str) {

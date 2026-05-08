@@ -543,8 +543,12 @@ pub trait Vec3Ext: Copy {
     fn m_per_s2_at<F: Frame>(self) -> crate::aliases::Acceleration<F>;
     /// Interpret as newtons (force) in frame `F`.
     fn n_at<F: Frame>(self) -> crate::aliases::Force<F>;
+    /// Interpret as N·m (torque) in frame `F`.
+    fn nm_at<F: Frame>(self) -> crate::aliases::Torque<F>;
     /// Interpret as rad/s (angular velocity) in frame `F`.
     fn rad_per_s_at<F: Frame>(self) -> crate::aliases::AngularVelocity<F>;
+    /// Interpret as rad/s² (angular acceleration) in frame `F`.
+    fn rad_per_s2_at<F: Frame>(self) -> crate::aliases::AngularAcceleration<F>;
 }
 
 impl Vec3Ext for DVec3 {
@@ -573,7 +577,15 @@ impl Vec3Ext for DVec3 {
         Qty3::from_raw_si(self)
     }
     #[inline]
+    fn nm_at<F: Frame>(self) -> crate::aliases::Torque<F> {
+        Qty3::from_raw_si(self)
+    }
+    #[inline]
     fn rad_per_s_at<F: Frame>(self) -> crate::aliases::AngularVelocity<F> {
+        Qty3::from_raw_si(self)
+    }
+    #[inline]
+    fn rad_per_s2_at<F: Frame>(self) -> crate::aliases::AngularAcceleration<F> {
         Qty3::from_raw_si(self)
     }
 }
