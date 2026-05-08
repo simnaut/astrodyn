@@ -195,6 +195,13 @@ pub struct MassPropertiesTyped<V: Vehicle> {
     pub inverse_inertia: DMat3,
     /// Center of mass in the structural frame.
     pub center_of_mass: Position<StructuralFrame<V>>,
+    /// Structure-to-body rotation. Same semantic as
+    /// [`MassProperties::t_parent_this`]; carried on the typed sibling
+    /// because Apollo (and any vehicle whose `pt_orientation` is not
+    /// the identity) sets a non-identity value, and a round-trip that
+    /// silently rewrote it to identity caused launch-stack composite
+    /// COMs to drift in `tier3_sim_apollo_trajectory`.
+    pub t_parent_this: DMat3,
     /// See [`MassProperties::dirty`].
     pub dirty: bool,
     _v: PhantomData<V>,
@@ -214,6 +221,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(DMat3::IDENTITY * m),
             inverse_inertia: DMat3::IDENTITY / m,
             center_of_mass: Position::<StructuralFrame<V>>::zero(),
+            t_parent_this: DMat3::IDENTITY,
             dirty: false,
             _v: PhantomData,
         }
@@ -243,9 +251,17 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             inertia,
             inverse_inertia: inertia_dmat.inverse(),
             center_of_mass,
+            t_parent_this: DMat3::IDENTITY,
             dirty: false,
             _v: PhantomData,
         }
+    }
+
+    /// Set the structure-to-body rotation (mirrors
+    /// [`MassProperties::with_t_parent_this`]).
+    pub fn with_t_parent_this(mut self, t_parent_this: DMat3) -> Self {
+        self.t_parent_this = t_parent_this;
+        self
     }
 
     /// Drop the phantoms and emit the untyped storage form. Numeric
@@ -257,7 +273,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             inertia: self.inertia.as_dmat3(),
             inverse_inertia: self.inverse_inertia,
             position: self.center_of_mass.raw_si(),
-            t_parent_this: DMat3::IDENTITY,
+            t_parent_this: self.t_parent_this,
             dirty: self.dirty,
         }
     }
@@ -272,6 +288,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(mp.inertia),
             inverse_inertia: mp.inverse_inertia,
             center_of_mass: Position::<StructuralFrame<V>>::from_raw_si(mp.position),
+            t_parent_this: mp.t_parent_this,
             dirty: mp.dirty,
             _v: PhantomData,
         }
