@@ -339,11 +339,14 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
             velocity: t0.composite_body.velocity,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(t0.composite_body.quaternion),
-            ang_vel_body: t0.composite_body.ang_vel,
-        }),
-        mass: Some(mass),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::from_glam(t0.composite_body.quaternion),
+                ang_vel_body: t0.composite_body.ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(mass.into()),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth_idx, 8, 8, true),

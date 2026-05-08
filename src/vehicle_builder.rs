@@ -47,7 +47,9 @@ use glam::DMat3;
 
 use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
 use astrodyn_dynamics::state::TranslationalStateTyped;
-use astrodyn_dynamics::{MassProperties, RotationalState};
+use astrodyn_dynamics::{
+    MassProperties, MassPropertiesTyped, RotationalState, RotationalStateTyped,
+};
 
 use crate::integrator::{GaussJacksonConfig, IntegratorType};
 use astrodyn_gravity::{GravityControl, GravityControls};
@@ -56,6 +58,8 @@ use astrodyn_math::{EulerSequence, OrbitalElements};
 use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::frame::RootInertial;
 use uom::si::f64::{Angle, Length, Mass};
+
+use astrodyn_quantities::frame::SelfRef;
 
 use crate::interactions::FlatPlateState;
 use crate::planet_config::PlanetConfig;
@@ -123,8 +127,8 @@ impl BuildState for Ready {}
 /// and through `Simulation`).
 pub struct VehicleBuilder<S: BuildState = NeedsState> {
     trans: Option<TranslationalStateTyped<RootInertial>>,
-    rot: Option<RotationalState>,
-    mass: Option<MassProperties>,
+    rot: Option<RotationalStateTyped<SelfRef>>,
+    mass: Option<MassPropertiesTyped<SelfRef>>,
     integrator: Option<IntegratorType>,
     t_struct_body: DMat3,
     gravity_controls: GravityControls<usize>,
@@ -246,19 +250,21 @@ impl VehicleBuilder<NeedsMass> {
     /// translational-only orbital case.
     pub fn three_dof_point_mass(mut self, mass: Mass) -> VehicleBuilder<HasIntegrator> {
         use uom::si::mass::kilogram;
-        self.mass = Some(MassProperties::new(mass.get::<kilogram>()));
+        self.mass = Some(MassProperties::new(mass.get::<kilogram>()).into());
         self.transition()
     }
 
     /// Configure as full 6-DoF body with the given rotational state and
-    /// mass properties (including inertia tensor).
+    /// mass properties (including inertia tensor). Untyped inputs are
+    /// lifted at the boundary; mission code that already holds typed
+    /// values can `.into()` first.
     pub fn sixdof(
         mut self,
         rot: RotationalState,
         mass: MassProperties,
     ) -> VehicleBuilder<HasIntegrator> {
-        self.rot = Some(rot);
-        self.mass = Some(mass);
+        self.rot = Some(rot.into());
+        self.mass = Some(mass.into());
         self.transition()
     }
 }
@@ -520,7 +526,13 @@ mod tests {
             .rk4()
             .build();
         assert_eq!(cfg.integrator, IntegratorType::Rk4);
-        assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
+        assert_eq!(
+            cfg.mass
+                .expect("mass set by typestate")
+                .mass
+                .get::<uom::si::mass::kilogram>(),
+            420_000.0
+        );
         assert!(cfg.rot.is_none());
     }
 
@@ -541,7 +553,13 @@ mod tests {
             .rk4()
             .build();
         assert!(cfg.rot.is_some());
-        assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
+        assert_eq!(
+            cfg.mass
+                .expect("mass set by typestate")
+                .mass
+                .get::<uom::si::mass::kilogram>(),
+            420_000.0
+        );
     }
 
     /// Ready-state methods (drag, gravity gradient, derived states, etc.)

@@ -473,11 +473,14 @@ mod tests {
                 velocity: child_pre_state.trans.velocity,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: child_pre_state.rot.q_parent_this,
-                ang_vel_body: child_pre_state.rot.ang_vel_this,
-            }),
-            mass: Some(MassProperties::new(5.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: child_pre_state.rot.q_parent_this,
+                    ang_vel_body: child_pre_state.rot.ang_vel_this,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -665,11 +668,14 @@ mod tests {
                 velocity: parent_root_vel,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-            mass: Some(MassProperties::new(10.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: JeodQuat::identity(),
+                    ang_vel_body: DVec3::ZERO,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(10.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             // integ_source: None ⇒ root-frame integration.
             ..Default::default()
@@ -711,11 +717,14 @@ mod tests {
                 velocity: child_pre_state_inertial.trans.velocity,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: child_pre_state_inertial.rot.q_parent_this,
-                ang_vel_body: child_pre_state_inertial.rot.ang_vel_this,
-            }),
-            mass: Some(MassProperties::new(5.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: child_pre_state_inertial.rot.q_parent_this,
+                    ang_vel_body: child_pre_state_inertial.rot.ang_vel_this,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             integ_source: Some(offset_src),
             ..Default::default()
@@ -850,7 +859,7 @@ mod tests {
         let child_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
             rot: None,
-            mass: Some(MassProperties::new(5.0)),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -873,8 +882,8 @@ mod tests {
         let parent_id = sim.add_body_to_tree(0, "parent");
         let child_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
-            rot: Some(RotationalState::default()),
-            mass: Some(MassProperties::new(5.0)),
+            rot: Some(RotationalState::default().into()),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -940,11 +949,14 @@ mod tests {
                 velocity: DVec3::ZERO,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-            mass: Some(MassProperties::new(10.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: JeodQuat::identity(),
+                    ang_vel_body: DVec3::ZERO,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(10.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -975,11 +987,14 @@ mod tests {
                 velocity: DVec3::ZERO,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-            mass: Some(MassProperties::new(1.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: JeodQuat::identity(),
+                    ang_vel_body: DVec3::ZERO,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(1.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             srp: Some(SrpModel::FlatPlate(FlatPlateState {
                 plates,
@@ -1057,15 +1072,15 @@ mod tests {
         let root_idx = 0;
         let mid_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
-            rot: Some(RotationalState::default()),
-            mass: Some(MassProperties::new(5.0)),
+            rot: Some(RotationalState::default().into()),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
         let leaf_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
-            rot: Some(RotationalState::default()),
-            mass: Some(MassProperties::new(2.0)),
+            rot: Some(RotationalState::default().into()),
+            mass: Some(MassProperties::new(2.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1134,8 +1149,8 @@ mod tests {
         // walk overwrites it every tick.
         let body_b_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
-            rot: Some(RotationalState::default()),
-            mass: Some(MassProperties::new(10.0)),
+            rot: Some(RotationalState::default().into()),
+            mass: Some(MassProperties::new(10.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1146,8 +1161,8 @@ mod tests {
         let link_offset = DVec3::new(0.0, 100.0, 0.0);
         let body_c_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState::default().into(),
-            rot: Some(RotationalState::default()),
-            mass: Some(MassProperties::new(5.0)),
+            rot: Some(RotationalState::default().into()),
+            mass: Some(MassProperties::new(5.0).into()),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });

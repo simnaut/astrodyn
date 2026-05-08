@@ -65,7 +65,7 @@ fn make_free_body_3dof(mass: f64, dt: f64) -> Simulation {
         }
         .into(),
         rot: None,
-        mass: Some(MassProperties::new(mass)),
+        mass: Some(MassProperties::new(mass).into()),
         gravity_controls: GravityControls { controls: vec![] },
         ..Default::default()
     });
@@ -89,11 +89,14 @@ fn make_free_body_6dof(mass: f64, inertia: DMat3, dt: f64) -> Simulation {
             velocity: DVec3::ZERO,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()

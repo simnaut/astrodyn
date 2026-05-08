@@ -18,8 +18,8 @@ use astrodyn_gravity::GravityControls;
 use astrodyn_interactions::DragConfig;
 
 use astrodyn_dynamics::state::TranslationalStateTyped;
-use astrodyn_dynamics::{MassProperties, RotationalState};
-use astrodyn_quantities::frame::RootInertial;
+use astrodyn_dynamics::{MassPropertiesTyped, RotationalStateTyped};
+use astrodyn_quantities::frame::{RootInertial, SelfRef};
 
 // ── Frame switching ─────────────────────────────────────────────────────
 
@@ -165,10 +165,18 @@ pub struct VehicleConfig {
     /// `From<TranslationalState> for TranslationalStateTyped<F>` impl
     /// in `astrodyn_dynamics` lifts at the boundary).
     pub trans: TranslationalStateTyped<RootInertial>,
-    /// Rotational state: quaternion and angular velocity. `None` for 3-DOF bodies.
-    pub rot: Option<RotationalState>,
-    /// Mass properties. `None` for massless test particles (gravity-only).
-    pub mass: Option<MassProperties>,
+    /// Rotational state (typed). `None` for 3-DOF bodies. The vehicle
+    /// phantom is the runtime-resolved wildcard `<SelfRef>` (JEOD_INV
+    /// `TS.01`); the runner / Bevy adapter drops to raw at the
+    /// construction boundary. Mission code can pass an untyped
+    /// `RotationalState` via `.into()` (the
+    /// `From<RotationalState> for RotationalStateTyped<V>` impl in
+    /// `astrodyn_dynamics` lifts at the boundary).
+    pub rot: Option<RotationalStateTyped<SelfRef>>,
+    /// Mass properties (typed). `None` for massless test particles
+    /// (gravity-only). Phantom is `<SelfRef>` (JEOD_INV `TS.01`);
+    /// mission code can pass an untyped `MassProperties` via `.into()`.
+    pub mass: Option<MassPropertiesTyped<SelfRef>>,
 
     // ── Dynamics ──
     /// Integration method. Defaults to `IntegratorType::Rk4`.

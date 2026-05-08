@@ -346,8 +346,12 @@ impl SimBody {
             // runs in the body's integration frame (numerically
             // coincides with root for root-integrated bodies). See #255.
             trans: config.trans.relabel_to::<IntegrationFrame>(),
-            rot: config.rot,
-            mass: config.mass,
+            // VehicleConfig stores typed `<SelfRef>` rot/mass at the
+            // mission boundary; the runner is a non-shipping consumer
+            // (CLAUDE.md "two parallel consumers") and stores raw types
+            // in SimBody, so drop to untyped here.
+            rot: config.rot.map(|r| r.to_untyped()),
+            mass: config.mass.map(|m| m.to_untyped()),
             mass_body_id: None,
             kinematic_only: false,
             frame_attach: None,

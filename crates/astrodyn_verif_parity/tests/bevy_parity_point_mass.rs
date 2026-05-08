@@ -335,8 +335,8 @@ fn tier3_sim_time_reversal_round_trip() {
     let earth = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -394,8 +394,8 @@ fn tier3_sim_relative_state_consistency() {
 
     sim.add_body(VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -406,11 +406,14 @@ fn tier3_sim_relative_state_consistency() {
     trans_b.position += DVec3::new(100.0, 0.0, 0.0);
     sim.add_body(VehicleConfig {
         trans: trans_b.into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
-        }),
-        mass: Some(iss_mass()),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
+            }
+            .into(),
+        ),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -702,8 +705,8 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: trans.into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },

@@ -346,7 +346,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             velocity: vehicle_vel,
         }
         .into(),
-        mass: Some(mass),
+        mass: Some(mass.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

@@ -153,7 +153,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
             velocity: DVec3::ZERO,
         }
         .into(),
-        mass: Some(astrodyn::MassProperties::new(1.0)),
+        mass: Some(astrodyn::MassProperties::new(1.0).into()),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp; num_plates],

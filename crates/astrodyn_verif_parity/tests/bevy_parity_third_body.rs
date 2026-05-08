@@ -365,8 +365,16 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
 
     sim.add_body(VehicleConfig {
         trans: trans.into(),
-        rot: if sixdof { Some(tumble_rot()) } else { None },
-        mass: if sixdof { Some(iss_mass()) } else { None },
+        rot: if sixdof {
+            Some(tumble_rot().into())
+        } else {
+            None
+        },
+        mass: if sixdof {
+            Some(iss_mass().into())
+        } else {
+            None
+        },
         gravity_controls: GravityControls {
             controls: sim_controls,
         },
@@ -897,7 +905,7 @@ fn tier3_bevy_earth_moon_clem() {
 
     sim.add_body(VehicleConfig {
         trans: clem_trans.into(),
-        mass: Some(mass_props),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth_idx, false),

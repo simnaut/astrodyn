@@ -203,11 +203,14 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
                 velocity: init.velocity,
             },
         ),
-        rot: Some(RotationalState {
-            quaternion: astrodyn::JeodQuat::from_glam(q),
-            ang_vel_body: w,
-        }),
-        mass: Some(iss_mass_props()),
+        rot: Some(
+            RotationalState {
+                quaternion: astrodyn::JeodQuat::from_glam(q),
+                ang_vel_body: w,
+            }
+            .into(),
+        ),
+        mass: Some(iss_mass_props().into()),
         gravity_controls: GravityControls {
             controls: vec![
                 earth_ctrl,

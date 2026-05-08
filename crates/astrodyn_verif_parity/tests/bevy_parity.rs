@@ -142,8 +142,8 @@ fn run_simulation_steps() -> SixDofState {
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: initial_trans().into(),
-        rot: Some(initial_rot()),
-        mass: Some(mass_props()),
+        rot: Some(initial_rot().into()),
+        mass: Some(mass_props().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -280,8 +280,8 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: initial_trans().into(),
-        rot: Some(initial_rot()),
-        mass: Some(mass_props()),
+        rot: Some(initial_rot().into()),
+        mass: Some(mass_props().into()),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

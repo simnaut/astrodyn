@@ -118,11 +118,14 @@ fn tier3_sim_time_reversal_run1() {
             velocity: init.velocity,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: init_quat,
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(MassProperties::new(1.0)), // mass doesn't affect spherical gravity
+        rot: Some(
+            RotationalState {
+                quaternion: init_quat,
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(MassProperties::new(1.0).into()), // mass doesn't affect spherical gravity
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

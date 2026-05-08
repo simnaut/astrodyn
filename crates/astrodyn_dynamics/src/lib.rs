@@ -89,7 +89,7 @@ pub use kinematic_propagation::{
     compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,
     KinematicChildOutputs,
 };
-pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
+pub use mass::{MassProperties, MassPropertiesTyped, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
 };

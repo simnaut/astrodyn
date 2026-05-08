@@ -158,20 +158,26 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
         // Bespoke uses identity quaternion + zero ω for the body — the
         // tidal CSV doesn't log attitude (8 columns: time, pos, vel,
         // dC20), so we mirror that here.
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
         // Bespoke ISS mass tensor (literal in the original test).
-        mass: Some(MassProperties::with_inertia(
-            400_000.0,
-            DMat3::from_cols(
-                DVec3::new(1.02e8, -6.96e6, -5.48e6),
-                DVec3::new(-6.96e6, 0.91e8, 5.90e5),
-                DVec3::new(-5.48e6, 5.90e5, 1.64e8),
-            ),
-            DVec3::new(-3.0, -1.5, 4.0),
-        )),
+        mass: Some(
+            MassProperties::with_inertia(
+                400_000.0,
+                DMat3::from_cols(
+                    DVec3::new(1.02e8, -6.96e6, -5.48e6),
+                    DVec3::new(-6.96e6, 0.91e8, 5.90e5),
+                    DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+                ),
+                DVec3::new(-3.0, -1.5, 4.0),
+            )
+            .into(),
+        ),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth, 8, 8, true),

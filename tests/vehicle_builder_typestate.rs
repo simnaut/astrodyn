@@ -41,7 +41,13 @@ fn three_dof_rk4_round_trip() {
         .rk4()
         .build();
     assert_eq!(cfg.integrator, IntegratorType::Rk4);
-    assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
+    assert_eq!(
+        cfg.mass
+            .expect("mass set by typestate")
+            .mass
+            .get::<uom::si::mass::kilogram>(),
+        420_000.0
+    );
     assert!(cfg.rot.is_none());
     assert!(cfg.drag.is_none());
 }

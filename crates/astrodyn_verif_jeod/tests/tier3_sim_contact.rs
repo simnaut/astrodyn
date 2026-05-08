@@ -172,11 +172,14 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
             velocity: DVec3::ZERO,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -188,11 +191,14 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
             velocity: DVec3::new(-2.0, 0.0, 0.0),
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -640,11 +646,14 @@ fn tier3_contact_line_side_to_side() {
             velocity: DVec3::ZERO,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: jeod_veh1,
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: jeod_veh1,
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -655,11 +664,14 @@ fn tier3_contact_line_side_to_side() {
             velocity: DVec3::new(-2.0, 0.0, 0.0),
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: jeod_veh2,
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: jeod_veh2,
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -741,11 +753,14 @@ fn tier3_contact_point_off_center() {
             velocity: init.veh1_vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -756,11 +771,14 @@ fn tier3_contact_point_off_center() {
             velocity: init.veh2_vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -880,11 +898,14 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
             velocity: DVec3::ZERO,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: earth_grav.clone(),
         compute_gravity_gradient: false,
         ..Default::default()
@@ -897,11 +918,14 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
             velocity: DVec3::ZERO,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: earth_grav,
         compute_gravity_gradient: false,
         ..Default::default()

@@ -186,8 +186,8 @@ fn tier3_bevy_external_torque_per_body() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(tumble_rot()),
-        mass: Some(mass_props),
+        rot: Some(tumble_rot().into()),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -253,8 +253,8 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: trans.into(),
-        rot: Some(rot),
-        mass: Some(iss_mass()),
+        rot: Some(rot.into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },
@@ -354,8 +354,8 @@ fn run_external_parity(
     let (mut sim, earth_idx) = new_sim_earth(dt);
     sim.add_body(VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(rot),
-        mass: Some(iss_mass()),
+        rot: Some(rot.into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

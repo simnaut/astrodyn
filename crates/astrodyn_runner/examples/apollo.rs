@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // below as a child in the mass tree, and `add_body_to_tree` will snapshot
     // the body's current mass into the tree node. Initializing with
     // CSM+S-IVB here would double-count the S-IVB once it's attached.
-    sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM));
+    sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM).into());
     // Wire DE421 ephemeris on the Moon/Sun sources (indices exposed by
     // the scenario as named constants — robust against any future
     // reordering inside `apollo_translunar`).

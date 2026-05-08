@@ -95,7 +95,7 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
         }
         .into(),
         rot: None,
-        mass: Some(MassProperties::new(mass)),
+        mass: Some(MassProperties::new(mass).into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -219,7 +219,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
         }
         .into(),
         rot: None,
-        mass: Some(MassProperties::new(1000.0)),
+        mass: Some(MassProperties::new(1000.0).into()),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth, false),
@@ -312,11 +312,14 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
             velocity: vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(MassProperties::new(mass)),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(MassProperties::new(mass).into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -399,11 +402,14 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
             velocity: vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: omega0_body,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: omega0_body,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -556,11 +562,14 @@ fn tier3_dyncomp_external_torque_impulse_response() {
             velocity: vel0,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: DVec3::ZERO,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -645,11 +654,14 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
             velocity: vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::identity(),
-            ang_vel_body: omega0,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: omega0,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

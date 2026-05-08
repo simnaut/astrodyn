@@ -249,11 +249,14 @@ mod tests {
                 velocity: body_root_vel,
             }
             .into(),
-            rot: Some(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-            mass: Some(MassProperties::new(1.0)),
+            rot: Some(
+                RotationalState {
+                    quaternion: JeodQuat::identity(),
+                    ang_vel_body: DVec3::ZERO,
+                }
+                .into(),
+            ),
+            mass: Some(MassProperties::new(1.0).into()),
             // Both sources controlled so the post-switch flip has
             // somewhere to write — the dynamics don't depend on these
             // values (mu=0 on both).

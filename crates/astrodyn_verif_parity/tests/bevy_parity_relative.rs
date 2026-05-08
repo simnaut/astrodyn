@@ -181,14 +181,14 @@ fn run_relative_parity(
     let mut sim = Simulation::new(time, DT);
     sim.add_body(VehicleConfig {
         trans: trans_a.into(),
-        rot: Some(rot_a),
-        mass: Some(dummy_mass),
+        rot: Some(rot_a.into()),
+        mass: Some(dummy_mass.into()),
         ..Default::default()
     });
     sim.add_body(VehicleConfig {
         trans: trans_b.into(),
-        rot: Some(rot_b),
-        mass: Some(dummy_mass),
+        rot: Some(rot_b.into()),
+        mass: Some(dummy_mass.into()),
         ..Default::default()
     });
     sim.validate().unwrap();

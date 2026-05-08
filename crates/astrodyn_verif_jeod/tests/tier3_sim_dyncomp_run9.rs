@@ -105,11 +105,14 @@ fn setup_run9(
             velocity: init.composite_body.velocity,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init_ang_vel,
-        }),
-        mass: Some(mass_props),
+        rot: Some(
+            RotationalState {
+                quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+                ang_vel_body: init_ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(mass_props.into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

@@ -213,24 +213,24 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, DT);
     let v1 = sim.add_body(VehicleConfig {
         trans: veh1_trans().into(),
-        rot: Some(veh1_rot()),
-        mass: Some(veh1_mass()),
+        rot: Some(veh1_rot().into()),
+        mass: Some(veh1_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
         trans: veh2_trans().into(),
-        rot: Some(veh2_rot()),
-        mass: Some(veh2_mass()),
+        rot: Some(veh2_rot().into()),
+        mass: Some(veh2_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
         trans: veh3_trans().into(),
-        rot: Some(veh3_rot()),
-        mass: Some(veh3_mass()),
+        rot: Some(veh3_rot().into()),
+        mass: Some(veh3_mass().into()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()

@@ -206,13 +206,13 @@ impl Simulation {
         let body_rot = body.rot.as_ref().unwrap_or_else(|| {
             panic!(
                 "register_ground_contact_pair: body_a={body_a} has no RotationalState; \
-                 ground contact requires 6-DOF (set `rot: Some(...)` on the VehicleConfig)"
+                 ground contact requires 6-DOF (set `rot: Some(....into())` on the VehicleConfig)"
             )
         });
         let body_mass = body.mass.as_ref().unwrap_or_else(|| {
             panic!(
                 "register_ground_contact_pair: body_a={body_a} has no MassProperties; \
-                 set `mass: Some(...)` on the VehicleConfig"
+                 set `mass: Some(....into())` on the VehicleConfig"
             )
         });
         // `body.trans` is `TranslationalStateTyped<IntegrationFrame>` after

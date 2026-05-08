@@ -218,8 +218,8 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
 pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
     VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },

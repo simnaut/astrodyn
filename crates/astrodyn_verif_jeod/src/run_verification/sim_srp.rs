@@ -242,11 +242,14 @@ fn build_srp(
                 velocity: init.velocity,
             },
         ),
-        mass: Some(MassProperties::with_inertia(
-            SRP_MASS,
-            DMat3::from_diagonal(DVec3::splat(1.0)),
-            DVec3::ZERO,
-        )),
+        mass: Some(
+            MassProperties::with_inertia(
+                SRP_MASS,
+                DMat3::from_diagonal(DVec3::splat(1.0)),
+                DVec3::ZERO,
+            )
+            .into(),
+        ),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

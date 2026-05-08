@@ -97,11 +97,14 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             velocity: init.veh_a_vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: init.veh_a_quat,
-            ang_vel_body: init.veh_a_ang_vel,
-        }),
-        mass: Some(dummy_mass),
+        rot: Some(
+            RotationalState {
+                quaternion: init.veh_a_quat,
+                ang_vel_body: init.veh_a_ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(dummy_mass.into()),
         ..Default::default()
     });
 
@@ -112,11 +115,14 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             velocity: init.veh_b_vel,
         }
         .into(),
-        rot: Some(RotationalState {
-            quaternion: init.veh_b_quat,
-            ang_vel_body: init.veh_b_ang_vel,
-        }),
-        mass: Some(dummy_mass),
+        rot: Some(
+            RotationalState {
+                quaternion: init.veh_b_quat,
+                ang_vel_body: init.veh_b_ang_vel,
+            }
+            .into(),
+        ),
+        mass: Some(dummy_mass.into()),
         ..Default::default()
     });
 

@@ -378,8 +378,8 @@ fn tier3_bevy_eccentric_derived_states() {
 
     sim.add_body(VehicleConfig {
         trans: ecc_trans.into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -636,8 +636,8 @@ fn tier3_bevy_equatorial_solar_beta() {
 
     sim.add_body(VehicleConfig {
         trans: iss_trans().into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -707,8 +707,8 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: trans.into(),
-        rot: Some(tumble_rot()),
-        mass: Some(iss_mass()),
+        rot: Some(tumble_rot().into()),
+        mass: Some(iss_mass().into()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
