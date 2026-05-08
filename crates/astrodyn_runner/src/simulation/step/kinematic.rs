@@ -389,13 +389,7 @@ impl Simulation {
         let body_integ_origins: Vec<IntegOrigin> = self
             .bodies
             .iter()
-            .map(|b| {
-                let (p, v) = self.frame_origin(b.integ_frame_id);
-                IntegOrigin {
-                    position: astrodyn::Position::from_raw_si(p), // allowed: integ-origin construction from raw frame_origin DVec3
-                    velocity: astrodyn::Velocity::from_raw_si(v), // allowed: integ-origin construction from raw frame_origin DVec3
-                }
-            })
+            .map(|b| self.frame_origin_typed(b.integ_frame_id))
             .collect();
         self.propagate_kinematic_state(&body_integ_origins);
     }

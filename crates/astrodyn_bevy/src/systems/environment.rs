@@ -3,7 +3,7 @@
 //! Gravity computation (point-mass + spherical harmonics + relativistic
 //! corrections + tidal ΔC20) and atmosphere evaluation.
 
-use astrodyn::{IntegOrigin, IntegrationFrame, Planet, Position, RootInertial, Velocity};
+use astrodyn::{IntegOrigin, IntegrationFrame, Planet, RootInertial};
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -81,8 +81,8 @@ pub fn gravity_computation_system<P: Planet>(
             let (integ_pos, integ_vel) =
                 body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
             let inputs = astrodyn::GravityBodyInputs {
-                position: Position::<IntegrationFrame>::from_raw_si(state.position.raw_si()), // allowed: gravity RF.10 boundary — relabel `PlanetInertial<P>` → `IntegrationFrame` so the kernel's `IntegOrigin` shift is the structurally-guarded transition to `RootInertial`
-                velocity: Velocity::<IntegrationFrame>::from_raw_si(state.velocity.raw_si()), // allowed: same gravity RF.10 boundary
+                position: state.position.relabel_to::<IntegrationFrame>(),
+                velocity: state.velocity.relabel_to::<IntegrationFrame>(),
                 integ_origin: IntegOrigin {
                     position: integ_pos,
                     velocity: integ_vel,

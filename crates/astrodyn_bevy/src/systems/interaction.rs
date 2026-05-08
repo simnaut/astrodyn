@@ -10,7 +10,7 @@
 //! by [`crate::AstrodynPlugin`] / [`crate::register_planet_systems`] because
 //! its output is consumed downstream of force collection.
 
-use astrodyn::{Planet, Position, RootInertial, SelfRef};
+use astrodyn::{Planet, RootInertial, SelfRef};
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -198,14 +198,14 @@ pub fn earth_lighting_system<P: Planet>(
         // `<RootInertial>` to satisfy the typed entry's frame contract.
         let (integ_origin, _integ_origin_vel) =
             body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
-        let body_pos_rel = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: integ-origin shift adds origin offset on the next line; relabel matches the runner's `body.trans.to_inertial(&o)` boundary.
+        let body_pos_rel = state.position.relabel_to::<RootInertial>();
         let body_pos = body_pos_rel + integ_origin;
         // Sun / Moon are root-integrated by SunBundle / MoonBundle
         // (their frame entity's parent is the root frame, integ
         // origin = zero); the relabel here is the consumer-boundary
         // step that pins the framing convention at the call site.
-        let sun_pos = Position::<RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun is root-integrated by SunBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
-        let moon_pos = Position::<RootInertial>::from_raw_si(moon_state.position.raw_si()); // allowed: Moon is root-integrated by MoonBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
+        let sun_pos = sun_state.position.relabel_to::<RootInertial>();
+        let moon_pos = moon_state.position.relabel_to::<RootInertial>();
         lighting.0 = astrodyn::compute_earth_lighting_typed(
             body_pos,
             sun_pos,
@@ -427,8 +427,7 @@ pub fn flat_plate_srp_system<P: Planet>(
                 // bit-identical numerics; the Sun's ephemeris-driven
                 // inertial position numerically coincides with the
                 // root frame's representation.
-                type RootPos = astrodyn::Position<astrodyn::RootInertial>;
-                let sun_pos_root = RootPos::from_raw_si(sun_state.position.raw_si()); // allowed: SRP shift-site, Sun position relabeled to RootInertial for kernel
+                let sun_pos_root = sun_state.position.relabel_to::<astrodyn::RootInertial>();
                 flat_config.stage_inputs = Some(astrodyn::FlatPlateStageInputs {
                     sun_position: sun_pos_root,
                     illum_factor,
