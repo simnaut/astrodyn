@@ -30,12 +30,8 @@ impl Simulation {
         Option<Position<RootInertial>>,
     ) {
         // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
-        let sun_pos = self
-            .sun_source
-            .map(|idx| Position::<RootInertial>::from_raw_si(self.source_position(idx)));
-        let moon_pos = self
-            .moon_source
-            .map(|idx| Position::<RootInertial>::from_raw_si(self.source_position(idx)));
+        let sun_pos = self.sun_source.map(|idx| self.source_position_typed(idx));
+        let moon_pos = self.moon_source.map(|idx| self.source_position_typed(idx));
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;

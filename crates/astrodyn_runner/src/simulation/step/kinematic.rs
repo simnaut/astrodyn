@@ -357,7 +357,7 @@ impl Simulation {
             // downstream consumer of `body.trans` for any body whose
             // integration frame is not root. RF.10 shift site.
             let trans_inertial =
-                TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state.trans);
+                TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state.trans); // allowed: kinematic-propagation kernel returns raw root-inertial `TranslationalState`
             self.bodies[body_idx].trans =
                 TranslationalStateTyped::<IntegrationFrame>::from_inertial(
                     trans_inertial,
@@ -392,8 +392,8 @@ impl Simulation {
             .map(|b| {
                 let (p, v) = self.frame_origin(b.integ_frame_id);
                 IntegOrigin {
-                    position: astrodyn::Position::from_raw_si(p),
-                    velocity: astrodyn::Velocity::from_raw_si(v),
+                    position: astrodyn::Position::from_raw_si(p), // allowed: integ-origin construction from raw frame_origin DVec3
+                    velocity: astrodyn::Velocity::from_raw_si(v), // allowed: integ-origin construction from raw frame_origin DVec3
                 }
             })
             .collect();

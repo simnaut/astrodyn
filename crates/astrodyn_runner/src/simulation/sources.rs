@@ -185,6 +185,24 @@ impl Simulation {
         )
     }
 
+    /// Typed sibling of [`Self::source_position`] returning the source
+    /// position already wrapped as `Position<RootInertial>`. The
+    /// frame phantom matches the runner's root-inertial convention; per-
+    /// step pipelines that consume gravity / SRP / shadow inputs in
+    /// `RootInertial` should call this rather than re-lifting the raw
+    /// `DVec3` at every body.
+    pub fn source_position_typed(
+        &self,
+        source_idx: usize,
+    ) -> astrodyn::Position<astrodyn::RootInertial> {
+        // allowed: typed-sibling accessor boundary. The frame phantom
+        // is the runner-wide convention (root frame is inertial); the
+        // raw kernel returns a frame-erased `DVec3` and the only source
+        // of truth for the phantom is the runner's documented root
+        // configuration.
+        astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(self.source_position(source_idx))
+    }
+
     /// Set the position of a gravity source relative to the root inertial frame.
     pub fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
         sim_set_source_position(

@@ -11,13 +11,14 @@ use astrodyn::forces::collect_and_resolve_forces;
 use astrodyn::frame_orchestration::{evaluate_and_apply_frame_switch, FrameSwitchTargetMissing};
 use astrodyn::gravity::accumulate_gravity;
 use astrodyn::integration::{
-    integrate_bodies_contact_coupled, integrate_body_typed, CoupledBodyInput,
+    integrate_bodies_contact_coupled_typed, integrate_body_coupled_typed, integrate_body_typed,
+    CoupledBodyInputTyped,
 };
 use astrodyn::{
     aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
-    integrate_body_coupled, Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force,
-    GravityControls, MassProperties, MassStorage, Position, RadiationForce, RotationalState,
-    SelfRef, Torque, TranslationalState, TranslationalStateTyped, Velocity,
+    Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force, GravityControls,
+    MassProperties, MassStorage, Position, RadiationForce, RotationalState, SelfRef, Torque,
+    TranslationalState, Velocity,
 };
 use astrodyn_dynamics::wrench::Wrench;
 use astrodyn_dynamics::MassBodyId;
@@ -348,14 +349,13 @@ impl Simulation {
                     let mut k1_temp_dots: Option<Vec<f64>> = None;
                     let mass_copy = body.mass;
 
-                    // Round-trip body.trans through the untyped form for the
-                    // frame-agnostic integrator interface; restore the
-                    // IntegrationFrame phantom on writeback. Numerics are
-                    // bit-identical (no shift, only a phantom drop/restore).
-                    let mut trans_untyped = body.trans.to_untyped();
-                    integrate_body_coupled(
+                    // body.trans flows end-to-end as typed through the
+                    // coupled integrator boundary. The kernel's `stage_fn`
+                    // closure still receives untyped `&TranslationalState`
+                    // because RK4 stage state is integrator-internal.
+                    integrate_body_coupled_typed::<SelfRef, IntegrationFrame>(
                         &config,
-                        &mut trans_untyped,
+                        &mut body.trans,
                         body.rot.as_mut(),
                         mass_copy.as_ref(),
                         |stage_trans, stage_rot, stage_thermal, time_frac| {
@@ -391,7 +391,7 @@ impl Simulation {
                             // for the stage-time interpolation matching
                             // `eval_body_gravity`.
                             let p_integ =
-                                Position::<IntegrationFrame>::from_raw_si(stage_trans.position);
+                                Position::<IntegrationFrame>::from_raw_si(stage_trans.position); // allowed: legitimate kernel-internal SRP stage interpolation boundary
                             let stage_pos_root: Position<astrodyn::RootInertial> =
                                 body_integ_origins[body_idx]
                                     .shift_position_at_stage(p_integ, time_frac * integ_dt);
@@ -464,10 +464,6 @@ impl Simulation {
                         dt,
                         time_scale_factor,
                     );
-                    body.trans =
-                        TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                            &trans_untyped,
-                        );
 
                     body.radiation_force = Some(RadiationForce {
                         force: final_srp_inertial_force,
@@ -502,6 +498,7 @@ impl Simulation {
                         body.rot.as_mut(),
                         body.mass.as_ref(),
                         |pos, vel, time_frac| {
+                            // allowed: typed-sibling call boundary — wraps gravity_fn closure output for the typed gravity contract
                             Acceleration::<IntegrationFrame>::from_raw_si(eval_body_gravity(
                                 controls,
                                 body_idx,
@@ -510,8 +507,8 @@ impl Simulation {
                                 time_frac,
                             ))
                         },
-                        Force::<IntegrationFrame>::from_raw_si(body.total_force.force),
-                        Torque::<BodyFrame<SelfRef>>::from_raw_si(body.total_force.torque),
+                        Force::<IntegrationFrame>::from_raw_si(body.total_force.force), // allowed: typed-sibling call boundary — step-constant force lift
+                        Torque::<BodyFrame<SelfRef>>::from_raw_si(body.total_force.torque), // allowed: typed-sibling call boundary — step-constant torque lift
                         uom::si::f64::Time::new::<uom::si::time::second>(dt),
                         time_scale_factor,
                         // Runner stores the raw astrodyn_dynamics enum; the
@@ -705,34 +702,29 @@ impl Simulation {
             // The `expect`s match the validated invariants — the
             // contact-coupled path requires 6-DOF + 3-component mass on
             // every body (enforced by `Self::validate`).
-            // Snapshot typed states into an untyped Vec for the
-            // frame-agnostic integrator interface; restore phantoms after
-            // integration. Same pattern as the single-body path above.
-            let mut trans_untyped_vec: Vec<TranslationalState> =
-                bodies_mut.iter().map(|b| b.trans.to_untyped()).collect();
-            let rot_refs: Vec<&mut RotationalState> = bodies_mut
+            // body.trans flows end-to-end as typed through the typed
+            // sibling; the kernel allocates the transient untyped
+            // buffer and writes back through the same `&mut`s.
+            let inputs: Vec<CoupledBodyInputTyped<'_, IntegrationFrame>> = bodies_mut
                 .iter_mut()
-                .map(|b| {
-                    b.rot
-                        .as_mut()
-                        .expect("validated: 6-DOF required for contact-coupled path")
-                })
-                .collect();
-            let mut inputs: Vec<CoupledBodyInput<'_>> = trans_untyped_vec
-                .iter_mut()
-                .zip(rot_refs)
                 .enumerate()
-                .map(|(i, (trans, rot))| CoupledBodyInput {
-                    trans,
-                    rot,
-                    mass: &mass_vec[i],
-                    non_grav_non_contact_force: non_grav_non_contact_vec[i],
-                    non_contact_torque_body: non_contact_torque_vec[i],
+                .map(|(i, b)| {
+                    let rot = b
+                        .rot
+                        .as_mut()
+                        .expect("validated: 6-DOF required for contact-coupled path");
+                    CoupledBodyInputTyped {
+                        trans: &mut b.trans,
+                        rot,
+                        mass: &mass_vec[i],
+                        non_grav_non_contact_force: non_grav_non_contact_vec[i],
+                        non_contact_torque_body: non_contact_torque_vec[i],
+                    }
                 })
                 .collect();
 
-            integrate_bodies_contact_coupled(
-                &mut inputs,
+            integrate_bodies_contact_coupled_typed(
+                inputs,
                 &mut self.coupled_integ_scratch,
                 |body_idx: usize, pos: DVec3, vel: DVec3, time_frac: f64| {
                     eval_body_gravity(
@@ -803,14 +795,9 @@ impl Simulation {
                 integ_dt,
             );
 
-            // Drop the &mut borrows held by `inputs` before writing back
-            // through the same SimBody slots.
-            drop(inputs);
-            for (i, body) in self.bodies.iter_mut().enumerate() {
-                body.trans = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                    &trans_untyped_vec[i],
-                );
-            }
+            // `integrate_bodies_contact_coupled_typed` consumed the
+            // `&mut body.trans` borrows; the integrated state is
+            // already written back through them.
 
             // Mark pending init impulses as consumed so subsequent steps
             // don't reapply them. (Matches JEOD: the impulsive force is
@@ -878,7 +865,9 @@ impl Simulation {
                 },
             )?;
             if switched {
+                // allowed: frame-switch writeback — `evaluate_and_apply_frame_switch` operates on raw `TranslationalState`; lift the post-switch result back into typed storage
                 body.trans.position = Position::<IntegrationFrame>::from_raw_si(raw_trans.position);
+                // allowed: frame-switch writeback (velocity sibling of the line above)
                 body.trans.velocity = Velocity::<IntegrationFrame>::from_raw_si(raw_trans.velocity);
             }
         }

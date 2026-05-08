@@ -104,6 +104,18 @@ src_files_to_scan=$( {
         -not -path 'crates/astrodyn_bevy/src/components/*' \
         -not -path 'crates/astrodyn_bevy/src/lib.rs'
     find crates/astrodyn_bevy/tests/ -name "*.rs" -type f
+    # Runner construction-boundary modules are the canonical
+    # composition/insertion sites — analog of the Bevy adapter's
+    # `components.rs`/`lib.rs` boundary. They mint typed state from
+    # untyped `VehicleConfig` / `RefFrameState` / mass-tree composition
+    # inputs at config-time; per-step bypasses elsewhere in the runner
+    # are still policed.
+    find crates/astrodyn_runner/src/ -name "*.rs" -type f \
+        -not -path 'crates/astrodyn_runner/src/simulation/types.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/bodies.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/frame_attach.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/mass_tree.rs'
+    find crates/astrodyn_runner/tests/ -name "*.rs" -type f
     find src/ -name "*.rs" -type f
 } | sort)
 

@@ -337,6 +337,93 @@ pub fn integrate_bodies_contact_coupled(
     }
 }
 
+/// Typed per-body input for [`integrate_bodies_contact_coupled_typed`].
+///
+/// Mirrors [`CoupledBodyInput`] but carries
+/// [`TranslationalStateTyped<F>`]. Each field is a `&'a mut` /
+/// `&'a` reference, so a `Vec<CoupledBodyInputTyped<'a, F>>` captures
+/// disjoint per-body borrows that can be split into the parallel
+/// arrays the kernel consumes.
+pub struct CoupledBodyInputTyped<'a, F: Frame> {
+    /// Translational state to advance (mutated in place).
+    pub trans: &'a mut TranslationalStateTyped<F>,
+    /// Rotational state to advance (mutated in place). 6-DOF only.
+    pub rot: &'a mut RotationalState,
+    /// Mass properties.
+    pub mass: &'a MassProperties,
+    /// Constant non-gravity, non-contact inertial force over the step.
+    pub non_grav_non_contact_force: DVec3,
+    /// Constant body-frame torque from non-contact sources.
+    pub non_contact_torque_body: DVec3,
+}
+
+/// Typed sibling of [`integrate_bodies_contact_coupled`].
+///
+/// Each body's `trans` flows end-to-end as
+/// [`TranslationalStateTyped<F>`]; the typed sibling allocates a
+/// transient untyped buffer for the kernel, runs the multi-body RK4
+/// step, and writes the integrated states back through the typed
+/// references. The `gravity_fn` and `contact_eval` closures continue
+/// to receive untyped intermediate state (RK4 stage scratch is
+/// integrator-internal).
+///
+/// Generic over `F: Frame` so consumers in different integration
+/// frames share a single entry point.
+///
+/// Takes `Vec<CoupledBodyInputTyped<'a, F>>` by value so each per-body
+/// `&'a mut` reference can be moved out into the parallel arrays the
+/// kernel needs; the typed `trans` references are retained and
+/// re-borrowed for the writeback after the kernel returns.
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
+    bodies: Vec<CoupledBodyInputTyped<'a, F>>,
+    scratch: &mut CoupledIntegScratch,
+    gravity_fn: impl FnMut(usize, DVec3, DVec3, f64) -> DVec3,
+    contact_eval: impl FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
+    dt: f64,
+) {
+    // allowed: typed-sibling boundary. Build the parallel untyped Vec
+    // the kernel expects, then write back. The kernel internals are
+    // shared with the gateway pipeline; the bypass machinery lives in
+    // the gateway by design (see `integrate_body_typed` for the wider
+    // rationale).
+    let n = bodies.len();
+    let mut raw_trans: Vec<TranslationalState> = Vec::with_capacity(n);
+    let mut typed_trans_refs: Vec<&'a mut TranslationalStateTyped<F>> = Vec::with_capacity(n);
+    let mut rots: Vec<&'a mut RotationalState> = Vec::with_capacity(n);
+    let mut masses: Vec<&'a MassProperties> = Vec::with_capacity(n);
+    let mut forces: Vec<DVec3> = Vec::with_capacity(n);
+    let mut torques: Vec<DVec3> = Vec::with_capacity(n);
+    for typed in bodies {
+        raw_trans.push(typed.trans.to_untyped());
+        typed_trans_refs.push(typed.trans);
+        rots.push(typed.rot);
+        masses.push(typed.mass);
+        forces.push(typed.non_grav_non_contact_force);
+        torques.push(typed.non_contact_torque_body);
+    }
+    {
+        let inputs: Vec<CoupledBodyInput<'_>> = raw_trans
+            .iter_mut()
+            .zip(rots)
+            .enumerate()
+            .map(|(i, (raw, rot))| CoupledBodyInput {
+                trans: raw,
+                rot,
+                mass: masses[i],
+                non_grav_non_contact_force: forces[i],
+                non_contact_torque_body: torques[i],
+            })
+            .collect();
+        let mut inputs = inputs;
+        integrate_bodies_contact_coupled(&mut inputs, scratch, gravity_fn, contact_eval, dt);
+    }
+    for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans.into_iter()) {
+        // allowed: typed-sibling boundary writeback. See note above.
+        *typed_ref = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw);
+    }
+}
+
 /// Populate one intermediate RK4 stage state from a base state and
 /// derivative step of size `h`, reusing caller-owned buffers.
 #[allow(clippy::too_many_arguments)]
@@ -879,6 +966,51 @@ pub fn integrate_body_coupled<V: astrodyn_quantities::frame::Vehicle>(
         &eval4.temp_dots,
         integ_dyndt,
     );
+}
+
+/// Typed sibling of [`integrate_body_coupled`].
+///
+/// Identical kernel — `body.trans` flows end-to-end as
+/// [`TranslationalStateTyped<F>`]; the typed sibling unwraps to the raw
+/// kernel storage on entry and re-wraps on exit. The `stage_fn` closure
+/// continues to receive untyped `&TranslationalState` because RK4
+/// stage state is integrator-internal scratch.
+///
+/// Generic over `<V: Vehicle, F: Frame>` so the gateway pipeline
+/// (`<_, RootInertial>`) and the runner (`<_, IntegrationFrame>`) share
+/// one entry point.
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_body_coupled_typed<V: astrodyn_quantities::frame::Vehicle, F: Frame>(
+    config: &DynamicsConfig,
+    trans: &mut TranslationalStateTyped<F>,
+    rot: Option<&mut RotationalState>,
+    mass: Option<&MassProperties>,
+    stage_fn: impl FnMut(
+        &TranslationalState,
+        Option<&RotationalState>,
+        &FlatPlateState<V>,
+        f64,
+    ) -> CoupledStageEval,
+    thermal: &mut FlatPlateState<V>,
+    dt: f64,
+    time_scale_factor: f64,
+) {
+    // allowed: typed-sibling boundary — round-trips body.trans through
+    // the untyped kernel storage. See `integrate_body_typed` for why
+    // this orchestration boundary stays in the gateway.
+    let mut raw_trans = trans.to_untyped();
+    integrate_body_coupled(
+        config,
+        &mut raw_trans,
+        rot,
+        mass,
+        stage_fn,
+        thermal,
+        dt,
+        time_scale_factor,
+    );
+    // allowed: typed-sibling boundary writeback. See note above.
+    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
 }
 
 /// 6-DOF coupled RK4: translational + rotational + thermal.

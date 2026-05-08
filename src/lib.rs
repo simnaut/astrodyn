@@ -112,8 +112,9 @@ pub use gravity::{
 };
 pub use integrable::IntegrableObject;
 pub use integration::{
-    integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
-    reset_integrators, CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
+    integrate_bodies_contact_coupled, integrate_bodies_contact_coupled_typed, integrate_body,
+    integrate_body_coupled, integrate_body_coupled_typed, integrate_body_typed, reset_integrators,
+    CoupledBodyInput, CoupledBodyInputTyped, CoupledIntegScratch, CoupledStageEval,
 };
 pub use integrator::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
 pub use interactions::{

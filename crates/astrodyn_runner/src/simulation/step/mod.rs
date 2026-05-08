@@ -116,8 +116,8 @@ impl Simulation {
             .map(|b| {
                 let (p, v) = self.frame_origin(b.integ_frame_id);
                 IntegOrigin {
-                    position: Position::from_raw_si(p),
-                    velocity: Velocity::from_raw_si(v),
+                    position: Position::from_raw_si(p), // allowed: integ-origin construction from raw frame_origin DVec3
+                    velocity: Velocity::from_raw_si(v), // allowed: integ-origin construction from raw frame_origin DVec3
                 }
             })
             .collect();
@@ -185,8 +185,8 @@ impl Simulation {
             .map(|b| {
                 let (p, v) = self.frame_origin(b.integ_frame_id);
                 IntegOrigin {
-                    position: Position::from_raw_si(p),
-                    velocity: Velocity::from_raw_si(v),
+                    position: Position::from_raw_si(p), // allowed: integ-origin construction from raw frame_origin DVec3
+                    velocity: Velocity::from_raw_si(v), // allowed: integ-origin construction from raw frame_origin DVec3
                 }
             })
             .collect();
