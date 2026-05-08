@@ -92,7 +92,8 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: None,
         mass: Some(MassProperties::new(mass)),
         gravity_controls: GravityControls {
@@ -215,7 +216,8 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: None,
         mass: Some(MassProperties::new(1000.0)),
         gravity_controls: GravityControls {
@@ -308,7 +310,8 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -394,7 +397,8 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: omega0_body,
@@ -550,7 +554,8 @@ fn tier3_dyncomp_external_torque_impulse_response() {
         trans: TranslationalState {
             position: pos,
             velocity: vel0,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -638,7 +643,8 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: omega0,

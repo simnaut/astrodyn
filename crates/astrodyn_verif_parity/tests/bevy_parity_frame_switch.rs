@@ -217,7 +217,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: initial_trans(),
+        trans: initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
@@ -379,7 +379,7 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         ),
     );
     sim.add_body(VehicleConfig {
-        trans: initial_trans(),
+        trans: initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {

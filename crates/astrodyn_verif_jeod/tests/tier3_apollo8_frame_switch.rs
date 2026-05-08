@@ -141,7 +141,8 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         trans: astrodyn::TranslationalState {
             position: POS_ECI,
             velocity: VEL_ECI,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,

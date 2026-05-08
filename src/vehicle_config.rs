@@ -17,7 +17,9 @@ use crate::EulerSequence;
 use astrodyn_gravity::GravityControls;
 use astrodyn_interactions::DragConfig;
 
-use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_dynamics::state::TranslationalStateTyped;
+use astrodyn_dynamics::{MassProperties, RotationalState};
+use astrodyn_quantities::frame::RootInertial;
 
 // ── Frame switching ─────────────────────────────────────────────────────
 
@@ -153,8 +155,16 @@ pub struct DerivedStateConfig {
 /// standalone runner exposes one; the Bevy adapter reads components).
 pub struct VehicleConfig {
     // ── Initial state ──
-    /// Translational state: position and velocity in the inertial frame.
-    pub trans: TranslationalState,
+    /// Translational state in the root-inertial frame, typed
+    /// end-to-end. The runner re-tags as `<IntegrationFrame>` at
+    /// `SimBody::new`; the Bevy adapter relabels to
+    /// `<PlanetInertial<P>>` via the `From<TranslationalStateTyped<RootInertial>>`
+    /// component impl. Mission code that constructs `VehicleConfig`
+    /// directly via struct literal can pass an untyped
+    /// `TranslationalState` via `.into()` (the
+    /// `From<TranslationalState> for TranslationalStateTyped<F>` impl
+    /// in `astrodyn_dynamics` lifts at the boundary).
+    pub trans: TranslationalStateTyped<RootInertial>,
     /// Rotational state: quaternion and angular velocity. `None` for 3-DOF bodies.
     pub rot: Option<RotationalState>,
     /// Mass properties. `None` for massless test particles (gravity-only).
@@ -214,7 +224,7 @@ pub struct VehicleConfig {
 impl Default for VehicleConfig {
     fn default() -> Self {
         Self {
-            trans: TranslationalState::default(),
+            trans: TranslationalStateTyped::<RootInertial>::default(),
             rot: None,
             mass: None,
             integrator: IntegratorType::default(),

@@ -82,7 +82,8 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
         trans: TranslationalState {
             position: DVec3::new(1.5e11, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::new(0.0, 0.0, 0.05),

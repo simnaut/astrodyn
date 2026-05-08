@@ -170,7 +170,8 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
         trans: TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -185,7 +186,8 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
         trans: TranslationalState {
             position: DVec3::new(12.0, 0.0, 0.0),
             velocity: DVec3::new(-2.0, 0.0, 0.0),
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -636,7 +638,8 @@ fn tier3_contact_line_side_to_side() {
         trans: TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: jeod_veh1,
             ang_vel_body: DVec3::ZERO,
@@ -650,7 +653,8 @@ fn tier3_contact_line_side_to_side() {
         trans: TranslationalState {
             position: DVec3::new(12.0, 0.0, 0.0),
             velocity: DVec3::new(-2.0, 0.0, 0.0),
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: jeod_veh2,
             ang_vel_body: DVec3::ZERO,
@@ -735,7 +739,8 @@ fn tier3_contact_point_off_center() {
         trans: TranslationalState {
             position: init.veh1_pos,
             velocity: init.veh1_vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -749,7 +754,8 @@ fn tier3_contact_point_off_center() {
         trans: TranslationalState {
             position: init.veh2_pos,
             velocity: init.veh2_vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -872,7 +878,8 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
         trans: TranslationalState {
             position: DVec3::new(earth_radius, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -888,7 +895,8 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
         trans: TranslationalState {
             position: DVec3::new(earth_radius + 10.0, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,

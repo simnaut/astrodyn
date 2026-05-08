@@ -460,8 +460,7 @@ impl VehicleBuilder<Ready> {
         VehicleConfig {
             trans: self
                 .trans
-                .expect("typestate guarantees translational state")
-                .to_untyped(),
+                .expect("typestate guarantees translational state"),
             rot: self.rot,
             // Mass is `Option<MassProperties>` in the storage type
             // (so direct struct-literal construction stays

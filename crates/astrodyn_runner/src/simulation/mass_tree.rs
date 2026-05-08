@@ -1766,7 +1766,7 @@ mod tests {
 
         let gj_cfg = GaussJacksonConfig::with_order(8);
         let make_cfg = |trans: TranslationalState| VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -1869,7 +1869,7 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make = |trans: TranslationalState| VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -1946,7 +1946,7 @@ mod tests {
         );
 
         let make_cfg = |trans: TranslationalState| VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::Abm4,
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2036,7 +2036,7 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make = |trans: TranslationalState| VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::Abm4,
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2115,7 +2115,7 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make_cfg = || VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2248,7 +2248,7 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let cm = sim.add_body(VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2433,7 +2433,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(9e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 8000.0, 0.0),
-            },
+            }
+            .into(),
             rot: Some(astrodyn::RotationalState::default()),
             integrator: IntegratorType::Rk4,
             mass: Some(MassProperties::new(1000.0)),
@@ -2761,7 +2762,7 @@ mod tests {
 
         let gj_cfg = GaussJacksonConfig::with_order(8);
         let body_idx = sim.add_body(VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2848,7 +2849,7 @@ mod tests {
         );
 
         let body_idx = sim.add_body(VehicleConfig {
-            trans,
+            trans: trans.into(),
             integrator: IntegratorType::Abm4,
             mass: Some(MassProperties::new(1000.0)),
             gravity_controls: GravityControls {
@@ -2920,7 +2921,7 @@ mod tests {
         // Add a 6-DOF child SimBody, register both in the mass tree,
         // attach with a non-zero offset, and mark the child kinematic.
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -2998,7 +2999,7 @@ mod tests {
         });
 
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -3085,7 +3086,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -3098,7 +3100,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(7e6 + 1.0, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -3112,7 +3115,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(7e6 + 2.0, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
+            }
+            .into(),
             rot: None,
             mass: Some(MassProperties::new(10.0)),
             gravity_controls: GravityControls { controls: vec![] },

@@ -95,7 +95,8 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         trans: TranslationalState {
             position: init.veh_a_pos,
             velocity: init.veh_a_vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: init.veh_a_quat,
             ang_vel_body: init.veh_a_ang_vel,
@@ -109,7 +110,8 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         trans: TranslationalState {
             position: init.veh_b_pos,
             velocity: init.veh_b_vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: init.veh_b_quat,
             ang_vel_body: init.veh_b_ang_vel,

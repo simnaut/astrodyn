@@ -156,7 +156,7 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
     };
 
     let mut cfg = VehicleConfig {
-        trans,
+        trans: trans.into(),
         rot: None,
         mass: None,
         gravity_controls: GravityControls {

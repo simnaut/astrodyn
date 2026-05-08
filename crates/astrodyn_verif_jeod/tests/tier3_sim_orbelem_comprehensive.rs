@@ -142,7 +142,8 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         trans: TranslationalState {
             position: rec.position,
             velocity: rec.velocity,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

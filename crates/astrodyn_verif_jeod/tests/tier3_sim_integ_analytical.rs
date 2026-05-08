@@ -81,7 +81,8 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
         trans: TranslationalState {
             position: DVec3::new(SMA, 0.0, 0.0),
             velocity: DVec3::new(0.0, circular_velocity(), 0.0),
-        },
+        }
+        .into(),
         integrator,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

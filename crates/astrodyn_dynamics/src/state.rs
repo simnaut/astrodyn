@@ -95,6 +95,32 @@ impl<F: Frame> TranslationalStateTyped<F> {
     pub fn is_likely_uninitialized(&self) -> bool {
         self.position.raw_si() == DVec3::ZERO && self.velocity.raw_si() == DVec3::ZERO
     }
+
+    /// Relabel both phantoms (`Position` and `Velocity`) from `F` to
+    /// `F2` without changing the underlying numeric values. Pure
+    /// caller-asserted phantom swap; mirrors
+    /// [`Qty3::relabel_to`](astrodyn_quantities::qty3::Qty3::relabel_to)
+    /// at the struct level so consumers with a `TranslationalStateTyped<F>`
+    /// don't have to relabel position and velocity separately.
+    #[inline]
+    pub fn relabel_to<F2: Frame>(self) -> TranslationalStateTyped<F2> {
+        TranslationalStateTyped {
+            position: self.position.relabel_to::<F2>(),
+            velocity: self.velocity.relabel_to::<F2>(),
+        }
+    }
+}
+
+impl<F: Frame> From<TranslationalState> for TranslationalStateTyped<F> {
+    /// Lift an untyped [`TranslationalState`] into the typed form,
+    /// asserting the caller's frame phantom `F` is correct. This is
+    /// the documented test-fixture / scenario-construction boundary;
+    /// per-step pipelines should use the typed `*_typed` siblings or
+    /// build via [`Vec3Ext::m_at`](astrodyn_quantities::ext::Vec3Ext::m_at).
+    #[inline]
+    fn from(s: TranslationalState) -> Self {
+        Self::from_untyped_unchecked(&s)
+    }
 }
 
 impl TranslationalStateTyped<IntegrationFrame> {

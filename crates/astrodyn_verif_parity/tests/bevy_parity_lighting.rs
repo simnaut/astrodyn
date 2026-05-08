@@ -138,7 +138,8 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         trans: TranslationalState {
             position: veh_pos,
             velocity: DVec3::new(0.0, 7668.56, 0.0),
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -347,7 +348,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -546,7 +547,8 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
         trans: TranslationalState {
             position: lifted_pos,
             velocity: lifted_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

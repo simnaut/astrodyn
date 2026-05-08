@@ -344,7 +344,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         trans: TranslationalState {
             position: vehicle_pos,
             velocity: vehicle_vel,
-        },
+        }
+        .into(),
         mass: Some(mass),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],

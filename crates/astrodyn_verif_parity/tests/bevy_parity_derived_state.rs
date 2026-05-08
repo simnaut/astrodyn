@@ -231,7 +231,7 @@ fn tier3_bevy_geodetic_derived_state() {
     );
 
     let body = VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -377,7 +377,7 @@ fn tier3_bevy_eccentric_derived_states() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: ecc_trans,
+        trans: ecc_trans.into(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
@@ -510,7 +510,7 @@ fn tier3_bevy_polar_geodetic() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: polar_trans,
+        trans: polar_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -635,7 +635,7 @@ fn tier3_bevy_equatorial_solar_beta() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
@@ -706,7 +706,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
@@ -787,7 +787,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -902,7 +902,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     );
 
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -981,7 +981,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
 
     let (mut sim, earth_idx) = new_sim_earth(tiny_dt);
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -1103,7 +1103,7 @@ fn tier3_bevy_orbelem() {
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans: ecc_trans,
+        trans: ecc_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -1179,7 +1179,7 @@ fn tier3_bevy_solar_beta() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: inc_trans,
+        trans: inc_trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

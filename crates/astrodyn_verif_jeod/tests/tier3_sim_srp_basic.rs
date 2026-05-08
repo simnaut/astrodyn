@@ -151,7 +151,8 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
         trans: TranslationalState {
             position: DVec3::new(1.5e11, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        },
+        }
+        .into(),
         mass: Some(astrodyn::MassProperties::new(1.0)),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,

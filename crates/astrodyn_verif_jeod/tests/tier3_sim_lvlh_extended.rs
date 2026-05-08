@@ -50,7 +50,7 @@ fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simu
     );
 
     sim.add_body(VehicleConfig {
-        trans: body,
+        trans: body.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

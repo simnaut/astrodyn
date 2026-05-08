@@ -141,7 +141,7 @@ fn run_simulation_steps() -> SixDofState {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: initial_trans(),
+        trans: initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
         gravity_controls: GravityControls {
@@ -279,7 +279,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: initial_trans(),
+        trans: initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
         integrator: IntegratorType::Rkf45,

@@ -92,7 +92,7 @@ fn build_pair(
     // Empty gravity controls: the kernel's accumulate path returns
     // zero acceleration, which is what we want.
     let parent_idx = sim.add_body(VehicleConfig {
-        trans: parent_trans,
+        trans: parent_trans.into(),
         rot: parent_rot,
         mass: Some(parent_mass),
         integrator: IntegratorType::Rk4,
@@ -102,7 +102,7 @@ fn build_pair(
         ..Default::default()
     });
     let child_idx = sim.add_body(VehicleConfig {
-        trans: child_trans,
+        trans: child_trans.into(),
         rot: child_rot,
         mass: Some(child_mass),
         integrator: IntegratorType::Rk4,
@@ -604,7 +604,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
     );
 
     let a_idx = sim.add_body(VehicleConfig {
-        trans: a_trans,
+        trans: a_trans.into(),
         rot: a_rot,
         mass: Some(a_mass),
         integrator: IntegratorType::Rk4,
@@ -614,7 +614,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let b_idx = sim.add_body(VehicleConfig {
-        trans: b_trans,
+        trans: b_trans.into(),
         rot: b_rot,
         mass: Some(b_mass),
         integrator: IntegratorType::Rk4,
@@ -624,7 +624,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let c_idx = sim.add_body(VehicleConfig {
-        trans: c_trans,
+        trans: c_trans.into(),
         rot: c_rot,
         mass: Some(c_mass),
         integrator: IntegratorType::Rk4,
@@ -829,7 +829,7 @@ fn runner_detach_lifts_through_integ_origin() {
     );
 
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans,
+        trans: parent_trans.into(),
         rot: parent_rot,
         mass: Some(parent_mass),
         integrator: IntegratorType::Rk4,
@@ -840,7 +840,7 @@ fn runner_detach_lifts_through_integ_origin() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans,
+        trans: child_trans.into(),
         rot: child_rot,
         mass: Some(child_mass),
         integrator: IntegratorType::Rk4,
@@ -994,7 +994,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         },
     );
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans,
+        trans: parent_trans.into(),
         rot: Some(parent_rot),
         mass: Some(parent_mass),
         integrator: IntegratorType::Rk4,
@@ -1004,7 +1004,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans,
+        trans: child_trans.into(),
         rot: Some(child_rot),
         mass: Some(child_mass),
         integrator: IntegratorType::Rk4,

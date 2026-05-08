@@ -88,7 +88,7 @@ fn tier3_bevy_sh4x4_rnp() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
@@ -194,7 +194,7 @@ fn tier3_bevy_tidal_sh4x4() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
@@ -249,7 +249,7 @@ fn tier3_bevy_run2p_polar_motion() {
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans(),
+        trans: iss_trans().into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -323,7 +323,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     let earth_idx = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
-        trans: gj_trans,
+        trans: gj_trans.into(),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],

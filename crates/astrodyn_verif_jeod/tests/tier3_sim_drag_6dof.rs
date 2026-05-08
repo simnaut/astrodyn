@@ -83,7 +83,8 @@ fn make_6dof_drag_sim(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: quat,
             ang_vel_body: ang_vel,

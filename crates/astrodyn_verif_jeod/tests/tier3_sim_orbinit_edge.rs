@@ -79,7 +79,8 @@ fn tier3_simulation_orbinit_cross_consistency() {
             trans: TranslationalState {
                 position: init.position,
                 velocity: init.velocity,
-            },
+            }
+            .into(),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },

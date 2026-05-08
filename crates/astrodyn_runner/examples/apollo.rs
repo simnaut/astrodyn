@@ -77,7 +77,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sb.bodies[0].trans = TranslationalState {
         position: init_pos,
         velocity: init_vel,
-    };
+    }
+    .into();
     // Initialize the body with CSM-only mass; the S-IVB is added separately
     // below as a child in the mass tree, and `add_body_to_tree` will snapshot
     // the body's current mass into the tree node. Initializing with

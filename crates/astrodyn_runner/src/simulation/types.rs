@@ -341,12 +341,11 @@ impl SimBody {
         let shadow_body = config.shadow_body.map(|sb| (sb.source_idx, sb.radius));
 
         Self {
-            // VehicleConfig::trans is documented as integration-frame; wrap
-            // the untyped storage with the IntegrationFrame phantom so
-            // root-inertial consumers must shift via `to_inertial`. See #255.
-            trans: TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &config.trans,
-            ),
+            // VehicleConfig::trans is typed `<RootInertial>`; the
+            // runner re-tags as `<IntegrationFrame>` because integration
+            // runs in the body's integration frame (numerically
+            // coincides with root for root-integrated bodies). See #255.
+            trans: config.trans.relabel_to::<IntegrationFrame>(),
             rot: config.rot,
             mass: config.mass,
             mass_body_id: None,

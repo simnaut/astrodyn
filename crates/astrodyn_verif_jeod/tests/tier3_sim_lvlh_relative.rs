@@ -80,7 +80,8 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         trans: TranslationalState {
             position: init.ref_pos,
             velocity: init.ref_vel,
-        },
+        }
+        .into(),
         ..Default::default()
     });
 
@@ -89,7 +90,8 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         trans: TranslationalState {
             position: init.subj_pos,
             velocity: init.subj_vel,
-        },
+        }
+        .into(),
         ..Default::default()
     });
 

@@ -149,10 +149,12 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
     );
 
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
+        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+            &TranslationalState {
+                position: init.position,
+                velocity: init.velocity,
+            },
+        ),
         // Bespoke uses identity quaternion + zero ω for the body — the
         // tidal CSV doesn't log attitude (8 columns: time, pos, vel,
         // dC20), so we mirror that here.

@@ -337,7 +337,8 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
         trans: TranslationalState {
             position: t0.composite_body.position,
             velocity: t0.composite_body.velocity,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::from_glam(t0.composite_body.quaternion),
             ang_vel_body: t0.composite_body.ang_vel,

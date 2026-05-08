@@ -156,6 +156,18 @@ impl<P: Planet> From<TranslationalState> for TranslationalStateC<P> {
     }
 }
 
+impl<P: Planet> From<TranslationalStateTyped<RootInertial>> for TranslationalStateC<P> {
+    /// Insertion-time boundary from the gateway's
+    /// `<RootInertial>`-typed `VehicleConfig.trans` into the Bevy
+    /// component's `<PlanetInertial<P>>` storage. Pure phantom relabel
+    /// (numerics bit-identical) — no `from_*_unchecked` bypass needed
+    /// because the gateway-side phantom is already asserted.
+    #[inline]
+    fn from(state: TranslationalStateTyped<RootInertial>) -> Self {
+        Self(state.relabel_to::<PlanetInertial<P>>())
+    }
+}
+
 /// Rotational state (attitude quaternion + body-frame angular
 /// velocity / acceleration) for the body being integrated.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]

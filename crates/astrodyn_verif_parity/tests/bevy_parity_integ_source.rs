@@ -224,7 +224,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: lunar_initial_trans(),
+        trans: lunar_initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
@@ -355,7 +355,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     sim.set_source_state(moon_idx, MOON_OFFSET, moon_vel);
 
     sim.add_body(VehicleConfig {
-        trans: lunar_initial_trans(),
+        trans: lunar_initial_trans().into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
@@ -464,7 +464,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     earth_entry.source.model = GravityModel::PointMass;
     sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         rot: Some(initial_rot()),
         mass: Some(MassProperties::with_inertia(
             400_000.0,
@@ -646,7 +646,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: lunar_tilted,
+        trans: lunar_tilted.into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
@@ -881,7 +881,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: lunar_tilted,
+        trans: lunar_tilted.into(),
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {

@@ -77,7 +77,8 @@ fn gj_energy_error(order: usize) -> f64 {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(order)),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

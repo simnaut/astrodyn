@@ -431,7 +431,8 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
         trans: TranslationalState {
             position: row0.position,
             velocity: row0.velocity,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: row0.quaternion,
             ang_vel_body: row0.ang_vel_body,

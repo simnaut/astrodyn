@@ -49,10 +49,12 @@ fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
         e
     });
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
+        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+            &TranslationalState {
+                position: init.position,
+                velocity: init.velocity,
+            },
+        ),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

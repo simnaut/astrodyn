@@ -277,11 +277,11 @@ impl Simulation {
             RefFrameKind::Body,
             RefFrameState {
                 trans: RefFrameTrans {
-                    // VehicleConfig::trans is integration-frame; the frame
-                    // tree node lives in the parent (integration) frame, so
-                    // values copy directly with no shift.
-                    position: config.trans.position,
-                    velocity: config.trans.velocity,
+                    // VehicleConfig::trans is typed `<RootInertial>`; the
+                    // frame tree node stores raw DVec3 in parent-frame
+                    // coordinates, so unwrap to raw here.
+                    position: config.trans.position.raw_si(),
+                    velocity: config.trans.velocity.raw_si(),
                 },
                 rot: RefFrameRot::default(),
             },

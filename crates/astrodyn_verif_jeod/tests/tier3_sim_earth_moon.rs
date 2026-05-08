@@ -173,7 +173,8 @@ fn tier3_simulation_earth_moon_clem() {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(moon, 60, 60, false),

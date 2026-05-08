@@ -471,7 +471,8 @@ mod tests {
             trans: TranslationalState {
                 position: child_pre_state.trans.position,
                 velocity: child_pre_state.trans.velocity,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: child_pre_state.rot.q_parent_this,
                 ang_vel_body: child_pre_state.rot.ang_vel_this,
@@ -662,7 +663,8 @@ mod tests {
             trans: TranslationalState {
                 position: parent_root_pos,
                 velocity: parent_root_vel,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -707,7 +709,8 @@ mod tests {
             trans: TranslationalState {
                 position: child_pre_state_inertial.trans.position - offset_src_root_pos,
                 velocity: child_pre_state_inertial.trans.velocity,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: child_pre_state_inertial.rot.q_parent_this,
                 ang_vel_body: child_pre_state_inertial.rot.ang_vel_this,
@@ -845,7 +848,7 @@ mod tests {
         // The recipe ships a 6-DOF root, which is fine. Add a 3-DOF
         // child SimBody (rot: None) and try to mark it kinematic.
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: None,
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },
@@ -869,7 +872,7 @@ mod tests {
             .expect("Mission::iss_leo must validate");
         let parent_id = sim.add_body_to_tree(0, "parent");
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState::default()),
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },
@@ -935,7 +938,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(7.0e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -969,7 +973,8 @@ mod tests {
             trans: TranslationalState {
                 position: DVec3::new(7.0e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -1051,14 +1056,14 @@ mod tests {
             .expect("Mission::iss_leo must validate");
         let root_idx = 0;
         let mid_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState::default()),
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
         let leaf_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState::default()),
             mass: Some(MassProperties::new(2.0)),
             gravity_controls: GravityControls { controls: vec![] },
@@ -1128,7 +1133,7 @@ mod tests {
         // body frame. Spawned at zero state because the frame-attach
         // walk overwrites it every tick.
         let body_b_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState::default()),
             mass: Some(MassProperties::new(10.0)),
             gravity_controls: GravityControls { controls: vec![] },
@@ -1140,7 +1145,7 @@ mod tests {
         // structural offset in B's parent frame.
         let link_offset = DVec3::new(0.0, 100.0, 0.0);
         let body_c_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default(),
+            trans: TranslationalState::default().into(),
             rot: Some(RotationalState::default()),
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },

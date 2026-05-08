@@ -90,7 +90,8 @@ fn make_drag_sim(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -514,7 +515,8 @@ fn make_drag_sim_with_wind(
         trans: TranslationalState {
             position: pos,
             velocity: vel,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,

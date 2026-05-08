@@ -103,8 +103,8 @@ fn from_orbital_elements_round_trip() {
     // to within numerical tolerance — `from_orbital_elements` delegates
     // to `init_from_orbital_elements_typed`, itself delegating to the
     // bit-identical f64 implementation.
-    let pos_err = (cfg.trans.position - iss_trans().position.raw_si()).length();
-    let vel_err = (cfg.trans.velocity - iss_trans().velocity.raw_si()).length();
+    let pos_err = (cfg.trans.position.raw_si() - iss_trans().position.raw_si()).length();
+    let vel_err = (cfg.trans.velocity.raw_si() - iss_trans().velocity.raw_si()).length();
     assert!(pos_err < 1.0e-6, "position round-trip error: {pos_err}");
     assert!(vel_err < 1.0e-9, "velocity round-trip error: {vel_err}");
 }

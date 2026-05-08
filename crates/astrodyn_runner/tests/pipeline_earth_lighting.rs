@@ -109,7 +109,8 @@ fn pipeline_earth_lighting_smoke() {
         trans: TranslationalState {
             position: DVec3::new(6_778_137.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7_668.558, 0.0),
-        },
+        }
+        .into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

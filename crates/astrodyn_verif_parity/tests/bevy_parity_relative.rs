@@ -180,13 +180,13 @@ fn run_relative_parity(
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     sim.add_body(VehicleConfig {
-        trans: trans_a,
+        trans: trans_a.into(),
         rot: Some(rot_a),
         mass: Some(dummy_mass),
         ..Default::default()
     });
     sim.add_body(VehicleConfig {
-        trans: trans_b,
+        trans: trans_b.into(),
         rot: Some(rot_b),
         mass: Some(dummy_mass),
         ..Default::default()
@@ -377,11 +377,11 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     sim.add_body(VehicleConfig {
-        trans: ref_trans,
+        trans: ref_trans.into(),
         ..Default::default()
     });
     sim.add_body(VehicleConfig {
-        trans: subj_trans,
+        trans: subj_trans.into(),
         ..Default::default()
     });
     sim.validate().unwrap();

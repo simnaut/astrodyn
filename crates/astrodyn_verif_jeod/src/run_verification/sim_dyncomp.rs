@@ -56,11 +56,15 @@ fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
 /// Translational state from the t=0 [`InitialConditions`] passed by
 /// `run_and_assert`. Centralises the common builder pattern shared by
 /// every dyncomp scenario.
-fn trans_from(init: &InitialConditions) -> TranslationalState {
-    TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
-    }
+fn trans_from(
+    init: &InitialConditions,
+) -> astrodyn::TranslationalStateTyped<astrodyn::RootInertial> {
+    astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+        &TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+    )
 }
 
 /// Rotational state from a 6-DOF [`InitialConditions`]. Panics with a
@@ -277,10 +281,13 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
 
     let trans =
         crate::lvlh_init_data::load_trans_init_function(&state_py, "set_trans_init_typical");
-    let trans_state = TranslationalState {
-        position: DVec3::from_array(trans.position),
-        velocity: DVec3::from_array(trans.velocity),
-    };
+    let trans_state =
+        astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+            &TranslationalState {
+                position: DVec3::from_array(trans.position),
+                velocity: DVec3::from_array(trans.velocity),
+            },
+        );
     let rot_state = init_lvlh_rot_state(&state_py);
 
     let time = SimulationTime::at_j2000(default_leap_second_table());

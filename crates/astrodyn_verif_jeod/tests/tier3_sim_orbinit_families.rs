@@ -51,7 +51,7 @@ fn build_sim(trans: TranslationalState, dt: f64) -> Simulation {
     );
 
     sim.add_body(VehicleConfig {
-        trans,
+        trans: trans.into(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

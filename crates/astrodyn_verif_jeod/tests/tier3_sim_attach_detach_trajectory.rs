@@ -277,7 +277,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, dt);
 
     let v1 = sim.add_body(VehicleConfig {
-        trans: veh1_initial_trans(),
+        trans: veh1_initial_trans().into(),
         rot: Some(veh1_initial_rot()),
         mass: Some(veh1_mass()),
         gravity_controls: GravityControls { controls: vec![] },
@@ -285,7 +285,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: veh2_initial_trans(),
+        trans: veh2_initial_trans().into(),
         rot: Some(veh2_initial_rot()),
         mass: Some(veh2_mass()),
         gravity_controls: GravityControls { controls: vec![] },
@@ -293,7 +293,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: veh3_initial_trans(),
+        trans: veh3_initial_trans().into(),
         rot: Some(veh3_initial_rot()),
         mass: Some(veh3_mass()),
         gravity_controls: GravityControls { controls: vec![] },

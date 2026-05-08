@@ -103,7 +103,8 @@ fn setup_run9(
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
-        },
+        }
+        .into(),
         rot: Some(RotationalState {
             quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
             ang_vel_body: init_ang_vel,

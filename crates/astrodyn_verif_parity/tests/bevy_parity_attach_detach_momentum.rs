@@ -2418,7 +2418,7 @@ fn bevy_runner_parity_attach_detach_momentum() {
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
-        trans: parent_trans,
+        trans: parent_trans.into(),
         rot: Some(parent_rot),
         mass: Some(parent_mass),
         integrator: RunnerIntegratorType::Rk4,
@@ -2428,7 +2428,7 @@ fn bevy_runner_parity_attach_detach_momentum() {
         ..Default::default()
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
-        trans: child_trans,
+        trans: child_trans.into(),
         rot: Some(child_rot),
         mass: Some(child_mass),
         integrator: RunnerIntegratorType::Rk4,
@@ -2854,7 +2854,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
-        trans: parent_trans,
+        trans: parent_trans.into(),
         rot: Some(parent_rot),
         mass: Some(parent_mass),
         integrator: RunnerIntegratorType::Rk4,
@@ -2865,7 +2865,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         ..Default::default()
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
-        trans: child_trans,
+        trans: child_trans.into(),
         rot: Some(child_rot),
         mass: Some(child_mass),
         integrator: RunnerIntegratorType::Rk4,

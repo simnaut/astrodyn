@@ -212,7 +212,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let v1 = sim.add_body(VehicleConfig {
-        trans: veh1_trans(),
+        trans: veh1_trans().into(),
         rot: Some(veh1_rot()),
         mass: Some(veh1_mass()),
         gravity_controls: GravityControls { controls: vec![] },
@@ -220,7 +220,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: veh2_trans(),
+        trans: veh2_trans().into(),
         rot: Some(veh2_rot()),
         mass: Some(veh2_mass()),
         gravity_controls: GravityControls { controls: vec![] },
@@ -228,7 +228,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: veh3_trans(),
+        trans: veh3_trans().into(),
         rot: Some(veh3_rot()),
         mass: Some(veh3_mass()),
         gravity_controls: GravityControls { controls: vec![] },

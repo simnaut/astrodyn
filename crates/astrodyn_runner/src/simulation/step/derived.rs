@@ -247,7 +247,8 @@ mod tests {
             trans: TranslationalState {
                 position: body_root_pos,
                 velocity: body_root_vel,
-            },
+            }
+            .into(),
             rot: Some(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
