@@ -36,9 +36,9 @@
 use std::time::Duration;
 
 use astrodyn::{
-    FrameSwitchConfig, GravityControl, GravitySourceEntry, JeodQuat, MassProperties,
-    RotationalState, SixDofState, SwitchSense, TranslationalState, VehicleBuilder, VehicleConfig,
-    EARTH, MOON,
+    FrameSwitchConfig, GravityControl, GravitySourceEntry, JeodQuat, MassProperties, RootInertial,
+    RotationalState, SixDofState, SwitchSense, TranslationalStateTyped, Vec3Ext, VehicleBuilder,
+    VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, FrameEntityC, FrameSwitchesC, IntegSourceC, PlanetBundle, RotationalStateC,
@@ -53,10 +53,10 @@ const NUM_STEPS: usize = 80;
 const MOON_OFFSET: DVec3 = DVec3::new(2.0e7, 0.0, 0.0);
 const SWITCH_RADIUS: f64 = 1.5e7;
 
-fn initial_trans() -> TranslationalState {
-    TranslationalState {
-        position: DVec3::new(7_000_000.0, 0.0, 0.0),
-        velocity: DVec3::new(7000.0, 0.0, 0.0),
+fn initial_trans() -> TranslationalStateTyped<RootInertial> {
+    TranslationalStateTyped::<RootInertial> {
+        position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
+        velocity: DVec3::new(7000.0, 0.0, 0.0).m_per_s_at::<RootInertial>(),
     }
 }
 
@@ -112,9 +112,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 /// `differential` flags on the gravity controls to match.
 fn earth_then_moon_config() -> VehicleConfig {
     VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -148,9 +146,7 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
 
     // Build a config that integrates in Moon (source index 1).
     let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -225,9 +221,7 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
     // *presence* of `IntegSourceC` (or relying on `Without<IntegSourceC>`)
     // see the same shape as a manually-spawned root-integrated vehicle.
     let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -257,9 +251,7 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -288,9 +280,7 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -312,9 +302,7 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .id();
 
     let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&initial_trans()))
+        .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -441,10 +429,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
     let moon_idx = sim.add_source(
         "Moon",
-        GravitySourceEntry::third_body(
-            &MOON,
-            astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(MOON_OFFSET),
-        ),
+        GravitySourceEntry::third_body(&MOON, MOON_OFFSET.m_at::<RootInertial>()),
     );
 
     let mut sim_cfg = earth_then_moon_config();

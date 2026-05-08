@@ -51,12 +51,20 @@
 #      The fix is to make Bevy components wrap the typed siblings
 #      directly; this guard prevents regression by refusing the bypass
 #      APIs in the adapter.
+#    - The **Bevy adapter integration tests**
+#      (`crates/astrodyn_bevy/tests/**`). These are the closest thing
+#      to user-facing worked examples for mission code — a mission
+#      author looking at how to wire up a `VehicleBuilder` lands here
+#      and copies the pattern. The bypass must not leak into that
+#      surface (issue #388 review).
 #    - The **gateway** (`src/**`, the workspace-root `astrodyn` crate).
 #      Per CLAUDE.md the gateway is the single API surface for the
 #      production path; bypass constructors there violate the spirit of
 #      the typed-quantity facade introduced in #101 / #172 (issue #388).
 #      Code under `#[cfg(test)] mod tests { ... }` blocks is skipped —
-#      test fixtures are a sanctioned boundary.
+#      unit-test fixtures are a sanctioned boundary. Integration tests
+#      under `crates/astrodyn_bevy/tests/**` are NOT skipped because
+#      they are the worked-example surface described above.
 #
 #    `// allowed: <reason>` annotations exempt individual lines when
 #    there is no choice (typically a documented orchestration boundary,
@@ -95,6 +103,7 @@ src_files_to_scan=$( {
         -not -path 'crates/astrodyn_bevy/src/components.rs' \
         -not -path 'crates/astrodyn_bevy/src/components/*' \
         -not -path 'crates/astrodyn_bevy/src/lib.rs'
+    find crates/astrodyn_bevy/tests/ -name "*.rs" -type f
     find src/ -name "*.rs" -type f
 } | sort)
 
@@ -125,7 +134,7 @@ bypass_matches=$(echo "$src_files_to_scan" | xargs awk '
     /^[[:space:]]*\/\// { next }
     # Blank: keep prev_allowed as-is.
     /^[[:space:]]*$/ { next }
-    /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si|from_seconds|(JeodQuat|Quat)::from_array|FrameTransform::from_matrix\(/ {
+    /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si|SecondsSince[^[:space:]]*::from_seconds|(JeodQuat|Quat)::from_array|FrameTransform::from_matrix\(/ {
         if (prev_allowed) { prev_allowed = 0; next }
         if ($0 ~ /\/\/ allowed:/) { prev_allowed = 0; next }
         printf "%s:%d: %s\n", FILENAME, FNR, $0
@@ -145,10 +154,12 @@ if [ -n "$marker_matches" ]; then
 fi
 
 if [ -n "$bypass_matches" ]; then
-    echo "FAIL: typed-quantity bypass constructors in the gateway or Bevy adapter" >&2
-    echo "  (scanned: src/** and crates/astrodyn_bevy/src/**, except the canonical" >&2
-    echo "   boundary modules crates/astrodyn_bevy/src/components.rs and" >&2
-    echo "   crates/astrodyn_bevy/src/lib.rs; #[cfg(test)] modules in src/** skipped.)" >&2
+    echo "FAIL: typed-quantity bypass constructors in the gateway, Bevy adapter, or Bevy integration tests" >&2
+    echo "  (scanned: src/**, crates/astrodyn_bevy/src/**, and" >&2
+    echo "   crates/astrodyn_bevy/tests/**; canonical boundary modules" >&2
+    echo "   crates/astrodyn_bevy/src/components.rs and" >&2
+    echo "   crates/astrodyn_bevy/src/lib.rs are exempt; #[cfg(test)]" >&2
+    echo "   modules in src/** are skipped.)" >&2
     echo "  Banned: from_untyped_unchecked / from_dmat3_unchecked / from_raw_si /" >&2
     echo "          from_seconds / (JeodQuat|Quat)::from_array / FrameTransform::from_matrix(" >&2
     echo "  These constructors mint a typed value from raw storage without" >&2

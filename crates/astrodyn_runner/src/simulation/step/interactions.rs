@@ -43,7 +43,7 @@ impl Simulation {
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             // JEOD_INV: RF.10 — SRP / shadow consume root-inertial position
             // (because `sun_position` is root-inertial). Drag, by contrast,
-            // is *not* in the shift class: `compute_drag` subtracts
+            // is *not* in the shift class: `compute_ballistic_drag` subtracts
             // `atmos.wind` (computed via `omega × atmosphere_position` in
             // the atmosphere planet's frame) from the vehicle velocity,
             // so the velocity must match the same planet-centered frame —
