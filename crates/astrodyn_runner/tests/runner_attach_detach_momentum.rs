@@ -36,8 +36,8 @@
 
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    IntegratorType, MassProperties as SimMassProperties, RotationalState, SimulationTime,
-    TranslationalState, VehicleConfig,
+    IntegratorType, MassProperties as SimMassProperties, RootInertial, RotationalState,
+    SimulationTime, TranslationalState, Vec3Ext, VehicleConfig,
 };
 use astrodyn_dynamics::{combine_states_at_attach, AttachCombineInputs};
 use astrodyn_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
@@ -817,7 +817,7 @@ fn runner_detach_lifts_through_integ_origin() {
                 mu: 0.0, // disable gravity so the test guards orchestration only
                 model: GravityModel::PointMass,
             },
-            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(SSB_TO_EARTH),
+            position: SSB_TO_EARTH.m_at::<RootInertial>(),
             velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
             t_inertial_pfix: None,
             rotation_model: RotationModel::None,

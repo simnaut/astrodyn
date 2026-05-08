@@ -13,7 +13,7 @@ use glam::DVec3;
 use crate::integrator::IntegratorType;
 use astrodyn_math::JeodQuat;
 use astrodyn_quantities::aliases::{Acceleration, Force, Position, Torque, Velocity};
-use astrodyn_quantities::frame::{BodyFrame, RootInertial, Vehicle};
+use astrodyn_quantities::frame::{BodyFrame, Frame, Vehicle};
 use uom::si::f64::Time;
 
 use crate::integrable::IntegrableObject;
@@ -1042,34 +1042,30 @@ fn integrate_coupled_sixdof<V: astrodyn_quantities::frame::Vehicle>(
 ///
 /// Identical kernel — wraps the entry boundary so callers pass typed
 /// quantities. The `trans` parameter takes a mutable
-/// [`TranslationalStateTyped<RootInertial>`] so the inertial-frame
-/// constraint is enforced at compile time; the wrapper unwraps to the
-/// raw kernel storage on entry and writes the integrated state back
-/// at exit. The `gravity_fn` closure is also typed: it receives an
-/// intermediate position / velocity in [`RootInertial`] and returns an
-/// [`Acceleration<RootInertial>`]. No new arithmetic — only `.raw_si()` /
-/// `from_raw_si` at the edges.
+/// [`TranslationalStateTyped<F>`] so the integration-frame constraint
+/// is enforced at compile time; the wrapper unwraps to the raw kernel
+/// storage on entry and writes the integrated state back at exit. The
+/// `gravity_fn` closure is also typed: it receives an intermediate
+/// position / velocity in `F` and returns an `Acceleration<F>`. No new
+/// arithmetic — only `.raw_si()` / `from_raw_si` at the edges.
 ///
 /// `dt` becomes [`uom::si::f64::Time`]. The dimensionless
 /// `time_scale_factor` (JEOD's `TimeDyn::scale_factor`) stays an
 /// `f64` ratio per Phase 5's design note (#107).
 ///
-/// Per-vehicle frame phantom `V` ties the torque to
-/// [`BodyFrame<V>`]; the body's translational state must be in
-/// [`RootInertial`] (enforced by the [`TranslationalStateTyped<RootInertial>`]
-/// parameter type).
+/// Generic over the integration frame `F` and the vehicle phantom `V`
+/// — production callers integrate in `RootInertial` (the gateway
+/// stage); the runner integrates in `IntegrationFrame` (per-body
+/// integration frame). The torque parameter ties to
+/// [`BodyFrame<V>`] regardless of `F`.
 #[allow(clippy::too_many_arguments)]
-pub fn integrate_body_typed<V: Vehicle>(
+pub fn integrate_body_typed<V: Vehicle, F: Frame>(
     config: &DynamicsConfig,
-    trans: &mut TranslationalStateTyped<RootInertial>,
+    trans: &mut TranslationalStateTyped<F>,
     rot: Option<&mut RotationalState>,
     mass: Option<&MassProperties>,
-    gravity_fn: impl Fn(
-        Position<RootInertial>,
-        Velocity<RootInertial>,
-        f64,
-    ) -> Acceleration<RootInertial>,
-    non_grav_force: Force<RootInertial>,
+    gravity_fn: impl Fn(Position<F>, Velocity<F>, f64) -> Acceleration<F>,
+    non_grav_force: Force<F>,
     torque: Torque<BodyFrame<V>>,
     dt: Time,
     time_scale_factor: f64,
@@ -1091,8 +1087,8 @@ pub fn integrate_body_typed<V: Vehicle>(
     // candidate for relocation into `astrodyn_dynamics`.
     let raw_gravity_fn = |pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
         gravity_fn(
-            Position::<RootInertial>::from_raw_si(pos), // allowed: integrator-stage boundary, see note above
-            Velocity::<RootInertial>::from_raw_si(vel), // allowed: integrator-stage boundary, see note above
+            Position::<F>::from_raw_si(pos), // allowed: integrator-stage boundary, see note above
+            Velocity::<F>::from_raw_si(vel), // allowed: integrator-stage boundary, see note above
             time_frac,
         )
         .raw_si()
@@ -1114,7 +1110,7 @@ pub fn integrate_body_typed<V: Vehicle>(
     );
     // allowed: typed-sibling boundary writing the raw integrator output
     // back into the typed `trans`. See note above.
-    *trans = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&raw_trans);
+    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
 }
 
 /// Compute total translational acceleration from a stage evaluation.

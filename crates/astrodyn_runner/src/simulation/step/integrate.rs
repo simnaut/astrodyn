@@ -10,12 +10,14 @@ use glam::{DMat3, DVec3};
 use astrodyn::forces::collect_and_resolve_forces;
 use astrodyn::frame_orchestration::{evaluate_and_apply_frame_switch, FrameSwitchTargetMissing};
 use astrodyn::gravity::accumulate_gravity;
-use astrodyn::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
+use astrodyn::integration::{
+    integrate_bodies_contact_coupled, integrate_body_typed, CoupledBodyInput,
+};
 use astrodyn::{
     aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
-    integrate_body_coupled, CoupledStageEval, EdgeGeometry, GravityControls, MassProperties,
-    MassStorage, Position, RadiationForce, RotationalState, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    integrate_body_coupled, Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force,
+    GravityControls, MassProperties, MassStorage, Position, RadiationForce, RotationalState,
+    SelfRef, Torque, TranslationalState, TranslationalStateTyped, Velocity,
 };
 use astrodyn_dynamics::wrench::Wrench;
 use astrodyn_dynamics::MassBodyId;
@@ -489,20 +491,28 @@ impl Simulation {
                     }
                 } else {
                     let controls = &body.gravity_controls;
-                    // Round-trip body.trans through the untyped form for the
-                    // integrator interface (see comment above; same pattern).
-                    let mut trans_untyped = body.trans.to_untyped();
-                    integrate_body(
+                    // Typed integrator boundary: `body.trans` flows
+                    // end-to-end as `TranslationalStateTyped<IntegrationFrame>`.
+                    // Force/torque/dt are lifted once at the call site;
+                    // the per-stage gravity-fn raw lift is a sanctioned
+                    // kernel-internal boundary inside `integrate_body_typed`.
+                    integrate_body_typed::<SelfRef, IntegrationFrame>(
                         &body.config,
-                        &mut trans_untyped,
+                        &mut body.trans,
                         body.rot.as_mut(),
                         body.mass.as_ref(),
                         |pos, vel, time_frac| {
-                            eval_body_gravity(controls, body_idx, pos, vel, time_frac)
+                            Acceleration::<IntegrationFrame>::from_raw_si(eval_body_gravity(
+                                controls,
+                                body_idx,
+                                pos.raw_si(),
+                                vel.raw_si(),
+                                time_frac,
+                            ))
                         },
-                        body.total_force.force,
-                        body.total_force.torque,
-                        dt,
+                        Force::<IntegrationFrame>::from_raw_si(body.total_force.force),
+                        Torque::<BodyFrame<SelfRef>>::from_raw_si(body.total_force.torque),
+                        uom::si::f64::Time::new::<uom::si::time::second>(dt),
                         time_scale_factor,
                         // Runner stores the raw astrodyn_dynamics enum; the
                         // astrodyn kernel takes the wrapped flavor —
@@ -511,10 +521,6 @@ impl Simulation {
                         body.gj_state.as_mut(),
                         body.abm4_state.as_mut(),
                     );
-                    body.trans =
-                        TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                            &trans_untyped,
-                        );
                 }
             }
         } else {
