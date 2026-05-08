@@ -366,8 +366,8 @@ impl SimBody {
             t_struct_body: config.t_struct_body,
             compute_gravity_torque: config.compute_gravity_gradient,
             atmospheric_state: AtmosphereState::<SelfPlanet>::default(),
-            external_force: config.external_force,
-            external_torque: config.external_torque,
+            external_force: config.external_force.raw_si(),
+            external_torque: config.external_torque.raw_si(),
             external_force_struct: DVec3::ZERO,
             external_torque_struct: DVec3::ZERO,
 

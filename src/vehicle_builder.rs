@@ -43,7 +43,7 @@
 
 use core::marker::PhantomData;
 
-use glam::{DMat3, DVec3};
+use glam::DMat3;
 
 use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
 use astrodyn_dynamics::state::TranslationalStateTyped;
@@ -133,8 +133,10 @@ pub struct VehicleBuilder<S: BuildState = NeedsState> {
     srp: Option<SrpModel>,
     shadow_body: Option<ShadowBody>,
     derived: DerivedStateConfig,
-    external_force: DVec3,
-    external_torque: DVec3,
+    external_force: astrodyn_quantities::aliases::Force<RootInertial>,
+    external_torque: astrodyn_quantities::aliases::Torque<
+        astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+    >,
     integ_source: Option<usize>,
     frame_switches: Vec<FrameSwitchConfig>,
     _state: PhantomData<S>,
@@ -160,8 +162,10 @@ impl<S: BuildState> VehicleBuilder<S> {
             srp: None,
             shadow_body: None,
             derived: DerivedStateConfig::default(),
-            external_force: DVec3::ZERO,
-            external_torque: DVec3::ZERO,
+            external_force: astrodyn_quantities::aliases::Force::<RootInertial>::zero(),
+            external_torque: astrodyn_quantities::aliases::Torque::<
+                astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+            >::zero(),
             integ_source: None,
             frame_switches: Vec::new(),
             _state: PhantomData,
@@ -358,14 +362,19 @@ impl VehicleBuilder<Ready> {
         self
     }
 
-    /// Set initial external force (inertial frame, N).
-    pub fn external_force(mut self, f: DVec3) -> Self {
+    /// Set initial external force (root-inertial frame, N).
+    pub fn external_force(mut self, f: astrodyn_quantities::aliases::Force<RootInertial>) -> Self {
         self.external_force = f;
         self
     }
 
     /// Set initial external torque (body frame, N·m).
-    pub fn external_torque(mut self, t: DVec3) -> Self {
+    pub fn external_torque(
+        mut self,
+        t: astrodyn_quantities::aliases::Torque<
+            astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+        >,
+    ) -> Self {
         self.external_torque = t;
         self
     }
@@ -492,6 +501,7 @@ mod tests {
     use super::*;
     use astrodyn_dynamics::TranslationalState;
     use astrodyn_quantities::ext::F64Ext;
+    use glam::DVec3;
 
     fn iss_trans() -> TranslationalStateTyped<RootInertial> {
         TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {

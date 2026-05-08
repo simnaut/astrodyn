@@ -104,7 +104,7 @@ pub use rkf45::{
 };
 pub use rotational::{
     compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
-    SixDofState,
+    RotationalStateTyped, SixDofState, SixDofStateTyped,
 };
 pub use state::TranslationalState;
 pub use subtree::DetachedSubtreeState;

@@ -9,7 +9,7 @@
 //! structs out of `astrodyn_runner`; the runner and the future Bevy adapter both
 //! consume this single description.
 
-use glam::{DMat3, DVec3};
+use glam::DMat3;
 
 use crate::integrator::IntegratorType;
 use crate::interactions::FlatPlateState;
@@ -195,10 +195,16 @@ pub struct VehicleConfig {
     pub derived: DerivedStateConfig,
 
     // ── External loads ──
-    /// External force in the inertial frame (N). Defaults to zero.
-    pub external_force: DVec3,
-    /// External torque in the body frame (N·m). Defaults to zero.
-    pub external_torque: DVec3,
+    /// External force in the root-inertial frame, typed end-to-end.
+    pub external_force:
+        astrodyn_quantities::aliases::Force<astrodyn_quantities::frame::RootInertial>,
+    /// External torque in the body frame, typed against the wildcard
+    /// vehicle phantom `<SelfRef>` at this storage boundary
+    /// (per-vehicle phantom is runtime-resolved by the runner / Bevy
+    /// adapter; documented under JEOD_INV `TS.01`).
+    pub external_torque: astrodyn_quantities::aliases::Torque<
+        astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+    >,
 
     // ── Frame switching ──
     /// Gravity source whose inertial frame is used for integration.
@@ -235,8 +241,12 @@ impl Default for VehicleConfig {
             srp: None,
             shadow_body: None,
             derived: DerivedStateConfig::default(),
-            external_force: DVec3::ZERO,
-            external_torque: DVec3::ZERO,
+            external_force: astrodyn_quantities::aliases::Force::<
+                astrodyn_quantities::frame::RootInertial,
+            >::zero(),
+            external_torque: astrodyn_quantities::aliases::Torque::<
+                astrodyn_quantities::frame::BodyFrame<astrodyn_quantities::frame::SelfRef>,
+            >::zero(),
             integ_source: None,
             frame_switches: Vec::new(),
         }

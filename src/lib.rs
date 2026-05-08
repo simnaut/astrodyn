@@ -167,7 +167,7 @@ pub use astrodyn_dynamics::{
     recompute_composites_via_storage, shift_wrench_to_parent, DetachedSubtreeState, DynamicsConfig,
     FrameAttachInputs, FrameDerivatives, GravityAcceleration, MassBodyId, MassNodeOutputs,
     MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
-    SixDofState, TotalForce, TranslationalState, Wrench,
+    SixDofState, SixDofStateTyped, TotalForce, TranslationalState, Wrench,
 };
 
 // astrodyn_dynamics typed siblings: ECS components built on the typed

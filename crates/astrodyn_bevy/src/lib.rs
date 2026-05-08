@@ -1122,22 +1122,15 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         if let Some(mass) = self.mass {
             entity.insert(components::MassPropertiesC::from(mass));
         }
-        if self.external_force != glam::DVec3::ZERO {
-            // `VehicleConfig.external_force` is still an untyped
-            // `DVec3` field on the `astrodyn` runtime fluent builder
-            // API. The Bevy `ExternalForceC` is typed (`Force<RootInertial>`),
-            // so this is a one-time insertion-time lift — not a per-step
-            // bypass. Migrating `VehicleConfig` itself to typed external
-            // fields is a deeper refactor inside `astrodyn`; out of
-            // scope for this Bevy-adapter boundary.
-            let f = astrodyn::Force::<astrodyn::RootInertial>::from_raw_si(self.external_force); // allowed: insertion-time boundary — VehicleConfig still exposes external_force as untyped DVec3, lifted once into Force<RootInertial> at spawn time (not a per-step bypass).
-            entity.insert(components::ExternalForceC(f));
+        if self.external_force.raw_si() != glam::DVec3::ZERO {
+            // `VehicleConfig.external_force` is now typed
+            // `Force<RootInertial>` end-to-end (issue #388 follow-up):
+            // the Bevy `ExternalForceC` carries the same phantom, so
+            // this is a direct move with no relabel.
+            entity.insert(components::ExternalForceC(self.external_force));
         }
-        if self.external_torque != glam::DVec3::ZERO {
-            let t = astrodyn::Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
-                self.external_torque,
-            ); // allowed: same insertion-time boundary as `external_force` above — VehicleConfig still untyped.
-            entity.insert(components::ExternalTorqueC(t));
+        if self.external_torque.raw_si() != glam::DVec3::ZERO {
+            entity.insert(components::ExternalTorqueC(self.external_torque));
         }
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
