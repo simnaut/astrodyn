@@ -19,6 +19,7 @@ pub mod kinematic_propagation;
 pub mod mass_tree;
 pub mod prelude;
 pub mod recipes;
+pub mod scenario;
 pub mod sets;
 pub mod source_mutator;
 pub mod systems;
@@ -40,6 +41,7 @@ pub use kinematic_propagation::{
     propagate_state_from_root_post_integration_system, propagate_state_from_root_system,
 };
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
+pub use scenario::{ScenarioHandles, SimulationBuilderBevyExt};
 pub use sets::*;
 pub use source_mutator::{SourceMutator, SourceReader};
 pub use systems::*;

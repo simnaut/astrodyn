@@ -28,8 +28,10 @@
 
 pub mod sim_derived_state;
 pub mod sim_dyncomp;
+pub mod sim_gj;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
+pub mod sim_relative;
 pub mod sim_solar_beta;
 pub mod sim_srp;
 pub mod sim_tide_verif;
@@ -236,7 +238,11 @@ impl VerificationCaseExt for VerificationCase {
 /// Project the t=0 [`StateLog`] from the reference CSV into the
 /// adapter-neutral [`InitialConditions`] passed to scenario builders.
 /// Scenarios consume this rather than re-parsing the CSV themselves.
-fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
+///
+/// Exposed `pub` so `astrodyn_verif_parity::VerificationCaseParityExt`
+/// (issue #389) can re-use the same projection without re-implementing
+/// the field-by-field copy.
+pub fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
     InitialConditions {
         time: t0.time,
         position: t0.position.unwrap_or_default(),
@@ -244,6 +250,22 @@ fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
         quaternion: t0.quaternion,
         ang_vel: t0.ang_vel,
     }
+}
+
+/// Public state-only loader for a [`CsvReference`].
+///
+/// Returns just the `Vec<StateLog>` portion of the per-variant
+/// reference-CSV loader; the per-family typed-records vec stays private
+/// because it carries extras-comparator wiring `verif_parity` doesn't
+/// need (parity tests compare runner state to bevy state, not against
+/// JEOD-logged extras).
+///
+/// Exposed for `astrodyn_verif_parity::VerificationCaseParityExt`
+/// (issue #389) so the parity trait can consume the same reference-CSV
+/// schedule that `run_and_assert` does, without duplicating the
+/// per-variant dispatch.
+pub fn load_reference_states(csv: &CsvReference, path: &std::path::Path) -> Vec<StateLog> {
+    load_reference(csv, path, None).0
 }
 
 /// Build a [`StateLog`] from a body's snapshot, with the time copied
@@ -534,7 +556,48 @@ fn load_reference(
             };
             (states, typed)
         }
+        CsvReference::TimesOnly(_) => {
+            // Cadence-only path: read column 0 of each non-header row
+            // and emit `StateLog`s with only `time` populated. Used by
+            // recipes whose CSV has a layout no per-variant loader
+            // models — typical when the parity trait drives the recipe
+            // and the assertion is runner ↔ bevy bit-identity, not
+            // tolerance-bounded against the JEOD-logged columns.
+            let times = load_times_only(path);
+            let states = times
+                .iter()
+                .map(|&t| StateLog {
+                    time: t,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            (states, CsvRecords::Times(times))
+        }
     }
+}
+
+/// Read column 0 (`sys.exec.out.time {s}`) from a JEOD reference CSV
+/// and return the per-row times. Skips the header row and any blank
+/// trailing lines. Used by [`CsvReference::TimesOnly`] dispatch.
+fn load_times_only(path: &std::path::Path) -> Vec<f64> {
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("load_times_only: read {} failed: {e}", path.display()));
+    let mut times = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let first = line.split(',').next().unwrap_or("").trim();
+        let t: f64 = first.parse().unwrap_or_else(|e| {
+            panic!(
+                "load_times_only: line {} of {}: parsing time column `{first}` failed: {e}",
+                i + 1,
+                path.display(),
+            )
+        });
+        times.push(t);
+    }
+    times
 }
 
 /// Per-family extras max-error accumulator used by `run_and_assert`.
