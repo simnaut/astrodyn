@@ -5,7 +5,7 @@
 //! both consumers of the `astrodyn` gateway crate and asserts bit-identical
 //! state. The library half (this file) provides the shared
 //! [`VerificationCaseParityExt`] trait that turns any Tier 3
-//! [`VerificationCase`](astrodyn_verif_jeod::verification::VerificationCase)
+//! [`astrodyn_verif_jeod::verification::VerificationCase`]
 //! into a one-line parity assertion (issue #389), so wrapper tests collapse
 //! to:
 //!

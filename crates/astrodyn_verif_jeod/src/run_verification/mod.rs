@@ -254,10 +254,11 @@ pub fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
 
 /// Public state-only loader for a [`CsvReference`].
 ///
-/// Returns just the `Vec<StateLog>` portion of [`load_reference`]; the
-/// per-family typed-records vec stays private because it carries
-/// extras-comparator wiring `verif_parity` doesn't need (parity tests
-/// compare runner state to bevy state, not against JEOD-logged extras).
+/// Returns just the `Vec<StateLog>` portion of the per-variant
+/// reference-CSV loader; the per-family typed-records vec stays private
+/// because it carries extras-comparator wiring `verif_parity` doesn't
+/// need (parity tests compare runner state to bevy state, not against
+/// JEOD-logged extras).
 ///
 /// Exposed for `astrodyn_verif_parity::VerificationCaseParityExt`
 /// (issue #389) so the parity trait can consume the same reference-CSV

@@ -2,16 +2,18 @@
 //!
 //! [`SimulationBuilderBevyExt::populate_app`] is the Bevy-side terminal for
 //! [`astrodyn::SimulationBuilder`], parallel to the runner's
-//! [`astrodyn_runner::SimulationBuilderExt::build`]. It materializes a
-//! declarative scenario into a populated Bevy [`App`] — resources for time,
-//! ephemeris, atmosphere, and polar motion; entities for every gravity
-//! source and vehicle; and a fully-wired mass tree when the scenario
-//! registers one.
+//! `astrodyn_runner::SimulationBuilderExt::build` (`astrodyn_runner` is not
+//! a dependency of `astrodyn_bevy`, so the link cannot be resolved by
+//! rustdoc — both terminals are documented at their respective crate
+//! sites). It materializes a declarative scenario into a populated Bevy
+//! [`App`] — resources for time, ephemeris, atmosphere, and polar motion;
+//! entities for every gravity source and vehicle; and a fully-wired mass
+//! tree when the scenario registers one.
 //!
-//! This unblocks issue #389: every Tier 3 [`astrodyn_verif_jeod::VerificationCase`]
+//! This unblocks issue #389: every Tier 3 `astrodyn_verif_jeod::VerificationCase`
 //! can be run through *both* the runner and a Bevy `App` from the same
 //! scenario factory, so the parity test becomes a one-liner via
-//! [`astrodyn_verif_parity::VerificationCaseParityExt`].
+//! `astrodyn_verif_parity::VerificationCaseParityExt`.
 //!
 //! ## Field-by-field mirror of `Simulation::from_builder`
 //!
@@ -71,7 +73,9 @@ pub struct ScenarioHandles {
 }
 
 /// Bevy-side terminal for [`astrodyn::SimulationBuilder`], parallel to
-/// [`astrodyn_runner::SimulationBuilderExt::build`].
+/// `astrodyn_runner::SimulationBuilderExt::build` (the runner crate is
+/// not a dependency of `astrodyn_bevy`, so the link cannot be resolved
+/// by rustdoc).
 ///
 /// `<P: Planet>` selects the planet whose
 /// [`PlanetInertial`](astrodyn::PlanetInertial) frame the bodies integrate
@@ -131,6 +135,12 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         // default; overwrite it here with the builder's full
         // `SimulationTime` so `time_scale_factor` and the leap-second
         // table are honored.
+        // allowed: `Time::<Fixed>::from_seconds` is Bevy's own constructor
+        // for `Time<Fixed>` (a Bevy resource), not the banned
+        // `SecondsSince::from_seconds` typed-quantity bypass; the grep
+        // pattern catches `from_seconds` indiscriminately. The argument
+        // `self.dt` is a plain `f64` integrator timestep, not a typed
+        // duration phantom.
         app.insert_resource(Time::<Fixed>::from_seconds(self.dt));
         app.insert_resource(SimulationTimeR(self.time));
 
@@ -577,6 +587,14 @@ mod tests {
                     mu: 1.327e20,
                     model: GravityModel::PointMass,
                 },
+                // allowed: bridge unit test — one-shot synthetic Sun
+                // position at scenario-construction time, not a per-step
+                // bypass. The call site mints a `Position<RootInertial>`
+                // for a `GravitySourceEntry` field that the runner-side
+                // `Simulation::add_source` consumes verbatim; using the
+                // typed `1.5e11.m_at::<RootInertial>()` lift here would
+                // require a `Vec3Ext` import inside the test only and
+                // not change the resulting bit pattern.
                 position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
                 velocity: Velocity::<RootInertial>::zero(),
                 t_inertial_pfix: None,

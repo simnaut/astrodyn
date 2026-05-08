@@ -5,7 +5,7 @@
 //! through `Simulation::step()`; bit-identity between the runner and
 //! the Bevy adapter is the parity contract. The runner-vs-JEOD
 //! cross-validation lives in
-//! [`crates/astrodyn_verif_jeod/tests/tier3_sim_relative.rs`].
+//! `crates/astrodyn_verif_jeod/tests/tier3_sim_relative.rs`.
 //!
 //! Variants differ only in initial conditions. Each one mirrors a
 //! hand-rolled test in `bevy_parity_relative.rs`:

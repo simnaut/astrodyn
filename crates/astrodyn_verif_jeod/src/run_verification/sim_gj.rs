@@ -12,10 +12,10 @@
 //! - [`gj_order12`] — GJ order 12, dt=1 s
 //! - [`gj_dt10`] — GJ order 8 with `time_scale_factor=10` (effective dt=10 s)
 //!
-//! The tier3 sibling [`crates/astrodyn_verif_jeod/tests/tier3_sim_gj.rs`]
+//! The tier3 sibling `crates/astrodyn_verif_jeod/tests/tier3_sim_gj.rs`
 //! is the runner-vs-JEOD oracle; the parity tests at
-//! [`crates/astrodyn_verif_parity/tests/bevy_parity_gj.rs`] feed these
-//! recipes into [`VerificationCaseParityExt::run_and_assert_parity`] for
+//! `crates/astrodyn_verif_parity/tests/bevy_parity_gj.rs` feed these
+//! recipes into `VerificationCaseParityExt::run_and_assert_parity` for
 //! the runner-vs-bevy half of the transitivity argument.
 //!
 //! ## Duration
