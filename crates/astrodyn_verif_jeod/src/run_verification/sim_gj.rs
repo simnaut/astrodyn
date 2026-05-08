@@ -82,7 +82,7 @@ fn build_gj_scenario(
     };
     let earth_idx = b.add_source("Earth", earth);
     b.add_body(VehicleConfig {
-        trans: gj_initial_state(),
+        trans: gj_initial_state().into(),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],

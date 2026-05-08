@@ -272,7 +272,7 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                              SimulationBuilder::register_in_mass_tree should have caught this."
                         )
                     });
-                    ids.push(Some(tree.add_body(name.clone(), mass)));
+                    ids.push(Some(tree.add_body(name.clone(), mass.to_untyped())));
                 } else {
                     ids.push(None);
                 }
@@ -531,7 +531,7 @@ mod tests {
         earth.central = true;
         let earth_idx = b.add_source("Earth", earth);
         b.add_body(VehicleConfig {
-            trans: iss_trans(),
+            trans: iss_trans().into(),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },
@@ -646,7 +646,7 @@ mod tests {
             },
         );
         b.add_body(VehicleConfig {
-            trans: iss_trans(),
+            trans: iss_trans().into(),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },

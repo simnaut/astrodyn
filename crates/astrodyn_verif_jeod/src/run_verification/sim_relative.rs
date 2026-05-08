@@ -62,15 +62,23 @@ fn build_two_body(
     let mut b = SimulationBuilder::new(time, RELATIVE_DT);
     let dummy_mass = MassProperties::new(1.0);
     b.add_body(VehicleConfig {
-        trans: trans_a,
-        rot: if sixdof { Some(rot_a) } else { None },
-        mass: if sixdof { Some(dummy_mass) } else { None },
+        trans: trans_a.into(),
+        rot: if sixdof { Some(rot_a.into()) } else { None },
+        mass: if sixdof {
+            Some(dummy_mass.into())
+        } else {
+            None
+        },
         ..Default::default()
     });
     b.add_body(VehicleConfig {
-        trans: trans_b,
-        rot: if sixdof { Some(rot_b) } else { None },
-        mass: if sixdof { Some(dummy_mass) } else { None },
+        trans: trans_b.into(),
+        rot: if sixdof { Some(rot_b.into()) } else { None },
+        mass: if sixdof {
+            Some(dummy_mass.into())
+        } else {
+            None
+        },
         ..Default::default()
     });
     b
