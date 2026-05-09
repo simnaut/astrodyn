@@ -203,7 +203,7 @@ pub enum CsvReference {
     /// its own column layout — only the parity trait routes through
     /// this variant.
     ///
-    /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`]: https://github.com/simnaut/bevy_jeod/blob/main/crates/astrodyn_verif_parity/src/lib.rs
+    /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`]: https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_verif_parity/src/lib.rs
     TimesOnly(&'static str),
 }
 
