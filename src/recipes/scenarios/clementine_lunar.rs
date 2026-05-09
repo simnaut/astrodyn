@@ -23,10 +23,8 @@ use crate::SimulationBuilder;
 /// - Cannonball SRP (cx area 5 m², albedo 0.4, diffuse 0.4).
 ///
 /// Mission code that wants high-fidelity Moon gravity (LP150Q) replaces
-/// the Moon entry with
-/// `astrodyn_verif_jeod::verification::reference_data::moon_lp150q()` and
-/// adds a non-spherical control. That's appropriate only for Tier 3
-/// cross-validation (it requires `$JEOD_HOME`).
+/// the Moon entry with [`crate::recipes::moon::lp150q`] and adds a
+/// non-spherical [`GravityControl`].
 ///
 /// ```
 /// use astrodyn::recipes::scenarios::clementine_lunar;

@@ -1,59 +1,44 @@
-//! High-fidelity gravity-source recipes backed by committed test
-//! fixtures **(workspace-internal — not for downstream mission code).**
+//! Deprecated thin shims over the mission-facing recipes.
 //!
-//! Functions here build [`GravitySourceEntry`] values populated with
-//! spherical-harmonics coefficient sets loaded from
-//! `test_data/gravity/*.bin` via `astrodyn_gravity::fixtures`.
-//! Those fixtures live at the workspace root of *this repository* and
-//! are not packaged with the crate — calling these recipes from a
-//! downstream workspace will panic at runtime when the loader can't
-//! find the binaries. The whole `verification` submodule is therefore
-//! hidden from rendered rustdoc; the only consumers are `astrodyn_runner`'s
-//! Tier 3 rigs and the in-repo examples that cross-validate against
-//! JEOD's reference data.
+//! Historically this module hosted the only path to high-fidelity SH
+//! gravity sources, since the `.cc` coefficient files were not
+//! reproducible without a JEOD checkout. After issue #144, the recipes
+//! were promoted to the mission-facing
+//! [`astrodyn::recipes::{earth, moon, mars}`] modules, backed by
+//! `include_bytes!` in `astrodyn_gravity` so they ship in the published
+//! `.crate`.
 //!
-//! Mission code should use the point-mass building blocks in
-//! [`earth`](super::super::earth), [`moon`](super::super::moon),
-//! [`mars`](super::super::mars), or supply its own
-//! [`SphericalHarmonicsData`](astrodyn_gravity::SphericalHarmonicsData) if
-//! a higher-fidelity field is needed.
-//!
-//! Fixtures here are regenerable via the `extract_*` binaries under
-//! `astrodyn_verif_jeod` (`cargo run -p astrodyn_verif_jeod --bin
-//! extract_grav_coeffs` for Earth fields, `extract_mars_data` for
-//! Moon/Mars/Sun).
-
-use astrodyn_gravity::fixtures;
+//! Each function here forwards to the new home; new call sites should
+//! call the recipe directly.
 
 use astrodyn::GravitySourceEntry;
-use astrodyn::{EARTH, MARS, MOON};
 
 /// Earth with the GGM05C spherical-harmonics gravity field
 /// (degree=order=360).
-///
-/// Reads `test_data/gravity/ggm05c.bin`, the committed mirror of
-/// `models/environment/gravity/data/src/earth_GGM05C.cc` (regenerable
-/// via `cargo run -p astrodyn_gravity --bin extract_grav_coeffs`).
+#[deprecated(
+    since = "0.2.0",
+    note = "use `astrodyn::recipes::earth::ggm05c` instead"
+)]
 pub fn earth_ggm05c() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&EARTH, fixtures::load_ggm05c())
+    astrodyn::recipes::earth::ggm05c()
 }
 
 /// Moon with the LP150Q spherical-harmonics gravity field
 /// (degree=order=150).
-///
-/// Reads `test_data/gravity/moon_lp150q.bin`, the committed mirror of
-/// `models/environment/gravity/data/src/moon_LP150Q.cc` (regenerable
-/// via `cargo run -p astrodyn_gravity --bin extract_mars_data`).
+#[deprecated(
+    since = "0.2.0",
+    note = "use `astrodyn::recipes::moon::lp150q` instead"
+)]
 pub fn moon_lp150q() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&MOON, fixtures::load_moon_lp150q())
+    astrodyn::recipes::moon::lp150q()
 }
 
 /// Mars with the MRO110B2 spherical-harmonics gravity field
 /// (degree=order=110).
-///
-/// Reads `test_data/gravity/mars_mro110b2.bin`, the committed mirror of
-/// `models/environment/gravity/data/src/mars_MRO110B2.cc` (regenerable
-/// via `cargo run -p astrodyn_gravity --bin extract_mars_data`).
+#[deprecated(
+    since = "0.2.0",
+    note = "use `astrodyn::recipes::mars::mro110b2` instead"
+)]
 pub fn mars_mro110b2() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&MARS, fixtures::load_mars_mro110b2())
+    astrodyn::recipes::mars::mro110b2()
 }

@@ -30,18 +30,18 @@
 //! provides a standalone `Simulation` struct that owns all state and drives the
 //! pipeline. ECS adapters should **not** use `astrodyn_runner` — use the per-body
 //! functions from this crate instead. `astrodyn_runner` is a parallel non-Bevy
-//! consumer and depends on the `astrodyn_*` physics crates directly; mission code
-//! never does.
+//! consumer that, like `astrodyn_bevy` and mission code, depends on `astrodyn`
+//! and only `astrodyn` for physics (issue #390).
 //!
 //! ## Re-export discipline
 //!
 //! Every `pub use astrodyn_*::...` re-export is justified by an active mission-
-//! crate or `astrodyn_bevy` adapter consumer. Items reached only by the standalone
-//! runner are not surfaced here — the runner imports them from the physics
-//! crate of origin. The contract is intentionally tight: a rename in one of
-//! the underlying physics crates only ripples to mission code if the affected
-//! type is one the mission API genuinely owns. The criteria are spelled out
-//! at the head of the re-export block in [`lib.rs`][self].
+//! crate, `astrodyn_bevy` adapter, or `astrodyn_runner` consumer — every
+//! non-verification consumer of the pipeline routes through this crate. The
+//! contract is intentionally tight: a rename in one of the underlying physics
+//! crates only ripples to mission code if the affected type is one the
+//! mission API genuinely owns. The criteria are spelled out at the head of
+//! the re-export block in [`lib.rs`][self].
 //!
 //! ## Pipeline ordering
 //!
@@ -245,7 +245,9 @@ pub use astrodyn_frames::{
 };
 
 // astrodyn_ephemeris: ephemeris data
-pub use astrodyn_ephemeris::{assets as ephemeris_assets, Ephemeris, EphemerisBody};
+pub use astrodyn_ephemeris::{
+    assets as ephemeris_assets, Ephemeris, EphemerisBody, EphemerisError,
+};
 
 // astrodyn_gravity: relativistic-correction submodule consumed by mission
 // code that builds relativistic-source lists. The JEOD `.cc`

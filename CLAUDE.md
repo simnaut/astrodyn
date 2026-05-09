@@ -186,7 +186,7 @@ Issue #389 stands up the infrastructure
 ([`VerificationCaseParityExt::run_and_assert_parity`] +
 [`SimulationBuilderBevyExt::populate_app`]) and seeds it with the
 common topics; a long tail of tier3 topics is tracked individually in
-[`KNOWN_PARITY_GAPS`](https://github.com/simnaut/bevy_jeod/blob/main/crates/astrodyn_verif_parity/tests/parity_coverage.rs)
+[`KNOWN_PARITY_GAPS`](https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_verif_parity/tests/parity_coverage.rs)
 for incremental closure (multi-planet scenarios, pre-recipe siblings,
 analytical-only tests, scenarios with `pre_step` ephemeris updates that
 need a Bevy-side `SimContext` impl — see issue #395). The

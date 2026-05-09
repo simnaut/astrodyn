@@ -22,8 +22,8 @@ use crate::SimulationBuilder;
 /// trajectory than the JEOD reference (which uses the MRO110B2
 /// 110×110 SH model). Mission code wanting verification-grade
 /// accuracy substitutes the central-body source with
-/// `verification::reference_data::mars_mro110b2()` and adds a
-/// non-spherical [`GravityControl`].
+/// [`crate::recipes::mars::mro110b2`] and adds a non-spherical
+/// [`GravityControl`].
 ///
 /// ```
 /// use astrodyn::recipes::scenarios::mars_orbit;

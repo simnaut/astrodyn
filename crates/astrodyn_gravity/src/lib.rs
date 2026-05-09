@@ -41,6 +41,7 @@
 pub mod accumulate;
 pub mod coefficients;
 pub mod compute;
+pub mod data;
 pub mod fixtures;
 pub mod gravity_controls;
 pub mod gravity_source;

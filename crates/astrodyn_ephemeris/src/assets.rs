@@ -4,35 +4,42 @@
 //! workspace's tests, examples, and downstream mission crates load by
 //! default:
 //!
-//! - `de421.bsp` (16.8 MB) — production JPL DE421 ephemeris.
-//! - `moon_pa_de421_1900-2050.bpc` (1.7 MB) — lunar PA orientation kernel.
+//! - `de421.bsp` (~17 MB) — production JPL DE421 ephemeris.
+//! - `moon_pa_de421_1900-2050.bpc` (~1.7 MB) — lunar PA orientation kernel.
 //!
-//! These are excluded from the published `.crate` (see `Cargo.toml`'s
-//! `exclude`) since they are large; downstream users that build against
-//! the published crate must provide their own paths to
-//! [`Ephemeris::from_bsp`](crate::Ephemeris::from_bsp).
+//! These are also embedded as `&'static [u8]` constants in
+//! [`crate::data`] (via `include_bytes!`) and ship inside the published
+//! `.crate`. New code should generally prefer
+//! [`Ephemeris::from_bsp_bytes`](crate::Ephemeris::from_bsp_bytes) over a
+//! path-based load — the bytes path works identically inside the
+//! workspace and from the published crate, with no `CARGO_MANIFEST_DIR`
+//! filesystem lookup.
 //!
-//! In-workspace consumers call these resolvers to find the committed
-//! fixtures via `CARGO_MANIFEST_DIR`. Each returns a path relative to
-//! the workspace root that the consumer can pass to `Ephemeris::from_bsp`.
+//! The path resolvers in this module remain useful when a caller needs a
+//! `Path` (e.g. shelling a kernel out to another tool, or passing it to
+//! an SPK loader the consumer manages itself). They resolve via
+//! `CARGO_MANIFEST_DIR` so they only work for in-workspace builds — they
+//! will *not* find the assets when called from a downstream consumer of
+//! the published crate.
+//!
+//! [`Ephemeris::from_bsp_bytes`]: crate::Ephemeris::from_bsp_bytes
 
 use std::path::PathBuf;
 
-/// Absolute path to the bundled `de421.bsp`.
+/// Absolute path to the bundled `de421.bsp` (in-workspace builds only).
 ///
-/// Resolves via `CARGO_MANIFEST_DIR`, so this works for any in-workspace
-/// crate (the assets sit at a stable path inside the `astrodyn_ephemeris`
-/// crate). Downstream consumers building against the published crate
-/// will not have this file (it is `exclude`d from publishes); they
-/// should ship their own `.bsp` and pass the path explicitly to
-/// [`Ephemeris::from_bsp`](crate::Ephemeris::from_bsp).
+/// Resolves via `CARGO_MANIFEST_DIR`. For builds that go through the
+/// published crate, prefer
+/// [`Ephemeris::from_bsp_bytes(crate::data::DE421_BSP)`](crate::Ephemeris::from_bsp_bytes)
+/// or the mission-facing `astrodyn::recipes::ephemeris::de421()`.
 pub fn de421_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/de421.bsp")
 }
 
-/// Absolute path to the bundled `moon_pa_de421_1900-2050.bpc`.
+/// Absolute path to the bundled `moon_pa_de421_1900-2050.bpc`
+/// (in-workspace builds only).
 ///
-/// See [`de421_path`] for the publishing caveat.
+/// See [`de421_path`] for the published-crate caveat.
 pub fn moon_pa_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/moon_pa_de421_1900-2050.bpc")
 }

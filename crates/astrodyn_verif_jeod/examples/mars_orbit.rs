@@ -1,27 +1,25 @@
 //! Dawn spacecraft at Mars: high-fidelity spherical harmonics gravity.
 //!
 //! Verification-style example exercising:
-//! - Mars MRO110B2 110×110 spherical harmonics gravity (loaded from
-//!   the committed `test_data/gravity/mars_mro110b2.bin` fixture via
-//!   [`recipes::verification::reference_data`])
+//! - Mars MRO110B2 110×110 spherical harmonics gravity from
+//!   [`recipes::mars::mro110b2`]
 //! - Mars IAU rotation model
-//! - Sun as 3rd-body perturbation with DE421 ephemeris
-//!   (`crates/astrodyn_ephemeris/assets/de421.bsp`)
+//! - Sun as 3rd-body perturbation with DE421 ephemeris from
+//!   [`recipes::ephemeris::de421`]
 //!
-//! No JEOD checkout is required — both the gravity binary and the DE421
-//! ephemeris are committed under `test_data/`. Mission code that wants a
-//! lighter point-mass-only Mars source can use `recipes::mars::point_mass()`
-//! instead.
+//! No JEOD checkout is required — the gravity blob and the DE421
+//! ephemeris are embedded into the published crate via `include_bytes!`.
+//! Mission code that wants a lighter point-mass-only Mars source can
+//! use [`recipes::mars::point_mass`] instead.
 //!
 //! ```bash
-//! cargo run -p astrodyn_runner --example mars_orbit
+//! cargo run -p astrodyn_verif_jeod --example mars_orbit
 //! ```
 
-use astrodyn::recipes::{epoch, sun, vehicle};
+use astrodyn::recipes::{self, epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
 use astrodyn::{EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
-use astrodyn_verif_jeod::verification::reference_data;
 use glam::DVec3;
 
 // Dawn spacecraft initial state at Mars (from JEOD SIM_Mars RUN_dawn, t=0).
@@ -50,23 +48,15 @@ fn parse_steps_arg(default: usize) -> usize {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let bsp_path = astrodyn::ephemeris_assets::de421_path();
-    assert!(
-        bsp_path.exists(),
-        "DE421 not found at {}",
-        bsp_path.display()
-    );
-
     let time = epoch::dawn_mars_2009();
     let epoch_tdb_jd = time.tdb_julian_date();
 
-    let ephemeris = astrodyn::Ephemeris::from_bsp(&bsp_path)?;
+    let ephemeris = recipes::ephemeris::de421()?;
     let (sun_pos_typed, _) =
         ephemeris.get_state_typed(EphemerisBody::Sun, EphemerisBody::Mars, epoch_tdb_jd)?;
     let sun_pos = sun_pos_typed.raw_si();
 
-    // Mars central body with MRO110B2 SH gravity (verification reference data).
-    let mars_source = reference_data::mars_mro110b2();
+    let mars_source = recipes::mars::mro110b2();
     let mars_mu = mars_source.source.mu;
 
     let mut sb = SimulationBuilder::new(time, DT);

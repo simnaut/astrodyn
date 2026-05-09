@@ -10,17 +10,15 @@
 //! ```
 //!
 //! Recipes here are JEOD-source-independent — they describe Earth via
-//! constants the Rust port owns. High-fidelity spherical-harmonics
-//! gravity that requires loading JEOD coefficient files lives in
-//! `astrodyn_verif_jeod::verification::reference_data`,
-//! whose use is appropriate only for cross-validation against JEOD.
-//! Mission code that needs an SH source supplies its own
-//! [`SphericalHarmonicsData`](astrodyn_gravity::SphericalHarmonicsData) and
-//! constructs the entry manually via
-//! [`GravitySourceEntry::central_body_sh`].
+//! constants and binary fixtures the Rust port owns. The [`ggm05c`],
+//! [`ggm02c`], and [`gemt1`] high-fidelity spherical-harmonics variants
+//! load coefficient blobs that are embedded into the published crate
+//! (via `include_bytes!` in `astrodyn_gravity`), so they work without a
+//! JEOD checkout.
 
 use crate::sources::GravitySourceEntry;
 use crate::EARTH;
+use astrodyn_gravity::fixtures;
 
 /// Earth as a point-mass central body (no spherical harmonics).
 ///
@@ -28,6 +26,34 @@ use crate::EARTH;
 /// updates `t_inertial_pfix` from time each step.
 pub fn point_mass() -> GravitySourceEntry {
     GravitySourceEntry::central_body(&EARTH)
+}
+
+/// Earth with the GGM05C spherical-harmonics gravity field
+/// (degree=order=360).
+///
+/// JEOD-equivalent of `models/environment/gravity/data/src/earth_GGM05C.cc`.
+/// Coefficient bytes are embedded at compile time via `include_bytes!`,
+/// so this recipe works without a JEOD checkout and from the published
+/// `.crate`.
+pub fn ggm05c() -> GravitySourceEntry {
+    GravitySourceEntry::central_body_sh(&EARTH, fixtures::load_ggm05c())
+}
+
+/// Earth with the GGM02C spherical-harmonics gravity field
+/// (degree=order=200).
+///
+/// JEOD-equivalent of `models/environment/gravity/data/src/earth_GGM02C.cc`.
+pub fn ggm02c() -> GravitySourceEntry {
+    GravitySourceEntry::central_body_sh(&EARTH, fixtures::load_ggm02c())
+}
+
+/// Earth with the GEM-T1 spherical-harmonics gravity field
+/// (degree=order=36).
+///
+/// JEOD-equivalent of `models/environment/gravity/data/src/earth_GEMT1.cc`.
+/// Used by JEOD's `SIM_7_time_reversal` verification scenario.
+pub fn gemt1() -> GravitySourceEntry {
+    GravitySourceEntry::central_body_sh(&EARTH, fixtures::load_gemt1())
 }
 
 /// Earth as a point-mass third-body perturbation source at the given
