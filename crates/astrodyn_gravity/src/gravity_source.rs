@@ -137,4 +137,54 @@ mod tests {
         };
         assert_eq!(typed.to_untyped().mu, earth_mu);
     }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+    //
+    // Restricted to the `PointMass` variant. The `SphericalHarmonics`
+    // variant's payload (`SphericalHarmonicsData`) carries large
+    // coefficient arrays and Gottlieb scratch space; it does not derive
+    // `PartialEq` and adding one would be invasive. The Apollo bug
+    // class — silently dropped/rewritten fields on the `*Typed`
+    // boundary — applies equally to `mu` and the variant discriminant,
+    // and PointMass exercises both.
+
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_point_mass_source() -> impl Strategy<Value = GravitySource> {
+        arb_finite_bounded().prop_map(|mu| GravitySource {
+            mu,
+            model: GravityModel::PointMass,
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_gravity_source_untyped_typed_untyped(orig in arb_point_mass_source()) {
+            let typed = GravitySourceTyped::from_untyped_unchecked(&orig);
+            let back = typed.to_untyped();
+            prop_assert_eq!(back.mu, orig.mu);
+            prop_assert!(matches!(
+                (&back.model, &orig.model),
+                (GravityModel::PointMass, GravityModel::PointMass)
+            ));
+        }
+
+        #[test]
+        fn round_trip_gravity_source_typed_untyped_typed(orig in arb_point_mass_source()) {
+            let typed = GravitySourceTyped::from_untyped_unchecked(&orig);
+            let lifted = GravitySourceTyped::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.mu.value, typed.mu.value);
+            prop_assert!(matches!(
+                (&lifted.model, &typed.model),
+                (GravityModel::PointMass, GravityModel::PointMass)
+            ));
+        }
+    }
 }
