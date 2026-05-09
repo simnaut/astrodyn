@@ -19,5 +19,7 @@ glam = { workspace = true }
 
 [dev-dependencies]
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0", features = ["test-utils"] }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
 astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
+proptest = "1"

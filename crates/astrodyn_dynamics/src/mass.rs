@@ -296,6 +296,42 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
              (I·I⁻¹ != identity to {tol:.0e})"
         );
     }
+
+    /// Drop the phantoms and emit the untyped storage form, preserving
+    /// every field verbatim (including the cache fields `inverse_mass`,
+    /// `inverse_inertia`, and `dirty`, plus `t_parent_this` — the field
+    /// whose silent drop was the Apollo regression in #393).
+    #[inline]
+    pub fn to_untyped(&self) -> MassProperties {
+        MassProperties {
+            mass: self.mass.get::<kilogram>(),
+            inverse_mass: self.inverse_mass,
+            inertia: self.inertia.as_dmat3(),
+            inverse_inertia: self.inverse_inertia,
+            position: self.center_of_mass.raw_si(),
+            t_parent_this: self.t_parent_this,
+            dirty: self.dirty,
+        }
+    }
+
+    /// Wrap an untyped [`MassProperties`] as typed. **The caller
+    /// asserts** body-frame inertia, structural-frame center of mass,
+    /// and consistency between `inverse_mass`/`inverse_inertia` and
+    /// `mass`/`inertia` — the latter is the same contract the untyped
+    /// struct exposes, since both fields are public there too.
+    #[inline]
+    pub fn from_untyped_unchecked(s: &MassProperties) -> Self {
+        Self {
+            mass: Mass::new::<kilogram>(s.mass),
+            inverse_mass: s.inverse_mass,
+            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(s.inertia),
+            inverse_inertia: s.inverse_inertia,
+            center_of_mass: Position::<StructuralFrame<V>>::from_raw_si(s.position),
+            t_parent_this: s.t_parent_this,
+            dirty: s.dirty,
+            _v: PhantomData,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -442,5 +478,123 @@ mod tests {
             Position::<StructuralFrame<TestVehicle>>::zero(),
         );
         typed.validate_consistency(1e-6);
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+    //
+    // Apollo regression class: the typed sibling silently dropped
+    // `t_parent_this` in #393. These property tests assert verbatim
+    // field-level round-trip equality so any future field added on one
+    // side without updating the other fails CI immediately.
+
+    use astrodyn_quantities::frame::TestVehicle;
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_dmat3_full_rank() -> impl Strategy<Value = DMat3> {
+        // Build a diagonal matrix with strictly positive principal
+        // moments (ensures non-singular and `inverse()` is well-defined),
+        // then conjugate by a small rotation so off-diagonal terms can
+        // arise without risking degeneracy.
+        (
+            (1.0_f64..1.0e6_f64),
+            (1.0_f64..1.0e6_f64),
+            (1.0_f64..1.0e6_f64),
+            (-1.0_f64..1.0_f64),
+            (-1.0_f64..1.0_f64),
+            (-1.0_f64..1.0_f64),
+        )
+            .prop_map(|(ix, iy, iz, ax, ay, az)| {
+                let diag = DMat3::from_diagonal(DVec3::new(ix, iy, iz));
+                let axis = DVec3::new(ax, ay, az);
+                let rot = if axis.length_squared() > 1.0e-6 {
+                    let angle = 0.1; // small bounded rotation; off-diagonal magnitude ~10%
+                    glam::DMat3::from_axis_angle(axis.normalize(), angle)
+                } else {
+                    DMat3::IDENTITY
+                };
+                rot.transpose() * diag * rot
+            })
+    }
+
+    fn arb_arbitrary_dmat3() -> impl Strategy<Value = DMat3> {
+        // 9 independent finite scalars — used for `t_parent_this` and
+        // `inverse_inertia` (both are stored verbatim and compared
+        // verbatim, so no positive-definiteness constraint is needed
+        // for round-trip purposes).
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(a, b, c, d, e, f, g, h, i)| {
+                DMat3::from_cols(
+                    DVec3::new(a, b, c),
+                    DVec3::new(d, e, f),
+                    DVec3::new(g, h, i),
+                )
+            })
+    }
+
+    fn arb_mass_properties() -> impl Strategy<Value = MassProperties> {
+        // Generate self-consistent caches per the plan: inverse_mass =
+        // 1/mass, inverse_inertia = inertia.inverse(), dirty = false.
+        // `t_parent_this` is independent (and the regression-class
+        // field — generate it as an arbitrary DMat3 so the round-trip
+        // sees a non-identity value).
+        (
+            (1.0e-3_f64..1.0e6_f64),
+            arb_dmat3_full_rank(),
+            arb_dvec3(),
+            arb_arbitrary_dmat3(),
+        )
+            .prop_map(|(mass, inertia, position, t_parent_this)| MassProperties {
+                mass,
+                inverse_mass: 1.0 / mass,
+                inertia,
+                inverse_inertia: inertia.inverse(),
+                position,
+                t_parent_this,
+                dirty: false,
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_mass_properties_untyped_typed_untyped(orig in arb_mass_properties()) {
+            let typed = MassPropertiesTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        // Asserted via the untyped projection — `MassPropertiesTyped`'s
+        // derived `PartialEq` requires `TestVehicle: PartialEq`, which
+        // it isn't. Catches dropped/added fields equally well.
+        #[test]
+        fn round_trip_mass_properties_typed_untyped_typed(orig in arb_mass_properties()) {
+            let typed = MassPropertiesTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            let lifted = MassPropertiesTyped::<TestVehicle>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 }

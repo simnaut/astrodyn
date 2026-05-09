@@ -137,4 +137,100 @@ mod tests {
         };
         assert_eq!(typed.to_untyped().mu, earth_mu);
     }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+    //
+    // Proptest is restricted to the `PointMass` variant. The
+    // `SphericalHarmonics` variant's payload (`SphericalHarmonicsData`)
+    // carries large coefficient arrays and Gottlieb scratch space; it
+    // does not derive `PartialEq` and adding one would be invasive.
+    // More importantly, `to_untyped`/`from_untyped_unchecked` move the
+    // boxed `SphericalHarmonicsData` opaquely (no per-field
+    // decomposition), so the field-drop bug class #398 guards against
+    // is not reachable for that variant — a proptest would only assert
+    // that `Clone` is the identity. PointMass exercises the bug class
+    // for `mu` and the variant discriminant; the
+    // `sh_variant_round_trip_preserves_payload` smoke test below adds
+    // a structural check that the SH variant survives the boundary
+    // without being silently coerced or its boxed payload swapped.
+
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_point_mass_source() -> impl Strategy<Value = GravitySource> {
+        arb_finite_bounded().prop_map(|mu| GravitySource {
+            mu,
+            model: GravityModel::PointMass,
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_gravity_source_untyped_typed_untyped(orig in arb_point_mass_source()) {
+            let typed = GravitySourceTyped::from_untyped_unchecked(&orig);
+            let back = typed.to_untyped();
+            prop_assert_eq!(back.mu, orig.mu);
+            prop_assert!(matches!(
+                (&back.model, &orig.model),
+                (GravityModel::PointMass, GravityModel::PointMass)
+            ));
+        }
+
+        #[test]
+        fn round_trip_gravity_source_typed_untyped_typed(orig in arb_point_mass_source()) {
+            let typed = GravitySourceTyped::from_untyped_unchecked(&orig);
+            let lifted = GravitySourceTyped::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.mu.value, typed.mu.value);
+            prop_assert!(matches!(
+                (&lifted.model, &typed.model),
+                (GravityModel::PointMass, GravityModel::PointMass)
+            ));
+        }
+    }
+
+    /// Structural smoke check for the `SphericalHarmonics` variant: a
+    /// degree-2 source survives the `*Typed` round-trip with its
+    /// variant intact and its boxed payload's identifying fields
+    /// preserved. Doesn't exercise the field-drop bug class (the
+    /// boxed payload moves opaquely — see the comment above the
+    /// proptest block) but does catch a future change that silently
+    /// coerces the variant or swaps the box for a default.
+    #[test]
+    fn sh_variant_round_trip_preserves_payload() {
+        let mu = 3.986_004_415e14;
+        let radius = 6_378_136.3;
+        // Minimal valid coefficient table for degree=2, order=2 with
+        // identifying non-zero entries the assertions can pin on.
+        let cnm = vec![
+            vec![1.0],
+            vec![0.0, 0.0],
+            vec![-4.841_695e-4, 0.0, 2.439_383e-6],
+        ];
+        let snm = vec![vec![0.0], vec![0.0, 0.0], vec![0.0, 0.0, -1.400_273e-6]];
+        let sh = SphericalHarmonicsData::new(2, 2, radius, mu, cnm, snm, false, 0.0);
+
+        let untyped = GravitySource {
+            mu,
+            model: GravityModel::SphericalHarmonics(Box::new(sh)),
+        };
+        let typed = GravitySourceTyped::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+
+        assert_eq!(back.mu, mu);
+        let GravityModel::SphericalHarmonics(payload) = &back.model else {
+            panic!("SH variant was silently coerced to PointMass on round-trip");
+        };
+        assert_eq!(payload.degree, 2);
+        assert_eq!(payload.order, 2);
+        assert_eq!(payload.radius, radius);
+        assert_eq!(payload.mu, mu);
+        assert_eq!(payload.cnm[2][0], -4.841_695e-4);
+        assert_eq!(payload.snm[2][2], -1.400_273e-6);
+    }
 }

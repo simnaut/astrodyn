@@ -261,6 +261,27 @@ impl<P: Frame> Default for RefFrameTransTyped<P> {
     }
 }
 
+impl<P: Frame> RefFrameTransTyped<P> {
+    /// Drop the frame phantom and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> RefFrameTrans {
+        RefFrameTrans {
+            position: self.position.raw_si(),
+            velocity: self.velocity.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`RefFrameTrans`] as typed. **The caller asserts**
+    /// the position and velocity are in parent-frame `P` coordinates.
+    #[inline]
+    pub fn from_untyped_unchecked(t: &RefFrameTrans) -> Self {
+        Self {
+            position: Position::<P>::from_raw_si(t.position),
+            velocity: Velocity::<P>::from_raw_si(t.velocity),
+        }
+    }
+}
+
 /// Typed rotational state for the `P → C` axis transformation.
 ///
 /// Fields are private to enforce JEOD_INV RF.04 (`q_parent_this` is
@@ -314,6 +335,40 @@ impl<P: Frame, C: Frame> RefFrameRotTyped<P, C> {
     #[inline]
     pub fn ang_vel_this(&self) -> AngularVelocity<C> {
         self.ang_vel_this
+    }
+
+    /// Drop the frame phantoms and emit the untyped storage form. The
+    /// `t_parent_this` matrix is the witness-derived cache held on the
+    /// typed sibling — emitted verbatim, so re-lifting via
+    /// [`Self::from_untyped_unchecked`] is the identity.
+    #[inline]
+    pub fn to_untyped(&self) -> RefFrameRot {
+        RefFrameRot {
+            q_parent_this: self.q_parent_this.inner(),
+            t_parent_this: self.t_parent_this,
+            ang_vel_this: self.ang_vel_this.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`RefFrameRot`] as typed. **The caller asserts**
+    /// `P → C` semantics for the rotation and `C` coordinates for the
+    /// angular velocity.
+    ///
+    /// Panics if `r.q_parent_this` has drifted from unit norm beyond
+    /// [`NormalizedQuat::DEFAULT_TOLERANCE`] (1e-12).
+    ///
+    /// `t_parent_this` is **re-derived from the witnessed quaternion**
+    /// rather than copied from the input — RF.04 treats the quaternion
+    /// as the canonical source of truth and the matrix as a cache. The
+    /// round-trip is still the identity for any caller that constructs
+    /// `r.t_parent_this` from `r.q_parent_this` (the documented
+    /// invariant).
+    #[inline]
+    pub fn from_untyped_unchecked(r: &RefFrameRot) -> Self {
+        let q = NormalizedQuat::new(r.q_parent_this).unwrap_or_else(|err| {
+            panic!("RefFrameRotTyped::from_untyped_unchecked: quaternion is not unit-norm: {err}")
+        });
+        Self::new(q, AngularVelocity::<C>::from_raw_si(r.ang_vel_this))
     }
 }
 
@@ -1139,6 +1194,118 @@ mod typed_tests {
         assert_eq!(untyped.trans.velocity, DVec3::ZERO);
         assert_eq!(untyped.rot.t_parent_this, DMat3::IDENTITY);
         assert_eq!(untyped.rot.ang_vel_this, DVec3::ZERO);
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+    //
+    // Round-trip property tests for the three typed siblings in this
+    // module: `RefFrameTransTyped`, `RefFrameRotTyped`, and the composed
+    // `RefFrameStateTyped`. The rotational siblings require unit-norm
+    // input quaternions (RF.04 + NormalizedQuat tolerance 1e-12) and
+    // require `t_parent_this` to be derived from `q_parent_this` so the
+    // verbatim round-trip succeeds.
+
+    use astrodyn_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3_bounded() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_unit_quat() -> impl Strategy<Value = NormalizedQuat<ScalarFirst, LeftTransform>> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_filter("non-zero norm", |(a, b, c, d)| {
+                let n2 = a * a + b * b + c * c + d * d;
+                n2.is_finite() && n2 > 1.0e-18
+            })
+            .prop_filter_map("renormalize succeeds", |(a, b, c, d)| {
+                NormalizedQuat::renormalize(JeodQuat::from_array([a, b, c, d]))
+            })
+    }
+
+    fn arb_ref_frame_trans() -> impl Strategy<Value = RefFrameTrans> {
+        (arb_dvec3_bounded(), arb_dvec3_bounded())
+            .prop_map(|(position, velocity)| RefFrameTrans { position, velocity })
+    }
+
+    /// Builds a `RefFrameRot` whose `t_parent_this` is consistent with
+    /// `q_parent_this` (RF.04 invariant). The verbatim round-trip
+    /// succeeds for these inputs and would fail for any caller-built
+    /// `RefFrameRot` whose `t` is stale relative to `q` — a real bug
+    /// that the test does not cover, by design.
+    fn arb_ref_frame_rot() -> impl Strategy<Value = RefFrameRot> {
+        (arb_unit_quat(), arb_dvec3_bounded()).prop_map(|(q, ang_vel_this)| {
+            let q_inner = q.inner();
+            let t = q_inner.left_quat_to_transformation();
+            RefFrameRot {
+                q_parent_this: q_inner,
+                t_parent_this: t,
+                ang_vel_this,
+            }
+        })
+    }
+
+    fn arb_ref_frame_state() -> impl Strategy<Value = RefFrameState> {
+        (arb_ref_frame_trans(), arb_ref_frame_rot())
+            .prop_map(|(trans, rot)| RefFrameState { trans, rot })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_ref_frame_trans_untyped_typed_untyped(orig in arb_ref_frame_trans()) {
+            let typed = RefFrameTransTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_ref_frame_trans_typed_untyped_typed(orig in arb_ref_frame_trans()) {
+            let typed = RefFrameTransTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            let lifted = RefFrameTransTyped::<RootInertial>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_ref_frame_rot_untyped_typed_untyped(orig in arb_ref_frame_rot()) {
+            let typed = RefFrameRotTyped::<RootInertial, Ecef>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_ref_frame_rot_typed_untyped_typed(orig in arb_ref_frame_rot()) {
+            let typed = RefFrameRotTyped::<RootInertial, Ecef>::from_untyped_unchecked(&orig);
+            let lifted = RefFrameRotTyped::<RootInertial, Ecef>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_ref_frame_state_untyped_typed_untyped(orig in arb_ref_frame_state()) {
+            let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_ref_frame_state_typed_untyped_typed(orig in arb_ref_frame_state()) {
+            let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&orig);
+            let lifted = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 
     #[test]

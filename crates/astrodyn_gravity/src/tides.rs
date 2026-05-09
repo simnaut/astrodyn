@@ -24,7 +24,7 @@ use uom::si::f64::{Length, Ratio};
 pub const EARTH_K2: f64 = 0.29525;
 
 /// Configuration for solid body tidal effects on a gravity source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TidalConfig {
     /// Love number k2 for degree-2 first-order tidal effect.
     pub k2: f64,
@@ -38,7 +38,7 @@ pub struct TidalConfig {
 }
 
 /// A body that raises tides on the primary (e.g., Moon, Sun).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TidalBody {
     /// Gravitational parameter (m³/s²).
     pub mu: f64,
@@ -78,6 +78,28 @@ pub struct TidalBodyTyped {
     pub mu: GravParam<SelfPlanet>,
     /// Position of the perturber in the simulation's root inertial frame.
     pub position_inertial: Position<RootInertial>,
+}
+
+impl TidalBodyTyped {
+    /// Drop the dimensional annotations and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> TidalBody {
+        TidalBody {
+            mu: self.mu.value,
+            position_inertial: self.position_inertial.raw_si(),
+        }
+    }
+
+    /// Lift an untyped [`TidalBody`] into the typed surface. **The
+    /// caller asserts** that `mu` is in m³/s² and `position_inertial`
+    /// is in `RootInertial` coordinates.
+    #[inline]
+    pub fn from_untyped_unchecked(b: &TidalBody) -> Self {
+        Self {
+            mu: GravParam::<SelfPlanet>::from_si(b.mu),
+            position_inertial: Position::<RootInertial>::from_raw_si(b.position_inertial),
+        }
+    }
 }
 
 impl TidalConfigTyped {
@@ -275,5 +297,77 @@ mod tests {
         let untyped_delta = compute_delta_c20(&untyped, &DMat3::IDENTITY);
         let typed_delta = compute_delta_c20_typed(&typed, &DMat3::IDENTITY);
         assert_eq!(typed_delta.value, untyped_delta);
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_tidal_body() -> impl Strategy<Value = TidalBody> {
+        (arb_finite_bounded(), arb_dvec3()).prop_map(|(mu, position_inertial)| TidalBody {
+            mu,
+            position_inertial,
+        })
+    }
+
+    fn arb_tidal_config() -> impl Strategy<Value = TidalConfig> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            proptest::collection::vec(arb_tidal_body(), 0..=4),
+        )
+            .prop_map(
+                |(k2, mu_primary, radius_primary, tidal_bodies)| TidalConfig {
+                    k2,
+                    mu_primary,
+                    radius_primary,
+                    tidal_bodies,
+                },
+            )
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_tidal_body_untyped_typed_untyped(orig in arb_tidal_body()) {
+            let typed = TidalBodyTyped::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_tidal_body_typed_untyped_typed(orig in arb_tidal_body()) {
+            let typed = TidalBodyTyped::from_untyped_unchecked(&orig);
+            let lifted = TidalBodyTyped::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_tidal_config_untyped_typed_untyped(orig in arb_tidal_config()) {
+            let typed = TidalConfigTyped::from_untyped(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_tidal_config_typed_untyped_typed(orig in arb_tidal_config()) {
+            let typed = TidalConfigTyped::from_untyped(&orig);
+            let lifted = TidalConfigTyped::from_untyped(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 }

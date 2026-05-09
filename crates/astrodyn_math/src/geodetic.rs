@@ -649,4 +649,40 @@ mod tests {
         assert_eq!(raw.longitude, back.longitude);
         assert_eq!(raw.altitude, back.altitude);
     }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+    //
+    // Defends against the regression class fixed in #393: a typed sibling
+    // whose `from_raw → into_raw` round-trip silently drops a field.
+
+    use proptest::prelude::*;
+
+    fn arb_finite_f64() -> impl Strategy<Value = f64> {
+        proptest::num::f64::ANY.prop_filter("finite", |x| x.is_finite())
+    }
+
+    fn arb_geodetic_state() -> impl Strategy<Value = GeodeticState> {
+        (arb_finite_f64(), arb_finite_f64(), arb_finite_f64()).prop_map(
+            |(latitude, longitude, altitude)| GeodeticState {
+                latitude,
+                longitude,
+                altitude,
+            },
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_geodetic_untyped_typed_untyped(orig in arb_geodetic_state()) {
+            let typed = GeodeticStateTyped::from_raw(orig);
+            prop_assert_eq!(typed.into_raw(), orig);
+        }
+
+        #[test]
+        fn round_trip_geodetic_typed_untyped_typed(orig in arb_geodetic_state()) {
+            let typed = GeodeticStateTyped::from_raw(orig);
+            let lifted = GeodeticStateTyped::from_raw(typed.into_raw());
+            prop_assert_eq!(lifted, typed);
+        }
+    }
 }

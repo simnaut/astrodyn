@@ -88,6 +88,25 @@ impl<F: Frame> TranslationalStateTyped<F> {
             velocity: self.velocity.relabel_to::<F2>(),
         }
     }
+
+    /// Drop the frame phantom and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> TranslationalState {
+        TranslationalState {
+            position: self.position.raw_si(),
+            velocity: self.velocity.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`TranslationalState`] as typed. **The caller
+    /// asserts** that the untyped state is expressed in frame `F`.
+    #[inline]
+    pub fn from_untyped_unchecked(s: &TranslationalState) -> Self {
+        Self {
+            position: Position::<F>::from_raw_si(s.position),
+            velocity: Velocity::<F>::from_raw_si(s.velocity),
+        }
+    }
 }
 
 impl TranslationalStateTyped<IntegrationFrame> {
@@ -242,6 +261,46 @@ mod tests {
         let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_inertial(s_inertial, &o);
         assert_eq!(s_integ.position.raw_si(), s_inertial.position.raw_si());
         assert_eq!(s_integ.velocity.raw_si(), s_inertial.velocity.raw_si());
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use proptest::prelude::*;
+
+    fn arb_finite_f64() -> impl Strategy<Value = f64> {
+        proptest::num::f64::ANY.prop_filter("finite", |x| x.is_finite())
+    }
+
+    fn arb_dvec3() -> impl Strategy<Value = DVec3> {
+        (arb_finite_f64(), arb_finite_f64(), arb_finite_f64())
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_translational_state() -> impl Strategy<Value = TranslationalState> {
+        (arb_dvec3(), arb_dvec3())
+            .prop_map(|(position, velocity)| TranslationalState { position, velocity })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_translational_untyped_typed_untyped(orig in arb_translational_state()) {
+            let typed = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        // The "typed -> untyped -> typed" leg is asserted via the
+        // untyped projection because the typed sibling's derived
+        // PartialEq requires the frame phantom (`RootInertial`) to be
+        // PartialEq, which it is not. Comparing untyped is semantically
+        // equivalent for the bug class we're guarding against — a
+        // silently dropped or added field shows up as inequality in
+        // either projection.
+        #[test]
+        fn round_trip_translational_typed_untyped_typed(orig in arb_translational_state()) {
+            let typed = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            let lifted = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 
     #[test]

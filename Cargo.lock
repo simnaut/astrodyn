@@ -251,6 +251,7 @@ dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod",
  "glam 0.30.10",
+ "proptest",
  "sha2",
  "uom",
 ]
@@ -274,6 +275,7 @@ dependencies = [
  "astrodyn_time",
  "astrodyn_verif_jeod",
  "glam 0.30.10",
+ "proptest",
 ]
 
 [[package]]
@@ -287,6 +289,7 @@ dependencies = [
  "astrodyn_time",
  "glam 0.30.10",
  "log",
+ "proptest",
  "thiserror 2.0.18",
  "uom",
 ]
@@ -305,6 +308,7 @@ dependencies = [
  "astrodyn_time",
  "astrodyn_verif_jeod",
  "glam 0.30.10",
+ "proptest",
  "uom",
 ]
 
@@ -317,6 +321,7 @@ dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod",
  "glam 0.30.10",
+ "proptest",
  "thiserror 2.0.18",
  "uom",
 ]
