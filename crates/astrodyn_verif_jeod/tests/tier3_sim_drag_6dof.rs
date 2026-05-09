@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: 6-DOF drag verification tests.
 //!
 //! These tests exercise aerodynamic drag with rotational dynamics through
@@ -80,19 +81,17 @@ fn make_6dof_drag_sim(
     let mass_props = MassProperties::with_inertia(mass, inertia, DVec3::ZERO);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: quat,
                 ang_vel_body: ang_vel,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -148,7 +147,11 @@ fn tier3_drag_with_rotation_energy_loss() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e_final = specific_orbital_energy(
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
 
     println!("  Initial energy: {e_initial:.6e} J/kg");
     println!("  Final energy:   {e_final:.6e} J/kg");
@@ -167,7 +170,7 @@ fn tier3_drag_with_rotation_energy_loss() {
         .rot
         .as_ref()
         .expect("6-DOF body should have rotational state");
-    let final_ang_vel_mag = rot.ang_vel_body.length();
+    let final_ang_vel_mag = rot.ang_vel_body.raw_si().length();
     let initial_ang_vel_mag = ang_vel.length();
 
     println!("  Initial |omega|: {initial_ang_vel_mag:.6e} rad/s");
@@ -235,8 +238,8 @@ fn tier3_drag_attitude_invariance_ballistic() {
     let body1 = sim1.body(0);
     let body2 = sim2.body(0);
 
-    let pos_diff = (body1.trans.position - body2.trans.position).length();
-    let vel_diff = (body1.trans.velocity - body2.trans.velocity).length();
+    let pos_diff = (body1.trans.position.raw_si() - body2.trans.position.raw_si()).length();
+    let vel_diff = (body1.trans.velocity.raw_si() - body2.trans.velocity.raw_si()).length();
 
     println!("  Position difference: {pos_diff:.6e} m");
     println!("  Velocity difference: {vel_diff:.6e} m/s");

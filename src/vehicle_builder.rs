@@ -55,9 +55,12 @@ use crate::integrator::{GaussJacksonConfig, IntegratorType};
 use astrodyn_gravity::{GravityControl, GravityControls};
 use astrodyn_interactions::DragConfig;
 use astrodyn_math::{EulerSequence, OrbitalElements};
+use astrodyn_quantities::aliases::{AngularVelocity, InertiaTensor, Position};
+use astrodyn_quantities::body_attitude::BodyAttitude;
 use astrodyn_quantities::dims::GravParam;
-use astrodyn_quantities::frame::RootInertial;
+use astrodyn_quantities::frame::{BodyFrame, RootInertial, StructuralFrame};
 use uom::si::f64::{Angle, Length, Mass};
+use uom::si::mass::kilogram;
 
 use astrodyn_quantities::frame::SelfRef;
 
@@ -249,22 +252,33 @@ impl VehicleBuilder<NeedsMass> {
     /// rotational state, no inertia tensor — the most common
     /// translational-only orbital case.
     pub fn three_dof_point_mass(mut self, mass: Mass) -> VehicleBuilder<HasIntegrator> {
-        use uom::si::mass::kilogram;
-        self.mass = Some(MassProperties::new(mass.get::<kilogram>()).into());
+        self.mass = Some(MassPropertiesTyped::<SelfRef>::new(mass));
         self.transition()
     }
 
     /// Configure as full 6-DoF body with the given rotational state and
     /// mass properties (including inertia tensor). Untyped inputs are
-    /// lifted at the boundary; mission code that already holds typed
-    /// values can `.into()` first.
+    /// lifted into the typed siblings at this boundary via inline
+    /// construction (the implicit `From<Untyped>` bypass and the
+    /// `from_untyped_unchecked` named helpers were removed in #397).
     pub fn sixdof(
         mut self,
         rot: RotationalState,
         mass: MassProperties,
     ) -> VehicleBuilder<HasIntegrator> {
-        self.rot = Some(rot.into());
-        self.mass = Some(mass.into());
+        // allowed: typed↔raw kernel-boundary lift at the public API
+        // boundary into the typed builder state.
+        self.rot = Some(RotationalStateTyped::<SelfRef>::new(
+            BodyAttitude::from_jeod_quat(rot.quaternion),
+            AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(rot.ang_vel_body), // allowed: typed↔raw kernel boundary
+        ));
+        let typed_mass = MassPropertiesTyped::<SelfRef>::with_inertia(
+            Mass::new::<kilogram>(mass.mass),
+            InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia), // allowed: typed↔raw kernel boundary
+            Position::<StructuralFrame<SelfRef>>::from_raw_si(mass.position), // allowed: typed↔raw kernel boundary
+        )
+        .with_t_parent_this(mass.t_parent_this);
+        self.mass = Some(typed_mass);
         self.transition()
     }
 }
@@ -505,15 +519,15 @@ impl VehicleBuilder<Ready> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astrodyn_dynamics::TranslationalState;
     use astrodyn_quantities::ext::F64Ext;
     use glam::DVec3;
 
     fn iss_trans() -> TranslationalStateTyped<RootInertial> {
-        TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7_500.0, 0.0),
-        })
+        use astrodyn_quantities::aliases::{Position, Velocity};
+        TranslationalStateTyped::<RootInertial> {
+            position: Position::<RootInertial>::from_raw_si(DVec3::new(7_000_000.0, 0.0, 0.0)),
+            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7_500.0, 0.0)),
+        }
     }
 
     /// Happy path: 3-DoF point mass advances through every stage and
@@ -568,15 +582,12 @@ mod tests {
     #[test]
     fn ready_state_full_surface() {
         use astrodyn_interactions::DragConfig;
+        use astrodyn_quantities::aliases::{Position, Velocity};
         let cfg = VehicleBuilder::new()
-            .with_translational(
-                TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(
-                    &TranslationalState {
-                        position: DVec3::new(7_000_000.0, 0.0, 0.0),
-                        velocity: DVec3::new(0.0, 7_500.0, 0.0),
-                    },
-                ),
-            )
+            .with_translational(TranslationalStateTyped::<RootInertial> {
+                position: Position::<RootInertial>::from_raw_si(DVec3::new(7_000_000.0, 0.0, 0.0)),
+                velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7_500.0, 0.0)),
+            })
             .three_dof_point_mass(1_000.0.kg())
             .rk4()
             .gravity_gradient()

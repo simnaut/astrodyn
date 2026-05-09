@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_7_time_reversal — time-reversed propagation cross-validation.
 //!
 //! JEOD propagates forward 60,000 s then sets `scale_factor = -1.0` for another
@@ -112,19 +113,19 @@ fn tier3_sim_time_reversal_run1() {
     let init_quat = astrodyn::JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: init_quat,
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(MassProperties::new(1.0).into()), // mass doesn't affect spherical gravity
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(1.0)),
+        )), // mass doesn't affect spherical gravity
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -155,8 +156,8 @@ fn tier3_sim_time_reversal_run1() {
         sim.step_until(rec.time).expect("step_until failed");
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - rec.position).length();
-        let vel_err = (body.trans.velocity - rec.velocity).length();
+        let pos_err = (body.trans.position.raw_si() - rec.position).length();
+        let vel_err = (body.trans.velocity.raw_si() - rec.velocity).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
 
@@ -167,8 +168,8 @@ fn tier3_sim_time_reversal_run1() {
 
     // Round-trip position: final state should match initial
     let final_body = sim.body(0);
-    let roundtrip_pos = (final_body.trans.position - init.position).length();
-    let roundtrip_vel = (final_body.trans.velocity - init.velocity).length();
+    let roundtrip_pos = (final_body.trans.position.raw_si() - init.position).length();
+    let roundtrip_vel = (final_body.trans.velocity.raw_si() - init.velocity).length();
 
     println!(
         "  reversal_run1: {} points, pos={max_pos_err:.2e}m, vel={max_vel_err:.2e}m/s, \

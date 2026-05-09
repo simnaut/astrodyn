@@ -78,11 +78,10 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(SMA, 0.0, 0.0),
             velocity: DVec3::new(0.0, circular_velocity(), 0.0),
-        }
-        .into(),
+        }),
         integrator,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -126,8 +125,8 @@ fn compare_analytical(integrator: IntegratorType, dt: f64) -> AnalyticalResult {
         sim.step_until(t).expect("step_until failed");
         let body = sim.body(0);
 
-        let pos_err = (body.trans.position - analytical_position(t)).length();
-        let vel_err = (body.trans.velocity - analytical_velocity(t)).length();
+        let pos_err = (body.trans.position.raw_si() - analytical_position(t)).length();
+        let vel_err = (body.trans.velocity.raw_si() - analytical_velocity(t)).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }
@@ -135,8 +134,8 @@ fn compare_analytical(integrator: IntegratorType, dt: f64) -> AnalyticalResult {
     // Final state is at t = n_steps * dt (closest integer multiple to the period).
     let final_t = (n_steps as f64) * dt;
     let body = sim.body(0);
-    let final_pos_err = (body.trans.position - analytical_position(final_t)).length();
-    let final_vel_err = (body.trans.velocity - analytical_velocity(final_t)).length();
+    let final_pos_err = (body.trans.position.raw_si() - analytical_position(final_t)).length();
+    let final_vel_err = (body.trans.velocity.raw_si() - analytical_velocity(final_t)).length();
 
     AnalyticalResult {
         max_pos_err,

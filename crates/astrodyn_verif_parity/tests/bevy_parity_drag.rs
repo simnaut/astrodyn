@@ -59,9 +59,9 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -102,8 +102,8 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim (drag)", &bevy_state, &sim_state);
@@ -151,9 +151,9 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -194,8 +194,8 @@ fn tier3_bevy_constant_density_drag_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim (const-density drag)", &bevy_state, &sim_state);
@@ -251,9 +251,9 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -302,8 +302,8 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim (MET drag)", &bevy_state, &sim_state);
@@ -349,9 +349,9 @@ fn tier3_bevy_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -408,8 +408,8 @@ fn tier3_bevy_met_run5a() {
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq("Bevy vs Sim (MET run5a)", &bevy_state, &sim_state);
 }
@@ -459,9 +459,9 @@ fn tier3_bevy_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -510,8 +510,8 @@ fn tier3_bevy_drag_run6b() {
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq("Bevy vs Sim (drag run6b)", &bevy_state, &sim_state);
 }

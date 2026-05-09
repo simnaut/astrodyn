@@ -139,11 +139,10 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: rec.position,
             velocity: rec.velocity,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

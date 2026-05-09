@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Apollo 8 frame switching cross-validation.
 //!
 //! Two sub-tests validating integration frame switching:
@@ -16,7 +17,7 @@ use astrodyn::JeodQuat;
 use astrodyn::{FrameSwitchConfig, GravitySourceEntry, SwitchSense, VehicleConfig};
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
-    SimulationTime,
+    SimulationTime, TranslationalState,
 };
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
@@ -138,34 +139,31 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
     );
 
     let body = sim.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: POS_ECI,
             velocity: VEL_ECI,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(
-            {
-                // Inertia: diag(100000, 200000, 400000) slug*ft^2; 1 slug*ft^2 = 1.355817948 kg*m^2
-                const SLUG_FT2_TO_KG_M2: f64 = 1.355_817_948;
-                let inertia = DMat3::from_diagonal(DVec3::new(
-                    100_000.0 * SLUG_FT2_TO_KG_M2,
-                    200_000.0 * SLUG_FT2_TO_KG_M2,
-                    400_000.0 * SLUG_FT2_TO_KG_M2,
-                ));
-                // CoM offset: [1098, 0, 372] inches; 1 inch = 0.0254 m
-                const INCH_TO_M: f64 = 0.0254;
-                let com_offset = DVec3::new(1098.0 * INCH_TO_M, 0.0, 372.0 * INCH_TO_M);
-                MassProperties::with_inertia(MASS, inertia, com_offset)
-            }
-            .into(),
-        ),
+            }),
+        )),
+        // allowed: typed↔raw kernel-boundary lift on scenario mass
+        // construction (named-method opt-in; see #397).
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&{
+            // Inertia: diag(100000, 200000, 400000) slug*ft^2; 1 slug*ft^2 = 1.355817948 kg*m^2
+            const SLUG_FT2_TO_KG_M2: f64 = 1.355_817_948;
+            let inertia = DMat3::from_diagonal(DVec3::new(
+                100_000.0 * SLUG_FT2_TO_KG_M2,
+                200_000.0 * SLUG_FT2_TO_KG_M2,
+                400_000.0 * SLUG_FT2_TO_KG_M2,
+            ));
+            // CoM offset: [1098, 0, 372] inches; 1 inch = 0.0254 m
+            const INCH_TO_M: f64 = 0.0254;
+            let com_offset = DVec3::new(1098.0 * INCH_TO_M, 0.0, 372.0 * INCH_TO_M);
+            MassProperties::with_inertia(MASS, inertia, com_offset)
+        })),
         gravity_controls: GravityControls {
             controls: vec![
                 // Earth is the central body for Earth-centered integration.
@@ -334,11 +332,14 @@ fn tier3_apollo8_eci_integ() {
 
             our_log.push(StateLog {
                 time: r.time,
-                position: Some(body.trans.position),
-                velocity: Some(body.trans.velocity),
+                position: Some(body.trans.position.raw_si()),
+                velocity: Some(body.trans.velocity.raw_si()),
                 acceleration: Some(body.trans_accel),
-                quaternion: body.rot.as_ref().map(|rot| rot.quaternion.to_glam()),
-                ang_vel: body.rot.as_ref().map(|rot| rot.ang_vel_body),
+                quaternion: body
+                    .rot
+                    .as_ref()
+                    .map(|rot| rot.q_inertial_body.as_witness().inner().to_glam()),
+                ang_vel: body.rot.as_ref().map(|rot| rot.ang_vel_body.raw_si()),
                 ang_accel: body.rot_accel,
             });
             ref_log.push(StateLog {
@@ -391,7 +392,7 @@ fn tier3_apollo8_frame_switch() {
         if ref_idx >= ref_positions.len() {
             break;
         }
-        let our_pos = sim.body(body_idx).trans.position;
+        let our_pos = sim.body(body_idx).trans.position.raw_si();
         let err = (our_pos - ref_positions[ref_idx]).length();
         if sim.body(body_idx).integ_frame_id == sim.root_frame_id {
             max_err_eci = max_err_eci.max(err);

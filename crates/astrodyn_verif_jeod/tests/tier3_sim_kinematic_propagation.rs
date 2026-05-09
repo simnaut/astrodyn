@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_verif_attach_detach RUN_simple_attach_detach with
 //! kinematic-propagation cross-validation.
 //!
@@ -296,25 +297,31 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, dt);
 
     let v1 = sim.add_body(VehicleConfig {
-        trans: veh1_initial_trans().into(),
-        rot: Some(veh1_initial_rot().into()),
-        mass: Some(veh1_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh1_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(veh1_initial_rot()),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: veh2_initial_trans().into(),
-        rot: Some(veh2_initial_rot().into()),
-        mass: Some(veh2_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(veh2_initial_rot()),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: veh3_initial_trans().into(),
-        rot: Some(veh3_initial_rot().into()),
-        mass: Some(veh3_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(veh3_initial_rot()),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -610,11 +617,15 @@ fn tier3_sim_kinematic_propagation_simple() {
         // Veh3: free-flying across entire run.
         let v3_out = sim.body(v3);
         let v3_csv = &row.veh[2];
-        max_v3_pos = max_v3_pos.max((v3_out.trans.position - v3_csv.position).length());
-        max_v3_vel = max_v3_vel.max((v3_out.trans.velocity - v3_csv.velocity).length());
+        max_v3_pos = max_v3_pos.max((v3_out.trans.position.raw_si() - v3_csv.position).length());
+        max_v3_vel = max_v3_vel.max((v3_out.trans.velocity.raw_si() - v3_csv.velocity).length());
         if let Some(rot) = v3_out.rot {
-            max_v3_quat = max_v3_quat.max(quat_angle_err(rot.quaternion, v3_csv.quaternion));
-            max_v3_avel = max_v3_avel.max((rot.ang_vel_body - v3_csv.ang_vel_body).length());
+            max_v3_quat = max_v3_quat.max(quat_angle_err(
+                rot.q_inertial_body.to_jeod_quat(),
+                v3_csv.quaternion,
+            ));
+            max_v3_avel =
+                max_v3_avel.max((rot.ang_vel_body.raw_si() - v3_csv.ang_vel_body).length());
         }
 
         // Pre-attach veh1 + veh2: free-flying.
@@ -623,13 +634,17 @@ fn tier3_sim_kinematic_propagation_simple() {
                 let body_idx = if i == 0 { v1 } else { v2 };
                 let out = sim.body(body_idx);
                 let csv = &row.veh[i];
-                max_pre_pos[i] = max_pre_pos[i].max((out.trans.position - csv.position).length());
-                max_pre_vel[i] = max_pre_vel[i].max((out.trans.velocity - csv.velocity).length());
+                max_pre_pos[i] =
+                    max_pre_pos[i].max((out.trans.position.raw_si() - csv.position).length());
+                max_pre_vel[i] =
+                    max_pre_vel[i].max((out.trans.velocity.raw_si() - csv.velocity).length());
                 if let Some(rot) = out.rot {
-                    max_pre_quat[i] =
-                        max_pre_quat[i].max(quat_angle_err(rot.quaternion, csv.quaternion));
-                    max_pre_avel[i] =
-                        max_pre_avel[i].max((rot.ang_vel_body - csv.ang_vel_body).length());
+                    max_pre_quat[i] = max_pre_quat[i].max(quat_angle_err(
+                        rot.q_inertial_body.to_jeod_quat(),
+                        csv.quaternion,
+                    ));
+                    max_pre_avel[i] = max_pre_avel[i]
+                        .max((rot.ang_vel_body.raw_si() - csv.ang_vel_body).length());
                 }
             }
         } else if row.time < DETACH_TIME {
@@ -654,14 +669,16 @@ fn tier3_sim_kinematic_propagation_simple() {
                 let out = sim.body(body_idx);
                 let csv = &row.veh[i];
                 max_attached_pos[i] =
-                    max_attached_pos[i].max((out.trans.position - csv.position).length());
+                    max_attached_pos[i].max((out.trans.position.raw_si() - csv.position).length());
                 max_attached_vel[i] =
-                    max_attached_vel[i].max((out.trans.velocity - csv.velocity).length());
+                    max_attached_vel[i].max((out.trans.velocity.raw_si() - csv.velocity).length());
                 if let Some(rot) = out.rot {
-                    max_attached_quat[i] =
-                        max_attached_quat[i].max(quat_angle_err(rot.quaternion, csv.quaternion));
-                    max_attached_avel[i] =
-                        max_attached_avel[i].max((rot.ang_vel_body - csv.ang_vel_body).length());
+                    max_attached_quat[i] = max_attached_quat[i].max(quat_angle_err(
+                        rot.q_inertial_body.to_jeod_quat(),
+                        csv.quaternion,
+                    ));
+                    max_attached_avel[i] = max_attached_avel[i]
+                        .max((rot.ang_vel_body.raw_si() - csv.ang_vel_body).length());
                 }
             }
 
@@ -669,21 +686,23 @@ fn tier3_sim_kinematic_propagation_simple() {
             let v2_runner = sim.body(v2);
             let v2_rot = v2_runner.rot.expect("veh2 6-DOF");
             let v2_snap = VehSnapshot {
-                position: v2_runner.trans.position,
-                velocity: v2_runner.trans.velocity,
-                quaternion: v2_rot.quaternion,
-                ang_vel_body: v2_rot.ang_vel_body,
+                position: v2_runner.trans.position.raw_si(),
+                velocity: v2_runner.trans.velocity.raw_si(),
+                quaternion: v2_rot.q_inertial_body.to_jeod_quat(),
+                ang_vel_body: v2_rot.ang_vel_body.raw_si(),
             };
             let predicted = kernel_from_veh2(&v2_snap, 1.0, 2.0);
-            max_runner_pos =
-                max_runner_pos.max((v1_runner.trans.position - predicted.position).length());
-            max_runner_vel =
-                max_runner_vel.max((v1_runner.trans.velocity - predicted.velocity).length());
+            max_runner_pos = max_runner_pos
+                .max((v1_runner.trans.position.raw_si() - predicted.position).length());
+            max_runner_vel = max_runner_vel
+                .max((v1_runner.trans.velocity.raw_si() - predicted.velocity).length());
             if let Some(rot) = v1_runner.rot {
-                max_runner_quat =
-                    max_runner_quat.max(quat_angle_err(rot.quaternion, predicted.quaternion));
-                max_runner_avel =
-                    max_runner_avel.max((rot.ang_vel_body - predicted.ang_vel_body).length());
+                max_runner_quat = max_runner_quat.max(quat_angle_err(
+                    rot.q_inertial_body.to_jeod_quat(),
+                    predicted.quaternion,
+                ));
+                max_runner_avel = max_runner_avel
+                    .max((rot.ang_vel_body.raw_si() - predicted.ang_vel_body).length());
             }
         } else {
             // Post-detach absolute trajectory match against JEOD's
@@ -694,15 +713,17 @@ fn tier3_sim_kinematic_propagation_simple() {
                 let body_idx = if i == 0 { v1 } else { v2 };
                 let out = sim.body(body_idx);
                 let csv = &row.veh[i];
-                max_post_detach_pos[i] =
-                    max_post_detach_pos[i].max((out.trans.position - csv.position).length());
-                max_post_detach_vel[i] =
-                    max_post_detach_vel[i].max((out.trans.velocity - csv.velocity).length());
+                max_post_detach_pos[i] = max_post_detach_pos[i]
+                    .max((out.trans.position.raw_si() - csv.position).length());
+                max_post_detach_vel[i] = max_post_detach_vel[i]
+                    .max((out.trans.velocity.raw_si() - csv.velocity).length());
                 if let Some(rot) = out.rot {
-                    max_post_detach_quat[i] =
-                        max_post_detach_quat[i].max(quat_angle_err(rot.quaternion, csv.quaternion));
-                    max_post_detach_avel[i] =
-                        max_post_detach_avel[i].max((rot.ang_vel_body - csv.ang_vel_body).length());
+                    max_post_detach_quat[i] = max_post_detach_quat[i].max(quat_angle_err(
+                        rot.q_inertial_body.to_jeod_quat(),
+                        csv.quaternion,
+                    ));
+                    max_post_detach_avel[i] = max_post_detach_avel[i]
+                        .max((rot.ang_vel_body.raw_si() - csv.ang_vel_body).length());
                 }
             }
         }

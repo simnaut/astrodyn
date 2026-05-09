@@ -19,7 +19,7 @@ use astrodyn::{
     Earth, GaussJacksonConfig, IntegratorType, PlanetInertial, Position, RootInertial, Velocity,
 };
 use astrodyn_dynamics::state::TranslationalStateTyped;
-use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_dynamics::{MassProperties, RotationalState};
 use astrodyn_gravity::GravityControl;
 use astrodyn_interactions::DragConfig;
 use astrodyn_math::{JeodQuat, OrbitalElements};
@@ -27,10 +27,10 @@ use astrodyn_quantities::ext::F64Ext;
 use glam::{DMat3, DVec3};
 
 fn iss_trans() -> TranslationalStateTyped<RootInertial> {
-    TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
-        position: DVec3::new(6_778_000.0, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 7_672.0, 0.0),
-    })
+    TranslationalStateTyped::<RootInertial> {
+        position: Position::<RootInertial>::from_raw_si(DVec3::new(6_778_000.0, 0.0, 0.0)),
+        velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7_672.0, 0.0)),
+    }
 }
 
 #[test]

@@ -1110,6 +1110,9 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         };
 
         let mut entity = commands.spawn((
+            // `self.trans` is `TranslationalStateTyped<RootInertial>` —
+            // production-path typed→typed `From` impl on the C component
+            // (kept post-#397).
             components::TranslationalStateC::<P>::from(self.trans),
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
@@ -1119,9 +1122,13 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             )),
         ));
         if let Some(rot) = self.rot {
+            // `rot` is `RotationalStateTyped<SelfRef>` — production-path
+            // typed→typed `From` impl on `RotationalStateC` (kept post-#397).
             entity.insert(components::RotationalStateC::from(rot));
         }
         if let Some(mass) = self.mass {
+            // `mass` is `MassPropertiesTyped<SelfRef>` — production-path
+            // typed→typed `From` impl on `MassPropertiesC` (kept post-#397).
             entity.insert(components::MassPropertiesC::from(mass));
         }
         if self.external_force.raw_si() != glam::DVec3::ZERO {

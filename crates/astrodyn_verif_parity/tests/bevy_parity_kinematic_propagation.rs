@@ -145,17 +145,23 @@ fn build_runner_sim() -> (astrodyn_runner::Simulation, usize, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
     let parent_idx = sim.add_body(VehicleConfig {
-        trans: parent_trans().into(),
-        rot: Some(parent_rot().into()),
-        mass: Some(parent_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&parent_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
+            &(parent_mass()),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let child_idx = sim.add_body(VehicleConfig {
-        trans: child_initial_trans().into(),
-        rot: Some(child_initial_rot().into()),
-        mass: Some(child_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&child_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(child_initial_rot()),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
+            &(child_mass()),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -206,10 +212,12 @@ fn build_bevy_app() -> (App, Entity, Entity) {
                 rotational_dynamics: true,
                 three_dof: false,
             }),
-            MassPropertiesC::from(parent_mass()),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(parent_mass()),
+            )),
             MassBodyIdC(parent_id),
-            TranslationalStateC::<astrodyn::Earth>::from(parent_trans()),
-            RotationalStateC::from(parent_rot()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot()))),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),
@@ -226,10 +234,14 @@ fn build_bevy_app() -> (App, Entity, Entity) {
                 rotational_dynamics: true,
                 three_dof: false,
             }),
-            MassPropertiesC::from(child_mass()),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(child_mass()),
+            )),
             MassBodyIdC(child_id),
-            TranslationalStateC::<astrodyn::Earth>::from(child_initial_trans()),
-            RotationalStateC::from(child_initial_rot()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(child_initial_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
+                &(child_initial_rot()),
+            )),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),
@@ -280,30 +292,24 @@ fn read_bevy_state(
     TranslationalState,
     RotationalState,
 ) {
-    let p_trans = app
-        .world()
-        .get::<TranslationalStateC<astrodyn::Earth>>(parent)
-        .unwrap()
-        .0
-        .to_untyped();
-    let p_rot = app
-        .world()
-        .get::<RotationalStateC>(parent)
-        .unwrap()
-        .0
-        .to_untyped();
-    let c_trans = app
-        .world()
-        .get::<TranslationalStateC<astrodyn::Earth>>(child)
-        .unwrap()
-        .0
-        .to_untyped();
-    let c_rot = app
-        .world()
-        .get::<RotationalStateC>(child)
-        .unwrap()
-        .0
-        .to_untyped();
+    let p_trans = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(parent)
+            .unwrap()
+            .0,
+    );
+    let p_rot = astrodyn::typed_bridge::rot_typed_to_raw(
+        &app.world().get::<RotationalStateC>(parent).unwrap().0,
+    );
+    let c_trans = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(child)
+            .unwrap()
+            .0,
+    );
+    let c_rot = astrodyn::typed_bridge::rot_typed_to_raw(
+        &app.world().get::<RotationalStateC>(child).unwrap().0,
+    );
     (p_trans, p_rot, c_trans, c_rot)
 }
 
@@ -457,12 +463,17 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
     let (bevy_p_trans, bevy_p_rot, bevy_c_trans, bevy_c_rot) =
         read_bevy_state(&app, parent_entity, child_entity);
 
+    let runner_p_trans = astrodyn::typed_bridge::trans_typed_to_raw(&runner_p.trans);
+    let runner_p_rot = astrodyn::typed_bridge::rot_typed_to_raw(&runner_p.rot.unwrap());
+    let runner_c_trans = astrodyn::typed_bridge::trans_typed_to_raw(&runner_c.trans);
+    let runner_c_rot = astrodyn::typed_bridge::rot_typed_to_raw(&runner_c.rot.unwrap());
+
     // ── Invariant 1: parent state is bit-identical across runtimes.
     assert_states_bit_identical(
         &bevy_p_trans,
-        &runner_p.trans,
+        &runner_p_trans,
         &bevy_p_rot,
-        &runner_p.rot.unwrap(),
+        &runner_p_rot,
         "parent",
     );
 
@@ -472,9 +483,9 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
     //    both runtimes.
     assert_states_bit_identical(
         &bevy_c_trans,
-        &runner_c.trans,
+        &runner_c_trans,
         &bevy_c_rot,
-        &runner_c.rot.unwrap(),
+        &runner_c_rot,
         "child",
     );
 
@@ -487,14 +498,14 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
     //    so this is a true parity check — assert via `to_bits()` per
     //    component, mirroring `assert_sixdof_eq`.
     let (predicted_child_trans, predicted_child_rot) =
-        kernel_from_parent(&runner_p.trans, &runner_p.rot.unwrap());
+        kernel_from_parent(&runner_p_trans, &runner_p_rot);
     let runner_predicted = SixDofState {
         trans: predicted_child_trans,
         rot: predicted_child_rot,
     };
     let runner_actual = SixDofState {
-        trans: runner_c.trans,
-        rot: runner_c.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&runner_c.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&runner_c.rot.unwrap()),
     };
     assert_sixdof_eq(
         "runner kernel-consistency (child vs kernel(runner.parent))",

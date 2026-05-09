@@ -238,20 +238,19 @@ fn build_srp(
     let num_plates = plates.len();
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
-        mass: Some(
-            MassProperties::with_inertia(
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
+        // allowed: typed↔raw kernel-boundary lift on scenario mass
+        // construction (named-method opt-in; see #397).
+        mass: Some(super::typed_helpers::mass_typed(
+            &MassProperties::with_inertia(
                 SRP_MASS,
                 DMat3::from_diagonal(DVec3::splat(1.0)),
                 DVec3::ZERO,
-            )
-            .into(),
-        ),
+            ),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -551,9 +550,9 @@ fn build_parity_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilde
     )];
 
     sb.add_body(VehicleConfig {
-        trans: parity_iss_trans().into(),
-        rot: Some(parity_tumble_rot().into()),
-        mass: Some(parity_iss_mass().into()),
+        trans: super::typed_helpers::trans_typed(&parity_iss_trans()),
+        rot: Some(super::typed_helpers::rot_typed(&parity_tumble_rot())),
+        mass: Some(super::typed_helpers::mass_typed(&parity_iss_mass())),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)],
         },
@@ -592,19 +591,17 @@ fn build_parity_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationB
     let plates = srp_plates(); // same 6-plate cube as SIM_3_ORBIT
 
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: DVec3::new(4.2e7, 0.0, 0.0),
             velocity: DVec3::new(0.0, 3074.0, 0.0),
-        }
-        .into(),
-        mass: Some(
-            MassProperties::with_inertia(
+        }),
+        mass: Some(super::typed_helpers::mass_typed(
+            &MassProperties::with_inertia(
                 300.0,
                 DMat3::from_diagonal(DVec3::splat(1.0)),
                 DVec3::ZERO,
-            )
-            .into(),
-        ),
+            ),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -648,9 +645,9 @@ fn build_parity_single_plate_sixdof(
 ) -> SimulationBuilder {
     let (mut sb, earth) = parity_skeleton();
     let mut cfg = VehicleConfig {
-        trans: parity_iss_trans().into(),
-        rot: Some(parity_tumble_rot().into()),
-        mass: Some(parity_iss_mass().into()),
+        trans: super::typed_helpers::trans_typed(&parity_iss_trans()),
+        rot: Some(super::typed_helpers::rot_typed(&parity_tumble_rot())),
+        mass: Some(super::typed_helpers::mass_typed(&parity_iss_mass())),
         t_struct_body,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

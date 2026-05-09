@@ -237,11 +237,9 @@ fn build_ref_attach_sim() -> Simulation {
     let mut sb = SimulationBuilder::new(epoch::j2000(), DT_S);
     let _earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
-        .with_translational(
-            astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-                &TranslationalState { position, velocity },
-            ),
-        )
+        .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(
+            &TranslationalState { position, velocity },
+        ))
         .sixdof(
             RotationalState {
                 quaternion: q_init,
@@ -335,8 +333,8 @@ fn tier3_sim_ref_attach_matrix() {
 
         let out = sim.body(0);
 
-        let pos_err = (out.trans.position - row.position).length();
-        let vel_err = (out.trans.velocity - row.velocity).length();
+        let pos_err = (out.trans.position.raw_si() - row.position).length();
+        let vel_err = (out.trans.velocity.raw_si() - row.velocity).length();
         if attached && row.time > ATTACH_TIME_S {
             max_post_pos_err = max_post_pos_err.max(pos_err);
             max_post_vel_err = max_post_vel_err.max(vel_err);
@@ -480,8 +478,8 @@ fn tier3_sim_ref_attach_pt2pt() {
         }
 
         let out = sim.body(0);
-        let pos_err = (out.trans.position - row.position).length();
-        let vel_err = (out.trans.velocity - row.velocity).length();
+        let pos_err = (out.trans.position.raw_si() - row.position).length();
+        let vel_err = (out.trans.velocity.raw_si() - row.velocity).length();
         if attached && row.time > ATTACH_TIME_S {
             max_post_pos_err = max_post_pos_err.max(pos_err);
             max_post_vel_err = max_post_vel_err.max(vel_err);

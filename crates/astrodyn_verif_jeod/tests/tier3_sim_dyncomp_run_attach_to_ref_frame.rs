@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_dyncomp `RUN_attach_to_ref_frame` — multi-attach
 //! lifecycle over an 8-hour ISS trajectory with the full force model.
 //!
@@ -334,19 +335,17 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
     // `lvlh_init` body-action body-frame composition just for this
     // single test. ──
     let body_idx = sb.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: t0.composite_body.position,
             velocity: t0.composite_body.velocity,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::from_glam(t0.composite_body.quaternion),
                 ang_vel_body: t0.composite_body.ang_vel,
-            }
-            .into(),
-        ),
-        mass: Some(mass.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth_idx, 8, 8, true),
@@ -436,7 +435,7 @@ fn apply_event(
             // Capture pre-attach inertial velocity for the matching
             // detach restore.
             let body_out = sim.body(body_idx);
-            lifecycle.pre_attach_vel = Some(body_out.trans.velocity);
+            lifecycle.pre_attach_vel = Some(body_out.trans.velocity.raw_si());
 
             // The matrix `attach_to_frame(parent)` overload in JEOD
             // computes the captured offset / rotation internally from
@@ -464,7 +463,10 @@ fn apply_event(
                 .rot
                 .as_ref()
                 .expect("RUN_attach_to_ref_frame is 6-DOF; rot must be Some");
-            let t_inertial_struct = rot.quaternion.left_quat_to_transformation();
+            let t_inertial_struct = rot
+                .q_inertial_body
+                .as_witness()
+                .left_quat_to_transformation();
             // T_pfix_struct = T_inertial_struct · T_inertial_pfix^T —
             // for a vector v in pfix coords, v_struct =
             // T_pfix_struct · v_pfix = T_inertial_struct ·
@@ -476,7 +478,7 @@ fn apply_event(
             // Body's *structure* position in pfix coordinates,
             // mirroring JEOD's
             // `structure.compute_relative_state(parent)` capture.
-            // `body_out.trans.position` is the composite-body
+            // `body_out.trans.position.raw_si()` is the composite-body
             // inertial position; the struct position in inertial is
             // composite − T_inertial_struct^T · mass.composite_properties.position
             // (the inverse of `compute_derived_state_forward`'s
@@ -486,8 +488,8 @@ fn apply_event(
                 .body_mass(body_idx)
                 .map(|mp| mp.position)
                 .unwrap_or(DVec3::ZERO);
-            let struct_inertial =
-                body_out.trans.position - t_inertial_struct.transpose() * composite_offset_struct;
+            let struct_inertial = body_out.trans.position.raw_si()
+                - t_inertial_struct.transpose() * composite_offset_struct;
             let offset_pfix = t_inertial_pfix * struct_inertial;
             sim.attach_to_frame(body_idx, earth_pfix, offset_pfix, t_pfix_struct);
         }
@@ -506,14 +508,14 @@ fn apply_event(
             // Capture full pre-attach composite-body state (the JEOD
             // pre_attach_pos/vel/rate/rotation block).
             let body_out = sim.body(body_idx);
-            lifecycle.pre_attach_pos = Some(body_out.trans.position);
-            lifecycle.pre_attach_vel = Some(body_out.trans.velocity);
+            lifecycle.pre_attach_pos = Some(body_out.trans.position.raw_si());
+            lifecycle.pre_attach_vel = Some(body_out.trans.velocity.raw_si());
             let rot = body_out
                 .rot
                 .as_ref()
                 .expect("RUN_attach_to_ref_frame is 6-DOF; rot must be Some");
-            lifecycle.pre_attach_quat = Some(rot.quaternion);
-            lifecycle.pre_attach_ang_vel = Some(rot.ang_vel_body);
+            lifecycle.pre_attach_quat = Some(rot.q_inertial_body.to_jeod_quat());
+            lifecycle.pre_attach_ang_vel = Some(rot.ang_vel_body.raw_si());
 
             // JEOD's `attach_to_frame_helper.rotation` is populated
             // verbatim from `vehicle.dyn_body.composite_body.state.rot.T_parent_this`
@@ -535,12 +537,15 @@ fn apply_event(
             let t_inertial_pfix = sim
                 .source_pfix_rotation(earth_idx)
                 .expect("Earth source has a pfix rotation");
-            let t_inertial_struct = rot.quaternion.left_quat_to_transformation();
+            let t_inertial_struct = rot
+                .q_inertial_body
+                .as_witness()
+                .left_quat_to_transformation();
             // Use the pfix vector sampled one DT_S earlier to mirror
             // JEOD's scheduled-class ordering — see the per-window
             // tolerance rationale block for the full derivation.
-            let pfix_vec =
-                stale_pfix_vec.unwrap_or_else(|| t_inertial_pfix * body_out.trans.position);
+            let pfix_vec = stale_pfix_vec
+                .unwrap_or_else(|| t_inertial_pfix * body_out.trans.position.raw_si());
             let surface_pos = surface_altitude_scaled(pfix_vec);
 
             // Disable the atmosphere so the surface placement doesn't
@@ -567,14 +572,14 @@ fn apply_event(
             // resolved the named subject point to (0,0,0) anyway since
             // `test_point`'s pose in struct frame is identity.
             let body_out = sim.body(body_idx);
-            lifecycle.pre_attach_pos = Some(body_out.trans.position);
-            lifecycle.pre_attach_vel = Some(body_out.trans.velocity);
+            lifecycle.pre_attach_pos = Some(body_out.trans.position.raw_si());
+            lifecycle.pre_attach_vel = Some(body_out.trans.velocity.raw_si());
             let rot = body_out
                 .rot
                 .as_ref()
                 .expect("RUN_attach_to_ref_frame is 6-DOF; rot must be Some");
-            lifecycle.pre_attach_quat = Some(rot.quaternion);
-            lifecycle.pre_attach_ang_vel = Some(rot.ang_vel_body);
+            lifecycle.pre_attach_quat = Some(rot.q_inertial_body.to_jeod_quat());
+            lifecycle.pre_attach_ang_vel = Some(rot.ang_vel_body.raw_si());
 
             // Same `T_inertial_body` reuse as the named-point variant
             // (see `AttachWrapChildParentPosRotCaptureFullState`).
@@ -584,12 +589,15 @@ fn apply_event(
             let t_inertial_pfix = sim
                 .source_pfix_rotation(earth_idx)
                 .expect("Earth source has a pfix rotation");
-            let t_inertial_struct = rot.quaternion.left_quat_to_transformation();
+            let t_inertial_struct = rot
+                .q_inertial_body
+                .as_witness()
+                .left_quat_to_transformation();
             // Same one-DT_S-stale pfix sampling as the named-point
             // variant — see the per-window tolerance rationale block
             // for the JEOD scheduled-class ordering this mirrors.
-            let pfix_vec =
-                stale_pfix_vec.unwrap_or_else(|| t_inertial_pfix * body_out.trans.position);
+            let pfix_vec = stale_pfix_vec
+                .unwrap_or_else(|| t_inertial_pfix * body_out.trans.position.raw_si());
             let surface_pos = surface_altitude_scaled(pfix_vec);
 
             disable_atmosphere(sim, body_idx);
@@ -748,7 +756,7 @@ fn drive_through_csv(
                 let t_ip_now = sim
                     .source_pfix_rotation(earth_idx)
                     .expect("Earth source has a pfix rotation");
-                Some(t_ip_now * body_now.trans.position)
+                Some(t_ip_now * body_now.trans.position.raw_si())
             } else {
                 None
             };
@@ -849,10 +857,10 @@ fn body_snapshot(sim: &Simulation, idx: usize) -> StateSnap {
         .as_ref()
         .expect("RUN_attach_to_ref_frame is 6-DOF; body rot must be Some");
     StateSnap {
-        position: out.trans.position,
-        velocity: out.trans.velocity,
-        quat: rot.quaternion,
-        ang_vel_body: rot.ang_vel_body,
+        position: out.trans.position.raw_si(),
+        velocity: out.trans.velocity.raw_si(),
+        quat: rot.q_inertial_body.to_jeod_quat(),
+        ang_vel_body: rot.ang_vel_body.raw_si(),
     }
 }
 

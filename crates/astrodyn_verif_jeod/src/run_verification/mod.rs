@@ -38,6 +38,48 @@ pub mod sim_srp;
 pub mod sim_tide_verif;
 pub mod sim_torque_simple;
 
+/// Shared typed↔raw kernel-boundary helpers for the per-family scenario
+/// modules. The `from_untyped_unchecked` named opt-ins on
+/// `TranslationalStateTyped` / `RotationalStateTyped` /
+/// `MassPropertiesTyped` were deleted in #397; these helpers are the
+/// file-local replacements that keep the per-scenario `VehicleConfig`
+/// builder bodies one-line per field.
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers for VehicleConfig storage construction.
+pub(crate) mod typed_helpers {
+    use astrodyn::{
+        AngularVelocity, BodyAttitude, BodyFrame, InertiaTensor, Mass, MassProperties,
+        MassPropertiesTyped, Position, RootInertial, RotationalState, RotationalStateTyped,
+        SelfRef, StructuralFrame, TranslationalState, TranslationalStateTyped, Velocity,
+    };
+    use uom::si::mass::kilogram;
+
+    #[inline]
+    pub(crate) fn trans_typed(t: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
+        TranslationalStateTyped::<RootInertial> {
+            position: Position::<RootInertial>::from_raw_si(t.position),
+            velocity: Velocity::<RootInertial>::from_raw_si(t.velocity),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn rot_typed(r: &RotationalState) -> RotationalStateTyped<SelfRef> {
+        RotationalStateTyped::<SelfRef>::new(
+            BodyAttitude::from_jeod_quat(r.quaternion),
+            AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(r.ang_vel_body),
+        )
+    }
+
+    #[inline]
+    pub(crate) fn mass_typed(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
+        MassPropertiesTyped::<SelfRef>::with_inertia(
+            Mass::new::<kilogram>(mp.mass),
+            InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia),
+            Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position),
+        )
+        .with_t_parent_this(mp.t_parent_this)
+    }
+}
+
 use crate::crossval::{CrossvalReport, StateLog};
 use crate::tier3_csv;
 use crate::verification::{
@@ -292,11 +334,14 @@ pub fn load_reference_states(csv: &CsvReference, path: &std::path::Path) -> Vec<
 fn snapshot_from(body: &VehicleOutput, ref_record: &StateLog) -> StateLog {
     StateLog {
         time: ref_record.time,
-        position: Some(body.trans.position),
-        velocity: Some(body.trans.velocity),
+        position: Some(body.trans.position.raw_si()),
+        velocity: Some(body.trans.velocity.raw_si()),
         acceleration: Some(body.trans_accel),
-        quaternion: body.rot.as_ref().map(|r| r.quaternion.to_glam()),
-        ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body),
+        quaternion: body
+            .rot
+            .as_ref()
+            .map(|r| r.q_inertial_body.as_witness().inner().to_glam()),
+        ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body.raw_si()),
         ang_accel: body.rot_accel,
     }
 }
@@ -818,11 +863,27 @@ impl ExtrasAccumulator {
                 // vehicle phantoms to the storage-boundary wildcard
                 // because per-entity vehicle identity is decided at
                 // runtime by the simulation's body slot.
+                //
+                // `compute_relative_state` consumes raw `TranslationalState` /
+                // `RotationalState`; demote the typed `body.trans` /
+                // `body.rot` through the kernel-boundary bridge helpers
+                // (the `from_untyped_unchecked` opt-ins were deleted in
+                // #397).
+                let body_a_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body.trans);
+                let body_b_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body_b.trans);
+                let body_a_rot = body
+                    .rot
+                    .as_ref()
+                    .map(astrodyn::typed_bridge::rot_typed_to_raw);
+                let body_b_rot = body_b
+                    .rot
+                    .as_ref()
+                    .map(astrodyn::typed_bridge::rot_typed_to_raw);
                 let rel = astrodyn::compute_relative_state::<astrodyn::SelfRef, astrodyn::SelfRef>(
-                    &body_b.trans,
-                    body_b.rot.as_ref(),
-                    &body.trans,
-                    body.rot.as_ref(),
+                    &body_b_trans,
+                    body_b_rot.as_ref(),
+                    &body_a_trans,
+                    body_a_rot.as_ref(),
                 );
                 let pos_err = (rel.trans.position_raw() - r.jeod_rel_pos).length();
                 let vel_err = (rel.trans.velocity_raw() - r.jeod_rel_vel).length();

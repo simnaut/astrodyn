@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Frame-attached body API for [`super::Simulation`].
 //!
 //! Implements JEOD's `DynBody::attach_to_frame` /
@@ -50,7 +51,8 @@
 use glam::DMat3;
 
 use astrodyn::{
-    FrameId, IntegrationFrame, RotationalState, TranslationalState, TranslationalStateTyped,
+    AngularVelocity, BodyAttitude, BodyFrame, FrameId, IntegrationFrame, Position,
+    RotationalStateTyped, SelfRef, TranslationalStateTyped, Velocity,
 };
 
 use super::types::FrameAttachState;
@@ -493,7 +495,7 @@ impl Simulation {
             let composite_offset = self.bodies[body_idx]
                 .mass
                 .map(|mp| astrodyn::MassPointState {
-                    position: mp.position,
+                    position: mp.center_of_mass.raw_si(),
                     t_parent_this: mp.t_parent_this,
                 })
                 .unwrap_or_default();
@@ -515,13 +517,12 @@ impl Simulation {
             // thing that keeps the typed phantom and the actual
             // coordinates consistent. RF.10 shift site.
             let integ_origin = &body_integ_origins[body_idx];
-            let trans_root =
-                TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-                    &TranslationalState {
-                        position: derived.trans.position,
-                        velocity: derived.trans.velocity,
-                    },
-                );
+            // allowed: typed↔raw kernel boundary — kinematic-propagation
+            // kernel returns raw root-inertial position/velocity.
+            let trans_root = TranslationalStateTyped::<astrodyn::RootInertial> {
+                position: Position::<astrodyn::RootInertial>::from_raw_si(derived.trans.position),
+                velocity: Velocity::<astrodyn::RootInertial>::from_raw_si(derived.trans.velocity),
+            };
             self.bodies[body_idx].trans =
                 TranslationalStateTyped::<IntegrationFrame>::from_inertial(
                     trans_root,
@@ -536,10 +537,12 @@ impl Simulation {
             // or panic; mirror the existing `kinematic_only` walk by
             // writing only when the body already carries a `rot` slot.
             if self.bodies[body_idx].rot.is_some() {
-                self.bodies[body_idx].rot = Some(RotationalState {
-                    quaternion: derived.rot.q_parent_this,
-                    ang_vel_body: derived.rot.ang_vel_this,
-                });
+                // allowed: typed↔raw kernel-boundary lift from kinematic-
+                // propagation kernel output (see #397).
+                self.bodies[body_idx].rot = Some(RotationalStateTyped::<SelfRef>::new(
+                    BodyAttitude::from_jeod_quat(derived.rot.q_parent_this),
+                    AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(derived.rot.ang_vel_this),
+                ));
             }
 
             // Sync body frame entity in the frame tree so consumers
@@ -562,9 +565,12 @@ impl Simulation {
             // q_parent_this so callers reading either form see the same
             // attitude.
             if let Some(body_rot) = self.bodies[body_idx].rot {
-                node.state.rot.q_parent_this = body_rot.quaternion;
-                node.state.rot.t_parent_this = body_rot.quaternion.left_quat_to_transformation();
-                node.state.rot.ang_vel_this = body_rot.ang_vel_body;
+                node.state.rot.q_parent_this = body_rot.q_inertial_body.to_jeod_quat();
+                node.state.rot.t_parent_this = body_rot
+                    .q_inertial_body
+                    .as_witness()
+                    .left_quat_to_transformation();
+                node.state.rot.ang_vel_this = body_rot.ang_vel_body.raw_si();
             }
         }
     }
@@ -607,15 +613,15 @@ mod tests {
         for _ in 0..100 {
             sim.step().expect("step must not fail");
             let out = sim.body(0);
+            let pos = out.trans.position.raw_si();
+            let vel = out.trans.velocity.raw_si();
             assert!(
-                (out.trans.position - attach_offset_pos).length() < 1e-9,
-                "frame-attached body drifted from offset: got {:?}",
-                out.trans.position
+                (pos - attach_offset_pos).length() < 1e-9,
+                "frame-attached body drifted from offset: got {pos:?}"
             );
             assert!(
-                out.trans.velocity.length() < 1e-9,
-                "frame-attached body picked up spurious velocity: got {:?}",
-                out.trans.velocity
+                vel.length() < 1e-9,
+                "frame-attached body picked up spurious velocity: got {vel:?}"
             );
         }
     }
@@ -660,7 +666,7 @@ mod tests {
         // (~7.6 km/s along y, way larger). What we are checking is
         // that the body's velocity was *replaced* by the parent-frame
         // composition, not just adjusted by an integrator step.
-        let speed = out.trans.velocity.length();
+        let speed = out.trans.velocity.raw_si().length();
         assert!(
             (200.0..=600.0).contains(&speed),
             "expected ~465 m/s sidereal-rotation contribution at the equator, got {speed} m/s"
@@ -689,8 +695,8 @@ mod tests {
         }
         // Body should still be frozen at the offset, with zero velocity.
         let frozen = sim.body(0);
-        assert!((frozen.trans.position - attach_offset).length() < 1e-9);
-        assert!(frozen.trans.velocity.length() < 1e-9);
+        assert!((frozen.trans.position.raw_si() - attach_offset).length() < 1e-9);
+        assert!(frozen.trans.velocity.raw_si().length() < 1e-9);
 
         sim.detach_from_frame(0);
         assert!(!sim.is_frame_attached(0));
@@ -702,11 +708,11 @@ mod tests {
         // component over the step).
         sim.step().expect("detached step");
         let after = sim.body(0);
+        let after_vel = after.trans.velocity.raw_si();
         assert!(
-            after.trans.velocity.length() > 0.0,
+            after_vel.length() > 0.0,
             "after detach the integrator should have produced nonzero velocity, \
-             got {:?}",
-            after.trans.velocity
+             got {after_vel:?}"
         );
     }
 
@@ -766,15 +772,15 @@ mod tests {
         for _ in 0..50 {
             sim.step().expect("step must not fail");
             let out = sim.body(0);
+            let pos = out.trans.position.raw_si();
+            let vel = out.trans.velocity.raw_si();
             assert!(
-                (out.trans.position - DVec3::new(10.0, 0.0, 0.0)).length() < 1e-9,
-                "frame-attached body drifted from (10,0,0): got {:?}",
-                out.trans.position
+                (pos - DVec3::new(10.0, 0.0, 0.0)).length() < 1e-9,
+                "frame-attached body drifted from (10,0,0): got {pos:?}"
             );
             assert!(
-                out.trans.velocity.length() < 1e-9,
-                "frame-attached body picked up spurious velocity: got {:?}",
-                out.trans.velocity
+                vel.length() < 1e-9,
+                "frame-attached body picked up spurious velocity: got {vel:?}"
             );
         }
     }
@@ -856,15 +862,16 @@ mod tests {
         let node_state = sim.frame_tree().get(body_frame_id).state;
 
         // Quaternion + transformation cache must equal the body's rot.
+        let body_quat = body_rot.q_inertial_body.to_jeod_quat();
+        let body_omega = body_rot.ang_vel_body.raw_si();
         assert!(
-            (node_state.rot.q_parent_this.scalar() - body_rot.quaternion.scalar()).abs() < 1e-12
-                && (node_state.rot.q_parent_this.vector() - body_rot.quaternion.vector()).length()
-                    < 1e-12,
+            (node_state.rot.q_parent_this.scalar() - body_quat.scalar()).abs() < 1e-12
+                && (node_state.rot.q_parent_this.vector() - body_quat.vector()).length() < 1e-12,
             "frame-tree node q_parent_this {:?} desync from body rot {:?}",
             node_state.rot.q_parent_this,
-            body_rot.quaternion
+            body_quat
         );
-        let t_expected = body_rot.quaternion.left_quat_to_transformation();
+        let t_expected = body_quat.left_quat_to_transformation();
         for col in 0..3 {
             assert!(
                 (node_state.rot.t_parent_this.col(col) - t_expected.col(col)).length() < 1e-12,
@@ -872,10 +879,10 @@ mod tests {
             );
         }
         assert!(
-            (node_state.rot.ang_vel_this - body_rot.ang_vel_body).length() < 1e-12,
+            (node_state.rot.ang_vel_this - body_omega).length() < 1e-12,
             "frame-tree node ang_vel_this {:?} desync from body ang_vel_body {:?}",
             node_state.rot.ang_vel_this,
-            body_rot.ang_vel_body
+            body_omega
         );
     }
 }

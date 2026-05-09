@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructor for SIM_tide_verif RUN_01.
 //!
 //! Validates the tidal ΔC20 computation against JEOD's SIM_tide_verif:
@@ -149,25 +150,24 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
     );
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         // Bespoke uses identity quaternion + zero ω for the body — the
         // tidal CSV doesn't log attitude (8 columns: time, pos, vel,
         // dC20), so we mirror that here.
-        rot: Some(
-            RotationalState {
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
+            }),
+        )),
         // Bespoke ISS mass tensor (literal in the original test).
-        mass: Some(
-            MassProperties::with_inertia(
+        // allowed: typed↔raw kernel-boundary lift on scenario mass
+        // construction (named-method opt-in; see #397).
+        mass: Some(super::typed_helpers::mass_typed(
+            &MassProperties::with_inertia(
                 400_000.0,
                 DMat3::from_cols(
                     DVec3::new(1.02e8, -6.96e6, -5.48e6),
@@ -175,9 +175,8 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
                     DVec3::new(-5.48e6, 5.90e5, 1.64e8),
                 ),
                 DVec3::new(-3.0, -1.5, 4.0),
-            )
-            .into(),
-        ),
+            ),
+        )),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth, 8, 8, true),

@@ -57,7 +57,7 @@ impl Simulation {
 
             // Compute structural transform once (shared by drag and flat-plate SRP)
             let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
-                r.quaternion.left_quat_to_transformation()
+                r.q_inertial_body.as_witness().left_quat_to_transformation()
             });
             let t_inertial_struct =
                 astrodyn::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
@@ -131,7 +131,7 @@ impl Simulation {
                         let center_grav_struct = body
                             .mass
                             .as_ref()
-                            .map_or(DVec3::ZERO, |m| m.position)
+                            .map_or(DVec3::ZERO, |m| m.center_of_mass.raw_si())
                             .m_at::<astrodyn::StructuralFrame<astrodyn::SelfRef>>();
                         let center_grav = center_grav_struct.raw_si();
 
@@ -253,11 +253,15 @@ impl Simulation {
             body.gravity_torque = None;
             if body.compute_gravity_torque {
                 if let (Some(ref rot), Some(ref mass)) = (&body.rot, &body.mass) {
-                    let t_parent_this = rot.quaternion.left_quat_to_transformation();
+                    let t_parent_this = rot
+                        .q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation();
+                    let inertia_dmat = mass.inertia.as_dmat3();
                     body.gravity_torque = Some(astrodyn::compute_gravity_torque(
                         &body.gravity_accel.grav_grad,
                         &t_parent_this,
-                        &mass.inertia,
+                        &inertia_dmat,
                     ));
                 }
             }

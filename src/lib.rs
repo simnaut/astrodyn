@@ -71,6 +71,7 @@ pub mod simulation_builder;
 pub mod source_frames;
 pub mod source_state;
 pub mod sources;
+pub mod typed_bridge;
 pub mod validation;
 pub mod vehicle_builder;
 pub mod vehicle_config;
@@ -278,7 +279,8 @@ pub use astrodyn_planet::PlanetShape;
 // `astrodyn_bevy` root crate) consume these types via `astrodyn` to
 // preserve the "single dependency" invariant.
 pub use astrodyn_quantities::aliases::{
-    Acceleration, AngularAcceleration, AngularVelocity, Force, Position, Torque, Velocity,
+    Acceleration, AngularAcceleration, AngularVelocity, Force, InertiaTensor, Position, Torque,
+    Velocity,
 };
 pub use astrodyn_quantities::diagnostics::CompatibleVehiclePair;
 pub use astrodyn_quantities::dims::GravParam;
@@ -300,7 +302,13 @@ pub use astrodyn_quantities::{define_planet, define_vehicle};
 
 // uom scalar quantities used directly by the Bevy adapter for typed
 // component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
-pub use uom::si::f64::{Angle, Ratio};
+pub use uom::si::f64::{Angle, Mass, Ratio};
+
+/// Re-export of [`uom::si::mass::kilogram`] for typed-quantity callers
+/// that need the unit token directly (`Mass::new::<kilogram>(420_000.0)`,
+/// `mass.get::<kilogram>()`). Adapter crates that consume astrodyn but
+/// not uom (the production-path layer rule) reach through this alias.
+pub use uom::si::mass::kilogram;
 
 /// Convenience constructor — wrap a raw f64 (radians) as a typed
 /// [`Angle`].

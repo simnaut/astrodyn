@@ -42,9 +42,9 @@ fn tier3_bevy_gravity_torque_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -79,8 +79,8 @@ fn tier3_bevy_gravity_torque_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim (grav torque)", &bevy_state, &sim_state);
@@ -185,9 +185,9 @@ fn tier3_bevy_external_torque_per_body() {
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
-        rot: Some(tumble_rot().into()),
-        mass: Some(mass_props.into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -211,8 +211,8 @@ fn tier3_bevy_external_torque_per_body() {
     };
     let sim_body = sim.body(0);
     let state_b = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(
         "Per-body functions vs Simulation::step() (ext torque)",
@@ -231,9 +231,9 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(trans),
-            RotationalStateC::from(rot),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -252,9 +252,9 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
-        rot: Some(rot.into()),
-        mass: Some(iss_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },
@@ -266,8 +266,8 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }
@@ -334,9 +334,9 @@ fn run_external_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(rot),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -353,9 +353,9 @@ fn run_external_parity(
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(dt);
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
-        rot: Some(rot.into()),
-        mass: Some(iss_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -366,7 +366,13 @@ fn run_external_parity(
     for step in 0..n_steps {
         let t = step as f64 * dt;
 
-        let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
+        let quat = sim
+            .body(0)
+            .rot
+            .as_ref()
+            .unwrap()
+            .q_inertial_body
+            .to_jeod_quat();
         let (force, torque) = force_torque_fn(t, dt, &quat);
 
         let mut ext_f = app.world_mut().get_mut::<ExternalForceC>(vehicle).unwrap();
@@ -387,8 +393,8 @@ fn run_external_parity(
     let bevy_state = read_sixdof(app.world(), vehicle);
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }

@@ -172,13 +172,13 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
 
     // Spawn a vehicle in Mars then verify the spawn-time state
     // matches `body_state_initial()` before the queue overrides it.
-    let pre_state = app
-        .world()
-        .entity(vehicle)
-        .get::<TranslationalStateC<astrodyn::Mars>>()
-        .unwrap()
-        .0
-        .to_untyped();
+    let pre_state = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(vehicle)
+            .get::<TranslationalStateC<astrodyn::Mars>>()
+            .unwrap()
+            .0,
+    );
     assert_eq!(pre_state.position, body_state_initial().position.raw_si());
 
     // Confirm a `MassPropertiesC` is present (required by the
@@ -204,13 +204,13 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .advance_by(Duration::from_secs_f64(DT));
     app.world_mut().run_schedule(FixedUpdate);
 
-    let post_state = app
-        .world()
-        .entity(vehicle)
-        .get::<TranslationalStateC<astrodyn::Mars>>()
-        .expect("Mars-tagged translational state must remain present after the apply pass")
-        .0
-        .to_untyped();
+    let post_state = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(vehicle)
+            .get::<TranslationalStateC<astrodyn::Mars>>()
+            .expect("Mars-tagged translational state must remain present after the apply pass")
+            .0,
+    );
 
     // The body_action apply pass runs before integration in the same
     // FixedUpdate tick. The post-tick state is therefore one DT of
@@ -341,13 +341,13 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     // state, NOT the Earth replacement state. Numerically the Mars
     // body propagates one DT under Mars gravity; we just need to
     // confirm it didn't snap to the Earth replacement state.
-    let mars_post = app
-        .world()
-        .entity(mars_body)
-        .get::<TranslationalStateC<astrodyn::Mars>>()
-        .unwrap()
-        .0
-        .to_untyped();
+    let mars_post = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(mars_body)
+            .get::<TranslationalStateC<astrodyn::Mars>>()
+            .unwrap()
+            .0,
+    );
     // One DT of orbital propagation drifts the Mars body by at most
     // ~400 m (3500 m/s velocity × 0.1 s DT). 10 km is a generous
     // bound that still excludes any silent route through an
@@ -372,13 +372,13 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     // body has drifted at most ~700 m (7000 m/s × 0.1 s); the
     // 10 km bound easily excludes any path that left the Earth body
     // at its spawn position.
-    let earth_post = app
-        .world()
-        .entity(earth_body)
-        .get::<TranslationalStateC<astrodyn::Earth>>()
-        .unwrap()
-        .0
-        .to_untyped();
+    let earth_post = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(earth_body)
+            .get::<TranslationalStateC<astrodyn::Earth>>()
+            .unwrap()
+            .0,
+    );
     let earth_drift = (earth_post.position - DVec3::new(8_000_000.0, 0.0, 0.0)).length();
     assert!(
         earth_drift < 10_000.0,
@@ -509,13 +509,13 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     //     stays near the spawn-time `body_state_initial()` (one DT
     //     of integration drift, well under 10 km), NOT near
     //     `mars_replacement` (which is ~6.4 Mm away).
-    let mars_post = app
-        .world()
-        .entity(mars_body)
-        .get::<TranslationalStateC<astrodyn::Mars>>()
-        .unwrap()
-        .0
-        .to_untyped();
+    let mars_post = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(mars_body)
+            .get::<TranslationalStateC<astrodyn::Mars>>()
+            .unwrap()
+            .0,
+    );
     let mars_drift_from_initial =
         (mars_post.position - body_state_initial().position.raw_si()).length();
     assert!(
@@ -537,13 +537,13 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     // (b) Earth body's queued action DID execute: its post-tick
     //     position is near `earth_replacement` (one DT of integration
     //     drift).
-    let earth_post = app
-        .world()
-        .entity(earth_body)
-        .get::<TranslationalStateC<astrodyn::Earth>>()
-        .unwrap()
-        .0
-        .to_untyped();
+    let earth_post = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .entity(earth_body)
+            .get::<TranslationalStateC<astrodyn::Earth>>()
+            .unwrap()
+            .0,
+    );
     let earth_drift = (earth_post.position - earth_replacement.position).length();
     assert!(
         earth_drift < 10_000.0,

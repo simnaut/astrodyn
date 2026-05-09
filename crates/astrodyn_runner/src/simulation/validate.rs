@@ -4,6 +4,8 @@
 //! ~325 lines and is a distinct concern from the per-step pipeline.
 
 use astrodyn::validation::ValidationError;
+use astrodyn::TranslationalState;
+use uom::si::mass::kilogram;
 
 use super::Simulation;
 
@@ -28,12 +30,26 @@ impl Simulation {
                     fps.t_pow4_cached.len(),
                 )
             });
-            let trans_untyped = body.trans.to_untyped();
+            // allowed: typed↔raw kernel boundary — `validate_body` takes
+            // raw structs.
+            let trans_untyped = TranslationalState {
+                position: body.trans.position.raw_si(),
+                velocity: body.trans.velocity.raw_si(),
+            };
+            let mass_untyped = body.mass.as_ref().map(|m| astrodyn::MassProperties {
+                mass: m.mass.get::<kilogram>(),
+                inverse_mass: m.inverse_mass,
+                inertia: m.inertia.as_dmat3(),
+                inverse_inertia: m.inverse_inertia,
+                position: m.center_of_mass.raw_si(),
+                t_parent_this: m.t_parent_this,
+                dirty: m.dirty,
+            });
             let errors = astrodyn::validate_body(
                 &body.config,
                 &body.gravity_controls,
                 true, // SimBody always has gravity_accel field
-                body.mass.as_ref(),
+                mass_untyped.as_ref(),
                 body.rot.is_some(),
                 Some(&trans_untyped),
                 |source_id: usize| self.gravity_data.get(source_id).map(|g| &g.source),

@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: JEOD `SIM_contact` — spring-damper contact between two bodies.
 //!
 //! Propagates two free-floating vehicles through `Simulation::step()` with
@@ -167,38 +168,34 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
     let mass_props = MassProperties::with_inertia(mass, inertia, DVec3::ZERO);
 
     let id1 = sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
     });
 
     let id2 = sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(12.0, 0.0, 0.0),
             velocity: DVec3::new(-2.0, 0.0, 0.0),
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -296,10 +293,14 @@ fn propagate_with_contact(
         if let Some(&cp) = cp_iter.peek() {
             if (t - cp).abs() <= 0.5 * DT {
                 out.push(CheckpointBodies {
-                    veh1_trans: b_a.trans,
-                    veh1_rot: b_a.rot.expect("6-DOF required for SIM_contact"),
-                    veh2_trans: b_b.trans,
-                    veh2_rot: b_b.rot.expect("6-DOF required for SIM_contact"),
+                    veh1_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_a.trans),
+                    veh1_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                        &b_a.rot.expect("6-DOF required for SIM_contact"),
+                    ),
+                    veh2_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_b.trans),
+                    veh2_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                        &b_b.rot.expect("6-DOF required for SIM_contact"),
+                    ),
                 });
                 cp_iter.next();
             }
@@ -641,37 +642,33 @@ fn tier3_contact_line_side_to_side() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: jeod_veh1,
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
     });
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(12.0, 0.0, 0.0),
             velocity: DVec3::new(-2.0, 0.0, 0.0),
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: jeod_veh2,
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -748,37 +745,33 @@ fn tier3_contact_point_off_center() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh1_pos,
             velocity: init.veh1_vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
     });
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh2_pos,
             velocity: init.veh2_vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -893,19 +886,17 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
 
     // veh1 — line cylinder along structural x-axis.
     let veh1 = sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(earth_radius, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: earth_grav.clone(),
         compute_gravity_gradient: false,
         ..Default::default()
@@ -913,19 +904,17 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
 
     // veh2 — point sphere 10 m radially outward from veh1.
     let veh2 = sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(earth_radius + 10.0, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: earth_grav,
         compute_gravity_gradient: false,
         ..Default::default()
@@ -1061,10 +1050,28 @@ fn tier3_contact_ground() {
         if let Some(&cp) = cp_iter.peek() {
             if (t - cp).abs() <= 0.5 * DT {
                 snapshots.push(CheckpointBodies {
-                    veh1_trans: b1.trans,
-                    veh1_rot: b1.rot.expect("6-DOF required"),
-                    veh2_trans: b2.trans,
-                    veh2_rot: b2.rot.expect("6-DOF required"),
+                    veh1_trans: astrodyn::TranslationalState {
+                        position: b1.trans.position.raw_si(),
+                        velocity: b1.trans.velocity.raw_si(),
+                    },
+                    veh1_rot: {
+                        let _r = b1.rot.expect("6-DOF required");
+                        astrodyn::RotationalState {
+                            quaternion: _r.q_inertial_body.to_jeod_quat(),
+                            ang_vel_body: _r.ang_vel_body.raw_si(),
+                        }
+                    },
+                    veh2_trans: astrodyn::TranslationalState {
+                        position: b2.trans.position.raw_si(),
+                        velocity: b2.trans.velocity.raw_si(),
+                    },
+                    veh2_rot: {
+                        let _r = b2.rot.expect("6-DOF required");
+                        astrodyn::RotationalState {
+                            quaternion: _r.q_inertial_body.to_jeod_quat(),
+                            ang_vel_body: _r.ang_vel_body.raw_si(),
+                        }
+                    },
                 });
                 cp_iter.next();
             }

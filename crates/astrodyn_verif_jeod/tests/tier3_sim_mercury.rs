@@ -70,11 +70,10 @@ fn propagate_mercury_periapses(
     ctrl.relativistic = relativistic;
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },
@@ -95,8 +94,8 @@ fn propagate_mercury_periapses(
         sim.step().expect("step failed");
         sim_time += dt;
         let body = sim.body(0);
-        let r = body.trans.position;
-        let v = body.trans.velocity;
+        let r = body.trans.position.raw_si();
+        let v = body.trans.velocity.raw_si();
         let r_dot = r.dot(v) / r.length();
 
         if step > 0 && prev_rdot < 0.0 && r_dot >= 0.0 {
@@ -270,11 +269,10 @@ fn tier3_simulation_mercury_relativistic_effect() {
         ),
     );
     sim_n.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(sun_n, false)],
         },
@@ -283,7 +281,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     sim_n.validate().unwrap();
     let steps = (total_time / dt) as usize;
     sim_n.step_n(steps).expect("step_n failed");
-    let newton_final = sim_n.body(0).trans.position;
+    let newton_final = sim_n.body(0).trans.position.raw_si();
 
     // Relativistic run
     let time_r = SimulationTime::at_j2000(leap_table);
@@ -302,11 +300,10 @@ fn tier3_simulation_mercury_relativistic_effect() {
     let mut ctrl = GravityControl::new_spherical(sun_r, false);
     ctrl.relativistic = true;
     sim_r.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },
@@ -314,7 +311,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     });
     sim_r.validate().unwrap();
     sim_r.step_n(steps).expect("step_n failed");
-    let gr_final = sim_r.body(0).trans.position;
+    let gr_final = sim_r.body(0).trans.position.raw_si();
 
     // The two trajectories should diverge due to GR
     let delta = (gr_final - newton_final).length();

@@ -6,8 +6,8 @@
 //! distance-based frame switching.
 
 use astrodyn::{
-    Acceleration, AngularAcceleration, BodyFrame, Force, Planet, Position, RootInertial, SelfRef,
-    Torque, Velocity,
+    Acceleration, AngularAcceleration, BodyFrame, Force, Planet, Position, RootInertial,
+    RotationalState, SelfRef, Torque, TranslationalState, Velocity,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -15,6 +15,10 @@ use glam::DVec3;
 use crate::components::*;
 use crate::frame_param::{FrameOrigin, RelativeFrameState};
 use crate::SimulationTimeR;
+use astrodyn::typed_bridge::{
+    mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
+    trans_raw_to_planet, trans_typed_to_raw,
+};
 
 use super::util::body_integ_origin_in_root_lazy;
 
@@ -542,9 +546,10 @@ pub fn integration_system<P: Planet>(
             // Convert typed state to the untyped form the kernel wants.
             // After `integrate_body_coupled` mutates the untyped copies
             // we re-wrap as typed for storage.
-            let mass_copy_untyped = mass.map(|m| m.0.to_untyped());
-            let mut state_untyped = state.0.to_untyped();
-            let mut rot_state_untyped = rot_state.as_ref().map(|r| r.0.to_untyped());
+            // allowed: typed↔raw kernel boundary
+            let mass_copy_untyped = mass.map(|m| mass_typed_to_raw(&m.0));
+            let mut state_untyped = trans_typed_to_raw(&state.0);
+            let mut rot_state_untyped = rot_state.as_ref().map(|r| rot_typed_to_raw(&r.0));
             let thermal = flat_config
                 .as_mut()
                 .expect("stage_inputs_and_order => flat_config present");
@@ -662,11 +667,11 @@ pub fn integration_system<P: Planet>(
             // frame, which the Component tags as planet-inertial with
             // the system instantiation's `<P>` parameter that matches
             // this entity by query filter).
-            type PiTrans<P> = astrodyn::TranslationalStateTyped<astrodyn::PlanetInertial<P>>;
-            state.0 = PiTrans::<P>::from_untyped_unchecked(&state_untyped); // allowed: typed↔untyped kernel boundary (integrate_body_coupled signature is untyped); analogous to From<Untyped> impls.
+            // allowed: typed↔raw kernel boundary writeback (integrate_body_coupled signature is untyped).
+            state.0 = trans_raw_to_planet::<P>(&state_untyped);
             if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
-                // allowed: same typed↔untyped kernel boundary as above.
-                rs.0 = astrodyn::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
+                // allowed: same typed↔raw kernel boundary as above.
+                rs.0 = rot_raw_to_self_ref(&ru);
             }
 
             // Write representative `RadiationForceC` from stage 4 so
@@ -705,9 +710,10 @@ pub fn integration_system<P: Planet>(
         // Standard (Scheduled or no-SRP) path. Same typed↔untyped
         // bridging as the coupled path: extract untyped at entry,
         // re-wrap typed at exit.
-        let mut state_untyped = state.0.to_untyped();
-        let mut rot_state_untyped = rot_state.as_ref().map(|r| r.0.to_untyped());
-        let mass_untyped = mass.map(|m| m.0.to_untyped());
+        // allowed: typed↔raw kernel boundary
+        let mut state_untyped = trans_typed_to_raw(&state.0);
+        let mut rot_state_untyped = rot_state.as_ref().map(|r| rot_typed_to_raw(&r.0));
+        let mass_untyped = mass.map(|m| mass_typed_to_raw(&m.0));
         astrodyn::integrate_body(
             config,
             &mut state_untyped,
@@ -735,12 +741,11 @@ pub fn integration_system<P: Planet>(
         // Re-wrap kernel-mutated state back into typed components;
         // integrate_body signature is untyped, so re-wrapping is the
         // canonical adapter step (analogous to From<Untyped> impls).
-        state.0 =
-            // allowed: typed↔untyped kernel boundary; planet-inertial frame matches the body's integration frame (system instantiation's `<P>` parameter, gated by the bodies query filter).
-            astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(&state_untyped);
+        // allowed: typed↔raw kernel boundary; planet-inertial frame matches the body's integration frame.
+        state.0 = trans_raw_to_planet::<P>(&state_untyped);
         if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
-            // allowed: typed↔untyped kernel boundary
-            rs.0 = astrodyn::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
+            // allowed: typed↔raw kernel boundary
+            rs.0 = rot_raw_to_self_ref(&ru);
         }
     }
 }
@@ -978,22 +983,18 @@ fn apply_cross_integ_frame_attach<P: Planet>(
             continue;
         }
         if let Ok((_, _, _, Some(mut t), _)) = bodies.get_mut(entry.body_entity) {
-            let old = t.0.to_untyped();
+            // allowed: cross-integ-frame numerical rewrite boundary
+            let old = trans_typed_to_raw(&t.0);
             let (new_pos, new_vel) = shift.apply(old.position, old.velocity);
-            t.0 =
-                // allowed: cross-integ-frame numerical rewrite boundary;
-                // same typed↔untyped re-wrap pattern as the merged-
-                // composite writeback. The shift is a pure translation
-                // between two inertial integ frames (co-aligned axes,
-                // origins differ in root-inertial), so the post-shift
-                // value still lives in integration-frame coordinates
-                // with the `<PlanetInertial<P>>` tag.
-                astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(
-                    &astrodyn::TranslationalState {
-                        position: new_pos,
-                        velocity: new_vel,
-                    },
-                );
+            // allowed: same typed↔raw re-wrap pattern as the merged-composite writeback.
+            // The shift is a pure translation between two inertial integ frames
+            // (co-aligned axes, origins differ in root-inertial), so the
+            // post-shift value still lives in integration-frame coordinates
+            // with the `<PlanetInertial<P>>` tag.
+            t.0 = trans_raw_to_planet::<P>(&TranslationalState {
+                position: new_pos,
+                velocity: new_vel,
+            });
         }
     }
 }
@@ -1417,7 +1418,8 @@ pub fn staging_system<P: Planet>(
              via id_to_entity at the same id.",
             subject_root_entity, subject_root_body_id.0, child_id, subject_root_id,
         );
-        let child_mass: astrodyn::MassProperties = subject_root_mass_c.0.to_untyped();
+        // allowed: typed↔raw kernel boundary
+        let child_mass: astrodyn::MassProperties = mass_typed_to_raw(&subject_root_mass_c.0);
         let (child_position_integ, child_velocity_integ) = subject_root_trans
             .as_ref()
             .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
@@ -1425,7 +1427,8 @@ pub fn staging_system<P: Planet>(
         let (child_quaternion, child_ang_vel_body) = subject_root_rot
             .as_ref()
             .map(|r| {
-                let untyped = r.0.to_untyped();
+                // allowed: typed↔raw kernel boundary
+                let untyped = rot_typed_to_raw(&r.0);
                 (untyped.quaternion, untyped.ang_vel_body)
             })
             .unwrap_or((astrodyn::JeodQuat::identity(), glam::DVec3::ZERO));
@@ -1439,7 +1442,8 @@ pub fn staging_system<P: Planet>(
                 )
             });
         let parent_id = parent_body_id.0;
-        let parent_mass: astrodyn::MassProperties = parent_mass_c.0.to_untyped();
+        // allowed: typed↔raw kernel boundary
+        let parent_mass: astrodyn::MassProperties = mass_typed_to_raw(&parent_mass_c.0);
         let (parent_position_integ, parent_velocity_integ) = parent_trans
             .as_ref()
             .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
@@ -1447,7 +1451,8 @@ pub fn staging_system<P: Planet>(
         let (parent_quaternion, parent_ang_vel_body) = parent_rot
             .as_ref()
             .map(|r| {
-                let untyped = r.0.to_untyped();
+                // allowed: typed↔raw kernel boundary
+                let untyped = rot_typed_to_raw(&r.0);
                 (untyped.quaternion, untyped.ang_vel_body)
             })
             .unwrap_or((astrodyn::JeodQuat::identity(), glam::DVec3::ZERO));
@@ -2327,7 +2332,8 @@ pub fn staging_system<P: Planet>(
             let (q, w) = parent_rot
                 .as_ref()
                 .map(|r| {
-                    let u = r.0.to_untyped();
+                    // allowed: typed↔raw kernel boundary
+                    let u = rot_typed_to_raw(&r.0);
                     (u.quaternion, u.ang_vel_body)
                 })
                 .unwrap_or((astrodyn::JeodQuat::identity(), glam::DVec3::ZERO));
@@ -2478,8 +2484,11 @@ pub fn staging_system<P: Planet>(
     // is still updated; only the change-detection signal is silenced.
     for (_, body_id, mut mass, _, _) in &mut bodies {
         if affected_ids.binary_search(&body_id.0).is_ok() {
-            *mass.bypass_change_detection() =
-                MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+            // allowed: typed↔raw kernel-boundary lift on mass-tree
+            // composite writeback (named-method opt-in; see #397).
+            *mass.bypass_change_detection() = MassPropertiesC::from(mass_raw_to_self_ref(
+                &tree.get(body_id.0).composite_properties,
+            ));
         }
     }
 
@@ -2571,33 +2580,21 @@ pub fn staging_system<P: Planet>(
                 // `TranslationalStateTyped<IntegrationFrame>`; the only
                 // safe transition from `RootInertial` is the
                 // integ-origin shift.
-                t.0 =
-                    // allowed: stage_attach_combine kernel boundary; the
-                    // kernel returns untyped DVec3 by design, so re-wrapping
-                    // as TranslationalStateTyped<PlanetInertial<P>> is the
-                    // same typed↔untyped pattern as the
-                    // From<TranslationalState> impl on TranslationalStateC.
-                    astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(
-                        &astrodyn::TranslationalState {
-                            position: merged_position,
-                            velocity: merged_velocity,
-                        },
-                    );
+                // allowed: stage_attach_combine kernel boundary — the
+                // kernel returns untyped DVec3 by design.
+                t.0 = trans_raw_to_planet::<P>(&TranslationalState {
+                    position: merged_position,
+                    velocity: merged_velocity,
+                });
             }
             if let Some(ref mut r) = rot {
-                // allowed: stage_attach_combine kernel boundary; same
-                // typed↔untyped re-wrap pattern as the translational case
-                // above. The output quaternion is the parent's pre-attach
-                // unit-norm quaternion (per `combine_states_at_attach`'s
-                // "merged body inherits parent attitude"), so the
-                // NormalizedQuat witness in from_untyped_unchecked is
-                // satisfied.
-                r.0 = astrodyn::RotationalStateTyped::<astrodyn::SelfRef>::from_untyped_unchecked(
-                    &astrodyn::RotationalState {
-                        quaternion: merged.quaternion,
-                        ang_vel_body: merged.ang_vel_body,
-                    },
-                );
+                // allowed: stage_attach_combine kernel boundary — the
+                // output quaternion is the parent's pre-attach unit-norm
+                // quaternion, so the BodyAttitude witness is satisfied.
+                r.0 = rot_raw_to_self_ref(&RotationalState {
+                    quaternion: merged.quaternion,
+                    ang_vel_body: merged.ang_vel_body,
+                });
             }
         }
 
@@ -2851,19 +2848,13 @@ pub fn staging_system<P: Planet>(
         let new_velocity = shift.parent_pre_velocity + dvel_inertial;
 
         if let Ok((_, _, _, Some(mut t), _)) = bodies.get_mut(shift.tree_root_entity) {
-            t.0 =
-                // allowed: detach-handler kernel boundary; same
-                // typed↔untyped re-wrap pattern as the attach branch
-                // above. The CoM-shift is a pure kinematic update —
-                // it does not introduce a new frame, so wrapping as
-                // `PlanetInertial<P>` is the same convention as the
-                // pre-detach value.
-                astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(
-                    &astrodyn::TranslationalState {
-                        position: new_position,
-                        velocity: new_velocity,
-                    },
-                );
+            // allowed: detach-handler kernel boundary; CoM-shift is a
+            // pure kinematic update — same `PlanetInertial<P>` frame
+            // as the pre-detach value.
+            t.0 = trans_raw_to_planet::<P>(&TranslationalState {
+                position: new_position,
+                velocity: new_velocity,
+            });
         }
 
         if shift.parent_was_detached {
@@ -3013,34 +3004,21 @@ pub fn step_detached_system<P: Planet>(
             );
             let position = state.0.composite_position.raw_si() - integ_origin_pos.raw_si();
             let velocity = state.0.composite_velocity.raw_si() - integ_origin_vel.raw_si();
-            t.0 =
-                // allowed: DetachedSubtreeState kernel boundary; the
-                // ballistic-step result is returned as raw DVec3 fields by
-                // design — re-wrapping into TranslationalStateTyped is the
-                // same typed↔untyped pattern as the
-                // From<TranslationalState> impl on TranslationalStateC.
-                astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(
-                    &astrodyn::TranslationalState {
-                        position,
-                        velocity,
-                    },
-                );
+            // allowed: DetachedSubtreeState kernel boundary — ballistic-
+            // step result is returned as raw DVec3 fields by design.
+            t.0 = trans_raw_to_planet::<P>(&TranslationalState { position, velocity });
         }
         if let Some(mut r) = rot {
             // allowed: DetachedSubtreeState kernel boundary. The advanced
             // `composite_attitude` is a `BodyAttitude<SelfRef>` whose
             // `to_jeod_quat` returns the underlying scalar-first
             // left-transformation quaternion. The wrapper guarantees
-            // unit-norm post-step (that's the whole point of
-            // `BodyAttitude::advance_under_body_rate`), so the
-            // NormalizedQuat witness in from_untyped_unchecked is
-            // satisfied.
-            r.0 = astrodyn::RotationalStateTyped::<astrodyn::SelfRef>::from_untyped_unchecked(
-                &astrodyn::RotationalState {
-                    quaternion: state.0.composite_attitude.to_jeod_quat(),
-                    ang_vel_body: state.0.composite_ang_vel_body,
-                },
-            );
+            // unit-norm post-step (`BodyAttitude::advance_under_body_rate`),
+            // so the witness is satisfied.
+            r.0 = rot_raw_to_self_ref(&RotationalState {
+                quaternion: state.0.composite_attitude.to_jeod_quat(),
+                ang_vel_body: state.0.composite_ang_vel_body,
+            });
         }
     }
 }

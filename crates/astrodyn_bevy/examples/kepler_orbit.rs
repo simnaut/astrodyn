@@ -15,7 +15,7 @@
 
 use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{GravityControl, GravityControls, MassProperties, TranslationalState};
+use astrodyn::{GravityControl, GravityControls, TranslationalState};
 use astrodyn_bevy::{
     AstrodynPlugin, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
@@ -127,7 +127,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         Angle::new::<radian>(oe.true_anom),
         constants::mu_ggm05c(),
     );
-    let trans: TranslationalState = trans_typed.to_untyped();
+    // allowed: typed↔raw kernel boundary (#397)
+    let trans: TranslationalState = TranslationalState {
+        position: trans_typed.position.raw_si(),
+        velocity: trans_typed.velocity.raw_si(),
+    };
 
     let mass_kg = vehicle::iss_mass().get::<kilogram>();
     let controls = GravityControls {
@@ -136,8 +140,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     commands.spawn((
         Name::new("Satellite"),
-        TranslationalStateC::<astrodyn::Earth>::from(trans),
-        MassPropertiesC::from(MassProperties::new(mass_kg)),
+        TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+        // JEOD_INV: TS.01 — `<SelfRef>` is the storage-side wildcard for the spawned vehicle's MassPropertiesC.
+        MassPropertiesC::from(astrodyn::MassPropertiesTyped::<astrodyn::SelfRef>::new(
+            astrodyn::Mass::new::<astrodyn::kilogram>(mass_kg),
+        )),
         GravityAccelerationC::default(),
         TotalForceC::default(),
         FrameDerivativesC::default(),

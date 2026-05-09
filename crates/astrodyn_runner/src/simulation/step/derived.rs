@@ -1,9 +1,10 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Stage 9 of [`super::super::Simulation::step_internal`]: derived
 //! states (orbital elements, Euler angles, LVLH frame, geodetic state,
 //! solar beta, earth lighting). Runs after integration; reads the
 //! post-integrated body state and writes per-body derived-state fields.
 
-use astrodyn::{IntegOrigin, Position, RootInertial};
+use astrodyn::{IntegOrigin, Position, RootInertial, RotationalState};
 
 use super::super::Simulation;
 
@@ -57,7 +58,13 @@ impl Simulation {
             // Euler angles
             if let Some(seq) = body.euler_sequence {
                 if let Some(ref rot) = body.rot {
-                    body.euler_angles = Some(astrodyn::compute_body_euler_angles(rot, seq));
+                    // allowed: typed↔raw kernel boundary
+                    let rot_untyped = RotationalState {
+                        quaternion: rot.q_inertial_body.to_jeod_quat(),
+                        ang_vel_body: rot.ang_vel_body.raw_si(),
+                    };
+                    body.euler_angles =
+                        Some(astrodyn::compute_body_euler_angles(&rot_untyped, seq));
                 } else {
                     body.euler_angles = None;
                 }
@@ -139,9 +146,8 @@ mod tests {
     use astrodyn::JeodQuat;
     use astrodyn::{
         default_leap_second_table, DerivedStateConfig, FrameSwitchConfig, GravityControl,
-        GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties, Position,
-        RotationModel, RotationalState, SimulationTime, SwitchSense, TranslationalState,
-        VehicleConfig, Velocity,
+        GravityControls, GravityModel, GravitySource, GravitySourceEntry, Position, RotationModel,
+        SimulationTime, SwitchSense, VehicleConfig, Velocity,
     };
     use glam::DVec3;
 
@@ -241,20 +247,30 @@ mod tests {
         // (X ≈ 1e9 + 50).
         let body_root_pos = DVec3::new(1.0e9 + 50.0, 100.0, 0.0);
         let body_root_vel = DVec3::new(0.0, 7500.0, 1000.0);
+        use astrodyn::{
+            kilogram, AngularVelocity, BodyAttitude, BodyFrame, InertiaTensor, Mass,
+            MassPropertiesTyped, RotationalStateTyped, SelfRef, StructuralFrame,
+            TranslationalStateTyped,
+        };
         let body_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState {
-                position: body_root_pos,
-                velocity: body_root_vel,
-            }
-            .into(),
-            rot: Some(
-                RotationalState {
-                    quaternion: JeodQuat::identity(),
-                    ang_vel_body: DVec3::ZERO,
-                }
-                .into(),
+            trans: TranslationalStateTyped::<astrodyn::RootInertial> {
+                position: Position::<astrodyn::RootInertial>::from_raw_si(body_root_pos),
+                velocity: Velocity::<astrodyn::RootInertial>::from_raw_si(body_root_vel),
+            },
+            rot: Some(RotationalStateTyped::<SelfRef>::new(
+                BodyAttitude::from_jeod_quat(JeodQuat::identity()),
+                AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+            )),
+            mass: Some(
+                MassPropertiesTyped::<SelfRef>::with_inertia(
+                    Mass::new::<kilogram>(1.0),
+                    InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(
+                        glam::DMat3::IDENTITY,
+                    ),
+                    Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+                )
+                .with_t_parent_this(glam::DMat3::IDENTITY),
             ),
-            mass: Some(MassProperties::new(1.0).into()),
             // Both sources controlled so the post-switch flip has
             // somewhere to write — the dynamics don't depend on these
             // values (mu=0 on both).

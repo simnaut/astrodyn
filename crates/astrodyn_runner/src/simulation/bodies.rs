@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Body lifecycle, accessors, setters, and contact-pair registration
 //! for [`super::Simulation`].
 //!
@@ -10,6 +11,10 @@
 
 use glam::DVec3;
 
+use astrodyn::typed_bridge::{
+    mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
+    trans_typed_to_raw,
+};
 use astrodyn::{
     evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
     MassBodyId, MassPointState, MassProperties, Phase, Position, RefFrameKind, RefFrameRot,
@@ -204,25 +209,28 @@ impl Simulation {
         let body_rot = body.rot.as_ref().unwrap_or_else(|| {
             panic!(
                 "register_ground_contact_pair: body_a={body_a} has no RotationalState; \
-                 ground contact requires 6-DOF (set `rot: Some(....into())` on the VehicleConfig)"
+                 ground contact requires 6-DOF (set `rot: Some(RotationalStateTyped::<SelfRef>::new(...))` on the VehicleConfig)"
             )
         });
         let body_mass = body.mass.as_ref().unwrap_or_else(|| {
             panic!(
                 "register_ground_contact_pair: body_a={body_a} has no MassProperties; \
-                 set `mass: Some(....into())` on the VehicleConfig"
+                 set `mass: Some(MassPropertiesTyped::<SelfRef>::with_inertia(...))` on the VehicleConfig"
             )
         });
-        // `body.trans` is `TranslationalStateTyped<IntegrationFrame>` after
-        // #258; `evaluate_ground_contact_pair` takes the untyped form.
-        let trans_untyped = body.trans.to_untyped();
+        // allowed: typed↔raw kernel boundary — `body.trans` is
+        // `TranslationalStateTyped<IntegrationFrame>` after #258;
+        // `evaluate_ground_contact_pair` takes the untyped form.
+        let trans_untyped = trans_typed_to_raw(&body.trans);
+        let body_rot_untyped = rot_typed_to_raw(body_rot);
+        let body_mass_untyped = mass_typed_to_raw(body_mass);
         let pending_initial_impulse = evaluate_ground_contact_pair(
             &vehicle_facet,
             &ground_facet,
             &trans_untyped,
-            body_rot,
+            &body_rot_untyped,
             body.t_struct_body,
-            body_mass,
+            &body_mass_untyped,
             t_inertial_pfix,
             Phase::Initialization,
         )
@@ -356,7 +364,8 @@ impl Simulation {
             "body_mass: body index {idx} out of range (have {} bodies)",
             self.bodies.len()
         );
-        self.bodies[idx].mass
+        // TODO(#408): expose typed sibling once callers migrate.
+        self.bodies[idx].mass.as_ref().map(mass_typed_to_raw)
     }
 
     /// Adjust an integrated body's `trans` from a `core_body` inertial
@@ -394,10 +403,13 @@ impl Simulation {
             let body_rot = body
                 .rot
                 .expect("convert_body_trans_core_to_composite: 6-DOF body required");
-            let t_inertial_to_body = body_rot.quaternion.left_quat_to_transformation();
+            let t_inertial_to_body = body_rot
+                .q_inertial_body
+                .as_witness()
+                .left_quat_to_transformation();
             let t_body_to_inertial = t_inertial_to_body.transpose();
             cw_inertial = t_body_to_inertial * cw_body;
-            dvel_inertial = t_body_to_inertial * body_rot.ang_vel_body.cross(cw_body);
+            dvel_inertial = t_body_to_inertial * body_rot.ang_vel_body.raw_si().cross(cw_body);
         }
         // composite = core − cw_inertial; subtract the rigid-body
         // ω × r contribution on velocity. All values stay in the body's
@@ -447,14 +459,17 @@ impl Simulation {
         let cw_body = t_struct_to_body * core_wrt_composite_struct;
         // Body → inertial via T_inertial_to_body⁻¹ = T_inertial_to_body.transpose().
         let body_rot = body.rot.expect("body_core_inertial: 6-DOF body required");
-        let t_inertial_to_body = body_rot.quaternion.left_quat_to_transformation();
+        let t_inertial_to_body = body_rot
+            .q_inertial_body
+            .as_witness()
+            .left_quat_to_transformation();
         let t_body_to_inertial = t_inertial_to_body.transpose();
         let cw_inertial = t_body_to_inertial * cw_body;
         let core_position = body.trans.position.raw_si() + cw_inertial;
         // v_core = v_composite + ω × r (in inertial frame). ω in body
         // frame is body.rot.ang_vel_body; rotate the cross-product to
         // inertial.
-        let omega_body = body_rot.ang_vel_body;
+        let omega_body = body_rot.ang_vel_body.raw_si();
         let core_velocity =
             body.trans.velocity.raw_si() + t_body_to_inertial * omega_body.cross(cw_body);
         (core_position, core_velocity)
@@ -508,9 +523,12 @@ impl Simulation {
                     velocity: body.trans.velocity.raw_si(),
                 },
                 rot: RefFrameRot {
-                    q_parent_this: body_rot.quaternion,
-                    t_parent_this: body_rot.quaternion.left_quat_to_transformation(),
-                    ang_vel_this: body_rot.ang_vel_body,
+                    q_parent_this: body_rot.q_inertial_body.to_jeod_quat(),
+                    t_parent_this: body_rot
+                        .q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation(),
+                    ang_vel_this: body_rot.ang_vel_body.raw_si(),
                 },
             }
         } else if let Some(detached) = self.detached_subtrees.get(&root_id) {
@@ -652,7 +670,10 @@ impl Simulation {
              rotational integration is needed; otherwise leave the body \
              3-DOF and don't call this setter."
         );
-        self.bodies[idx].rot = Some(rot);
+        // allowed: typed↔raw kernel-boundary lift at the public API
+        // setter (named-method opt-in; the implicit `.into()` bypass
+        // was removed in #397).
+        self.bodies[idx].rot = Some(rot_raw_to_self_ref(&rot));
         // Mirror the rotational state onto the body's frame-tree node so
         // downstream consumers — `compute_relative_state` walks that
         // traverse through it, or another body attaching to *this*
@@ -689,7 +710,9 @@ impl Simulation {
     pub fn set_body_mass(&mut self, idx: usize, mut mass: MassProperties) {
         mass.dirty = true;
         mass.recompute_derived();
-        self.bodies[idx].mass = Some(mass);
+        // allowed: typed↔raw kernel-boundary lift at the public API
+        // setter (named-method opt-in; see #397).
+        self.bodies[idx].mass = Some(mass_raw_to_self_ref(&mass));
     }
 
     /// Toggle a body's aerodynamic drag configuration mid-run.
@@ -789,7 +812,9 @@ impl Simulation {
         let mut composite = tree.get(id).composite_properties;
         composite.dirty = true;
         composite.recompute_derived();
-        self.bodies[idx].mass = Some(composite);
+        // allowed: typed↔raw kernel-boundary lift from the mass tree's
+        // raw composite (named-method opt-in; see #397).
+        self.bodies[idx].mass = Some(mass_raw_to_self_ref(&composite));
 
         // ── IG.37: mark + reset the body's multi-step integrator history.
         //    The two-step pattern (mark dirty, then reset) is deliberate —
@@ -979,7 +1004,7 @@ mod tests {
         let body_rot = sim.bodies[0]
             .rot
             .expect("iss_leo_drag is 6-DOF — body must carry rot");
-        assert_eq!(body_rot.quaternion, new_quat);
-        assert_eq!(body_rot.ang_vel_body, new_ang_vel);
+        assert_eq!(body_rot.q_inertial_body.to_jeod_quat(), new_quat);
+        assert_eq!(body_rot.ang_vel_body.raw_si(), new_ang_vel);
     }
 }

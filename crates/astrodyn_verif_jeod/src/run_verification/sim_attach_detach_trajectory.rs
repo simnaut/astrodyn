@@ -141,25 +141,25 @@ fn build_attach_detach(_init: &InitialConditions) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut b = SimulationBuilder::new(time, DT);
     b.add_body(VehicleConfig {
-        trans: veh1_trans().into(),
-        rot: Some(veh1_rot().into()),
-        mass: Some(veh1_mass().into()),
+        trans: super::typed_helpers::trans_typed(&veh1_trans()),
+        rot: Some(super::typed_helpers::rot_typed(&veh1_rot())),
+        mass: Some(super::typed_helpers::mass_typed(&veh1_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     b.add_body(VehicleConfig {
-        trans: veh2_trans().into(),
-        rot: Some(veh2_rot().into()),
-        mass: Some(veh2_mass().into()),
+        trans: super::typed_helpers::trans_typed(&veh2_trans()),
+        rot: Some(super::typed_helpers::rot_typed(&veh2_rot())),
+        mass: Some(super::typed_helpers::mass_typed(&veh2_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     b.add_body(VehicleConfig {
-        trans: veh3_trans().into(),
-        rot: Some(veh3_rot().into()),
-        mass: Some(veh3_mass().into()),
+        trans: super::typed_helpers::trans_typed(&veh3_trans()),
+        rot: Some(super::typed_helpers::rot_typed(&veh3_rot())),
+        mass: Some(super::typed_helpers::mass_typed(&veh3_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()

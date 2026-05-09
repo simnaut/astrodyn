@@ -15,7 +15,6 @@ use astrodyn_math::JeodQuat;
 use astrodyn_quantities::aliases::AngularVelocity;
 use astrodyn_quantities::body_attitude::BodyAttitude;
 use astrodyn_quantities::frame::{BodyFrame, Frame, RootInertial, Vehicle};
-use astrodyn_quantities::quat::NormalizedQuat;
 use glam::{DMat3, DVec3};
 
 /// Rotational state of a rigid body.
@@ -81,28 +80,6 @@ impl<V: Vehicle, F: Frame> Default for SixDofStateTyped<V, F> {
 }
 
 impl<V: Vehicle, F: Frame> SixDofStateTyped<V, F> {
-    /// Drop both phantoms and emit the untyped storage form. Numeric
-    /// values are preserved exactly.
-    #[inline]
-    pub fn to_untyped(&self) -> SixDofState {
-        SixDofState {
-            trans: self.trans.to_untyped(),
-            rot: self.rot.to_untyped(),
-        }
-    }
-
-    /// Lift an untyped [`SixDofState`] into the typed form, asserting
-    /// the caller's frame phantom `F` and vehicle phantom `V` are
-    /// correct. The rotational half re-validates the quaternion's unit
-    /// norm; see [`RotationalStateTyped::from_untyped_unchecked`].
-    #[inline]
-    pub fn from_untyped_unchecked(s: &SixDofState) -> Self {
-        Self {
-            trans: TranslationalStateTyped::<F>::from_untyped_unchecked(&s.trans),
-            rot: RotationalStateTyped::<V>::from_untyped_unchecked(&s.rot),
-        }
-    }
-
     /// Relabel the translational frame phantom from `F` to `F2` without
     /// changing numeric values. Mirrors
     /// [`TranslationalStateTyped::relabel_to`] — the rotational half
@@ -114,16 +91,6 @@ impl<V: Vehicle, F: Frame> SixDofStateTyped<V, F> {
             trans: self.trans.relabel_to::<F2>(),
             rot: self.rot,
         }
-    }
-}
-
-impl<V: Vehicle, F: Frame> From<SixDofState> for SixDofStateTyped<V, F> {
-    /// Lift the documented test/scenario boundary from untyped
-    /// [`SixDofState`] into the typed form. Mirrors
-    /// [`From<TranslationalState> for TranslationalStateTyped<F>`].
-    #[inline]
-    fn from(s: SixDofState) -> Self {
-        Self::from_untyped_unchecked(&s)
     }
 }
 
@@ -166,46 +133,6 @@ impl<V: Vehicle> RotationalStateTyped<V> {
             ang_vel_body,
             _v: PhantomData,
         }
-    }
-
-    /// Drop the phantom and emit the untyped storage form. Numeric
-    /// values (unitless quaternion components, rad/s for the angular
-    /// velocity) are preserved exactly.
-    #[inline]
-    pub fn to_untyped(&self) -> RotationalState {
-        RotationalState {
-            quaternion: self.q_inertial_body.to_jeod_quat(),
-            ang_vel_body: self.ang_vel_body.raw_si(),
-        }
-    }
-
-    /// Wrap an untyped [`RotationalState`] as typed for vehicle `V`.
-    /// **The caller asserts** the angular velocity is expressed in
-    /// `BodyFrame<V>`. The inner quaternion is checked against
-    /// [`NormalizedQuat::DEFAULT_TOLERANCE`]: panics if it has drifted
-    /// more than 1e-12 from unit norm, indicating an upstream
-    /// re-normalization was missed.
-    pub fn from_untyped_unchecked(s: &RotationalState) -> Self {
-        let q = NormalizedQuat::new(s.quaternion)
-            .unwrap_or_else(|err| panic!("RotationalState quaternion is not unit-norm: {err}"));
-        Self {
-            q_inertial_body: BodyAttitude::from_witness(q),
-            ang_vel_body: AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
-            _v: PhantomData,
-        }
-    }
-}
-
-impl<V: Vehicle> From<RotationalState> for RotationalStateTyped<V> {
-    /// Lift an untyped [`RotationalState`] into the typed form,
-    /// asserting the caller's vehicle phantom `V`. Mirrors
-    /// [`From<TranslationalState> for TranslationalStateTyped<F>`] —
-    /// the documented test/scenario / BodyAction-payload boundary.
-    /// Re-validates quaternion unit-norm via
-    /// `from_untyped_unchecked`.
-    #[inline]
-    fn from(s: RotationalState) -> Self {
-        Self::from_untyped_unchecked(&s)
     }
 }
 
@@ -564,18 +491,19 @@ mod tests {
 
     #[test]
     fn typed_rotational_state_round_trips() {
+        use astrodyn_quantities::aliases::AngularVelocity;
         use astrodyn_quantities::frame::TestVehicle;
 
-        let untyped = RotationalState {
-            quaternion: JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::Z),
-            ang_vel_body: DVec3::new(0.01, 0.02, 0.03),
-        };
+        let q = JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::Z);
+        let ang_vel = DVec3::new(0.01, 0.02, 0.03);
 
-        let typed = RotationalStateTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
-        let back = typed.to_untyped();
+        let typed = RotationalStateTyped::<TestVehicle>::new(
+            BodyAttitude::from_jeod_quat(q),
+            AngularVelocity::<BodyFrame<TestVehicle>>::from_raw_si(ang_vel),
+        );
 
-        assert_eq!(back.quaternion, untyped.quaternion);
-        assert_eq!(back.ang_vel_body, untyped.ang_vel_body);
+        assert_eq!(typed.q_inertial_body.to_jeod_quat(), q);
+        assert_eq!(typed.ang_vel_body.raw_si(), ang_vel);
     }
 
     #[test]
@@ -583,9 +511,8 @@ mod tests {
         use astrodyn_quantities::frame::TestVehicle;
 
         let s = RotationalStateTyped::<TestVehicle>::default();
-        let untyped = s.to_untyped();
-        assert_eq!(untyped.quaternion, JeodQuat::identity());
-        assert_eq!(untyped.ang_vel_body, DVec3::ZERO);
+        assert_eq!(s.q_inertial_body.to_jeod_quat(), JeodQuat::identity());
+        assert_eq!(s.ang_vel_body.raw_si(), DVec3::ZERO);
     }
 
     // The constant-ω attitude advance helper that used to live here

@@ -106,12 +106,12 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
         .unwrap()
         .0
         .raw_si();
-    let bevy_trans = app
-        .world()
-        .get::<TranslationalStateC<astrodyn::Earth>>(moon_entity)
-        .unwrap()
-        .0
-        .to_untyped();
+    let bevy_trans = astrodyn::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(moon_entity)
+            .unwrap()
+            .0,
+    );
 
     // The source's frame entity (FrameTransC) should reflect the
     // same values.

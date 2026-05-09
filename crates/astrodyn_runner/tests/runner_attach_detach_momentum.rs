@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Runner integration tests for [`astrodyn_runner::Simulation::attach`] /
 //! [`astrodyn_runner::Simulation::detach`] momentum conservation
 //! (sub-issue #297).
@@ -37,13 +38,42 @@
 use astrodyn::JeodQuat;
 use astrodyn::{combine_states_at_attach, AttachCombineInputs};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    IntegratorType, MassProperties as SimMassProperties, RootInertial, RotationalState,
-    SimulationTime, TranslationalState, Vec3Ext, VehicleConfig,
+    AngularVelocity, BodyAttitude, BodyFrame, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, InertiaTensor, IntegratorType,
+    MassProperties as SimMassProperties, MassPropertiesTyped, Position, RootInertial,
+    RotationalState, RotationalStateTyped, SelfRef, SimulationTime, StructuralFrame,
+    TranslationalState, TranslationalStateTyped, Vec3Ext, VehicleConfig, Velocity,
 };
 use astrodyn::{RefFrameRot, RefFrameState, RefFrameTrans};
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
 use glam::{DMat3, DVec3};
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
+
+// allowed: typed↔raw kernel-boundary helpers used in test scaffolding
+// (issue #397).
+fn trans_typed(t: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
+    TranslationalStateTyped::<RootInertial> {
+        position: Position::<RootInertial>::from_raw_si(t.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<RootInertial>::from_raw_si(t.velocity), // allowed: typed↔raw kernel boundary
+    }
+}
+
+fn rot_typed(r: &RotationalState) -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::from_jeod_quat(r.quaternion),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(r.ang_vel_body), // allowed: typed↔raw kernel boundary
+    )
+}
+
+fn mass_typed(mp: &SimMassProperties) -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(mp.mass),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia), // allowed: typed↔raw kernel boundary
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position), // allowed: typed↔raw kernel boundary
+    )
+    .with_t_parent_this(mp.t_parent_this)
+}
 
 /// Build a one-source (pure-inertial — `mu = 0`) simulation containing
 /// a parent + child pair with explicit pre-attach state. We disable
@@ -92,9 +122,9 @@ fn build_pair(
     // Empty gravity controls: the kernel's accumulate path returns
     // zero acceleration, which is what we want.
     let parent_idx = sim.add_body(VehicleConfig {
-        trans: parent_trans.into(),
-        rot: parent_rot.map(Into::into),
-        mass: Some(parent_mass.into()),
+        trans: trans_typed(&parent_trans),
+        rot: parent_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -102,9 +132,9 @@ fn build_pair(
         ..Default::default()
     });
     let child_idx = sim.add_body(VehicleConfig {
-        trans: child_trans.into(),
-        rot: child_rot.map(Into::into),
-        mass: Some(child_mass.into()),
+        trans: trans_typed(&child_trans),
+        rot: child_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -222,13 +252,13 @@ fn runner_attach_matches_kernel_byte_for_byte() {
 
     // Pull the runner's post-attach parent state.
     let parent_out = sim.body(parent_idx);
-    let runner_pos = parent_out.trans.position;
-    let runner_vel = parent_out.trans.velocity;
+    let runner_pos = parent_out.trans.position.raw_si();
+    let runner_vel = parent_out.trans.velocity.raw_si();
     let parent_rot_out = parent_out
         .rot
         .expect("6-DOF parent must keep rotational state");
-    let runner_q = parent_rot_out.quaternion;
-    let runner_w = parent_rot_out.ang_vel_body;
+    let runner_q = parent_rot_out.q_inertial_body.to_jeod_quat();
+    let runner_w = parent_rot_out.ang_vel_body.raw_si();
 
     // Bit-identical: every f64 must match its kernel counterpart to
     // `to_bits()`.
@@ -358,7 +388,7 @@ fn runner_attach_conserves_linear_momentum() {
         .composite_properties
         .mass;
     let parent_post = sim.body(parent_idx);
-    let p_post = combined_mass * parent_post.trans.velocity;
+    let p_post = combined_mass * parent_post.trans.velocity.raw_si();
 
     // Bit-identical f64 conservation is unrealistic (the kernel does
     // a divide by `inverse_mass`), but the round-off envelope is
@@ -423,21 +453,23 @@ fn runner_attach_then_detach_recovers_parent_position() {
     sim.detach(child_idx);
 
     let parent_post = sim.body(parent_idx);
-    let err = (parent_post.trans.position - parent_trans.position).length();
+    let parent_post_pos = parent_post.trans.position.raw_si();
+    let parent_post_vel = parent_post.trans.velocity.raw_si();
+    let err = (parent_post_pos - parent_trans.position).length();
     assert!(
         err < 1e-9,
         "parent position drift across attach + detach: pre={:?} post={:?} err={err}",
         parent_trans.position,
-        parent_post.trans.position
+        parent_post_pos
     );
     // For a co-moving merge, velocity is unchanged across both
     // operations (linear momentum trivially preserved at v_p == v_c).
-    let v_err = (parent_post.trans.velocity - parent_trans.velocity).length();
+    let v_err = (parent_post_vel - parent_trans.velocity).length();
     assert!(
         v_err < 1e-9,
         "parent velocity drift across attach + detach: pre={:?} post={:?} err={v_err}",
         parent_trans.velocity,
-        parent_post.trans.velocity
+        parent_post_vel
     );
 
     // The detached child's state is the body-aware tree-walk
@@ -451,12 +483,13 @@ fn runner_attach_then_detach_recovers_parent_position() {
     // is parent_pre_position + (2.52 + 0.48, 0, 0) = parent_pre_position
     // + (3, 0, 0) = child's pre-attach position.
     let child_post = sim.body(child_idx);
-    let child_err = (child_post.trans.position - child_trans.position).length();
+    let child_post_pos = child_post.trans.position.raw_si();
+    let child_err = (child_post_pos - child_trans.position).length();
     assert!(
         child_err < 1e-9,
         "child position drift across attach + detach (rigid co-mover): pre={:?} post={:?} err={child_err}",
         child_trans.position,
-        child_post.trans.position
+        child_post_pos
     );
 }
 
@@ -496,10 +529,11 @@ fn runner_attach_detach_handles_3dof_bodies() {
         "3-DOF parent must remain 3-DOF after attach"
     );
     let expected_v = (1000.0 * 7600.0 + 1000.0 * 7700.0) / 2000.0;
+    let parent_vel = parent_post.trans.velocity.raw_si();
     assert!(
-        (parent_post.trans.velocity.y - expected_v).abs() < 1e-9,
+        (parent_vel.y - expected_v).abs() < 1e-9,
         "linear momentum conservation failed for 3-DOF attach: y_vel={}",
-        parent_post.trans.velocity.y
+        parent_vel.y
     );
 
     // Detach must also work without rotational state.
@@ -604,9 +638,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
     );
 
     let a_idx = sim.add_body(VehicleConfig {
-        trans: a_trans.into(),
-        rot: a_rot.map(Into::into),
-        mass: Some(a_mass.into()),
+        trans: trans_typed(&a_trans),
+        rot: a_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(a_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -614,9 +648,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let b_idx = sim.add_body(VehicleConfig {
-        trans: b_trans.into(),
-        rot: b_rot.map(Into::into),
-        mass: Some(b_mass.into()),
+        trans: trans_typed(&b_trans),
+        rot: b_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(b_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -624,9 +658,9 @@ fn runner_attach_handles_interior_kinematic_parent() {
         ..Default::default()
     });
     let c_idx = sim.add_body(VehicleConfig {
-        trans: c_trans.into(),
-        rot: c_rot.map(Into::into),
-        mass: Some(c_mass.into()),
+        trans: trans_typed(&c_trans),
+        rot: c_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(c_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(inertial, false)],
@@ -649,7 +683,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
     // reading sim.body(a_idx) here gives the (A+B) composite state +
     // (A+B) composite mass — what the kernel needs as the "parent
     // composite" when adding C.
-    let a_pre_attach_v = sim.body(a_idx).trans.velocity;
+    let a_pre_attach_v = sim.body(a_idx).trans.velocity.raw_si();
     let combined_ab_mass = sim
         .mass_tree
         .as_ref()
@@ -680,15 +714,15 @@ fn runner_attach_handles_interior_kinematic_parent() {
         (combined_ab_mass * a_pre_attach_v + c_mass.mass * c_v) / (combined_ab_mass + c_mass.mass);
 
     let a_post = sim.body(a_idx);
-    let v_err = (a_post.trans.velocity - expected_v).length();
+    let a_post_vel = a_post.trans.velocity.raw_si();
+    let v_err = (a_post_vel - expected_v).length();
     assert!(
         v_err < 1e-9,
         "interior-parent attach must update the integrated tree root's velocity \
          to the mass-weighted combine (linear momentum conservation across the \
          whole tree). Without the multi-level fix the combine writes to the \
          interior parent and the root's velocity stays at {a_pre_attach_v:?}. \
-         Expected={expected_v:?}, got={:?}, err={v_err}",
-        a_post.trans.velocity
+         Expected={expected_v:?}, got={a_post_vel:?}, err={v_err}"
     );
 
     // The integrated root must still carry rotational state (the
@@ -708,7 +742,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         .composite_properties
         .mass;
     let p_pre = combined_ab_mass * a_pre_attach_v + c_mass.mass * c_v;
-    let p_post = combined_total_mass * a_post.trans.velocity;
+    let p_post = combined_total_mass * a_post_vel;
     let p_err = (p_post - p_pre).length();
     assert!(
         p_err < 1e-9,
@@ -829,9 +863,9 @@ fn runner_detach_lifts_through_integ_origin() {
     );
 
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans.into(),
-        rot: parent_rot.map(Into::into),
-        mass: Some(parent_mass.into()),
+        trans: trans_typed(&parent_trans),
+        rot: parent_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -840,9 +874,9 @@ fn runner_detach_lifts_through_integ_origin() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans.into(),
-        rot: child_rot.map(Into::into),
-        mass: Some(child_mass.into()),
+        trans: trans_typed(&child_trans),
+        rot: child_rot.as_ref().map(rot_typed),
+        mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -869,48 +903,48 @@ fn runner_detach_lifts_through_integ_origin() {
     // post-detach value would be off by exactly `SSB_TO_EARTH` (the
     // root-inertial seed lift never gets reversed).
     let parent_post = sim.body(parent_idx);
-    let pos_err = (parent_post.trans.position - parent_trans.position).length();
+    let parent_post_pos = parent_post.trans.position.raw_si();
+    let parent_post_vel = parent_post.trans.velocity.raw_si();
+    let pos_err = (parent_post_pos - parent_trans.position).length();
     assert!(
         pos_err < 1e-6,
         "parent position must round-trip across attach + detach when the \
-         integ frame has a non-zero `IntegOrigin`: pre={:?} post={:?} \
+         integ frame has a non-zero `IntegOrigin`: pre={:?} post={parent_post_pos:?} \
          err={pos_err}. A failure of order {} m indicates the seed lift / \
          writeback shift is missing.",
         parent_trans.position,
-        parent_post.trans.position,
         SSB_TO_EARTH.length()
     );
-    let v_err = (parent_post.trans.velocity - parent_trans.velocity).length();
+    let v_err = (parent_post_vel - parent_trans.velocity).length();
     assert!(
         v_err < 1e-9,
         "parent velocity must round-trip across attach + detach (co-mover): \
-         pre={:?} post={:?} err={v_err}",
+         pre={:?} post={parent_post_vel:?} err={v_err}",
         parent_trans.velocity,
-        parent_post.trans.velocity,
     );
 
     // Same property for the child — its storage is also typed
     // `<IntegrationFrame>` and the rederived state must come out in
     // Earth-relative coords, not root-inertial coords.
     let child_post = sim.body(child_idx);
-    let child_err = (child_post.trans.position - child_trans.position).length();
+    let child_post_pos = child_post.trans.position.raw_si();
+    let child_post_vel = child_post.trans.velocity.raw_si();
+    let child_err = (child_post_pos - child_trans.position).length();
     assert!(
         child_err < 1e-6,
         "child position must round-trip across attach + detach when the \
-         integ frame has a non-zero `IntegOrigin`: pre={:?} post={:?} \
+         integ frame has a non-zero `IntegOrigin`: pre={:?} post={child_post_pos:?} \
          err={child_err}. A failure of order {} m indicates the writeback \
          shift is missing on the child side.",
         child_trans.position,
-        child_post.trans.position,
         SSB_TO_EARTH.length()
     );
-    let child_v_err = (child_post.trans.velocity - child_trans.velocity).length();
+    let child_v_err = (child_post_vel - child_trans.velocity).length();
     assert!(
         child_v_err < 1e-9,
         "child velocity must round-trip across attach + detach (co-mover): \
-         pre={:?} post={:?} err={child_v_err}",
+         pre={:?} post={child_post_vel:?} err={child_v_err}",
         child_trans.velocity,
-        child_post.trans.velocity,
     );
 }
 
@@ -994,9 +1028,9 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         },
     );
     let parent_idx = sb.add_body(VehicleConfig {
-        trans: parent_trans.into(),
-        rot: Some(parent_rot.into()),
-        mass: Some(parent_mass.into()),
+        trans: trans_typed(&parent_trans),
+        rot: Some(rot_typed(&(parent_rot))),
+        mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(_inertial, false)],
@@ -1004,9 +1038,9 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         ..Default::default()
     });
     let child_idx = sb.add_body(VehicleConfig {
-        trans: child_trans.into(),
-        rot: Some(child_rot.into()),
-        mass: Some(child_mass.into()),
+        trans: trans_typed(&child_trans),
+        rot: Some(rot_typed(&(child_rot))),
+        mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(_inertial, false)],
@@ -1027,29 +1061,31 @@ fn from_builder_preserves_attached_bodies_initial_state() {
 
     // Bit-identical preservation: post-build state equals spec'd state.
     let parent_post = sim.body(parent_idx);
+    let parent_post_pos = parent_post.trans.position.raw_si();
+    let parent_post_vel = parent_post.trans.velocity.raw_si();
     assert_eq!(
-        parent_post.trans.position.to_array().map(f64::to_bits),
+        parent_post_pos.to_array().map(f64::to_bits),
         parent_trans.position.to_array().map(f64::to_bits),
-        "from_builder must preserve parent position verbatim: spec={:?} got={:?}",
+        "from_builder must preserve parent position verbatim: spec={:?} got={parent_post_pos:?}",
         parent_trans.position,
-        parent_post.trans.position,
     );
     assert_eq!(
-        parent_post.trans.velocity.to_array().map(f64::to_bits),
+        parent_post_vel.to_array().map(f64::to_bits),
         parent_trans.velocity.to_array().map(f64::to_bits),
-        "from_builder must preserve parent velocity verbatim: spec={:?} got={:?}",
+        "from_builder must preserve parent velocity verbatim: spec={:?} got={parent_post_vel:?}",
         parent_trans.velocity,
-        parent_post.trans.velocity,
     );
     let parent_rot_post = parent_post
         .rot
         .expect("6-DOF parent must keep rot through builder materialization");
+    let parent_quat_post = parent_rot_post.q_inertial_body.to_jeod_quat();
+    let parent_omega_post = parent_rot_post.ang_vel_body.raw_si();
     assert_eq!(
         [
-            parent_rot_post.quaternion.scalar().to_bits(),
-            parent_rot_post.quaternion.vector().x.to_bits(),
-            parent_rot_post.quaternion.vector().y.to_bits(),
-            parent_rot_post.quaternion.vector().z.to_bits(),
+            parent_quat_post.scalar().to_bits(),
+            parent_quat_post.vector().x.to_bits(),
+            parent_quat_post.vector().y.to_bits(),
+            parent_quat_post.vector().z.to_bits(),
         ],
         [
             parent_rot.quaternion.scalar().to_bits(),
@@ -1060,33 +1096,36 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         "from_builder must preserve parent quaternion verbatim",
     );
     assert_eq!(
-        parent_rot_post.ang_vel_body.to_array().map(f64::to_bits),
+        parent_omega_post.to_array().map(f64::to_bits),
         parent_rot.ang_vel_body.to_array().map(f64::to_bits),
         "from_builder must preserve parent ang_vel verbatim",
     );
 
     let child_post = sim.body(child_idx);
+    let child_post_pos = child_post.trans.position.raw_si();
+    let child_post_vel = child_post.trans.velocity.raw_si();
     assert_eq!(
-        child_post.trans.position.to_array().map(f64::to_bits),
+        child_post_pos.to_array().map(f64::to_bits),
         child_trans.position.to_array().map(f64::to_bits),
-        "from_builder must preserve child position verbatim: spec={:?} got={:?}",
+        "from_builder must preserve child position verbatim: spec={:?} got={child_post_pos:?}",
         child_trans.position,
-        child_post.trans.position,
     );
     assert_eq!(
-        child_post.trans.velocity.to_array().map(f64::to_bits),
+        child_post_vel.to_array().map(f64::to_bits),
         child_trans.velocity.to_array().map(f64::to_bits),
         "from_builder must preserve child velocity verbatim",
     );
     let child_rot_post = child_post
         .rot
         .expect("6-DOF child must keep rot through builder materialization");
+    let child_quat_post = child_rot_post.q_inertial_body.to_jeod_quat();
+    let child_omega_post = child_rot_post.ang_vel_body.raw_si();
     assert_eq!(
         [
-            child_rot_post.quaternion.scalar().to_bits(),
-            child_rot_post.quaternion.vector().x.to_bits(),
-            child_rot_post.quaternion.vector().y.to_bits(),
-            child_rot_post.quaternion.vector().z.to_bits(),
+            child_quat_post.scalar().to_bits(),
+            child_quat_post.vector().x.to_bits(),
+            child_quat_post.vector().y.to_bits(),
+            child_quat_post.vector().z.to_bits(),
         ],
         [
             child_rot.quaternion.scalar().to_bits(),
@@ -1097,7 +1136,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         "from_builder must preserve child quaternion verbatim",
     );
     assert_eq!(
-        child_rot_post.ang_vel_body.to_array().map(f64::to_bits),
+        child_omega_post.to_array().map(f64::to_bits),
         child_rot.ang_vel_body.to_array().map(f64::to_bits),
         "from_builder must preserve child ang_vel verbatim",
     );

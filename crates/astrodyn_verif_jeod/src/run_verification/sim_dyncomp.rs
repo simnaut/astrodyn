@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructors for the SIM_dyncomp Tier 3 family.
 //!
 //! Each constructor returns a fully-populated
@@ -59,12 +60,10 @@ fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
 fn trans_from(
     init: &InitialConditions,
 ) -> astrodyn::TranslationalStateTyped<astrodyn::RootInertial> {
-    astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-        &TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
-    )
+    super::typed_helpers::trans_typed(&TranslationalState {
+        position: init.position,
+        velocity: init.velocity,
+    })
 }
 
 /// Rotational state from a 6-DOF [`InitialConditions`]. Panics with a
@@ -140,8 +139,10 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, "run2_6dof").into()),
-        mass: Some(mass_props.into()),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(rot_from(init, "run2_6dof")),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -281,13 +282,10 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
 
     let trans =
         crate::lvlh_init_data::load_trans_init_function(&state_py, "set_trans_init_typical");
-    let trans_state =
-        astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: DVec3::from_array(trans.position),
-                velocity: DVec3::from_array(trans.velocity),
-            },
-        );
+    let trans_state = super::typed_helpers::trans_typed(&TranslationalState {
+        position: DVec3::from_array(trans.position),
+        velocity: DVec3::from_array(trans.velocity),
+    });
     let rot_state = init_lvlh_rot_state(&state_py);
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -295,8 +293,8 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_state,
-        rot: Some(rot_state.into()),
-        mass: Some(mass_props.into()),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_state))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -612,8 +610,10 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
 
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, "run4_3rd_body").into()),
-        mass: Some(iss_mass_properties().into()),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(rot_from(init, "run4_3rd_body")),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth, false),
@@ -759,8 +759,10 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
 
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, "battin_3rd_body").into()),
-        mass: Some(iss_mass_properties().into()),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(rot_from(init, "battin_3rd_body")),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth, false),
@@ -908,7 +910,7 @@ fn build_run7(
     // Drag requires a RotationalState (JEOD_INV: IN.15). 7A/7B (no drag)
     // run as 3-DOF; 7C/7D (drag) carry the reference quaternion.
     let rot = if with_drag {
-        Some(rot_from(init, case).into())
+        Some(super::typed_helpers::rot_typed(&rot_from(init, case)))
     } else {
         None
     };
@@ -916,7 +918,9 @@ fn build_run7(
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot,
-        mass: Some(sphere_mass_properties().into()),
+        mass: Some(super::typed_helpers::mass_typed(
+            &(sphere_mass_properties()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(
@@ -1056,8 +1060,8 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, case).into()),
-        mass: Some(mass_props.into()),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
@@ -1149,8 +1153,8 @@ fn build_run6_drag(
     );
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, case).into()),
-        mass: Some(mass_props.into()),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -1268,8 +1272,8 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(rot_from(init, case).into()),
-        mass: Some(mass_props.into()),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
@@ -1362,14 +1366,13 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     );
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(
-            RotationalState {
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)],
         },
@@ -1425,14 +1428,15 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
     );
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
-        rot: Some(
-            RotationalState {
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(MassProperties::new(1.0).into()),
+            }),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(
+            &(MassProperties::new(1.0)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
