@@ -37,7 +37,7 @@
 
 pub mod reference_data;
 
-use glam::{DQuat, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 use uom::si::f64::Time;
 
 use astrodyn::SimulationBuilder;
@@ -74,6 +74,49 @@ pub trait SimContext {
     ) {
         let _ = (source_idx, tidal_body_idx, position);
         panic!("tidal bodies not supported by this SimContext implementation");
+    }
+
+    /// Attach `child_idx` to `parent_idx` at runtime, with the given
+    /// structural offset and parent→child rotation. Mirrors
+    /// `astrodyn_runner::Simulation::attach`. Used by mid-flight
+    /// attach/detach scenarios that schedule topology changes via
+    /// `pre_step`.
+    ///
+    /// The default implementation panics so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that own a
+    /// mass-tree mutation surface (the runner's `Simulation`, the
+    /// Bevy adapter's `AttachEvent` bus) override this.
+    fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        let _ = (child_idx, parent_idx, offset, t_parent_child);
+        panic!("attach not supported by this SimContext implementation");
+    }
+
+    /// Detach `child_idx` from its current parent. Mirrors
+    /// `astrodyn_runner::Simulation::detach`.
+    ///
+    /// Default implementation panics. Override in adapters that own a
+    /// mass-tree mutation surface.
+    fn detach(&mut self, child_idx: usize) {
+        let _ = child_idx;
+        panic!("detach not supported by this SimContext implementation");
+    }
+
+    /// Mark `child_idx` as kinematic-only — its translational and
+    /// rotational state are derived from its parent each step instead
+    /// of integrated. Mirrors
+    /// `astrodyn_runner::Simulation::mark_kinematic_only`.
+    ///
+    /// Default implementation panics. Override in adapters that own
+    /// the kinematic-child state machine.
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        let _ = child_idx;
+        panic!("mark_kinematic_only not supported by this SimContext implementation");
     }
 }
 

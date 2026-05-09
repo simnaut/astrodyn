@@ -38,6 +38,8 @@
 //! within the same tolerance. Issue #389 closes the gap by making the
 //! `bevy_parity_*` test set a superset of every Tier 3 topic.
 
+pub mod app_sim_context;
+
 use std::time::Duration;
 
 use astrodyn_bevy::{RotationalStateC, SimulationBuilderBevyExt, TranslationalStateC};
@@ -47,6 +49,8 @@ use astrodyn_verif_jeod::tier3_csv;
 use astrodyn_verif_jeod::verification::VerificationCase;
 use bevy::prelude::*;
 use uom::si::time::second;
+
+pub use app_sim_context::AppSimContext;
 
 /// Trait that turns any [`VerificationCase`] into a runner-vs-bevy
 /// bit-identical state parity assertion.
@@ -76,22 +80,6 @@ pub trait VerificationCaseParityExt {
 
 impl VerificationCaseParityExt for VerificationCase {
     fn run_and_assert_parity<P: astrodyn::Planet>(&self) {
-        // Per-tick `pre_step` injection on the Bevy side requires a
-        // `SimContext` impl over a `World` wrapper — not yet wired (it's
-        // tracked as a Phase 3 follow-up in the issue #389 plan). Until
-        // it lands, parity for scenarios that carry a `pre_step` factory
-        // is structurally unsupported; surface the gap so a regression
-        // can't go unnoticed.
-        assert!(
-            self.pre_step.is_none(),
-            "`{}`: scenarios with a pre_step hook need a Bevy-side \
-             SimContext impl that hasn't been wired yet (issue #389 \
-             follow-up). Either skip the test with `#[ignore]` and an \
-             entry in `KNOWN_PARITY_GAPS`, or implement `SimContext` for \
-             a `&mut World` wrapper.",
-            self.name,
-        );
-
         // 1. Load the reference CSV exactly once. Only timestamps and
         //    the t=0 row matter for parity — JEOD-logged state never
         //    enters the comparison (that's the runner-vs-JEOD job in
@@ -133,6 +121,15 @@ impl VerificationCaseParityExt for VerificationCase {
             .populate_app::<P>(&mut app)
             .unwrap_or_else(|e| panic!("`{}`: bevy populate_app failed: {e:?}", self.name));
 
+        // Per-step pre_step hook: built once from the t=0 conditions so
+        // the closure can capture run-once state (DE421, J2000 JD,
+        // source indices). The runner half feeds the closure a `&mut
+        // Simulation`; the bevy half feeds it a `&mut AppSimContext`.
+        // Both adapters drive the same `SimContext` trait surface, so
+        // the closure body is unaware of which runtime it's mutating.
+        let mut runner_pre_step = self.pre_step.map(|f| f(&init));
+        let mut bevy_pre_step = self.pre_step.map(|f| f(&init));
+
         // 3. Propagate in lockstep. Rather than mirror runner's
         //    `step_until` (which would require a separate Bevy-side
         //    "step until time" helper), advance both by the same number
@@ -158,6 +155,20 @@ impl VerificationCaseParityExt for VerificationCase {
                 record.time,
                 current_time,
             );
+            // Run the pre-step hook on each side before propagation,
+            // mirroring `run_and_assert`'s `hook(&mut sim, record.time)`
+            // call. Both halves drive the same `SimContext` trait
+            // surface (`Simulation` for the runner, `AppSimContext` for
+            // bevy), so a closure that updates a Sun position via
+            // `set_source_position` does the same physical work on
+            // both adapters.
+            if let Some(hook) = runner_pre_step.as_mut() {
+                hook(&mut runner_sim, record.time);
+            }
+            if let Some(hook) = bevy_pre_step.as_mut() {
+                let mut ctx = AppSimContext::<P>::new(&mut app, &handles);
+                hook(&mut ctx, record.time);
+            }
             // Advance runner.
             runner_sim
                 .step_n(dt_steps)

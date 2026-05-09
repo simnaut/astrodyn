@@ -43,7 +43,7 @@ use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 use uom::si::time::second;
 
 use astrodyn_runner::builder::SimulationBuilderExt;
@@ -78,6 +78,21 @@ impl SimContext for Simulation {
              out of bounds; tidal_bodies.len() = {tidal_bodies_len}"
         );
         cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
+    }
+    fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        Simulation::attach(self, child_idx, parent_idx, offset, t_parent_child);
+    }
+    fn detach(&mut self, child_idx: usize) {
+        Simulation::detach(self, child_idx);
+    }
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        Simulation::mark_kinematic_only(self, child_idx);
     }
 }
 
