@@ -12,12 +12,11 @@
 use glam::DVec3;
 
 use astrodyn::{
-    evaluate_ground_contact_pair, AngularVelocity, BodyAttitude, BodyFrame, ContactFacet,
+    evaluate_ground_contact_pair, kilogram, AngularVelocity, BodyAttitude, BodyFrame, ContactFacet,
     DragConfig, Frame, GroundFacet, InertiaTensor, IntegrationFrame, Mass, MassBodyId,
     MassPointState, MassProperties, MassPropertiesTyped, Phase, Position, RefFrameKind,
     RefFrameRot, RefFrameState, RefFrameTrans, RotationalState, RotationalStateTyped, SelfRef,
     StructuralFrame, TranslationalState, TranslationalStateTyped, VehicleConfig, Velocity,
-    kilogram,
 };
 
 // allowed: typed↔raw kernel-boundary helpers used by body
