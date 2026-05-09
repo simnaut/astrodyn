@@ -135,6 +135,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

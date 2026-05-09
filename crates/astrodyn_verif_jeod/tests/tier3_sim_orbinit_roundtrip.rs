@@ -69,6 +69,7 @@ fn roundtrip_via_simulation(
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -204,6 +205,7 @@ fn tier3_orbinit_roundtrip_circular() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

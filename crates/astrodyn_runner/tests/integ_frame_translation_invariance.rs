@@ -78,6 +78,7 @@ fn earth_point_mass(mu: f64) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0, // zero corotation so density is comparable across setups
         central: true,
+        marker_only: false,
     }
 }
 
@@ -95,6 +96,7 @@ fn ssb_barycenter() -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: true,
+        marker_only: false,
     }
 }
 
@@ -112,6 +114,7 @@ fn earth_at_offset(mu: f64) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -131,6 +134,7 @@ fn sun_source(position_in_root: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 

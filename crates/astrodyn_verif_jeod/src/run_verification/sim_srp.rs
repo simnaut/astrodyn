@@ -157,6 +157,7 @@ fn earth_point_mass(mu: f64) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: true,
+        marker_only: false,
     }
 }
 
@@ -176,6 +177,7 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -435,13 +437,21 @@ fn parity_earth_central() -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: true,
+        marker_only: false,
     }
 }
 
 /// Sun source with `mu = 0` (referenced only for SRP direction, never
-/// for gravitational perturbation) seeded at [`PARITY_SUN_POS`].
+/// for gravitational perturbation) seeded at [`PARITY_SUN_POS`]. The
+/// `marker_only = true` flag tells `populate_app` to spawn this Sun
+/// as a `SunMarker`-only entity (no `GravitySourceC`,
+/// `SourceInertialPositionC`, or frame-tree entity), matching the
+/// hand-rolled `bevy_parity_srp.rs` Sun-as-marker setup so
+/// runner ↔ bevy bit-identity holds.
 fn parity_sun_source() -> GravitySourceEntry {
-    sun_zero_mu(PARITY_SUN_POS)
+    let mut entry = sun_zero_mu(PARITY_SUN_POS);
+    entry.marker_only = true;
+    entry
 }
 
 /// Single-plate vehicle config: 100 m² plate with normal +X at the

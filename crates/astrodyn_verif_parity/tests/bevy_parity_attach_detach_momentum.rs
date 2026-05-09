@@ -2417,6 +2417,7 @@ fn bevy_runner_parity_attach_detach_momentum() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
@@ -2816,6 +2817,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     let runner_source_a = sim.add_source(
@@ -2833,6 +2835,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     let runner_source_b = sim.add_source(
@@ -2850,6 +2853,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {

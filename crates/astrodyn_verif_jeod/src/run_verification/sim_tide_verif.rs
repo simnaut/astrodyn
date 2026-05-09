@@ -70,6 +70,7 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -132,6 +133,7 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
             tidal_config: Some(tidal_config),
             planet_omega: OMEGA_EARTH,
             central: true,
+            marker_only: false,
         },
     );
     let sun = sb.add_source("Sun", third_body(mu_sun, initial_sun));

@@ -55,6 +55,7 @@ fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     (sim, earth)

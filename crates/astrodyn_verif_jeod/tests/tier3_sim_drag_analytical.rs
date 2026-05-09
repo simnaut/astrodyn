@@ -63,6 +63,7 @@ fn make_drag_sim(
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -521,6 +522,7 @@ fn make_drag_sim_with_wind(
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

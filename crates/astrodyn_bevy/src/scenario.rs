@@ -400,7 +400,38 @@ fn spawn_source<P: Planet>(
         tidal_config,
         planet_omega,
         central: _,
+        marker_only,
     } = entry;
+
+    // Marker-only fast-path: spawn the entity with just the marker
+    // and translational state — `Name`, `SunMarker` / `MoonMarker`,
+    // `TranslationalStateC<P>`. Skips `GravitySourceC`,
+    // `SourceInertialPositionC`, and the source's frame-tree entity
+    // (no `register_source_frames_system` pickup) so the SRP
+    // direction-only-source path matches the hand-rolled
+    // `bevy_parity_srp.rs` setup that the recipe family targets.
+    // See `astrodyn::GravitySourceEntry::marker_only` for the full
+    // contract.
+    if marker_only {
+        let mut entity_cmds = app.world_mut().spawn((
+            Name::new(name.to_string()),
+            // `TranslationalStateC<P>` carries the source position
+            // for the SRP system's `Query<&TranslationalStateC<P>,
+            // With<SunMarker>>` lookup. Mirrors the hand-rolled
+            // spawn in the bevy_parity_srp tests.
+            TranslationalStateC::<P>::from_untyped(astrodyn::TranslationalState {
+                position: position.raw_si(),
+                velocity: velocity.raw_si(),
+            }),
+        ));
+        if Some(idx) == sun_source {
+            entity_cmds.insert(SunMarker);
+        }
+        if Some(idx) == moon_source {
+            entity_cmds.insert(MoonMarker);
+        }
+        return entity_cmds.id();
+    }
 
     let mut entity_cmds = app.world_mut().spawn((
         Name::new(name.to_string()),
@@ -652,6 +683,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
         b.add_body(VehicleConfig {

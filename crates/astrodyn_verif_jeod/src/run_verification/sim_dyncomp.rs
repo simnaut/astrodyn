@@ -49,6 +49,7 @@ fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: true,
+        marker_only: false,
     }
 }
 
@@ -434,6 +435,7 @@ fn earth_sh_with_rnp() -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: OMEGA_EARTH,
         central: true,
+        marker_only: false,
     }
 }
 
@@ -453,6 +455,7 @@ fn earth_pm_with_rnp(mu: f64) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: OMEGA_EARTH,
         central: true,
+        marker_only: false,
     }
 }
 
@@ -568,6 +571,7 @@ fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -708,6 +712,7 @@ fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> Gr
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -872,6 +877,7 @@ fn build_run7(
             tidal_config: None,
             planet_omega: OMEGA_EARTH,
             central: true,
+            marker_only: false,
         },
     );
     let sun = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));

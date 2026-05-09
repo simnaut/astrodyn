@@ -350,6 +350,7 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
             tidal_config: None,
             planet_omega: OMEGA_EARTH,
             central: true,
+            marker_only: false,
         },
     );
     let moon = sb.add_source(
@@ -367,6 +368,7 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     let sun = sb.add_source(
@@ -384,6 +386,7 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     sb.set_source_ephemeris(
