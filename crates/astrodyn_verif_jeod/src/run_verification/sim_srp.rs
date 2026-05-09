@@ -24,10 +24,12 @@ use crate::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
-    default_leap_second_table, Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams,
-    FlatPlateState, FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationModel, ShadowBody, SimulationBuilder,
-    SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState, VehicleConfig, EARTH,
+    default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig,
+    Ephemeris, EphemerisBody, ExponentialAtmosphere, FlatPlate, FlatPlateParams, FlatPlateState,
+    FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState, ShadowBody,
+    SimulationBuilder, SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState,
+    VehicleConfig, EARTH,
 };
 use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
@@ -353,3 +355,513 @@ pub fn srp_orbit_trajectory() -> VerificationCase {
         pre_step: None,
     }
 }
+
+// ── Bevy ↔ runner parity recipes (no JEOD CSV) ─────────────────────────────
+//
+// These nine recipes migrate the hand-rolled `bevy_parity_srp.rs` test
+// suite into the `VerificationCase` shape so the parity trait can drive
+// both runtimes from a single factory. Each scenario uses a synthetic
+// Sun at `(1.496e11, 0, 0)` (no DE421, no `pre_step`) and a point-mass
+// Earth; the parity assertion is bit-identity per checkpoint.
+//
+// Cadence: dt=1.0 s sampling against `srp_basic_srp_basic.csv` (200
+// records at 1 s) via `CsvReference::TimesOnly`. The CSV's body is
+// never read — the parity trait only needs the time column for
+// scheduling. The resulting 200 s × 1 s schedule strictly dominates the
+// pre-migration 100 × 10 s schedule (more checkpoints, same physics).
+
+const PARITY_SUN_POS: DVec3 = DVec3::new(1.496e11, 0.0, 0.0);
+const PARITY_DT: f64 = 1.0;
+const PARITY_TIMES_CSV: &str = "srp_basic_srp_basic.csv";
+
+fn parity_iss_trans() -> TranslationalState {
+    TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    }
+}
+
+fn parity_tumble_rot() -> RotationalState {
+    let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+    q.normalize();
+    RotationalState {
+        quaternion: q,
+        ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
+    }
+}
+
+fn parity_iss_mass() -> MassProperties {
+    MassProperties::with_inertia(
+        400_000.0,
+        DMat3::from_diagonal(DVec3::new(1.02e8, 0.91e8, 1.64e8)),
+        DVec3::ZERO,
+    )
+}
+
+fn parity_earth_source(mu: f64, central: bool) -> GravitySourceEntry {
+    GravitySourceEntry {
+        source: GravitySource {
+            mu,
+            model: GravityModel::PointMass,
+        },
+        position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
+        velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+        planet_omega: 0.0,
+        central,
+    }
+}
+
+fn parity_sun_source() -> GravitySourceEntry {
+    GravitySourceEntry {
+        source: GravitySource {
+            // mu=0: Sun is referenced only for SRP / shadow direction.
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(PARITY_SUN_POS),
+        velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+        planet_omega: 0.0,
+        central: false,
+    }
+}
+
+/// Single-plate convenience used by the basic / shadow / derivative
+/// flavors. Mirrors `bevy_parity_srp.rs::make_single_plate`.
+fn parity_single_plate(
+    albedo: f64,
+    diffuse: f64,
+    emissivity: f64,
+) -> Vec<(
+    FlatPlate<astrodyn::SelfRef>,
+    FlatPlateParams,
+    FlatPlateThermal,
+)> {
+    use astrodyn::Vec3Ext;
+    vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO.m_at::<astrodyn::StructuralFrame<astrodyn::SelfRef>>(),
+        },
+        FlatPlateParams { albedo, diffuse },
+        FlatPlateThermal {
+            emissivity,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        },
+    )]
+}
+
+fn parity_flat_plate_state(
+    plates: Vec<(
+        FlatPlate<astrodyn::SelfRef>,
+        FlatPlateParams,
+        FlatPlateThermal,
+    )>,
+    order: ThermalIntegrationOrder,
+) -> FlatPlateState<astrodyn::SelfRef> {
+    let n = plates.len();
+    FlatPlateState {
+        plates,
+        temperatures: vec![INITIAL_PLATE_TEMP_K; n],
+        t_pow4_cached: vec![INITIAL_PLATE_TEMP_K.powi(4); n],
+        integration_order: order,
+        ..Default::default()
+    }
+}
+
+/// Earth + synthetic Sun source skeleton shared by every parity recipe.
+/// Returns `(builder, earth_idx)`; the caller then registers its body
+/// and (optionally) adds atmosphere.
+fn parity_skeleton() -> (SimulationBuilder, usize) {
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, PARITY_DT);
+    let earth = sb.add_source("Earth", parity_earth_source(EARTH.shape.mu, true));
+    let sun = sb.add_source("Sun", parity_sun_source());
+    sb = sb.sun(sun);
+    (sb, earth)
+}
+
+fn parity_zero_tols() -> Tolerances {
+    Tolerances {
+        position_m: [0.0; 3],
+        velocity_m_s: [0.0; 3],
+        quat_angle_rad: 0.0,
+        ang_vel_rad_s: [0.0; 3],
+        extras: &[],
+    }
+}
+
+// ── Scenario E: full stack — drag + 1 SRP plate + gravity-torque, 6-DOF ──
+
+fn build_parity_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
+    use astrodyn::Vec3Ext;
+    // The full-stack scenario adds atmosphere, and the Bevy
+    // `atmosphere_update_system` requires the planet source to carry a
+    // `PlanetFixedRotationC` (or fall back to spherical via
+    // `planet_entity: None`). The shared `parity_skeleton` adds Earth
+    // with `RotationModel::None` and `t_inertial_pfix: None`, so the
+    // bridge wouldn't install `PlanetFixedRotationC`. Build a
+    // skeleton with Earth carrying an identity inertial→pfix transform
+    // so both runtimes resolve the atmosphere stage with the same
+    // (identity) rotation; `planet_omega` stays 0, matching the
+    // hand-rolled test the recipe replaces.
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, PARITY_DT);
+    let mut earth_entry = parity_earth_source(EARTH.shape.mu, true);
+    earth_entry.t_inertial_pfix = Some(DMat3::IDENTITY);
+    let earth = sb.add_source("Earth", earth_entry);
+    let sun = sb.add_source("Sun", parity_sun_source());
+    sb = sb.sun(sun);
+    sb = sb.atmosphere(
+        AtmosphereConfig {
+            model: AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            planet_omega: astrodyn::planet_config::EARTH.omega,
+        },
+        earth,
+    );
+
+    let plate = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO.m_at::<astrodyn::StructuralFrame<astrodyn::SelfRef>>(),
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        // Emissivity must be > 0 (JEOD_INV: IN.33). Both runtimes use
+        // the same value, so parity holds.
+        FlatPlateThermal {
+            emissivity: 1.0,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        },
+    )];
+
+    sb.add_body(VehicleConfig {
+        trans: parity_iss_trans().into(),
+        rot: Some(parity_tumble_rot().into()),
+        mass: Some(parity_iss_mass().into()),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, true)],
+        },
+        compute_gravity_gradient: true,
+        drag: Some(DragConfig {
+            cd: 2.2,
+            area: 1000.0,
+            constant_density: None,
+        }),
+        srp: Some(SrpModel::FlatPlate(parity_flat_plate_state(
+            plate,
+            ThermalIntegrationOrder::default(),
+        ))),
+        ..Default::default()
+    });
+    sb
+}
+
+/// Full-stack parity: drag + 1 SRP plate + gravity-torque, ISS 6-DOF.
+pub fn full_stack_sixdof() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_full_stack_sixdof",
+        scenario: build_parity_full_stack_sixdof,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+// ── Scenario H: 6-plate flat-plate SRP with shadow, 3-DOF ──
+
+fn build_parity_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder {
+    let (mut sb, earth) = parity_skeleton();
+    let plates = srp_plates(); // same 6-plate cube as SIM_3_ORBIT
+
+    sb.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: DVec3::new(4.2e7, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 3074.0, 0.0),
+        }
+        .into(),
+        mass: Some(
+            MassProperties::with_inertia(
+                300.0,
+                DMat3::from_diagonal(DVec3::splat(1.0)),
+                DVec3::ZERO,
+            )
+            .into(),
+        ),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        srp: Some(SrpModel::FlatPlate(parity_flat_plate_state(
+            plates,
+            ThermalIntegrationOrder::default(),
+        ))),
+        shadow_body: Some(ShadowBody {
+            source_idx: earth,
+            radius: EARTH.shadow_radius,
+        }),
+        ..Default::default()
+    });
+    sb
+}
+
+/// 6-plate flat-plate SRP with Earth shadow (3-DOF).
+pub fn flat_plate_with_shadow() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_flat_plate_srp_with_shadow",
+        scenario: build_parity_flat_plate_with_shadow,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+// ── Scenario family: shadow / basic / derivative single-plate 6-DOF ──
+
+fn build_parity_single_plate_sixdof(
+    plates: Vec<(
+        FlatPlate<astrodyn::SelfRef>,
+        FlatPlateParams,
+        FlatPlateThermal,
+    )>,
+    order: ThermalIntegrationOrder,
+    with_shadow: bool,
+    t_struct_body: DMat3,
+) -> SimulationBuilder {
+    let (mut sb, earth) = parity_skeleton();
+    let mut cfg = VehicleConfig {
+        trans: parity_iss_trans().into(),
+        rot: Some(parity_tumble_rot().into()),
+        mass: Some(parity_iss_mass().into()),
+        t_struct_body,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        srp: Some(SrpModel::FlatPlate(parity_flat_plate_state(plates, order))),
+        ..Default::default()
+    };
+    if with_shadow {
+        cfg.shadow_body = Some(ShadowBody {
+            source_idx: earth,
+            // Matches the hand-rolled shadow tests' literal radius.
+            radius: 6_371_000.0,
+        });
+    }
+    sb.add_body(cfg);
+    sb
+}
+
+fn build_shadow_2a_annular(_init: &InitialConditions) -> SimulationBuilder {
+    // Emissivity > 0 (JEOD_INV: IN.33). Tests shadow geometry, not thermal.
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.0, 0.0, 0.5),
+        ThermalIntegrationOrder::default(),
+        true,
+        DMat3::IDENTITY,
+    )
+}
+
+/// Shadow 2a annular flavor — 6-DOF, ε=0.5 single plate, Earth shadow.
+pub fn shadow_2a_annular() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_shadow_2a_annular",
+        scenario: build_shadow_2a_annular,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_shadow_2a_cooling(_init: &InitialConditions) -> SimulationBuilder {
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.0, 0.0, 0.9),
+        ThermalIntegrationOrder::default(),
+        true,
+        DMat3::IDENTITY,
+    )
+}
+
+/// Shadow 2a cooling flavor — 6-DOF, ε=0.9 single plate, Earth shadow.
+pub fn shadow_2a_cooling() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_shadow_2a_cooling",
+        scenario: build_shadow_2a_cooling,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_srp_basic_default(_init: &InitialConditions) -> SimulationBuilder {
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.3, 0.3, 0.5),
+        ThermalIntegrationOrder::default(),
+        false,
+        DMat3::IDENTITY,
+    )
+}
+
+/// SRP basic default — 6-DOF, single plate (albedo=0.3, diffuse=0.3).
+pub fn srp_basic_default() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_srp_basic_default",
+        scenario: build_srp_basic_default,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_srp_basic_varied_cr(_init: &InitialConditions) -> SimulationBuilder {
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.8, 0.1, 0.5),
+        ThermalIntegrationOrder::default(),
+        false,
+        DMat3::IDENTITY,
+    )
+}
+
+/// SRP basic varied-Cr — 6-DOF, single plate (albedo=0.8, diffuse=0.1).
+pub fn srp_basic_varied_cr() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_srp_basic_varied_cr",
+        scenario: build_srp_basic_varied_cr,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_srp_derivative_first_order(_init: &InitialConditions) -> SimulationBuilder {
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.3, 0.3, 0.5),
+        ThermalIntegrationOrder::DerivativeFirstOrder,
+        false,
+        DMat3::IDENTITY,
+    )
+}
+
+/// Derivative-class SRP, first-order thermal integration.
+pub fn srp_derivative_first_order() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_srp_derivative_first_order",
+        scenario: build_srp_derivative_first_order,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_srp_derivative_rk4(_init: &InitialConditions) -> SimulationBuilder {
+    build_parity_single_plate_sixdof(
+        parity_single_plate(0.3, 0.3, 0.5),
+        ThermalIntegrationOrder::DerivativeRk4,
+        false,
+        DMat3::IDENTITY,
+    )
+}
+
+/// Derivative-class SRP, RK4 thermal integration.
+pub fn srp_derivative_rk4() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_srp_derivative_rk4",
+        scenario: build_srp_derivative_rk4,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+fn build_srp_derivative_rk4_rotated_struct(_init: &InitialConditions) -> SimulationBuilder {
+    use astrodyn::Vec3Ext;
+    // 90° rotation about body-Z: structural X→body Y, Y→-X. A
+    // structural-frame SRP torque with X component becomes a
+    // body-frame torque along Y. The hand-rolled regression test
+    // caught a bug where SRP torque was added to constant_torque
+    // without the t_struct_body rotation; this recipe is the parity
+    // counterpart.
+    let t_struct_body = DMat3::from_cols(
+        DVec3::new(0.0, 1.0, 0.0),
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    // Plate offset along structural +Y (15 m) with normal +X — produces
+    // a non-zero structural-frame torque via r × F.
+    let offset_plate = vec![(
+        FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::new(0.0, 15.0, 0.0)
+                .m_at::<astrodyn::StructuralFrame<astrodyn::SelfRef>>(),
+        },
+        FlatPlateParams {
+            albedo: 0.3,
+            diffuse: 0.3,
+        },
+        FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        },
+    )];
+    build_parity_single_plate_sixdof(
+        offset_plate,
+        ThermalIntegrationOrder::DerivativeRk4,
+        false,
+        t_struct_body,
+    )
+}
+
+/// Derivative RK4 with non-identity `t_struct_body` and offset plate —
+/// regression coverage for the structural↔body torque rotation in the
+/// coupled RK4 stage closure.
+pub fn srp_derivative_rk4_rotated_struct() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_bevy_srp_derivative_rk4_rotated_struct",
+        scenario: build_srp_derivative_rk4_rotated_struct,
+        reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
+        duration: Time::new::<second>(0.0),
+        tolerances: parity_zero_tols(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+// `DynamicsConfig` is imported by mission code that constructs vehicles
+// directly; recipes use struct-update syntax against `VehicleConfig`'s
+// `Default` (which already encodes `translational_dynamics: true`,
+// `three_dof: false` once `rot` is `Some`). Suppress the unused warning
+// — the import documents the public API for mission code reading this
+// file as a worked example.
+#[allow(dead_code)]
+const _DYNCFG: Option<DynamicsConfig> = None;
