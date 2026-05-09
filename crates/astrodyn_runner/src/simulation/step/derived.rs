@@ -3,8 +3,7 @@
 //! solar beta, earth lighting). Runs after integration; reads the
 //! post-integrated body state and writes per-body derived-state fields.
 
-use astrodyn::{Position, RootInertial};
-use astrodyn_quantities::IntegOrigin;
+use astrodyn::{IntegOrigin, Position, RootInertial};
 
 use super::super::Simulation;
 
@@ -118,15 +117,14 @@ impl Simulation {
             if let Some((earth_r, moon_r, sun_r)) = body.earth_lighting_config {
                 if let (Some(sp), Some(mp)) = (sun_pos, moon_pos) {
                     let inertial_pos_typed = body.trans.to_inertial(integ_origin).position;
-                    body.earth_lighting =
-                        Some(astrodyn_interactions::compute_earth_lighting_typed(
-                            inertial_pos_typed,
-                            sp,
-                            mp,
-                            sun_r,
-                            earth_r,
-                            moon_r,
-                        ));
+                    body.earth_lighting = Some(astrodyn::compute_earth_lighting_typed(
+                        inertial_pos_typed,
+                        sp,
+                        mp,
+                        sun_r,
+                        earth_r,
+                        moon_r,
+                    ));
                 } else {
                     body.earth_lighting = None;
                 }
@@ -138,13 +136,13 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use crate::Simulation;
+    use astrodyn::JeodQuat;
     use astrodyn::{
         default_leap_second_table, DerivedStateConfig, FrameSwitchConfig, GravityControl,
         GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties, Position,
         RotationModel, RotationalState, SimulationTime, SwitchSense, TranslationalState,
         VehicleConfig, Velocity,
     };
-    use astrodyn_math::JeodQuat;
     use glam::DVec3;
 
     /// Stage 8b's frame-switch evaluation can change `body.integ_frame_id`

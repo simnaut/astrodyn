@@ -8,7 +8,7 @@
 //! `SourceFrameIds` was lifted to `astrodyn::source_frames` (issue #71)
 //! so the Bevy adapter can build source frames against the same
 //! structure `astrodyn_runner` uses. `DetachedSubtreeState` lives in
-//! `astrodyn_dynamics::subtree` (issue #253 Task C) — pure rigid-body
+//! `astrodyn::subtree` (issue #253 Task C) — pure rigid-body
 //! kinematics, no `Simulation` dependency. It is re-exported from
 //! `simulation::mod` so consumers reach it via
 //! `astrodyn_runner::DetachedSubtreeState` regardless.
@@ -34,10 +34,7 @@ use astrodyn::{
     RotationalState, SelfPlanet, SrpModel, TotalForce, TranslationalState, TranslationalStateTyped,
     VehicleConfig,
 };
-use astrodyn_dynamics::{MassBodyId, MassPointState};
-use astrodyn_frames::FrameId;
-use astrodyn_interactions::{ContactFacet, GroundFacet};
-use astrodyn_quantities::frame::IntegrationFrame;
+use astrodyn::{ContactFacet, FrameId, GroundFacet, IntegrationFrame, MassBodyId, MassPointState};
 
 /// Registration of a contact interaction between two bodies.
 ///
@@ -148,7 +145,7 @@ pub(crate) struct GravityData {
     /// Tidal ΔC20 to add to the base C20 coefficient. Updated each step.
     pub delta_c20: f64,
     /// Tidal configuration. When `Some`, the simulation computes ΔC20 each step.
-    pub tidal_config: Option<astrodyn_gravity::tides::TidalConfig>,
+    pub tidal_config: Option<astrodyn::TidalConfig>,
     /// Rotation model for updating planet-fixed frame each step.
     pub rotation_model: RotationModel,
     /// Sidereal angular velocity (rad/s) for the planet-fixed frame's
@@ -188,7 +185,7 @@ pub struct VehicleOutput {
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
     /// Earth lighting state (sun/moon occlusion, albedo).
-    pub earth_lighting: Option<astrodyn_interactions::earth_lighting::EarthLightingState>,
+    pub earth_lighting: Option<astrodyn::EarthLightingState>,
 }
 
 /// Internal per-body simulation state. Combines user config with bookkeeping
@@ -244,7 +241,7 @@ pub(crate) struct SimBody {
     pub frame_attach: Option<FrameAttachState>,
     pub config: DynamicsConfig,
     pub gravity_controls: GravityControls<usize>,
-    pub integrator: astrodyn_dynamics::IntegratorType,
+    pub integrator: astrodyn::IntegratorType,
     pub drag: Option<DragConfig>,
     pub flat_plate_state: Option<astrodyn::FlatPlateState<astrodyn::SelfRef>>,
     pub cannonball_srp: Option<(f64, f64, f64)>,
@@ -307,11 +304,11 @@ pub(crate) struct SimBody {
     pub lvlh_frame: Option<LvlhFrame>,
     pub geodetic_state: Option<GeodeticState>,
     pub solar_beta: Option<f64>,
-    pub earth_lighting: Option<astrodyn_interactions::earth_lighting::EarthLightingState>,
+    pub earth_lighting: Option<astrodyn::EarthLightingState>,
 
     // ── Integrator state ──
-    pub gj_state: Option<astrodyn_dynamics::GaussJacksonState>,
-    pub abm4_state: Option<astrodyn_dynamics::Abm4State>,
+    pub gj_state: Option<astrodyn::GaussJacksonState>,
+    pub abm4_state: Option<astrodyn::Abm4State>,
 }
 
 impl SimBody {
@@ -357,12 +354,7 @@ impl SimBody {
             frame_attach: None,
             config: dynamics_config,
             gravity_controls: config.gravity_controls,
-            // Convert at the runner boundary: VehicleConfig carries the
-            // astrodyn-owned IntegratorType (mission-facing contract);
-            // SimBody stores astrodyn_dynamics::IntegratorType because the
-            // runner can depend on astrodyn_dynamics directly and wants the
-            // raw enum for its own integrate/validate dispatch.
-            integrator: config.integrator.into(),
+            integrator: config.integrator,
             drag: config.drag,
             flat_plate_state,
             cannonball_srp,

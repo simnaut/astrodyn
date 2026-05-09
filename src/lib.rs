@@ -143,32 +143,37 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 
 // ── Re-exports from astrodyn_* crates ──
 //
-// Curation criteria (audit §2.4):
+// Curation criteria (issue #390):
 //
-// 1. `astrodyn_bevy` and any mission crate depend only on `astrodyn` (per
-//    CLAUDE.md "Three-Layer Architecture"), so every type a mission
-//    crate reaches must be reachable through here.
-// 2. `astrodyn_runner` is a parallel non-Bevy consumer that *may* depend
-//    directly on the `astrodyn_*` physics crates (audit §2.3).
-//    Items that are needed only by `astrodyn_runner` are imported there
-//    directly, not surfaced on the `astrodyn` API.
+// 1. Every workspace consumer that *uses* the pipeline — mission crates,
+//    `astrodyn_bevy`, `astrodyn_runner` — depends on `astrodyn` (and
+//    only `astrodyn`, plus `bevy` for the Bevy adapter). Verification
+//    crates (`astrodyn_verif_jeod`, `astrodyn_verif_parity`) are the
+//    explicit exception: they reach physics crates directly because
+//    they need internals to construct test fixtures.
+// 2. Therefore every public type, function, or module a non-verification
+//    consumer reaches must be reachable through here.
 // 3. Items that no consumer reaches are dropped — every entry below
-//    earns its place by an active `astrodyn_bevy` (root, examples, tests)
-//    or mission-crate consumer.
+//    earns its place by an active consumer.
 //
-// Adding a new re-export is therefore tied to a concrete consumer that
-// imports it via `astrodyn::...`; if the consumer is `astrodyn_runner`,
-// the import goes to its physics-crate dependency instead.
+// A CI lint (`scripts/check_no_bypass_deps.sh`) enforces criterion #1
+// structurally by failing the build if `astrodyn_runner` or
+// `astrodyn_bevy` declare any direct `astrodyn_*` physics-crate dep.
 
 // astrodyn_dynamics: state types, force types, mass, config, frame utilities
 pub use astrodyn_dynamics::{
-    compute_frame_derivatives, compute_kinematic_child_state, compute_t_inertial_struct,
-    compute_translational_derivatives, derive_frame_attached_state, propagate_forward,
-    recompute_composites_via_storage, shift_wrench_to_parent, DetachedSubtreeState, DynamicsConfig,
+    abm4_translational_step, combine_states_at_attach, compute_frame_derivatives,
+    compute_kinematic_child_state, compute_t_inertial_struct, compute_translational_derivatives,
+    derive_frame_attached_state, propagate_forward, recompute_composites_via_storage,
+    shift_wrench_to_parent, AttachCombineInputs, DetachedSubtreeState, DynamicsConfig,
     FrameAttachInputs, FrameDerivatives, GravityAcceleration, MassBodyId, MassNodeOutputs,
     MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
     SixDofState, SixDofStateTyped, TotalForce, TranslationalState, Wrench,
 };
+
+// astrodyn_dynamics::body_init: typed orbital-element initializer
+// consumed by mission examples (e.g. `examples/kepler_orbit.rs`).
+pub use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
 
 // astrodyn_dynamics typed siblings: ECS components built on the typed
 // state primitives so storage carries frame phantoms rather than
@@ -182,8 +187,12 @@ pub use astrodyn_dynamics::state::TranslationalStateTyped;
 
 // astrodyn_gravity: source definitions, controls, and tides
 pub use astrodyn_gravity::tides::{
-    compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
+    compute_delta_c20, compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
 };
+
+// astrodyn_gravity: test fixtures (e.g. `fixtures::load_ggm05c()`)
+// consumed by integration tests that need a representative gravity model.
+pub use astrodyn_gravity::fixtures as gravity_fixtures;
 pub use astrodyn_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // astrodyn_atmosphere: state output and model types
@@ -196,19 +205,22 @@ pub use astrodyn_interactions::{
     compute_ballistic_drag, compute_ballistic_drag_typed, compute_cannonball_srp,
     compute_cannonball_srp_typed, compute_earth_lighting, compute_earth_lighting_typed,
     compute_flat_plate_srp_thermal, compute_gravity_torque, compute_gravity_torque_typed,
-    compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, DragConfig, DragConfigTyped,
-    EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
-    LightingBody, LightingParams, RadiationForce, SOLAR_RADIUS,
+    compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, ContactFacet,
+    ContactMaterial, DragConfig, DragConfigTyped, EarthLightingState, FlatPlate, FlatPlateParams,
+    FlatPlateSrpResult, FlatPlateThermal, GroundFacet, LightingBody, LightingParams, Phase,
+    RadiationForce, SphericalTerrain, Terrain, SOLAR_RADIUS,
 };
 
 // astrodyn_frames: reference frame state and arena-based frame tree.
-// `FrameStorage` plus the per-link state structs (`RefFrameRot`,
+// `FrameStorage` (trait) plus the per-link state structs (`RefFrameRot`,
 // `RefFrameTrans`, `RefFrameState`) are needed by mission code that
 // constructs or reads frame nodes; `frame_compute_relative_state_via_storage`
-// drives cross-frame state queries.
+// drives cross-frame state queries. `FrameTree` (concrete arena) is the
+// non-Bevy storage implementation — used by `astrodyn_runner`'s
+// `Simulation` state container.
 pub use astrodyn_frames::{
-    compute_relative_state as frame_compute_relative_state_via_storage, FrameStorage, RefFrameRot,
-    RefFrameState, RefFrameTrans,
+    compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameStorage,
+    FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
 };
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that the
@@ -221,12 +233,16 @@ pub use astrodyn_time::{
 };
 
 // astrodyn_frames: planet rotation (used by ephemeris stage and mission
-// code that sets up Mars/Moon planetary configurations).
+// code that sets up Mars/Moon planetary configurations). The
+// `nutation_j2000`, `precession_j2000`, and `rotation_j2000` modules
+// expose the lower-level primitives consumed by code that splits the
+// Earth RNP composition across cache-refresh boundaries.
 pub use astrodyn_frames::rotation_j2000::{
     compute_t_parent_this_from_tjt_with_polar, compute_t_parent_this_from_tjt_with_polar_typed,
 };
-pub use astrodyn_frames::rotation_mars;
-pub use astrodyn_frames::rotation_moon;
+pub use astrodyn_frames::{
+    nutation_j2000, precession_j2000, rotation_j2000, rotation_mars, rotation_moon,
+};
 
 // astrodyn_ephemeris: ephemeris data
 pub use astrodyn_ephemeris::{assets as ephemeris_assets, Ephemeris, EphemerisBody};

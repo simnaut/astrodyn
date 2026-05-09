@@ -332,10 +332,7 @@ fn axis_norm_tol_is_reachable_through_astrodyn_and_prelude() {
     let from_prelude: f64 = AXIS_NORM_TOL;
     // Both must reference the same constant the kernel asserts against.
     assert_eq!(from_astrodyn, from_prelude);
-    assert_eq!(
-        from_astrodyn,
-        astrodyn_dynamics::kinematic_joint::AXIS_NORM_TOL
-    );
+    assert_eq!(from_astrodyn, astrodyn::AXIS_NORM_TOL);
 }
 
 /// Frame-tree integration: a `RelativeFrameState` walk that crosses a

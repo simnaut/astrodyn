@@ -9,7 +9,7 @@
 //!    bodies with non-trivial state, snapshotting their pre-attach
 //!    composite-body state, calling `Simulation::attach`, and comparing
 //!    the parent's `body.trans` / `body.rot` against the standalone
-//!    [`astrodyn_dynamics::combine_states_at_attach`] output for the same
+//!    [`astrodyn::combine_states_at_attach`] output for the same
 //!    inputs must agree to f64 rounding. The runner adapter is a thin
 //!    wrapper around the kernel — any drift indicates a bug in the
 //!    snapshot/writeback plumbing.
@@ -34,14 +34,14 @@
 //! integration tests), not here, because it has to stand up a Bevy
 //! `App`.
 
+use astrodyn::JeodQuat;
+use astrodyn::{combine_states_at_attach, AttachCombineInputs};
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
     IntegratorType, MassProperties as SimMassProperties, RootInertial, RotationalState,
     SimulationTime, TranslationalState, Vec3Ext, VehicleConfig,
 };
-use astrodyn_dynamics::{combine_states_at_attach, AttachCombineInputs};
-use astrodyn_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
-use astrodyn_math::JeodQuat;
+use astrodyn::{RefFrameRot, RefFrameState, RefFrameTrans};
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
 use glam::{DMat3, DVec3};
 
@@ -62,8 +62,8 @@ fn build_pair(
     Simulation,
     /* parent_idx */ usize,
     /* child_idx */ usize,
-    /* parent_id */ astrodyn_dynamics::MassBodyId,
-    /* child_id */ astrodyn_dynamics::MassBodyId,
+    /* parent_id */ astrodyn::MassBodyId,
+    /* child_id */ astrodyn::MassBodyId,
 ) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
@@ -206,7 +206,7 @@ fn runner_attach_matches_kernel_byte_for_byte() {
 
     // Run the standalone kernel with the same inputs.
     let parent_t_struct_to_body = parent_mass.t_parent_this;
-    let parent_t_inertial_struct = astrodyn_dynamics::compute_t_inertial_struct(
+    let parent_t_inertial_struct = astrodyn::compute_t_inertial_struct(
         &parent_t_struct_to_body,
         &parent_pre_state.rot.t_parent_this,
     );
@@ -1113,8 +1113,8 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         .mass_tree
         .as_ref()
         .expect("from_builder must wire the mass tree when attach_bodies is called");
-    let parent_mass_body_id: astrodyn_dynamics::MassBodyId = 0;
-    let child_mass_body_id: astrodyn_dynamics::MassBodyId = 1;
+    let parent_mass_body_id: astrodyn::MassBodyId = 0;
+    let child_mass_body_id: astrodyn::MassBodyId = 1;
     assert_eq!(
         tree.parent(child_mass_body_id),
         Some(parent_mass_body_id),

@@ -53,12 +53,10 @@
 use std::collections::HashMap;
 
 use astrodyn::{
-    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, RootInertial,
-    RotationalState, TranslationalState, TranslationalStateTyped,
+    propagate_state_via_storage, IntegOrigin, IntegrationFrame, KinematicEdge, KinematicNodeState,
+    MassBodyId, MassStorage, RootInertial, RotationalState, TranslationalState,
+    TranslationalStateTyped,
 };
-use astrodyn_dynamics::MassBodyId;
-use astrodyn_quantities::frame::IntegrationFrame;
-use astrodyn_quantities::IntegOrigin;
 
 use super::super::Simulation;
 
@@ -451,22 +449,22 @@ mod tests {
             .left_quat_to_transformation();
         let offset = DVec3::new(1.0, 0.0, 0.0);
         let parent_state_seed = sim.body(0);
-        let parent_pre_state = astrodyn_frames::RefFrameState {
-            trans: astrodyn_frames::RefFrameTrans {
+        let parent_pre_state = astrodyn::RefFrameState {
+            trans: astrodyn::RefFrameTrans {
                 position: parent_state_seed.trans.position,
                 velocity: parent_state_seed.trans.velocity,
             },
-            rot: astrodyn_frames::RefFrameRot {
+            rot: astrodyn::RefFrameRot {
                 q_parent_this: parent_q,
                 t_parent_this: parent_q.left_quat_to_transformation(),
                 ang_vel_this: parent_omega,
             },
         };
-        let link = astrodyn_dynamics::MassPointState {
+        let link = astrodyn::MassPointState {
             position: offset,
             t_parent_this: t_pc,
         };
-        let child_pre_state = astrodyn_dynamics::propagate_forward(&parent_pre_state, &link);
+        let child_pre_state = astrodyn::propagate_forward(&parent_pre_state, &link);
         let child_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState {
                 position: child_pre_state.trans.position,
@@ -693,19 +691,18 @@ mod tests {
         let offset = DVec3::new(1.0, 0.0, 0.0);
         // Parent integrates in root, identity attitude / zero ω → its
         // composite-body inertial state equals its trans values.
-        let parent_pre_state = astrodyn_frames::RefFrameState {
-            trans: astrodyn_frames::RefFrameTrans {
+        let parent_pre_state = astrodyn::RefFrameState {
+            trans: astrodyn::RefFrameTrans {
                 position: parent_root_pos,
                 velocity: parent_root_vel,
             },
-            rot: astrodyn_frames::RefFrameRot::default(),
+            rot: astrodyn::RefFrameRot::default(),
         };
-        let link = astrodyn_dynamics::MassPointState {
+        let link = astrodyn::MassPointState {
             position: offset,
             t_parent_this: DMat3::IDENTITY,
         };
-        let child_pre_state_inertial =
-            astrodyn_dynamics::propagate_forward(&parent_pre_state, &link);
+        let child_pre_state_inertial = astrodyn::propagate_forward(&parent_pre_state, &link);
         // Lower the child seed from root-inertial into the offset
         // source's integration frame (subtract the offset source's
         // root-inertial position; velocity is unchanged because the

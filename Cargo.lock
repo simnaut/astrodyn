@@ -232,8 +232,6 @@ name = "astrodyn_bevy"
 version = "0.1.0"
 dependencies = [
  "astrodyn",
- "astrodyn_dynamics",
- "astrodyn_quantities",
  "astrodyn_runner",
  "astrodyn_verif_jeod",
  "bevy",
@@ -350,14 +348,6 @@ name = "astrodyn_runner"
 version = "0.1.0"
 dependencies = [
  "astrodyn",
- "astrodyn_atmosphere",
- "astrodyn_dynamics",
- "astrodyn_frames",
- "astrodyn_gravity",
- "astrodyn_interactions",
- "astrodyn_math",
- "astrodyn_quantities",
- "astrodyn_time",
  "glam 0.30.10",
  "log",
  "uom",

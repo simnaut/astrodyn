@@ -11,12 +11,10 @@
 use glam::DVec3;
 
 use astrodyn::{
-    evaluate_ground_contact_pair, DragConfig, MassProperties, Position, VehicleConfig, Velocity,
+    evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
+    MassBodyId, MassPointState, MassProperties, Phase, Position, RefFrameKind, RefFrameRot,
+    RefFrameState, RefFrameTrans, VehicleConfig, Velocity,
 };
-use astrodyn_dynamics::{MassBodyId, MassPointState};
-use astrodyn_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-use astrodyn_interactions::{ContactFacet, GroundFacet, Phase};
-use astrodyn_quantities::frame::IntegrationFrame;
 
 use super::types::{
     ContactPairConfig, GroundContactImpulse, GroundContactPairConfig, SimBody, VehicleOutput,
@@ -43,7 +41,7 @@ impl Simulation {
     /// * `facet_a.material != facet_b.material`. JEOD parks the
     ///   spring/damper/friction parameters on a single `SpringPairInteraction`
     ///   per pair, so both facets must carry identical
-    ///   [`ContactMaterial`](astrodyn_interactions::ContactMaterial) values.
+    ///   [`ContactMaterial`](astrodyn::ContactMaterial) values.
     ///   Panic here instead of deferring until the first integrator step.
     pub fn register_contact_pair(
         &mut self,
@@ -105,7 +103,7 @@ impl Simulation {
     ///
     /// The first call also pins the planet source whose `pfix` rotation
     /// will be queried for terrain lookups; subsequent registrations must
-    /// use the same `planet_source`. For [`SphericalTerrain`](astrodyn_interactions::SphericalTerrain)
+    /// use the same `planet_source`. For [`SphericalTerrain`](astrodyn::SphericalTerrain)
     /// the pfix rotation cancels in the ground-point computation and
     /// `planet_source` is documentation-only — but we still validate
     /// consistency to keep ground-contact registrations explicit.
@@ -308,7 +306,7 @@ impl Simulation {
     /// runtime attach/detach uses this to translate the body index it
     /// holds into the [`MassBodyId`] the [`MassTree`] indexes by.
     ///
-    /// [`MassTree`]: astrodyn_dynamics::MassTree
+    /// [`MassTree`]: astrodyn::MassTree
     /// Frame-tree node id of the body's `composite_body` reference
     /// frame.
     ///
@@ -316,14 +314,14 @@ impl Simulation {
     /// non-integration parent frame (e.g. JEOD's
     /// `RUN_attach_to_ref_frame` "capture pre-attach pfix-relative
     /// pose" pattern) can pass the id to
-    /// [`FrameTree::compute_relative_state`](astrodyn_frames::FrameTree::compute_relative_state)
+    /// [`FrameTree::compute_relative_state`](astrodyn::FrameTree::compute_relative_state)
     /// via [`Self::frame_tree`]. The id is stable for the lifetime of
     /// the simulation — `add_body` allocates it once and never reuses
     /// it.
     ///
     /// # Panics
     /// Panics if `idx` is out of range.
-    pub fn body_frame_id(&self, idx: usize) -> astrodyn_frames::FrameId {
+    pub fn body_frame_id(&self, idx: usize) -> astrodyn::FrameId {
         assert!(
             idx < self.bodies.len(),
             "body_frame_id: body index {idx} out of range (have {} bodies)",
@@ -470,7 +468,7 @@ impl Simulation {
     /// from either the integrated-body slot ([`Self::body`]) or the
     /// [`Self::detached_subtrees`] map (when the root is detached), then
     /// chain-walks down to `target_id` using the same body-aware step as
-    /// [`Self::detach_subtree`] (with [`astrodyn_dynamics::propagate_forward`]
+    /// [`Self::detach_subtree`] (with [`astrodyn::propagate_forward`]
     /// at each level).
     ///
     /// This mirrors what JEOD's truth recorder logs for `lm_dyn.composite_body`
@@ -553,7 +551,7 @@ impl Simulation {
                 position: offset_in_current_body,
                 t_parent_this: t_current_body_to_next_body,
             };
-            current_state = astrodyn_dynamics::propagate_forward(&current_state, &rel);
+            current_state = astrodyn::propagate_forward(&current_state, &rel);
             current_node_id = next_id;
         }
         current_state
@@ -808,7 +806,10 @@ impl Simulation {
         if let Some(ref mut abm) = body.abm4_state {
             abm.mark_topology_dirty();
         }
-        astrodyn::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
+        astrodyn::reset_integrators(
+            body.gj_state.as_mut().map(|s| s.inner_mut()),
+            body.abm4_state.as_mut().map(|s| s.inner_mut()),
+        );
     }
 
     /// Clear the kinematic-only flag on a body, returning ownership of
@@ -884,10 +885,9 @@ mod tests {
     use crate::SimulationBuilderExt;
     use astrodyn::recipes::Mission;
     use astrodyn::RotationalState;
-    use astrodyn_interactions::{ContactMaterial, SphericalTerrain};
-    use astrodyn_math::JeodQuat;
-    use astrodyn_time::leap_second::default_leap_second_table;
-    use astrodyn_time::SimulationTime;
+    use astrodyn::{
+        default_leap_second_table, ContactMaterial, JeodQuat, SimulationTime, SphericalTerrain,
+    };
     use std::sync::Arc;
 
     fn empty_sim() -> Simulation {

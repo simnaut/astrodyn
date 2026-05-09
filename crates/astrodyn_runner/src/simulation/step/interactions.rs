@@ -8,8 +8,7 @@
 
 use glam::{DMat3, DVec3};
 
-use astrodyn::{Position, RadiationForce, RootInertial, Vec3Ext};
-use astrodyn_quantities::IntegOrigin;
+use astrodyn::{IntegOrigin, Position, RadiationForce, RootInertial, Vec3Ext};
 
 use super::super::Simulation;
 
