@@ -581,24 +581,31 @@ fn build_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
             thermal_power_dump: 0.0,
         },
     )];
-    let mut sb = parity_skeleton();
-    // Atmosphere with spherical-fallback geometry: set the config
-    // directly without `atmosphere_planet_source`. The hand-rolled
-    // parity test takes the same shape (`AtmosphereModelR.planet_entity
-    // = None`), so the bridge's `populate_app` mirrors this with
-    // `planet_entity: None` — the atmosphere system uses the
-    // spherical r_eq/r_pol defaults instead of querying a planet
-    // entity for its `PlanetFixedRotationC`. Going through
-    // `SimulationBuilder::atmosphere(config, planet_source)` would
-    // implicitly couple to the planet's rotation which Earth (without
-    // an explicit `rotation_model`) doesn't carry.
-    sb.atmosphere = Some(astrodyn::AtmosphereConfig {
-        model: astrodyn::AtmosphereModel::Exponential(exp_atmos),
-        r_eq: astrodyn::EARTH.shape.r_eq,
-        r_pol: astrodyn::EARTH.shape.r_pol,
-        planet_omega: astrodyn::EARTH.omega,
-    });
-    let mut body = parity_body_sixdof(0, true);
+    // Construct the skeleton manually — atmospheric drag requires a
+    // rotating central body so the bridge can wire `PlanetFixedRotationC`
+    // (spherical-fallback atmosphere is rejected by populate_app's
+    // fence per the "fail loudly on misconfig" rule). Use Earth's full
+    // `central_body` config (point-mass gravity + EarthRNP rotation)
+    // for the central source. Sun follows the standard
+    // `parity_sun_source` marker-only pattern.
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, PARITY_DT);
+    let earth_idx = sb.add_source(
+        "Earth",
+        GravitySourceEntry::central_body(&astrodyn::planet_config::EARTH),
+    );
+    let sun = sb.add_source("Sun", parity_sun_source());
+    sb = sb.sun(sun);
+    sb = sb.atmosphere(
+        astrodyn::AtmosphereConfig {
+            model: astrodyn::AtmosphereModel::Exponential(exp_atmos),
+            r_eq: astrodyn::EARTH.shape.r_eq,
+            r_pol: astrodyn::EARTH.shape.r_pol,
+            planet_omega: astrodyn::EARTH.omega,
+        },
+        earth_idx,
+    );
+    let mut body = parity_body_sixdof(earth_idx, true);
     body.drag = Some(drag_config);
     body.srp = Some(SrpModel::FlatPlate(parity_flat_plate_state(
         plate,

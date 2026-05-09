@@ -217,28 +217,29 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         }
 
         // ── Atmosphere ──
-        //
-        // `atmosphere_planet_source = None` is the spherical-fallback
-        // path: the atmosphere system uses the config's `r_eq`/`r_pol`
-        // defaults instead of querying a planet entity for its
-        // `PlanetFixedRotationC`. The runner side accepts the same
-        // shape (`from_builder` copies both fields verbatim and only
-        // `validate` checks the index when `Some`); the bridge mirrors
-        // it by setting `planet_entity: None`. Hand-rolled parity
-        // tests for spherical-Earth atmosphere (drag without RNP) take
-        // exactly this path.
         if let Some(config) = atmosphere {
-            let planet_entity = atmosphere_planet_source.map(|planet_idx| {
-                *source_entities.get(planet_idx).unwrap_or_else(|| {
-                    panic!(
-                        "populate_app: atmosphere_planet_source index {planet_idx} out of \
-                         range ({sources_len} sources)"
-                    )
-                })
+            let planet_idx = atmosphere_planet_source.expect(
+                "populate_app: SimulationBuilder.atmosphere is Some but \
+                 atmosphere_planet_source is None. Atmosphere computation \
+                 requires a planet source whose `PlanetFixedRotationC` the \
+                 atmosphere system queries every tick. Call \
+                 `SimulationBuilder::atmosphere(config, planet_source)` (not \
+                 a direct `sb.atmosphere = Some(_)` field write) and ensure \
+                 the source has a `rotation_model` so `populate_app` inserts \
+                 `PlanetFixedRotationC` on it. The runner side accepts the \
+                 split fields as-is and the in-source-list index validation \
+                 catches a stale index, but a `None` planet source is a \
+                 misconfiguration the bridge surfaces here.",
+            );
+            let planet_entity = *source_entities.get(planet_idx).unwrap_or_else(|| {
+                panic!(
+                    "populate_app: atmosphere_planet_source index {planet_idx} out of \
+                     range ({sources_len} sources)"
+                )
             });
             app.insert_resource(AtmosphereModelR {
                 config,
-                planet_entity,
+                planet_entity: Some(planet_entity),
             });
         }
 
