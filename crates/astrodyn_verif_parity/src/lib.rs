@@ -121,6 +121,17 @@ impl VerificationCaseParityExt for VerificationCase {
             .populate_app::<P>(&mut app)
             .unwrap_or_else(|e| panic!("`{}`: bevy populate_app failed: {e:?}", self.name));
 
+        // Run Bevy's `Startup` schedule once so registration systems
+        // (`register_source_frames_system`, `register_body_frames_system`,
+        // `register_pfix_frames_system`) attach `FrameEntityC` to
+        // every source / body before any `pre_step` invocation. The
+        // first `FixedUpdate` would otherwise be the first time these
+        // run, but a `pre_step` hook that mutates a source via
+        // `AppSimContext::set_source_position` reaches through
+        // `SourceMutator`, which queries `FrameEntityC` and panics if
+        // it is missing.
+        app.world_mut().run_schedule(bevy::prelude::Startup);
+
         // Per-step pre_step hook: built once from the t=0 conditions so
         // the closure can capture run-once state (DE421, J2000 JD,
         // source indices). The runner half feeds the closure a `&mut
