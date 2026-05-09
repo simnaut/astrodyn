@@ -90,7 +90,7 @@ fn build_two_body_app(
             Name::new("VehicleA"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_a),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(1000.0)),
             )),
             GravityControlsC(GravityControls {
@@ -107,7 +107,7 @@ fn build_two_body_app(
             Name::new("VehicleB"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_b),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(500.0)),
             )),
             GravityControlsC(GravityControls {
@@ -247,7 +247,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
                 Name::new(name.to_string()),
                 DynamicsConfigC::default(),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(mass)),
                 )),
                 GravityControlsC(GravityControls {

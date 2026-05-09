@@ -185,8 +185,8 @@ pub fn propagate_state_from_root_system<P: Planet>(
             // allowed: typed↔raw kernel boundary
             let (rot_untyped, trans_untyped) = match read_q.get(entity) {
                 Ok((r, t)) => (
-                    crate::typed_bridge::rot_typed_to_raw(&r.0),
-                    crate::typed_bridge::trans_typed_to_raw(&t.0),
+                    astrodyn::typed_bridge::rot_typed_to_raw(&r.0),
+                    astrodyn::typed_bridge::trans_typed_to_raw(&t.0),
                 ),
                 Err(_) => Default::default(),
             };
@@ -300,8 +300,8 @@ pub fn propagate_state_from_root_system<P: Planet>(
                 // applied at *shift sites* via `to_inertial(&origin)`
                 // — never silently here.
                 // allowed: typed↔raw kernel-boundary writeback (#397)
-                rot_c.0 = crate::typed_bridge::rot_raw_to_self_ref(&state.rot);
-                trans_c.0 = crate::typed_bridge::trans_raw_to_planet::<P>(&state.trans);
+                rot_c.0 = astrodyn::typed_bridge::rot_raw_to_self_ref(&state.rot);
+                trans_c.0 = astrodyn::typed_bridge::trans_raw_to_planet::<P>(&state.trans);
             }
         }
     }
@@ -427,10 +427,10 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("rotated_parent"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(10.0)),
                 )),
-                RotationalStateC::from(crate::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -447,7 +447,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("kinematic_child"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(5.0)),
                 )),
                 MassChildOf::with_rotation(parent, offset, t_pc),
@@ -548,7 +548,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("root"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(10.0)),
                 )),
                 RotationalStateC::default(),
@@ -573,7 +573,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("mid"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(5.0)),
                 )),
                 MassChildOf::with_rotation(root, zero, t_pc),
@@ -591,7 +591,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("leaf"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(2.0)),
                 )),
                 MassChildOf::with_rotation(mid, zero, t_pc),
@@ -699,10 +699,10 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("rotated_parent"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(10.0)),
                 )),
-                RotationalStateC::from(crate::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
                 TranslationalStateC::<astrodyn::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -729,7 +729,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("kinematic_child"),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(5.0)),
                 )),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),

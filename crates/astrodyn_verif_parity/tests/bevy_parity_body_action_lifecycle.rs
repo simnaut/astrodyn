@@ -161,10 +161,10 @@ fn build_app() -> (App, Entity) {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(1.0)),
             )),
             astrodyn_bevy::DynamicsConfigC(DynamicsConfig {
@@ -190,7 +190,7 @@ fn write_msg(app: &mut App, msg: BodyActionEvent) {
 
 /// Read the vehicle's mass from the typed Component.
 fn read_mass(app: &App, vehicle: Entity) -> f64 {
-    astrodyn_bevy::typed_bridge::mass_typed_to_raw(
+    astrodyn::typed_bridge::mass_typed_to_raw(
         &app.world()
             .entity(vehicle)
             .get::<MassPropertiesC>()
@@ -202,7 +202,7 @@ fn read_mass(app: &App, vehicle: Entity) -> f64 {
 
 /// Read the vehicle's translational state from the typed Component.
 fn read_trans(app: &App, vehicle: Entity) -> TranslationalState {
-    astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+    astrodyn::typed_bridge::trans_typed_to_raw(
         &app.world()
             .entity(vehicle)
             .get::<TranslationalStateC<astrodyn::Earth>>()
@@ -478,10 +478,10 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(400_000.0)),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -638,10 +638,10 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(400_000.0)),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -802,10 +802,10 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(M0)),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -854,7 +854,7 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
         .entity_mut(vehicle)
         .get_mut::<MassPropertiesC>()
         .expect("mass props present") = MassPropertiesC::from(
-        astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL))),
+        astrodyn::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL))),
     );
 
     // First runs `message_update_system` (the buffer swap). FixedUpdate
@@ -878,7 +878,7 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
         .entity_mut(vehicle)
         .get_mut::<MassPropertiesC>()
         .expect("mass props present") = MassPropertiesC::from(
-        astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL2))),
+        astrodyn::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL2))),
     );
 
     app.world_mut().run_schedule(First);

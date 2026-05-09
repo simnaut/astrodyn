@@ -120,11 +120,11 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     // test configuration, which explicitly disables integration.
     let init = &records[0];
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: DVec3::ZERO,
         }),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(astrodyn::MassProperties::new(1.0)),
         )),
         shadow_body: Some(ShadowBody {

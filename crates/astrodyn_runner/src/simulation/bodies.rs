@@ -11,62 +11,15 @@
 
 use glam::DVec3;
 
-use astrodyn::{
-    evaluate_ground_contact_pair, kilogram, AngularVelocity, BodyAttitude, BodyFrame, ContactFacet,
-    DragConfig, Frame, GroundFacet, InertiaTensor, IntegrationFrame, Mass, MassBodyId,
-    MassPointState, MassProperties, MassPropertiesTyped, Phase, Position, RefFrameKind,
-    RefFrameRot, RefFrameState, RefFrameTrans, RotationalState, RotationalStateTyped, SelfRef,
-    StructuralFrame, TranslationalState, TranslationalStateTyped, VehicleConfig, Velocity,
+use astrodyn::typed_bridge::{
+    mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
+    trans_typed_to_raw,
 };
-
-// allowed: typed↔raw kernel-boundary helpers used by body
-// accessors / setters and contact-pair scaffolding (issue #397).
-#[inline]
-fn mass_typed_to_raw(m: &MassPropertiesTyped<SelfRef>) -> MassProperties {
-    MassProperties {
-        mass: m.mass.get::<kilogram>(),
-        inverse_mass: m.inverse_mass,
-        inertia: m.inertia.as_dmat3(),
-        inverse_inertia: m.inverse_inertia,
-        position: m.center_of_mass.raw_si(),
-        t_parent_this: m.t_parent_this,
-        dirty: m.dirty,
-    }
-}
-
-#[inline]
-fn mass_raw_to_typed(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
-    MassPropertiesTyped::<SelfRef>::with_inertia(
-        Mass::new::<kilogram>(mp.mass),
-        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia),
-        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position),
-    )
-    .with_t_parent_this(mp.t_parent_this)
-}
-
-#[inline]
-fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
-    RotationalState {
-        quaternion: s.q_inertial_body.to_jeod_quat(),
-        ang_vel_body: s.ang_vel_body.raw_si(),
-    }
-}
-
-#[inline]
-fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
-    RotationalStateTyped::<SelfRef>::new(
-        BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body),
-    )
-}
-
-#[inline]
-fn trans_typed_to_raw<F: Frame>(s: &TranslationalStateTyped<F>) -> TranslationalState {
-    TranslationalState {
-        position: s.position.raw_si(),
-        velocity: s.velocity.raw_si(),
-    }
-}
+use astrodyn::{
+    evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
+    MassBodyId, MassPointState, MassProperties, Phase, Position, RefFrameKind, RefFrameRot,
+    RefFrameState, RefFrameTrans, VehicleConfig, Velocity,
+};
 
 use super::types::{
     ContactPairConfig, GroundContactImpulse, GroundContactPairConfig, SimBody, VehicleOutput,
@@ -411,7 +364,7 @@ impl Simulation {
             "body_mass: body index {idx} out of range (have {} bodies)",
             self.bodies.len()
         );
-        // TODO(typed-cleanup): expose typed sibling once callers migrate.
+        // TODO(#408): expose typed sibling once callers migrate.
         self.bodies[idx].mass.as_ref().map(mass_typed_to_raw)
     }
 
@@ -720,7 +673,7 @@ impl Simulation {
         // allowed: typed↔raw kernel-boundary lift at the public API
         // setter (named-method opt-in; the implicit `.into()` bypass
         // was removed in #397).
-        self.bodies[idx].rot = Some(rot_raw_to_typed(&rot));
+        self.bodies[idx].rot = Some(rot_raw_to_self_ref(&rot));
         // Mirror the rotational state onto the body's frame-tree node so
         // downstream consumers — `compute_relative_state` walks that
         // traverse through it, or another body attaching to *this*
@@ -759,7 +712,7 @@ impl Simulation {
         mass.recompute_derived();
         // allowed: typed↔raw kernel-boundary lift at the public API
         // setter (named-method opt-in; see #397).
-        self.bodies[idx].mass = Some(mass_raw_to_typed(&mass));
+        self.bodies[idx].mass = Some(mass_raw_to_self_ref(&mass));
     }
 
     /// Toggle a body's aerodynamic drag configuration mid-run.
@@ -861,7 +814,7 @@ impl Simulation {
         composite.recompute_derived();
         // allowed: typed↔raw kernel-boundary lift from the mass tree's
         // raw composite (named-method opt-in; see #397).
-        self.bodies[idx].mass = Some(mass_raw_to_typed(&composite));
+        self.bodies[idx].mass = Some(mass_raw_to_self_ref(&composite));
 
         // ── IG.37: mark + reset the body's multi-step integrator history.
         //    The two-step pattern (mark dirty, then reset) is deliberate —

@@ -60,12 +60,12 @@ fn make_free_body_3dof(mass: f64, dt: f64) -> Simulation {
     add_dummy_central_source(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
         }),
         rot: None,
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls { controls: vec![] },
@@ -86,19 +86,17 @@ fn make_free_body_6dof(mass: f64, inertia: DMat3, dt: f64) -> Simulation {
 
     let mass_props = MassProperties::with_inertia(mass, inertia, DVec3::ZERO);
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()

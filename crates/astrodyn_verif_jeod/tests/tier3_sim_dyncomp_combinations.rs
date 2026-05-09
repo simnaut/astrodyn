@@ -90,12 +90,12 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
         }),
         rot: None,
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
@@ -223,12 +223,12 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
         }),
         rot: None,
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(MassProperties::new(1000.0)),
         )),
         gravity_controls: GravityControls {
@@ -326,17 +326,17 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
     sim.atmosphere_planet_source = Some(earth);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
@@ -420,19 +420,17 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
     // Initial omega tipped off the major axis to exercise all three Euler eqs.
     let omega0_body = DVec3::new(0.1, 0.02, 0.0); // rad/s
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: omega0_body,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -580,19 +578,17 @@ fn tier3_dyncomp_external_torque_impulse_response() {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel0,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -672,19 +668,17 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: omega0,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

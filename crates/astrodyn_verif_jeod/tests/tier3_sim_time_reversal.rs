@@ -113,17 +113,17 @@ fn tier3_sim_time_reversal_run1() {
     let init_quat = astrodyn::JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: init_quat,
                 ang_vel_body: DVec3::ZERO,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(MassProperties::new(1.0)),
         )), // mass doesn't affect spherical gravity
         gravity_controls: GravityControls {

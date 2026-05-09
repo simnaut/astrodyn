@@ -429,17 +429,17 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
     let row0 = &csv[0];
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: row0.position,
             velocity: row0.velocity,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: row0.quaternion,
                 ang_vel_body: row0.ang_vel_body,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(cm_only_mass),
         )),
         gravity_controls: GravityControls {

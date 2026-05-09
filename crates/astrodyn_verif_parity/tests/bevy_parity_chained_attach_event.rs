@@ -212,37 +212,25 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let v1 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh1_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh1_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh1_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh1_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh1_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh2_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh2_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh2_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh2_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh3_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh3_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh3_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh3_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -313,10 +301,10 @@ fn spawn_body(
         .spawn((
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
             MassBodyIdC(id),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),

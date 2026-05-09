@@ -154,12 +154,12 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(parent_mass()),
             )),
             MassBodyIdC(id_parent),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
             FrameDerivativesC::default(),
@@ -172,12 +172,12 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(child_mass()),
             )),
             MassBodyIdC(id_child),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
             FrameDerivativesC::default(),

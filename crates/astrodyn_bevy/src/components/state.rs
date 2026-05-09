@@ -25,10 +25,19 @@ use bevy::prelude::*;
 // `DVec3` is now a compile error — the typed accessor `Position<RootInertial>`
 // surfaces the convention as a type, not just a comment.
 //
-// `From<Untyped>` impls are provided on every spatial Component so
-// existing test/example code that constructs `TranslationalStateC(state)`
-// from an untyped `TranslationalState` switches to
-// `TranslationalStateC::<astrodyn::Earth>::from_untyped(state)` without other changes.
+// The `From<Untyped>` impls and `RotationalStateC::from_untyped` /
+// `MassPropertiesC::from_untyped` named opt-ins were deleted in #397
+// (delete-not-allow): mission code constructs the typed sibling directly
+// (`RotationalStateTyped::<SelfRef>::new(...)`,
+// `MassPropertiesTyped::<SelfRef>::with_inertia(...)`) and lifts to the
+// Component via the typed-side `From<RotationalStateTyped<SelfRef>>` /
+// `From<MassPropertiesTyped<SelfRef>>` impls (still present below).
+// The lone exception is `TranslationalStateC::<P>::from_untyped(state)`,
+// which remains as a named opt-in because the relabel from the gateway's
+// `TranslationalStateTyped<RootInertial>` to the Component's
+// `TranslationalStateTyped<PlanetInertial<P>>` storage requires the
+// caller to assert `P` — there is no information-preserving typed-side
+// `From` impl that can do that without a witness.
 
 /// Translational state (position, velocity) for the body being
 /// integrated. Wraps a typed

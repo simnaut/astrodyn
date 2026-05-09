@@ -45,7 +45,7 @@ use astrodyn::{
 };
 
 use crate::components::{MassChildOf, MassPropertiesC};
-use crate::typed_bridge::{mass_raw_to_self_ref, mass_typed_to_raw};
+use astrodyn::typed_bridge::{mass_raw_to_self_ref, mass_typed_to_raw};
 
 // allowed: typed↔raw kernel-boundary helper for the many test sites that
 // build a fresh `MassProperties::new(...)` and need a Component for

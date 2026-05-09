@@ -91,7 +91,7 @@ fn build_solar_beta_sim(
     sim.sun_source = Some(sun);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&body_state),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&body_state),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

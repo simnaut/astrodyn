@@ -51,7 +51,7 @@ pub fn aero_drag_system<P: Planet>(
         // structural-frame Component still uses raw DVec3; that's a
         // remaining typed-storage boundary).
         // allowed: typed↔raw kernel boundary
-        let rot_untyped = crate::typed_bridge::rot_typed_to_raw(&rot.0);
+        let rot_untyped = astrodyn::typed_bridge::rot_typed_to_raw(&rot.0);
         let t_inertial_body = rot_untyped.quaternion.left_quat_to_transformation();
         let t_inertial_struct =
             astrodyn::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
@@ -96,7 +96,7 @@ pub fn gravity_torque_system(
         // directly; read it without lifting. Same for the rotational
         // state — it's already typed.
         // allowed: typed↔raw kernel boundary
-        let rot_untyped = crate::typed_bridge::rot_typed_to_raw(&rot.0);
+        let rot_untyped = astrodyn::typed_bridge::rot_typed_to_raw(&rot.0);
         let t_parent_this = rot_untyped.quaternion.left_quat_to_transformation();
         torque.0 = astrodyn::compute_gravity_torque_typed::<SelfRef>(
             &grav.grav_grad,

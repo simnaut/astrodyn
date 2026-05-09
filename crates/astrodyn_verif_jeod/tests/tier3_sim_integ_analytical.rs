@@ -78,7 +78,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(SMA, 0.0, 0.0),
             velocity: DVec3::new(0.0, circular_velocity(), 0.0),
         }),

@@ -274,7 +274,7 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                     });
                     ids.push(Some(tree.add_body(
                         name.clone(),
-                        crate::typed_bridge::mass_typed_to_raw(&mass),
+                        astrodyn::typed_bridge::mass_typed_to_raw(&mass),
                     )));
                 } else {
                     ids.push(None);
@@ -538,7 +538,7 @@ mod tests {
         let earth_idx = b.add_source("Earth", earth);
         b.add_body(VehicleConfig {
             // allowed: typed↔raw kernel boundary (#397)
-            trans: crate::typed_bridge::trans_raw_to_root(&iss_trans()),
+            trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },
@@ -576,7 +576,7 @@ mod tests {
             .step_n(NUM_STEPS)
             .expect("runner step_n must succeed");
         // allowed: typed↔raw kernel boundary
-        let runner_state = crate::typed_bridge::trans_typed_to_raw(&runner_sim.body(0).trans);
+        let runner_state = astrodyn::typed_bridge::trans_typed_to_raw(&runner_sim.body(0).trans);
 
         // Bridge — populate a fresh app from the same builder, step.
         let mut app = App::new();
@@ -588,7 +588,7 @@ mod tests {
         assert_eq!(handles.body_entities.len(), 1);
         step_bevy(&mut app, NUM_STEPS);
         // allowed: typed↔raw kernel boundary
-        let bevy_state = crate::typed_bridge::trans_typed_to_raw(
+        let bevy_state = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<TranslationalStateC<astrodyn::Earth>>(handles.body_entities[0])
                 .expect("vehicle entity must carry TranslationalStateC<Earth>")
@@ -656,7 +656,7 @@ mod tests {
         );
         b.add_body(VehicleConfig {
             // allowed: typed↔raw kernel boundary (#397)
-            trans: crate::typed_bridge::trans_raw_to_root(&iss_trans()),
+            trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },

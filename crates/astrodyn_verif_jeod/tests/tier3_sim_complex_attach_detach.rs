@@ -339,37 +339,31 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, dt);
 
     let v1 = sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh1_initial_trans()),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh1_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(veh1_initial_rot()),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(veh1_mass()),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh2_initial_trans()),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(veh2_initial_rot()),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(veh2_mass()),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh3_initial_trans()),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(veh3_initial_rot()),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(veh3_mass()),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()

@@ -139,11 +139,11 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
     );
 
     let body = sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: POS_ECI,
             velocity: VEL_ECI,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
@@ -151,7 +151,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         )),
         // allowed: typed↔raw kernel-boundary lift on scenario mass
         // construction (named-method opt-in; see #397).
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(&{
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&{
             // Inertia: diag(100000, 200000, 400000) slug*ft^2; 1 slug*ft^2 = 1.355817948 kg*m^2
             const SLUG_FT2_TO_KG_M2: f64 = 1.355_817_948;
             let inertia = DMat3::from_diagonal(DVec3::new(

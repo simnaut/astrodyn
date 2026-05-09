@@ -66,10 +66,10 @@ fn mass_point_ref_inserted_on_body_with_mass_properties() {
         .spawn((
             Name::new("vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass()))),
             DynamicsConfigC(dynamics()),
         ))
         .id();
@@ -117,7 +117,7 @@ fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
         .spawn((
             Name::new("late_mass"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
             // Note: no MassPropertiesC at spawn — kinematic-only.
@@ -148,7 +148,7 @@ fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
     app.world_mut()
         .entity_mut(body)
         .insert(MassPropertiesC::from(
-            astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass())),
+            astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass())),
         ));
 
     // Drive another tick so `sync_body_mass_point_ref_system` fires.
@@ -180,10 +180,10 @@ fn mass_point_ref_removed_when_mass_lost_after_registration() {
         .spawn((
             Name::new("loses_mass"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass()))),
             DynamicsConfigC(dynamics()),
         ))
         .id();
@@ -228,7 +228,7 @@ fn mass_point_ref_omitted_for_kinematic_only_body() {
         .spawn((
             Name::new("kinematic"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
             DynamicsConfigC(dynamics()),

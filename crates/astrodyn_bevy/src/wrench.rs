@@ -522,7 +522,7 @@ pub fn wrench_aggregation_system(
             let mass = mass_q
                 .get(entity)
                 .ok()
-                .map(|(_, m)| crate::typed_bridge::mass_typed_to_raw(&m.0));
+                .map(|(_, m)| astrodyn::typed_bridge::mass_typed_to_raw(&m.0));
             let grav_accel = grav_q
                 .get(entity)
                 .map_or(DVec3::ZERO, |g| g.0.grav_accel.raw_si());
@@ -531,7 +531,7 @@ pub fn wrench_aggregation_system(
             let rot = rot_q
                 .get(entity)
                 .ok()
-                .map(|r| crate::typed_bridge::rot_typed_to_raw(&r.0));
+                .map(|r| astrodyn::typed_bridge::rot_typed_to_raw(&r.0));
             let new_derivs = if let (Some(rot), Some(m)) = (rot, mass) {
                 astrodyn::compute_frame_derivatives(
                     &total,
@@ -574,12 +574,12 @@ mod tests {
     // / `RotationalStateC::from_untyped`.
     #[inline]
     fn mp_c_from_raw(mp: MassProperties) -> MassPropertiesC {
-        MassPropertiesC(crate::typed_bridge::mass_raw_to_self_ref(&mp))
+        MassPropertiesC(astrodyn::typed_bridge::mass_raw_to_self_ref(&mp))
     }
 
     #[inline]
     fn rot_c_from_raw(r: astrodyn::RotationalState) -> RotationalStateC {
-        RotationalStateC(crate::typed_bridge::rot_raw_to_self_ref(&r))
+        RotationalStateC(astrodyn::typed_bridge::rot_raw_to_self_ref(&r))
     }
 
     fn add_test_app() -> App {
@@ -1328,7 +1328,7 @@ mod tests {
         // the child's pose every step from the root; for this
         // regression test we only need to confirm the integrator
         // does not move it.)
-        let parent_pos = crate::typed_bridge::trans_typed_to_raw(
+        let parent_pos = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
                 .unwrap()
@@ -1374,7 +1374,7 @@ mod tests {
         // gravity would have integrated it ~9.8/2 m in the first
         // step alone (4.9 m), with growing drift each subsequent
         // step.
-        let child_pos = crate::typed_bridge::trans_typed_to_raw(
+        let child_pos = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<crate::TranslationalStateC<astrodyn::Earth>>(child)
                 .unwrap()
@@ -1394,7 +1394,7 @@ mod tests {
         // Sanity: the parent (root) DID integrate. If neither moved,
         // the test would silently pass even with a broken
         // integration system.
-        let parent_pos_after = crate::typed_bridge::trans_typed_to_raw(
+        let parent_pos_after = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
                 .unwrap()

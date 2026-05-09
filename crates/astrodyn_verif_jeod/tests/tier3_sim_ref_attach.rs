@@ -237,7 +237,7 @@ fn build_ref_attach_sim() -> Simulation {
     let mut sb = SimulationBuilder::new(epoch::j2000(), DT_S);
     let _earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
-        .with_translational(astrodyn_verif_jeod::typed_bridge::trans_raw_to_typed(
+        .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(
             &TranslationalState { position, velocity },
         ))
         .sixdof(

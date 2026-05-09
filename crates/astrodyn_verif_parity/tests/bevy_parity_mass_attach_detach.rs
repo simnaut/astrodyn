@@ -82,7 +82,7 @@ fn spawn_topology(
     let parent = app
         .world_mut()
         .spawn(MassPropertiesC::from(
-            astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(parent_core)),
+            astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_core)),
         ))
         .id();
     let mut child_entities = Vec::with_capacity(children.len());
@@ -90,7 +90,7 @@ fn spawn_topology(
         let cid = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(core)),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(core)),
                 MassChildOf::with_rotation(parent, *offset, *t_parent_child),
             ))
             .id();
@@ -102,7 +102,7 @@ fn spawn_topology(
 
 /// Read the composite mass / position / inertia from a Bevy entity.
 fn read_composite(app: &App, entity: Entity) -> MassProperties {
-    astrodyn_bevy::typed_bridge::mass_typed_to_raw(
+    astrodyn::typed_bridge::mass_typed_to_raw(
         &app.world()
             .get::<MassPropertiesC>(entity)
             .expect("entity has MassPropertiesC")
@@ -446,18 +446,14 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
     let parent_entity = app
         .world_mut()
         .spawn((
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(parent_core),
-            )),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_core))),
             MassBodyIdC(parent_arena_id),
         ))
         .id();
     let child_entity = app
         .world_mut()
         .spawn((
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(child_core),
-            )),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_core))),
             MassBodyIdC(child_arena_id),
         ))
         .id();

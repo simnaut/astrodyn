@@ -135,7 +135,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: veh_pos,
             velocity: DVec3::new(0.0, 7668.56, 0.0),
         }),
@@ -347,7 +347,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -365,7 +365,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans);
     assert_trans_eq(
         "Bevy vs Sim (earth lighting pipeline)",
         &bevy_trans,
@@ -544,7 +544,7 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: lifted_pos,
             velocity: lifted_vel,
         }),

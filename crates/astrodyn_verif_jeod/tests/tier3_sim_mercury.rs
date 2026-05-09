@@ -70,7 +70,7 @@ fn propagate_mercury_periapses(
     ctrl.relativistic = relativistic;
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
         }),
@@ -269,7 +269,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
         ),
     );
     sim_n.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
         }),
@@ -300,7 +300,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     let mut ctrl = GravityControl::new_spherical(sun_r, false);
     ctrl.relativistic = true;
     sim_r.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
         }),

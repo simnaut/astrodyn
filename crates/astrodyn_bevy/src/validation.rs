@@ -284,8 +284,8 @@ pub fn validate_jeod_invariants<P: Planet>(
         // — runs once at startup — so the per-call conversion cost is
         // negligible compared to the typed-storage win.)
         // allowed: typed↔raw kernel boundary
-        let mass_untyped = mass.map(|m| crate::typed_bridge::mass_typed_to_raw(&m.0));
-        let trans_untyped = trans_state.map(|t| crate::typed_bridge::trans_typed_to_raw(&t.0));
+        let mass_untyped = mass.map(|m| astrodyn::typed_bridge::mass_typed_to_raw(&m.0));
+        let trans_untyped = trans_state.map(|t| astrodyn::typed_bridge::trans_typed_to_raw(&t.0));
         let errors = astrodyn::validate_body(
             config,
             &controls.0,

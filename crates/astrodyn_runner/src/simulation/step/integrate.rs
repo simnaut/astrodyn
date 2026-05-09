@@ -14,44 +14,13 @@ use astrodyn::integration::{
     integrate_bodies_contact_coupled_typed, integrate_body_coupled_typed, integrate_body_typed,
     CoupledBodyInputTyped,
 };
+use astrodyn::typed_bridge::{mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw};
 use astrodyn::{
-    aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair, kilogram,
-    Acceleration, AngularVelocity, BodyAttitude, BodyFrame, CoupledStageEval, EdgeGeometry, Force,
-    GravityControls, IntegOrigin, IntegrationFrame, MassBodyId, MassProperties,
-    MassPropertiesTyped, MassStorage, Phase, Position, RadiationForce, RotationalState,
-    RotationalStateTyped, SelfRef, Torque, TranslationalState, Velocity, Wrench,
+    aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
+    Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force, GravityControls, IntegOrigin,
+    IntegrationFrame, MassBodyId, MassProperties, MassStorage, Phase, Position, RadiationForce,
+    RotationalState, SelfRef, Torque, TranslationalState, Velocity, Wrench,
 };
-
-// allowed: typed↔raw kernel-boundary helpers used by force collection
-// and integrator dispatch (issue #397).
-#[inline]
-fn mass_typed_to_raw(m: &MassPropertiesTyped<SelfRef>) -> MassProperties {
-    MassProperties {
-        mass: m.mass.get::<kilogram>(),
-        inverse_mass: m.inverse_mass,
-        inertia: m.inertia.as_dmat3(),
-        inverse_inertia: m.inverse_inertia,
-        position: m.center_of_mass.raw_si(),
-        t_parent_this: m.t_parent_this,
-        dirty: m.dirty,
-    }
-}
-
-#[inline]
-fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
-    RotationalState {
-        quaternion: s.q_inertial_body.to_jeod_quat(),
-        ang_vel_body: s.ang_vel_body.raw_si(),
-    }
-}
-
-#[inline]
-fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
-    RotationalStateTyped::<SelfRef>::new(
-        BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body), // allowed: typed↔raw kernel boundary
-    )
-}
 
 use std::collections::HashMap;
 
@@ -503,7 +472,7 @@ impl Simulation {
                     // Writeback typed rot from the bridged untyped local.
                     if let Some(updated) = rot_untyped {
                         // allowed: typed↔raw kernel-boundary writeback (see #397).
-                        body.rot = Some(rot_raw_to_typed(&updated));
+                        body.rot = Some(rot_raw_to_self_ref(&updated));
                     }
 
                     body.radiation_force = Some(RadiationForce {
@@ -562,7 +531,7 @@ impl Simulation {
                     // Writeback typed rot from the bridged untyped local.
                     if let Some(updated) = rot_untyped {
                         // allowed: typed↔raw kernel-boundary writeback (see #397).
-                        body.rot = Some(rot_raw_to_typed(&updated));
+                        body.rot = Some(rot_raw_to_self_ref(&updated));
                     }
                 }
             }
@@ -862,7 +831,7 @@ impl Simulation {
             for (body, rot) in bodies_mut.iter_mut().zip(rot_untyped_vec) {
                 // allowed: typed↔raw kernel-boundary writeback for the
                 // contact-coupled scratch slot (see #397).
-                body.rot = Some(rot_raw_to_typed(&rot));
+                body.rot = Some(rot_raw_to_self_ref(&rot));
             }
 
             // Mark pending init impulses as consumed so subsequent steps

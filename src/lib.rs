@@ -71,6 +71,7 @@ pub mod simulation_builder;
 pub mod source_frames;
 pub mod source_state;
 pub mod sources;
+pub mod typed_bridge;
 pub mod validation;
 pub mod vehicle_builder;
 pub mod vehicle_config;

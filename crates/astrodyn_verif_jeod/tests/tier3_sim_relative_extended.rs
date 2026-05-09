@@ -62,7 +62,7 @@ fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
 
 fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -248,8 +248,8 @@ fn tier3_relative_hohmann_transfer_geometry() {
     // Initial separation: both bodies at the same point → 0.
     let body0 = sim.body(0);
     let body1 = sim.body(1);
-    let body0_trans = astrodyn_verif_jeod::typed_bridge::trans_typed_to_raw(&body0.trans);
-    let body1_trans = astrodyn_verif_jeod::typed_bridge::trans_typed_to_raw(&body1.trans);
+    let body0_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body0.trans);
+    let body1_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body1.trans);
     let init_rel =
         compute_relative_state::<SelfRef, SelfRef>(&body0_trans, None, &body1_trans, None);
     let init_sep = init_rel.trans.position_raw().length();

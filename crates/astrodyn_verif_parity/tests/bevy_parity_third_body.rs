@@ -90,7 +90,7 @@ fn tier3_bevy_solar_beta_equ() {
     sim.ephemeris = Some(eph_sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&equ_trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&equ_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -105,7 +105,7 @@ fn tier3_bevy_solar_beta_equ() {
 
     let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim", "solar_beta_equ", bevy_beta, sim_beta);
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq("Bevy vs Sim (solar_beta_equ)", &bevy_trans, &sim_trans);
     println!("  Solar beta equatorial: bit-identical");
 }
@@ -180,7 +180,7 @@ fn tier3_bevy_solar_beta_obliquity() {
     sim.ephemeris = Some(eph_sim);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&obl_trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&obl_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -195,7 +195,7 @@ fn tier3_bevy_solar_beta_obliquity() {
 
     let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim", "solar_beta_obliquity", bevy_beta, sim_beta);
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq(
         "Bevy vs Sim (solar_beta_obliquity)",
         &bevy_trans,
@@ -291,12 +291,10 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         app.world_mut()
             .spawn((
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                     &(tumble_rot()),
                 )),
-                MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                    &(iss_mass()),
-                )),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
                 DynamicsConfigC(config),
                 GravityControlsC(GravityControls { controls }),
             ))
@@ -367,20 +365,16 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     }
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         rot: if sixdof {
             // allowed: typed↔raw kernel-boundary lift (see #397).
-            Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-                &tumble_rot(),
-            ))
+            Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&tumble_rot()))
         } else {
             None
         },
         mass: if sixdof {
             // allowed: typed↔raw kernel-boundary lift (see #397).
-            Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &iss_mass(),
-            ))
+            Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&iss_mass()))
         } else {
             None
         },
@@ -395,13 +389,13 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     if sixdof {
         let bevy_state = read_sixdof(app.world(), vehicle);
         let sim_state = SixDofState {
-            trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans),
-            rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim.body(0).rot.unwrap()),
+            trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans),
+            rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim.body(0).rot.unwrap()),
         };
         assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
     } else {
         let bevy_trans = read_trans(app.world(), vehicle);
-        let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+        let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
         assert_trans_eq(&format!("Bevy vs Sim ({label})"), &bevy_trans, &sim_trans);
     }
 }
@@ -570,7 +564,7 @@ fn tier3_bevy_mars_dawn() {
     sim_sun_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&mars_trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&mars_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(mars_idx, false), sim_sun_ctrl],
         },
@@ -580,7 +574,7 @@ fn tier3_bevy_mars_dawn() {
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
     {
-        let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+        let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
         assert_trans_eq("Bevy vs Sim (mars_dawn)", &bevy_trans, &sim_trans);
     };
     println!("  Mars dawn: bit-identical");
@@ -650,7 +644,7 @@ fn tier3_bevy_mercury_relativistic() {
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&mercury_trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&mercury_trans),
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
@@ -659,7 +653,7 @@ fn tier3_bevy_mercury_relativistic() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq(
         "Bevy vs Sim (mercury_relativistic)",
         &bevy_trans,
@@ -752,7 +746,7 @@ fn tier3_bevy_relativistic_moving_source() {
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&mercury_trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&mercury_trans),
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
@@ -761,7 +755,7 @@ fn tier3_bevy_relativistic_moving_source() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq(
         "Bevy vs Sim (relativistic_moving_source)",
         &bevy_trans,
@@ -858,9 +852,9 @@ fn tier3_bevy_earth_moon_clem() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(clem_trans),
-            astrodyn_bevy::MassPropertiesC::from(
-                astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass_props)),
-            ),
+            astrodyn_bevy::MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(mass_props),
+            )),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![
@@ -917,10 +911,8 @@ fn tier3_bevy_earth_moon_clem() {
     sim_moon_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&clem_trans),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&clem_trans),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth_idx, false),
@@ -938,7 +930,7 @@ fn tier3_bevy_earth_moon_clem() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq("Bevy vs Sim (earth_moon_clem)", &bevy_trans, &sim_trans);
     println!("  Earth-Moon Clementine SRP: bit-identical");
 }

@@ -102,20 +102,20 @@ pub fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
 
 pub fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(
             &world
                 .get::<TranslationalStateC<astrodyn::Earth>>(entity)
                 .unwrap()
                 .0,
         ),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(
             &world.get::<RotationalStateC>(entity).unwrap().0,
         ),
     }
 }
 
 pub fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+    astrodyn::typed_bridge::trans_typed_to_raw(
         &world
             .get::<TranslationalStateC<astrodyn::Earth>>(entity)
             .unwrap()
@@ -218,13 +218,9 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
 
 pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
     VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(tumble_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(iss_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },

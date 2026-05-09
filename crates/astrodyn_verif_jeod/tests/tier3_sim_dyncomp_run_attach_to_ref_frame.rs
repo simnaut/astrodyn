@@ -335,19 +335,17 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
     // `lvlh_init` body-action body-frame composition just for this
     // single test. ──
     let body_idx = sb.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: t0.composite_body.position,
             velocity: t0.composite_body.velocity,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::from_glam(t0.composite_body.quaternion),
                 ang_vel_body: t0.composite_body.ang_vel,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(mass),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth_idx, 8, 8, true),

@@ -23,7 +23,6 @@ pub mod scenario;
 pub mod sets;
 pub mod source_mutator;
 pub mod systems;
-pub mod typed_bridge;
 pub mod validation;
 pub mod wrench;
 

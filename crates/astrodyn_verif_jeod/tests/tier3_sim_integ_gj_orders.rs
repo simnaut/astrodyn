@@ -74,7 +74,7 @@ fn gj_energy_error(order: usize) -> f64 {
     let init_vel = DVec3::new(0.0, circular_velocity(), 0.0);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
         }),

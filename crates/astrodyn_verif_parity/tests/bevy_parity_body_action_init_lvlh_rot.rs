@@ -81,10 +81,10 @@ fn build_app() -> (App, Entity) {
             TranslationalStateC::<astrodyn::Earth>::default(),
             // Placeholder rotational state we expect the action to
             // overwrite on `update`.
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(RotationalState::default()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(1_000.0)),
             )),
             astrodyn_bevy::DynamicsConfigC(DynamicsConfig {
@@ -105,7 +105,7 @@ fn write_msg(app: &mut App, msg: BodyActionEvent) {
 }
 
 fn read_rot(app: &App, vehicle: Entity) -> RotationalState {
-    astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+    astrodyn::typed_bridge::rot_typed_to_raw(
         &app.world()
             .entity(vehicle)
             .get::<RotationalStateC>()

@@ -44,12 +44,8 @@ fn tier3_bevy_point_mass_sixdof() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-                &(tumble_rot()),
-            )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(iss_mass()),
-            )),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -80,8 +76,8 @@ fn tier3_bevy_point_mass_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim", &bevy_state, &sim_state);
@@ -111,7 +107,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&trans),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -120,7 +116,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
     assert_trans_eq(&format!("Bevy vs Sim ({label})"), &bevy_trans, &sim_trans);
 }
 
@@ -177,12 +173,8 @@ fn tier3_bevy_run2_6dof() {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-                &(tumble_rot()),
-            )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(iss_mass()),
-            )),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -205,8 +197,8 @@ fn tier3_bevy_run2_6dof() {
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq("Bevy vs Sim (run2_6dof)", &bevy_state, &sim_state);
 }
@@ -266,7 +258,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
         let (mut sim, earth_idx) = new_sim_earth(DT);
         sim.add_body(VehicleConfig {
             // allowed: typed↔raw kernel-boundary lift (see #397).
-            trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(trans),
+            trans: astrodyn::typed_bridge::trans_raw_to_root(trans),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },
@@ -274,7 +266,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
         });
         sim.validate().unwrap();
         sim.step().expect("step failed");
-        let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+        let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
         assert_trans_eq(
             &format!("Bevy vs Sim (orbinit {label})"),
             &bevy_trans,
@@ -341,13 +333,9 @@ fn tier3_sim_time_reversal_round_trip() {
     earth_entry.central = true;
     let earth = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(tumble_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(iss_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -404,13 +392,9 @@ fn tier3_sim_relative_state_consistency() {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(tumble_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(iss_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -420,16 +404,14 @@ fn tier3_sim_relative_state_consistency() {
     let mut trans_b = iss_trans();
     trans_b.position += DVec3::new(100.0, 0.0, 0.0);
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&trans_b),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans_b),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
             }),
         )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(iss_mass()),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -441,16 +423,10 @@ fn tier3_sim_relative_state_consistency() {
 
     let a = sim.body(0);
     let b = sim.body(1);
-    let a_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&a.trans);
-    let b_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&b.trans);
-    let a_rot = a
-        .rot
-        .as_ref()
-        .map(astrodyn_bevy::typed_bridge::rot_typed_to_raw);
-    let b_rot = b
-        .rot
-        .as_ref()
-        .map(astrodyn_bevy::typed_bridge::rot_typed_to_raw);
+    let a_trans = astrodyn::typed_bridge::trans_typed_to_raw(&a.trans);
+    let b_trans = astrodyn::typed_bridge::trans_typed_to_raw(&b.trans);
+    let a_rot = a.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
+    let b_rot = b.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
 
     // `<SelfRef, SelfRef>` is the canonical runtime-resolved boundary
     // — both subject and reference vehicle identities live in
@@ -560,7 +536,7 @@ fn tier3_sim_mars_rotation_dispatch() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(3.5e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 3.5e3, 0.0),
         }),
@@ -635,7 +611,7 @@ fn tier3_sim_multi_source_rotation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -711,12 +687,8 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-                &(tumble_rot()),
-            )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(iss_mass()),
-            )),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -734,13 +706,9 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&trans),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(tumble_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(iss_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },
@@ -751,8 +719,8 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }

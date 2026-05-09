@@ -114,11 +114,9 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
         .spawn((
             Name::new("Lunar"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-                &(body_mass()),
-            )),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(body_mass()))),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
             FrameDerivativesC::default(),

@@ -68,7 +68,7 @@ pub fn euler_angles_system(
             // typed `[Angle; 3]` (the typed-output naming convention
             // documented in astrodyn::derived). Convert at the call.
             // allowed: typed↔raw kernel boundary
-            let rot_untyped = crate::typed_bridge::rot_typed_to_raw(&rot.0);
+            let rot_untyped = astrodyn::typed_bridge::rot_typed_to_raw(&rot.0);
             angles.0 = astrodyn::compute_body_euler_angles_typed(&rot_untyped, config.sequence);
         } else {
             angles.0 = Default::default();

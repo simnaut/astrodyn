@@ -77,7 +77,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
 
     // Body 0: reference vehicle
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.ref_pos,
             velocity: init.ref_vel,
         }),
@@ -86,7 +86,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
 
     // Body 1: subject vehicle
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.subj_pos,
             velocity: init.subj_vel,
         }),

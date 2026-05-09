@@ -409,13 +409,13 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     );
 
     let bevy_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
                 .unwrap()
                 .0,
         ),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(
             &app.world().get::<RotationalStateC>(vehicle).unwrap().0,
         ),
     };
@@ -436,8 +436,8 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     sim.step_n(NUM_STEPS).expect("step_n failed");
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_bit_identical(

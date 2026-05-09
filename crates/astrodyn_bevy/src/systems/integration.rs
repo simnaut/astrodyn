@@ -14,11 +14,11 @@ use glam::DVec3;
 
 use crate::components::*;
 use crate::frame_param::{FrameOrigin, RelativeFrameState};
-use crate::typed_bridge::{
+use crate::SimulationTimeR;
+use astrodyn::typed_bridge::{
     mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
     trans_raw_to_planet, trans_typed_to_raw,
 };
-use crate::SimulationTimeR;
 
 use super::util::body_integ_origin_in_root_lazy;
 

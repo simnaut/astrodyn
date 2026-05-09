@@ -92,37 +92,33 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
 
     // Body 0: vehicle A (subject)
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh_a_pos,
             velocity: init.veh_a_vel,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: init.veh_a_quat,
                 ang_vel_body: init.veh_a_ang_vel,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(dummy_mass),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(dummy_mass))),
         ..Default::default()
     });
 
     // Body 1: vehicle B (reference)
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh_b_pos,
             velocity: init.veh_b_vel,
         }),
-        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(RotationalState {
                 quaternion: init.veh_b_quat,
                 ang_vel_body: init.veh_b_ang_vel,
             }),
         )),
-        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
-            &(dummy_mass),
-        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(dummy_mass))),
         ..Default::default()
     });
 
@@ -143,14 +139,8 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             position: b.trans.position.raw_si(),
             velocity: b.trans.velocity.raw_si(),
         };
-        let a_rot = a
-            .rot
-            .as_ref()
-            .map(astrodyn_verif_jeod::typed_bridge::rot_typed_to_raw);
-        let b_rot = b
-            .rot
-            .as_ref()
-            .map(astrodyn_verif_jeod::typed_bridge::rot_typed_to_raw);
+        let a_rot = a.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
+        let b_rot = b.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
         let rel = compute_relative_state::<SelfRef, SelfRef>(
             &b_trans,
             b_rot.as_ref(),
@@ -182,14 +172,8 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             position: b.trans.position.raw_si(),
             velocity: b.trans.velocity.raw_si(),
         };
-        let a_rot = a
-            .rot
-            .as_ref()
-            .map(astrodyn_verif_jeod::typed_bridge::rot_typed_to_raw);
-        let b_rot = b
-            .rot
-            .as_ref()
-            .map(astrodyn_verif_jeod::typed_bridge::rot_typed_to_raw);
+        let a_rot = a.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
+        let b_rot = b.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
 
         let rel = compute_relative_state::<SelfRef, SelfRef>(
             &b_trans,

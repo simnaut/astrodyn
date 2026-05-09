@@ -72,8 +72,8 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
         .spawn((
             Name::new("body"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(&(rot))),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(MassProperties::new(1.0)),
             )),
             DynamicsConfigC(DynamicsConfig {

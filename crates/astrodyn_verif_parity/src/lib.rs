@@ -178,7 +178,7 @@ impl VerificationCaseParityExt for VerificationCase {
             //    same body.
             for (body_idx, &entity) in handles.body_entities.iter().enumerate() {
                 let runner_body = runner_sim.body(body_idx);
-                let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+                let bevy_trans = astrodyn::typed_bridge::trans_typed_to_raw(
                     &app.world()
                         .get::<TranslationalStateC<P>>(entity)
                         .unwrap_or_else(|| {
@@ -191,7 +191,7 @@ impl VerificationCaseParityExt for VerificationCase {
                         .0,
                 );
                 let runner_trans_untyped =
-                    astrodyn_bevy::typed_bridge::trans_typed_to_raw(&runner_body.trans);
+                    astrodyn::typed_bridge::trans_typed_to_raw(&runner_body.trans);
                 assert_translational_bits_eq(
                     self.name,
                     body_idx,
@@ -200,7 +200,7 @@ impl VerificationCaseParityExt for VerificationCase {
                     &runner_trans_untyped,
                 );
                 if let Some(runner_rot) = runner_body.rot.as_ref() {
-                    let bevy_rot = astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+                    let bevy_rot = astrodyn::typed_bridge::rot_typed_to_raw(
                         &app.world()
                             .get::<RotationalStateC>(entity)
                             .unwrap_or_else(|| {
@@ -212,8 +212,7 @@ impl VerificationCaseParityExt for VerificationCase {
                             })
                             .0,
                     );
-                    let runner_rot_untyped =
-                        astrodyn_bevy::typed_bridge::rot_typed_to_raw(runner_rot);
+                    let runner_rot_untyped = astrodyn::typed_bridge::rot_typed_to_raw(runner_rot);
                     assert_rotational_bits_eq(
                         self.name,
                         body_idx,

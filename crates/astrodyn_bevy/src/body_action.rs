@@ -623,7 +623,7 @@ pub fn body_action_system<P: Planet>(
             // Action-fire boundary — `BodyAction::apply_translational`
             // returns the ECS-agnostic `TranslationalState` (#397).
             // allowed: typed↔raw kernel boundary at action-fire time.
-            comp.0 = crate::typed_bridge::trans_raw_to_planet::<P>(&state);
+            comp.0 = astrodyn::typed_bridge::trans_raw_to_planet::<P>(&state);
             state_mutated = true;
         }
         if let Some(state) = action.action.apply_rotational() {
@@ -638,7 +638,7 @@ pub fn body_action_system<P: Planet>(
                 });
             // Same action-fire boundary as the translational branch above (#397).
             // allowed: typed↔raw kernel boundary at action-fire time.
-            comp.0 = crate::typed_bridge::rot_raw_to_self_ref(&state);
+            comp.0 = astrodyn::typed_bridge::rot_raw_to_self_ref(&state);
             state_mutated = true;
         }
         if let Some(props) = action.action.apply_mass() {
@@ -666,7 +666,7 @@ pub fn body_action_system<P: Planet>(
             // Action-fire boundary — `MassProperties` is the ECS-agnostic
             // untyped form (#397).
             // allowed: typed↔raw kernel boundary at action-fire time.
-            comp.0 = crate::typed_bridge::mass_raw_to_self_ref(&props);
+            comp.0 = astrodyn::typed_bridge::mass_raw_to_self_ref(&props);
             comp.0.dirty = true;
             mass_mutated = true;
         }
@@ -887,7 +887,7 @@ mod tests {
             .spawn((
                 TranslationalStateC::<astrodyn::Earth>::default(),
                 RotationalStateC::default(),
-                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(400_000.0)),
                 )),
                 // `body_action_system` filters by `With<DynamicsConfigC>`;
@@ -940,7 +940,7 @@ mod tests {
         );
         app.update();
 
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()
@@ -969,7 +969,7 @@ mod tests {
             ),
         );
         app.update();
-        let state: RotationalState = crate::typed_bridge::rot_typed_to_raw(
+        let state: RotationalState = astrodyn::typed_bridge::rot_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<RotationalStateC>()
@@ -1007,7 +1007,7 @@ mod tests {
             ),
         );
         app.update();
-        let trans = crate::typed_bridge::trans_typed_to_raw(
+        let trans = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<TranslationalStateC<astrodyn::Earth>>()
@@ -1047,7 +1047,7 @@ mod tests {
             .expect("run_system_cached_with");
         app.update();
 
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()
@@ -1075,7 +1075,7 @@ mod tests {
         write_msg(&mut app, BodyActionEvent::remove("anything"));
         app.update();
 
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()
@@ -1117,7 +1117,7 @@ mod tests {
             ),
         );
         app.update();
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()
@@ -1160,7 +1160,7 @@ mod tests {
         app.update();
         // Neither add fired: the entity still has its original
         // 400 000 kg from `spawn_vehicle`.
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()
@@ -1210,7 +1210,7 @@ mod tests {
         // If the empty-name `remove` had iterated `retain` it would
         // have cleared both pending entries and the mass would still
         // be the spawn-time 400 000.
-        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+        let final_mass = astrodyn::typed_bridge::mass_typed_to_raw(
             &app.world()
                 .entity(entity)
                 .get::<MassPropertiesC>()

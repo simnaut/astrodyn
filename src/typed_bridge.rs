@@ -1,26 +1,40 @@
-//! Crate-internal typed↔raw kernel-boundary helpers.
+//! Typed↔raw kernel-boundary helpers.
 //!
 //! The `from_untyped_unchecked` named opt-ins on
 //! `TranslationalStateTyped`/`RotationalStateTyped`/`MassPropertiesTyped`,
 //! and the `MassPropertiesC::from_untyped` / `RotationalStateC::from_untyped`
 //! Bevy Component opt-ins, were deleted in #397. The kernel functions in
 //! `astrodyn` still take raw `RotationalState` / `TranslationalState` /
-//! `MassProperties` structs, so the Bevy adapter has to translate at the
-//! boundary anyway. Centralizing those translations here keeps the per-system
-//! call sites a single line and means there's exactly one home for the
+//! `MassProperties` structs by design (typing the integrator interfaces
+//! themselves was out of scope for #397), so adapters and verification
+//! fixtures must translate at the boundary anyway.
+//!
+//! Centralizing those translations here keeps the per-system call sites a
+//! single line and means there's exactly one home for the
 //! `// allowed: typed↔raw kernel boundary` annotation per direction.
+//! Consumers (the Bevy adapter, the verif crates, and the runner's own
+//! kernel-boundary sites) all import from `astrodyn::typed_bridge::*` so
+//! there is one canonical implementation, not N.
 
-use astrodyn::{
-    kilogram, AngularVelocity, BodyAttitude, BodyFrame, Frame, InertiaTensor, Mass, MassProperties,
-    MassPropertiesTyped, Planet, PlanetInertial, Position, RootInertial, RotationalState,
-    RotationalStateTyped, SelfRef, StructuralFrame, TranslationalState, TranslationalStateTyped,
-    Vehicle, Velocity,
+use astrodyn_dynamics::mass::MassPropertiesTyped;
+use astrodyn_dynamics::rotational::RotationalStateTyped;
+use astrodyn_dynamics::state::TranslationalStateTyped;
+use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_quantities::aliases::{AngularVelocity, InertiaTensor, Position, Velocity};
+use astrodyn_quantities::body_attitude::BodyAttitude;
+use astrodyn_quantities::frame::{
+    BodyFrame, Frame, Planet, PlanetInertial, RootInertial, SelfRef, StructuralFrame, Vehicle,
 };
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
-/// Convert a typed `MassPropertiesTyped<V>` into the raw struct the kernel
-/// functions consume. `// allowed: typed↔raw kernel boundary`.
+/// Convert a typed `MassPropertiesTyped<V>` into the raw struct the
+/// kernel functions consume. Field-by-field copy preserving the
+/// caller's `inverse_mass`, `inverse_inertia`, and `dirty` exactly —
+/// no recomputation. Mirror of [`mass_raw_to_typed`].
 #[inline]
 pub fn mass_typed_to_raw<V: Vehicle>(m: &MassPropertiesTyped<V>) -> MassProperties {
+    // allowed: typed↔raw kernel boundary
     MassProperties {
         mass: m.mass.get::<kilogram>(),
         inverse_mass: m.inverse_mass,
@@ -32,8 +46,19 @@ pub fn mass_typed_to_raw<V: Vehicle>(m: &MassPropertiesTyped<V>) -> MassProperti
     }
 }
 
-/// Lift a raw `MassProperties` struct emitted by a kernel back into the typed
-/// sibling. `// allowed: typed↔raw kernel boundary`.
+/// Lift a raw `MassProperties` struct emitted by a kernel back into
+/// the typed sibling.
+///
+/// **Note:** routes through [`MassPropertiesTyped::with_inertia`], which
+/// **recomputes `inverse_mass = 1/mass` and `inverse_inertia = inertia⁻¹`
+/// from the freshly-supplied inputs and resets `dirty = false`.** The
+/// caller's `mp.inverse_mass` / `mp.inverse_inertia` / `mp.dirty` are
+/// not propagated — the rebuilt typed sibling carries fresh, consistent
+/// derived values regardless of the raw input's bookkeeping. Round-trips
+/// through `mass_typed_to_raw` → `mass_raw_to_typed` therefore canonicalize
+/// the dirty flag and re-derive the inverses; this is intentional (the
+/// JEOD invariant `MA.04` requires `inertia · inverse_inertia ≈ I` and
+/// `with_inertia` is the canonical re-derivation site).
 #[inline]
 pub fn mass_raw_to_typed<V: Vehicle>(mp: &MassProperties) -> MassPropertiesTyped<V> {
     MassPropertiesTyped::<V>::with_inertia(
@@ -45,17 +70,19 @@ pub fn mass_raw_to_typed<V: Vehicle>(mp: &MassProperties) -> MassPropertiesTyped
 }
 
 /// Convert a typed `RotationalStateTyped<V>` into the raw struct.
-/// `// allowed: typed↔raw kernel boundary`.
 #[inline]
 pub fn rot_typed_to_raw<V: Vehicle>(s: &RotationalStateTyped<V>) -> RotationalState {
+    // allowed: typed↔raw kernel boundary
     RotationalState {
         quaternion: s.q_inertial_body.to_jeod_quat(),
         ang_vel_body: s.ang_vel_body.raw_si(),
     }
 }
 
-/// Lift a raw `RotationalState` struct emitted by a kernel back into the typed
-/// sibling. `// allowed: typed↔raw kernel boundary`.
+/// Lift a raw `RotationalState` struct emitted by a kernel back into
+/// the typed sibling. Validates the quaternion's unit norm via
+/// [`BodyAttitude::from_jeod_quat`] (panics on drift past
+/// `NormalizedQuat::DEFAULT_TOLERANCE`).
 #[inline]
 pub fn rot_raw_to_typed<V: Vehicle>(s: &RotationalState) -> RotationalStateTyped<V> {
     RotationalStateTyped::<V>::new(
@@ -65,17 +92,17 @@ pub fn rot_raw_to_typed<V: Vehicle>(s: &RotationalState) -> RotationalStateTyped
 }
 
 /// Convert a typed `TranslationalStateTyped<F>` into the raw struct.
-/// `// allowed: typed↔raw kernel boundary`.
 #[inline]
 pub fn trans_typed_to_raw<F: Frame>(s: &TranslationalStateTyped<F>) -> TranslationalState {
+    // allowed: typed↔raw kernel boundary
     TranslationalState {
         position: s.position.raw_si(),
         velocity: s.velocity.raw_si(),
     }
 }
 
-/// Lift a raw `TranslationalState` struct emitted by a kernel back into the
-/// typed sibling. `// allowed: typed↔raw kernel boundary`.
+/// Lift a raw `TranslationalState` struct emitted by a kernel back into
+/// the typed sibling.
 #[inline]
 pub fn trans_raw_to_typed<F: Frame>(s: &TranslationalState) -> TranslationalStateTyped<F> {
     TranslationalStateTyped::<F> {
@@ -84,16 +111,15 @@ pub fn trans_raw_to_typed<F: Frame>(s: &TranslationalState) -> TranslationalStat
     }
 }
 
-/// Specialization of `trans_raw_to_typed` for `RootInertial`. Used at the
-/// gateway entry sites where the body always ends up phantom-tagged with
-/// `RootInertial`. `// allowed: typed↔raw kernel boundary`.
+/// Specialization of [`trans_raw_to_typed`] for `RootInertial`. Used at
+/// the gateway entry sites where the body always ends up phantom-tagged
+/// with `RootInertial`.
 #[inline]
 pub fn trans_raw_to_root(s: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
     trans_raw_to_typed::<RootInertial>(s)
 }
 
-/// Specialization of `trans_raw_to_typed` for `PlanetInertial<P>` —
-/// `// allowed: typed↔raw kernel boundary`.
+/// Specialization of [`trans_raw_to_typed`] for `PlanetInertial<P>`.
 #[inline]
 pub fn trans_raw_to_planet<P: Planet>(
     s: &TranslationalState,
@@ -101,17 +127,17 @@ pub fn trans_raw_to_planet<P: Planet>(
     trans_raw_to_typed::<PlanetInertial<P>>(s)
 }
 
-/// Specialization of `rot_raw_to_typed` for `SelfRef`. Used by every
+/// Specialization of [`rot_raw_to_typed`] for `SelfRef`. Used by every
 /// adapter site that writes back into a `RotationalStateC` Component.
-/// `// allowed: typed↔raw kernel boundary`.
 #[inline]
 pub fn rot_raw_to_self_ref(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
     rot_raw_to_typed::<SelfRef>(s)
 }
 
-/// Specialization of `mass_raw_to_typed` for `SelfRef`. Used by every
+/// Specialization of [`mass_raw_to_typed`] for `SelfRef`. Used by every
 /// adapter site that writes back into a `MassPropertiesC` Component.
-/// `// allowed: typed↔raw kernel boundary`.
+/// Inherits the `with_inertia` recomputation behavior documented on
+/// [`mass_raw_to_typed`].
 #[inline]
 pub fn mass_raw_to_self_ref(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
     mass_raw_to_typed::<SelfRef>(mp)

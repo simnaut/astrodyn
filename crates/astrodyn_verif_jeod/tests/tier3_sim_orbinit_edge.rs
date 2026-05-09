@@ -76,7 +76,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
         );
 
         sim.add_body(VehicleConfig {
-            trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
+            trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
                 position: init.position,
                 velocity: init.velocity,
             }),

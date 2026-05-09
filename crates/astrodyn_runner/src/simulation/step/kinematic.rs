@@ -52,60 +52,16 @@
 
 use std::collections::HashMap;
 
+use astrodyn::typed_bridge::{
+    rot_raw_to_self_ref, rot_typed_to_raw, trans_raw_to_typed, trans_typed_to_raw,
+};
 use astrodyn::{
-    kilogram, propagate_state_via_storage, AngularVelocity, BodyAttitude, BodyFrame, Frame,
-    InertiaTensor, IntegOrigin, IntegrationFrame, KinematicEdge, KinematicNodeState, Mass,
-    MassBodyId, MassProperties, MassPropertiesTyped, MassStorage, Position, RootInertial,
-    RotationalState, RotationalStateTyped, SelfRef, StructuralFrame, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    propagate_state_via_storage, IntegOrigin, IntegrationFrame, KinematicEdge, KinematicNodeState,
+    MassBodyId, MassStorage, RootInertial, RotationalState, TranslationalState,
+    TranslationalStateTyped,
 };
 
 use super::super::Simulation;
-
-// allowed: typed↔raw kernel-boundary helpers used by kinematic
-// propagation and the multi-body test scaffolding (issue #397).
-#[inline]
-#[allow(dead_code)] // used in test mod via super::mass_raw_to_typed
-fn mass_raw_to_typed(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
-    MassPropertiesTyped::<SelfRef>::with_inertia(
-        Mass::new::<kilogram>(mp.mass),
-        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia), // allowed: typed↔raw kernel boundary
-        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position), // allowed: typed↔raw kernel boundary
-    )
-    .with_t_parent_this(mp.t_parent_this)
-}
-
-#[inline]
-fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
-    RotationalState {
-        quaternion: s.q_inertial_body.to_jeod_quat(),
-        ang_vel_body: s.ang_vel_body.raw_si(),
-    }
-}
-
-#[inline]
-fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
-    RotationalStateTyped::<SelfRef>::new(
-        BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body), // allowed: typed↔raw kernel boundary
-    )
-}
-
-#[inline]
-fn trans_raw_to_typed<F: Frame>(s: &TranslationalState) -> TranslationalStateTyped<F> {
-    TranslationalStateTyped::<F> {
-        position: Position::<F>::from_raw_si(s.position), // allowed: typed↔raw kernel boundary
-        velocity: Velocity::<F>::from_raw_si(s.velocity), // allowed: typed↔raw kernel boundary
-    }
-}
-
-#[inline]
-fn trans_typed_to_raw<F: Frame>(s: &TranslationalStateTyped<F>) -> TranslationalState {
-    TranslationalState {
-        position: s.position.raw_si(),
-        velocity: s.velocity.raw_si(),
-    }
-}
 
 impl Simulation {
     /// Walk the mass tree from each root and overwrite every non-root,
@@ -414,7 +370,7 @@ impl Simulation {
             // bodies carry one.
             // allowed: typed↔raw kernel-boundary lift for kinematic-prop
             // writeback (see #397).
-            self.bodies[body_idx].rot = Some(rot_raw_to_typed(&state.rot));
+            self.bodies[body_idx].rot = Some(rot_raw_to_self_ref(&state.rot));
         }
     }
 
@@ -445,8 +401,8 @@ impl Simulation {
 
 #[cfg(test)]
 mod tests {
-    use super::{mass_raw_to_typed, rot_raw_to_typed, trans_raw_to_typed};
     use crate::SimulationBuilderExt;
+    use astrodyn::typed_bridge::{mass_raw_to_self_ref, rot_raw_to_self_ref, trans_raw_to_typed};
     use astrodyn::{
         recipes::Mission, GravityControls, JeodQuat, MassProperties, RootInertial, RotationalState,
         TranslationalState, Vec3Ext, VehicleConfig,
@@ -472,7 +428,7 @@ mod tests {
         // it in place to 6-DOF by installing a non-identity rotational
         // state — kinematic-link composition has to read the parent's
         // attitude and angular rate, so a `rot` field is required.
-        sim.bodies[0].rot = Some(rot_raw_to_typed(&RotationalState {
+        sim.bodies[0].rot = Some(rot_raw_to_self_ref(&RotationalState {
             quaternion: parent_q,
             ang_vel_body: parent_omega,
         }));
@@ -521,13 +477,13 @@ mod tests {
                 position: child_pre_state.trans.position,
                 velocity: child_pre_state.trans.velocity,
             }),
-            rot: Some(rot_raw_to_typed(
+            rot: Some(rot_raw_to_self_ref(
                 &(RotationalState {
                     quaternion: child_pre_state.rot.q_parent_this,
                     ang_vel_body: child_pre_state.rot.ang_vel_this,
                 }),
             )),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -727,13 +683,13 @@ mod tests {
                 position: parent_root_pos,
                 velocity: parent_root_vel,
             }),
-            rot: Some(rot_raw_to_typed(
+            rot: Some(rot_raw_to_self_ref(
                 &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
                 }),
             )),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(10.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             // integ_source: None ⇒ root-frame integration.
             ..Default::default()
@@ -773,13 +729,13 @@ mod tests {
                 position: child_pre_state_inertial.trans.position - offset_src_root_pos,
                 velocity: child_pre_state_inertial.trans.velocity,
             }),
-            rot: Some(rot_raw_to_typed(
+            rot: Some(rot_raw_to_self_ref(
                 &(RotationalState {
                     quaternion: child_pre_state_inertial.rot.q_parent_this,
                     ang_vel_body: child_pre_state_inertial.rot.ang_vel_this,
                 }),
             )),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             integ_source: Some(offset_src),
             ..Default::default()
@@ -914,7 +870,7 @@ mod tests {
         let child_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
             rot: None,
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -937,8 +893,8 @@ mod tests {
         let parent_id = sim.add_body_to_tree(0, "parent");
         let child_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
-            rot: Some(rot_raw_to_typed(&(RotationalState::default()))),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1003,13 +959,13 @@ mod tests {
                 position: DVec3::new(7.0e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
-            rot: Some(rot_raw_to_typed(
+            rot: Some(rot_raw_to_self_ref(
                 &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
                 }),
             )),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(10.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1039,13 +995,13 @@ mod tests {
                 position: DVec3::new(7.0e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
-            rot: Some(rot_raw_to_typed(
+            rot: Some(rot_raw_to_self_ref(
                 &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
                 }),
             )),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(1.0)))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             srp: Some(SrpModel::FlatPlate(FlatPlateState {
                 plates,
@@ -1123,15 +1079,15 @@ mod tests {
         let root_idx = 0;
         let mid_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
-            rot: Some(rot_raw_to_typed(&(RotationalState::default()))),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
         let leaf_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
-            rot: Some(rot_raw_to_typed(&(RotationalState::default()))),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(2.0)))),
+            rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(2.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1200,8 +1156,8 @@ mod tests {
         // walk overwrites it every tick.
         let body_b_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
-            rot: Some(rot_raw_to_typed(&(RotationalState::default()))),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(10.0)))),
+            rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -1212,8 +1168,8 @@ mod tests {
         let link_offset = DVec3::new(0.0, 100.0, 0.0);
         let body_c_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
-            rot: Some(rot_raw_to_typed(&(RotationalState::default()))),
-            mass: Some(mass_raw_to_typed(&(MassProperties::new(5.0)))),
+            rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });

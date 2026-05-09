@@ -89,10 +89,10 @@ fn build_app() -> (App, Entity, Entity) {
         .spawn((
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(mass_props()),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -123,8 +123,8 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
         .unwrap();
     let rot = world.get::<RotationalStateC>(vehicle).unwrap();
     SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&trans.0),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&rot.0),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&trans.0),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&rot.0),
     }
 }
 
@@ -146,11 +146,11 @@ fn run_simulation_steps() -> SixDofState {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(initial_rot()),
         )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(mass_props()),
         )),
         gravity_controls: GravityControls {
@@ -164,8 +164,8 @@ fn run_simulation_steps() -> SixDofState {
 
     let body = sim.body(0);
     SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     }
 }
 
@@ -258,10 +258,10 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         .spawn((
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(mass_props()),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -292,11 +292,11 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(initial_rot()),
         )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(mass_props()),
         )),
         integrator: IntegratorType::Rkf45,
@@ -311,8 +311,8 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_bit_identical("Bevy RKF45 vs Sim RKF45", &bevy_state, &sim_state);

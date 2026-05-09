@@ -50,7 +50,7 @@ fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simu
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&body),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&body),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

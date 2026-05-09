@@ -104,10 +104,10 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .spawn((
             Name::new("EarthToMoon"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(vehicle_mass()),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -161,7 +161,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 
-    let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+    let bevy_trans = astrodyn::typed_bridge::trans_typed_to_raw(
         &app.world()
             .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
             .unwrap()
@@ -222,11 +222,11 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(initial_rot()),
         )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(vehicle_mass()),
         )),
         gravity_controls: GravityControls {
@@ -327,10 +327,10 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         .spawn((
             Name::new("EarthDeparture"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
                 &(initial_rot()),
             )),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                 &(vehicle_mass()),
             )),
             DynamicsConfigC(DynamicsConfig {
@@ -366,7 +366,7 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 
-    let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+    let bevy_trans = astrodyn::typed_bridge::trans_typed_to_raw(
         &app.world()
             .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
             .unwrap()
@@ -394,11 +394,11 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         ),
     );
     sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
             &(initial_rot()),
         )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
             &(vehicle_mass()),
         )),
         gravity_controls: GravityControls {

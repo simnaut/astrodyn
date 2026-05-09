@@ -240,37 +240,25 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let v1 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh1_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh1_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh1_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh1_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh1_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh2_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh2_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh2_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh2_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&veh3_trans()),
-        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
-            &(veh3_rot()),
-        )),
-        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
-            &(veh3_mass()),
-        )),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh3_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -333,10 +321,10 @@ fn spawn_body(
         .spawn((
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
             MassBodyIdC(id),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),
@@ -354,13 +342,13 @@ fn step_bevy(app: &mut App) {
 }
 
 fn read_bevy_state(app: &App, entity: Entity) -> SixDofState {
-    let trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+    let trans = astrodyn::typed_bridge::trans_typed_to_raw(
         &app.world()
             .get::<TranslationalStateC<astrodyn::Earth>>(entity)
             .expect("entity has TranslationalStateC")
             .0,
     );
-    let rot = astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+    let rot = astrodyn::typed_bridge::rot_typed_to_raw(
         &app.world()
             .get::<RotationalStateC>(entity)
             .expect("entity has RotationalStateC")
@@ -372,8 +360,8 @@ fn read_bevy_state(app: &App, entity: Entity) -> SixDofState {
 fn read_runner_state(sim: &Simulation, idx: usize) -> SixDofState {
     let out = sim.body(idx);
     SixDofState {
-        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&out.trans),
-        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(&out.trans),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(
             &out.rot
                 .expect("attach/detach trajectory parity runs every body in 6-DOF"),
         ),
