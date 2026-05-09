@@ -253,17 +253,27 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         let child = self.body_entity(child_idx);
         let parent = self.body_entity(parent_idx);
 
-        // Write `AttachEvent<SelfRef, SelfRef>` onto the message bus.
+        // Write `AttachEvent<SelfRef, SelfRef>` onto the message bus
+        // **only**. `MassChildOf` is deliberately NOT inserted here:
+        // composite_mass_system races staging_system on the attach
+        // tick (the file-level "Tick-1 / steady-state separation"
+        // contract in `bevy_parity_kinematic_propagation.rs`), so
+        // mass-tree edge insertion must wait until after
+        // staging_system has finished the combine. Mission code
+        // installs `MassChildOf` later — typically alongside
+        // `mark_kinematic_only` (which we mirror below).
+        //
         // The next `app.world_mut().run_schedule(FixedUpdate)` drains
-        // the queue at the top of `staging_system`, before integration
-        // — so the runner's synchronous `Simulation::attach` and the
-        // Bevy adapter's deferred attach both run their combine kernel
-        // on the same pre-attach pair, and the merged composite-body
-        // state plus integrator reset land before that tick's
-        // integration. The message payload uses `<SelfRef, SelfRef>`
-        // because the canonical Bevy adapter registers the
-        // runtime-resolved instantiation (vehicle identity is decided
-        // by per-entity storage, not at message-bus dispatch).
+        // the queue at the top of `staging_system`, before
+        // integration — so the runner's synchronous
+        // `Simulation::attach` and the Bevy adapter's deferred attach
+        // both run their combine kernel on the same pre-attach pair,
+        // and the merged composite-body state plus integrator reset
+        // land before that tick's integration. The message payload
+        // uses `<SelfRef, SelfRef>` because the canonical Bevy
+        // adapter registers the runtime-resolved instantiation
+        // (vehicle identity is decided by per-entity storage, not at
+        // message-bus dispatch).
         let event = AttachEvent::<SelfRef, SelfRef> {
             child,
             parent,
@@ -277,20 +287,6 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
             .world
             .resource_mut::<Messages<AttachEvent<SelfRef, SelfRef>>>();
         messages.write(event);
-
-        // Also insert `MassChildOf` on the child entity so the
-        // ECS-native parent ↔ child edge mirrors the topology
-        // `staging_system` is about to record on the mass-tree
-        // resource. Mirrors the hand-rolled
-        // `bevy_parity_attach_detach_trajectory.rs` pattern; without
-        // it kinematic-propagation reads the wrong parent on the
-        // attach-event tick.
-        let _ = (parent, child); // silence unused if reordered later
-        self.world.entity_mut(child).insert(MassChildOf {
-            parent,
-            offset,
-            t_parent_child,
-        });
     }
 
     fn detach(&mut self, child_idx: usize) {
@@ -301,18 +297,91 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         // updates the mass-tree resource; removing `MassChildOf` here
         // keeps the component-level edge in sync so the next tick's
         // wrench / propagation systems observe a root-equivalent
-        // topology for the detached body.
+        // topology for the detached body. Detach has no
+        // composite_mass_system race because the topology change
+        // *removes* an edge — the post-detach composites recompute
+        // independently of when the system runs relative to the
+        // event drain.
         self.world.entity_mut(child).remove::<MassChildOf>();
     }
 
     fn mark_kinematic_only(&mut self, child_idx: usize) {
         let child = self.body_entity(child_idx);
-        // `wrench_aggregation_system` would also install
-        // `KinematicChildC` once it observes a non-root mass-tree
-        // node, but explicit insertion here matches the runner's
-        // synchronous `mark_kinematic_only` semantics — the marker is
-        // present *before* the next FixedUpdate's integration runs.
-        self.world.entity_mut(child).insert(KinematicChildC);
+        // Insert `MassChildOf` (the ECS-native parent ↔ child edge)
+        // and `KinematicChildC` (the integrator gating marker)
+        // together. Recipes call `attach` first (writes AttachEvent
+        // only), then on a later pre_step call `mark_kinematic_only`
+        // — which lands here, post-staging — to install the steady-
+        // state kinematic-chain handles. Mirrors the hand-rolled
+        // `bevy_parity_kinematic_propagation.rs` pattern that splits
+        // the attach event from the kinematic-edge installation
+        // across two ticks (the file's "Tick-1 / steady-state
+        // separation" docstring) to avoid composite_mass_system
+        // racing staging_system within one tick.
+        //
+        // The mass-tree resource was updated by `staging_system` at
+        // the top of the previous FixedUpdate, so reading the
+        // child's parent + edge geometry from there gives us the
+        // post-attach topology. `MassTreeR` carries the offset and
+        // rotation in raw glam form — pull them out and reuse for
+        // `MassChildOf` so the ECS edge mirrors the resource edge
+        // exactly.
+        let (parent_entity, offset, t_parent_child) = {
+            let tree_r = self.world.resource::<astrodyn_bevy::MassTreeR>();
+            let mass_id = self
+                .world
+                .get::<astrodyn_bevy::MassBodyIdC>(child)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BevySimContext::mark_kinematic_only: child entity {child:?} \
+                         has no MassBodyIdC — call `attach` first."
+                    )
+                })
+                .0;
+            let parent_id = tree_r.0.parent(mass_id).unwrap_or_else(|| {
+                panic!(
+                    "BevySimContext::mark_kinematic_only: child mass id {mass_id:?} \
+                     has no parent in the mass tree — staging_system has not yet \
+                     processed the AttachEvent? Call `attach` and run one \
+                     FixedUpdate before `mark_kinematic_only`."
+                )
+            });
+            // `MassBody::structure_point` is the per-attach struct
+            // origin (`offset`) + struct-frame rotation
+            // (`t_parent_this`) JEOD's `MassTree::attach` records.
+            let sp = &tree_r.0.get(mass_id).structure_point;
+            let offset = sp.position;
+            let t_pc = sp.t_parent_this;
+            // Map parent mass id back to entity by scanning
+            // body_entities for the matching MassBodyIdC. Bridge
+            // currently provides no direct mass-id ↔ entity index
+            // (issue tracked at #389); the linear scan is fine for
+            // the scenario sizes parity tests cover (≤ ~10 bodies).
+            let mut parent_entity = None;
+            for &candidate in self.body_entities {
+                if let Some(id) = self.world.get::<astrodyn_bevy::MassBodyIdC>(candidate) {
+                    if id.0 == parent_id {
+                        parent_entity = Some(candidate);
+                        break;
+                    }
+                }
+            }
+            let parent_entity = parent_entity.unwrap_or_else(|| {
+                panic!(
+                    "BevySimContext::mark_kinematic_only: parent mass id {parent_id:?} \
+                     not found among body_entities."
+                )
+            });
+            (parent_entity, offset, t_pc)
+        };
+        self.world.entity_mut(child).insert((
+            MassChildOf {
+                parent: parent_entity,
+                offset,
+                t_parent_child,
+            },
+            KinematicChildC,
+        ));
     }
 }
 
