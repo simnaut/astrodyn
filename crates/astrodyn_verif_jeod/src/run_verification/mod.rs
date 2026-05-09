@@ -814,6 +814,10 @@ impl ExtrasAccumulator {
                 // it matches whichever frame branch
                 // `RelativeTranslation` landed in for the scenario.
                 let body_b = sim.body(1);
+                // JEOD_INV: TS.01 — `<SelfRef, SelfRef>` resolves both
+                // vehicle phantoms to the storage-boundary wildcard
+                // because per-entity vehicle identity is decided at
+                // runtime by the simulation's body slot.
                 let rel = astrodyn::compute_relative_state::<astrodyn::SelfRef, astrodyn::SelfRef>(
                     &body_b.trans,
                     body_b.rot.as_ref(),

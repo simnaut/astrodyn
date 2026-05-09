@@ -1,5 +1,14 @@
 //! Bevy-side [`SimContext`] implementation for parity tests.
 //!
+//! JEOD_INV: TS.01 — this module is a per-entity storage boundary
+//! between the runtime-typed runner (`astrodyn_runner::Simulation`,
+//! which carries `<V: Vehicle>` parameters per body) and the
+//! runtime-typed Bevy world (`AttachEvent<SelfRef, SelfRef>` events
+//! on the message bus, `m_at::<StructuralFrame<SelfRef>>`-tagged
+//! offsets, etc.). Every `SelfRef` use below sits at this boundary;
+//! see `docs/JEOD_invariants.md` row TS.01 for the full rule and the
+//! lint at `tests/self_ref_self_planet_discipline.rs`.
+//!
 //! The runner crate forwards `SimContext` directly to
 //! `astrodyn_runner::Simulation`. The Bevy adapter has no comparable
 //! single-handle wrapper — state is spread across components and the
@@ -117,7 +126,7 @@ impl<P: Planet> SimContext for AppSimContext<'_, P> {
         // The canonical staging-system message bus is the runtime-
         // resolved `AttachEvent<SelfRef, SelfRef>` pair; both
         // structural-frame phantom slots are SelfRef wildcards at the
-        // bridge boundary. JEOD_INV: TS.01.
+        // bridge boundary (JEOD_INV: TS.01).
         self.app
             .world_mut()
             .write_message(AttachEvent::<SelfRef, SelfRef> {
