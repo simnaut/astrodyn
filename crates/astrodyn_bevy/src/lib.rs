@@ -1144,6 +1144,62 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
         }
+        // Drag — when `VehicleConfig.drag = Some(config)`, the runner
+        // computes drag for that body. Mirror on the Bevy side by
+        // inserting `DragConfigC`. Pre-issue #395 sub-task B
+        // root-cause, this insertion was missing here, so recipe-driven
+        // scenarios silently lost drag on the Bevy side; now the
+        // bridge keeps the runner and Bevy adapters in lock step.
+        if let Some(drag) = self.drag {
+            entity.insert(components::DragConfigC::from_untyped(&drag));
+        }
+        // SRP — `VehicleConfig.srp` is a tagged enum; lower each
+        // variant onto its matching Bevy `Component`. The hand-rolled
+        // parity tests insert these manually (`FlatPlateConfigC` /
+        // `CannonballSrpC` per scenario); spawn_bevy now does the
+        // same translation automatically so recipes don't need to
+        // round-trip through populate_app+manual-insert.
+        if let Some(srp) = self.srp {
+            match srp {
+                astrodyn::SrpModel::FlatPlate(state) => {
+                    entity.insert(components::FlatPlateConfigC(state));
+                }
+                astrodyn::SrpModel::Cannonball {
+                    cx_area,
+                    albedo,
+                    diffuse,
+                } => {
+                    entity.insert(components::CannonballSrpC {
+                        cx_area,
+                        albedo,
+                        diffuse,
+                    });
+                }
+            }
+        }
+        // Shadow body — `VehicleConfig.shadow_body` references a
+        // gravity source by index that casts a conical shadow on the
+        // body for SRP eclipse computation. The runner-side SRP
+        // system reads this from the body; the Bevy adapter places a
+        // `ShadowBodyC` marker on the *source* entity itself and the
+        // shadow-detection system queries `(TranslationalStateC,
+        // ShadowBodyC)`. Translate by inserting the component on the
+        // resolved source entity. Capture both the entity ID and the
+        // source-list reach so the failure mode here matches the
+        // `GravityControl::source` resolver above.
+        if let Some(sb) = self.shadow_body {
+            let src = resolve_source_entity(source_entities, sb.source_idx, "shadow_body");
+            // Using a fresh `entity` borrow on the source — the body's
+            // `entity` borrow above must be released first. Stash the
+            // body entity id, drop the borrow, mutate source, then
+            // continue.
+            let body_id = entity.id();
+            commands
+                .entity(src)
+                .insert(components::ShadowBodyC { radius: sb.radius });
+            // Re-acquire the body entity for any downstream inserts.
+            entity = commands.entity(body_id);
+        }
         // Non-root integration: translate the `usize` source index to
         // the matching ECS Entity so `register_body_frames_system` can
         // parent the body's frame entity under that source's frame

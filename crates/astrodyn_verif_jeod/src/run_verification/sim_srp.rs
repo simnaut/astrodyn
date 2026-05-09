@@ -582,16 +582,22 @@ fn build_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
         },
     )];
     let mut sb = parity_skeleton();
-    // Earth was registered first — index 0.
-    sb = sb.atmosphere(
-        astrodyn::AtmosphereConfig {
-            model: astrodyn::AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::EARTH.shape.r_eq,
-            r_pol: astrodyn::EARTH.shape.r_pol,
-            planet_omega: astrodyn::EARTH.omega,
-        },
-        0,
-    );
+    // Atmosphere with spherical-fallback geometry: set the config
+    // directly without `atmosphere_planet_source`. The hand-rolled
+    // parity test takes the same shape (`AtmosphereModelR.planet_entity
+    // = None`), so the bridge's `populate_app` mirrors this with
+    // `planet_entity: None` — the atmosphere system uses the
+    // spherical r_eq/r_pol defaults instead of querying a planet
+    // entity for its `PlanetFixedRotationC`. Going through
+    // `SimulationBuilder::atmosphere(config, planet_source)` would
+    // implicitly couple to the planet's rotation which Earth (without
+    // an explicit `rotation_model`) doesn't carry.
+    sb.atmosphere = Some(astrodyn::AtmosphereConfig {
+        model: astrodyn::AtmosphereModel::Exponential(exp_atmos),
+        r_eq: astrodyn::EARTH.shape.r_eq,
+        r_pol: astrodyn::EARTH.shape.r_pol,
+        planet_omega: astrodyn::EARTH.omega,
+    });
     let mut body = parity_body_sixdof(0, true);
     body.drag = Some(drag_config);
     body.srp = Some(SrpModel::FlatPlate(parity_flat_plate_state(

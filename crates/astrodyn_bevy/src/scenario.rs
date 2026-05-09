@@ -217,22 +217,28 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         }
 
         // ── Atmosphere ──
+        //
+        // `atmosphere_planet_source = None` is the spherical-fallback
+        // path: the atmosphere system uses the config's `r_eq`/`r_pol`
+        // defaults instead of querying a planet entity for its
+        // `PlanetFixedRotationC`. The runner side accepts the same
+        // shape (`from_builder` copies both fields verbatim and only
+        // `validate` checks the index when `Some`); the bridge mirrors
+        // it by setting `planet_entity: None`. Hand-rolled parity
+        // tests for spherical-Earth atmosphere (drag without RNP) take
+        // exactly this path.
         if let Some(config) = atmosphere {
-            let planet_idx = atmosphere_planet_source.expect(
-                "populate_app: SimulationBuilder.atmosphere is Some but \
-                 atmosphere_planet_source is None. The runner's \
-                 Simulation::from_builder enforces this; the bridge does \
-                 the same to keep the two consumers in lock step.",
-            );
-            let planet_entity = *source_entities.get(planet_idx).unwrap_or_else(|| {
-                panic!(
-                    "populate_app: atmosphere_planet_source index {planet_idx} out of \
-                     range ({sources_len} sources)"
-                )
+            let planet_entity = atmosphere_planet_source.map(|planet_idx| {
+                *source_entities.get(planet_idx).unwrap_or_else(|| {
+                    panic!(
+                        "populate_app: atmosphere_planet_source index {planet_idx} out of \
+                         range ({sources_len} sources)"
+                    )
+                })
             });
             app.insert_resource(AtmosphereModelR {
                 config,
-                planet_entity: Some(planet_entity),
+                planet_entity,
             });
         }
 
