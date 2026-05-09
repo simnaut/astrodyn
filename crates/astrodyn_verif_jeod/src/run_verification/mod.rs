@@ -108,6 +108,7 @@ enum CsvRecords {
     Euler(Vec<tier3_csv::EulerRecord>),
     SolarBeta(Vec<tier3_csv::SolarBetaRecord>),
     Tide(Vec<tier3_csv::TideRecord>),
+    Relative(Vec<tier3_csv::RelativeRecord>),
     /// Variants without family-specific extras keep only the per-step
     /// time so [`StateLog`]-based assertions still align.
     Times(Vec<f64>),
@@ -123,6 +124,7 @@ impl CsvRecords {
             Self::Euler(v) => v.len(),
             Self::SolarBeta(v) => v.len(),
             Self::Tide(v) => v.len(),
+            Self::Relative(v) => v.len(),
             Self::Times(v) => v.len(),
         }
     }
@@ -572,6 +574,30 @@ fn load_reference(
             };
             (states, typed)
         }
+        CsvReference::Relative(_) => {
+            // SIM_Relative is a 2-body kinematic sim; the per-step
+            // assertion is body-A's state (the runner's body 0) against
+            // CSV columns 1..7 (interleaved position/velocity), so the
+            // generic `StateLog` only carries body 0's state. Body B
+            // and the JEOD-logged relative columns flow through the
+            // typed records vec for the `Relative` extras comparator.
+            let records = load_relative_csv(path);
+            let states = records
+                .iter()
+                .map(|r| StateLog {
+                    time: r.time,
+                    position: Some(r.veh_a_pos),
+                    velocity: Some(r.veh_a_vel),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let typed = if matches!(extras, Some(ExtrasComparator::Relative)) {
+                CsvRecords::Relative(records)
+            } else {
+                CsvRecords::Times(states.iter().map(|s| s.time).collect())
+            };
+            (states, typed)
+        }
         CsvReference::TimesOnly(_) => {
             // Cadence-only path: read column 0 of each non-header row
             // and emit `StateLog`s with only `time` populated. Used by
@@ -655,6 +681,7 @@ impl ExtrasAccumulator {
             ],
             ExtrasComparator::SolarBeta => vec![("beta", 0.0, "rad")],
             ExtrasComparator::TideDc20 { .. } => vec![("dc20", 0.0, "")],
+            ExtrasComparator::Relative => vec![("rel_pos", 0.0, "m"), ("rel_vel", 0.0, "m/s")],
         };
         Self {
             kind: kind.clone(),
@@ -773,6 +800,30 @@ impl ExtrasAccumulator {
                 // tidal-host source explicitly.
                 let our_dc20 = sim.source_delta_c20(*earth_source_idx);
                 self.update_max("dc20", (our_dc20 - r.delta_c20).abs());
+            }
+            (ExtrasComparator::Relative, CsvRecords::Relative(recs)) => {
+                let r = &recs[idx];
+                // Two-body kinematic sim: body 0 is vehicle A
+                // ("subject"), body 1 is vehicle B ("reference"). We
+                // call `compute_relative_state::<SelfRef, SelfRef>`
+                // exactly the way the bespoke `tier3_sim_relative.rs`
+                // did — both phantom slots resolve to runtime-typed
+                // wildcards because per-entity vehicle identity is
+                // decided at the storage boundary (JEOD_INV: TS.01).
+                // The metric reads `position_raw` / `velocity_raw` so
+                // it matches whichever frame branch
+                // `RelativeTranslation` landed in for the scenario.
+                let body_b = sim.body(1);
+                let rel = astrodyn::compute_relative_state::<astrodyn::SelfRef, astrodyn::SelfRef>(
+                    &body_b.trans,
+                    body_b.rot.as_ref(),
+                    &body.trans,
+                    body.rot.as_ref(),
+                );
+                let pos_err = (rel.trans.position_raw() - r.jeod_rel_pos).length();
+                let vel_err = (rel.trans.velocity_raw() - r.jeod_rel_vel).length();
+                self.update_max("rel_pos", pos_err);
+                self.update_max("rel_vel", vel_err);
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \

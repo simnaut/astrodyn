@@ -230,6 +230,13 @@ pub enum CsvReference {
     OrbInit(&'static str),
     /// 8-column SIM_tide_verif CSV (time + pos + vel + dC20).
     Tide(&'static str),
+    /// 57-column SIM_Relative two-body CSV (time + interleaved vehA
+    /// state[25] + interleaved vehB state[25] + JEOD-logged relative
+    /// translational state[6]). Used by the runner-vs-JEOD oracle
+    /// (`tier3_sim_relative.rs`) to assert
+    /// [`astrodyn::compute_relative_state`] against JEOD's own
+    /// SIM_Relative output via [`ExtrasComparator::Relative`].
+    Relative(&'static str),
     /// CSV consumed for time-cadence only — the per-variant loaders
     /// don't know how to parse the body of this file (or it carries
     /// columns the cross-validation report would misinterpret), so the
@@ -270,6 +277,7 @@ impl CsvReference {
             | CsvReference::AeroTraj(s)
             | CsvReference::OrbInit(s)
             | CsvReference::Tide(s)
+            | CsvReference::Relative(s)
             | CsvReference::TimesOnly(s) => s,
         }
     }
@@ -368,6 +376,14 @@ pub enum ExtrasComparator {
         /// whose ΔC20 series the comparator will sample.
         earth_source_idx: usize,
     },
+    /// SIM_Relative two-body relative state: 2 extras (`rel_pos`,
+    /// `rel_vel`) computed via [`astrodyn::compute_relative_state`] on
+    /// the runner's bodies 0 and 1 and compared against the
+    /// JEOD-logged relative position / velocity vectors in CSV
+    /// columns 51–56. The metric is a vector-magnitude error
+    /// (`(ours - reference).length()`), matching the bespoke
+    /// `tier3_sim_relative.rs` assertion shape exactly.
+    Relative,
 }
 
 /// A single Tier 3 verification case.
