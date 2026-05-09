@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_dyncomp;
 pub mod sim_gj;

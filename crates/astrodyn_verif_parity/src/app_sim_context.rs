@@ -17,10 +17,11 @@
 //! the `SimContext` trait sits in `astrodyn_verif_jeod` (which
 //! `astrodyn_bevy` only sees as a dev-dependency).
 
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use astrodyn::{Planet, SelfRef, StructuralFrame, Vec3Ext};
-use astrodyn_bevy::{AttachEvent, DetachEvent, ScenarioHandles, SourceMutator};
+use astrodyn_bevy::{AttachEvent, DetachEvent, MassChildOf, ScenarioHandles, SourceMutator};
 use astrodyn_verif_jeod::verification::SimContext;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -37,6 +38,20 @@ use glam::{DMat3, DVec3};
 pub struct AppSimContext<'a, P: Planet> {
     app: &'a mut App,
     handles: &'a ScenarioHandles,
+    /// Attach geometry cache, keyed by child body index.
+    ///
+    /// The runner's `Simulation::mark_kinematic_only` looks up the
+    /// parent + offset + rotation in its own mass tree, but the Bevy
+    /// [`mark_kinematic_only`](Self::mark_kinematic_only) needs to
+    /// insert [`MassChildOf`] (which carries the same triple) on the
+    /// child entity, and the parity trait calls `attach` and
+    /// `mark_kinematic_only` from the same `pre_step` invocation
+    /// before any `FixedUpdate` runs — so the queued [`AttachEvent`]'s
+    /// payload has not yet been processed into `MassTreeR`. We cache
+    /// the geometry at `attach` time so `mark_kinematic_only` has a
+    /// source of truth that does not depend on `staging_system`
+    /// having run.
+    recent_attach: HashMap<usize, (Entity, DVec3, DMat3)>,
     _planet: PhantomData<P>,
 }
 
@@ -45,6 +60,7 @@ impl<'a, P: Planet> AppSimContext<'a, P> {
         Self {
             app,
             handles,
+            recent_attach: HashMap::new(),
             _planet: PhantomData,
         }
     }
@@ -93,6 +109,11 @@ impl<P: Planet> SimContext for AppSimContext<'_, P> {
     ) {
         let child = self.handles.body_entities[child_idx];
         let parent = self.handles.body_entities[parent_idx];
+        // Cache the attach geometry so `mark_kinematic_only` can
+        // install `MassChildOf` without waiting for `staging_system`
+        // to drain the queued event into `MassTreeR`.
+        self.recent_attach
+            .insert(child_idx, (parent, offset, t_parent_child));
         // The canonical staging-system message bus is the runtime-
         // resolved `AttachEvent<SelfRef, SelfRef>` pair; both
         // structural-frame phantom slots are SelfRef wildcards at the
@@ -112,18 +133,39 @@ impl<P: Planet> SimContext for AppSimContext<'_, P> {
 
     fn detach(&mut self, child_idx: usize) {
         let child = self.handles.body_entities[child_idx];
+        self.recent_attach.remove(&child_idx);
         self.app.world_mut().write_message(DetachEvent { child });
     }
 
-    fn mark_kinematic_only(&mut self, _child_idx: usize) {
-        // No-op on the Bevy side. `wrench_aggregation_system`
-        // auto-inserts `KinematicChildC` on every non-root in the
-        // mass tree (`crates/astrodyn_bevy/src/wrench.rs`), so any
-        // attached child is already kinematic without an explicit
-        // marker call. The runner exposes this as a separate flag
-        // (`Simulation::mark_kinematic_only`) because it integrates
-        // attached children by default unless explicitly opted out;
-        // Bevy's model is the inverse and matches JEOD_INV: DB.17
-        // ("only the root integrates").
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        // The Bevy adapter's simple-attach contract leaves the
+        // `MassChildOf` ECS edge insertion to mission code (only the
+        // chained-attach reroot path inserts it inside
+        // `staging_system`). The runner-side
+        // `Simulation::mark_kinematic_only` is what activates
+        // kinematic propagation on the child; the Bevy equivalent is
+        // installing `MassChildOf` so `wrench_aggregation_system`
+        // walks the chain and auto-derives `KinematicChildC` on the
+        // child (gating it out of `integration_system` per
+        // JEOD_INV: DB.17 — only the root integrates).
+        let (parent_entity, offset, t_parent_child) =
+            *self.recent_attach.get(&child_idx).unwrap_or_else(|| {
+                panic!(
+                    "AppSimContext::mark_kinematic_only({child_idx}): \
+                     no prior attach recorded for child_idx={child_idx}. \
+                     Call `attach(child_idx, parent_idx, …)` first; the \
+                     runner's mass-tree analog requires the same \
+                     ordering."
+                )
+            });
+        let child_entity = self.handles.body_entities[child_idx];
+        self.app
+            .world_mut()
+            .entity_mut(child_entity)
+            .insert(MassChildOf::with_rotation(
+                parent_entity,
+                offset,
+                t_parent_child,
+            ));
     }
 }
