@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# CI guard (issue #390): every workspace consumer of the `astrodyn`
-# pipeline depends on `astrodyn` and only `astrodyn` for physics.
+# CI guard: every workspace consumer of the `astrodyn` pipeline
+# depends on `astrodyn` and only `astrodyn` for physics.
 #
 # Specifically, neither `astrodyn_runner` nor `astrodyn_bevy` may
 # declare a direct dependency on any `astrodyn_*` *physics* crate
@@ -28,7 +28,7 @@ for crate_toml in crates/astrodyn_runner/Cargo.toml crates/astrodyn_bevy/Cargo.t
     if [ -n "$bad" ]; then
         echo "FAIL: $crate_toml declares a direct physics-crate dependency:" >&2
         echo "$bad" >&2
-        echo "  Per CLAUDE.md (#390), every consumer of the astrodyn pipeline" >&2
+        echo "  Per CLAUDE.md, every consumer of the astrodyn pipeline" >&2
         echo "  goes through 'astrodyn' (+ bevy for the Bevy adapter; +" >&2
         echo "  astrodyn_runner as a dev-dep on astrodyn_bevy for parity)." >&2
         echo "  If 'astrodyn' is missing a symbol you need, widen its" >&2

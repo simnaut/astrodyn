@@ -31,7 +31,7 @@
 //! pipeline. ECS adapters should **not** use `astrodyn_runner` — use the per-body
 //! functions from this crate instead. `astrodyn_runner` is a parallel non-Bevy
 //! consumer that, like `astrodyn_bevy` and mission code, depends on `astrodyn`
-//! and only `astrodyn` for physics (issue #390).
+//! and only `astrodyn` for physics.
 //!
 //! ## Re-export discipline
 //!
@@ -143,7 +143,7 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 
 // ── Re-exports from astrodyn_* crates ──
 //
-// Curation criteria (issue #390):
+// Curation criteria:
 //
 // 1. Every workspace consumer that *uses* the pipeline — mission crates,
 //    `astrodyn_bevy`, `astrodyn_runner` — depends on `astrodyn` (and

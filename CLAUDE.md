@@ -107,9 +107,7 @@ dev-dep on `astrodyn_bevy` for parity tests). The "single API surface"
 rule applies uniformly: every physics type, function, or module that a
 non-verification consumer reaches must be reachable through `astrodyn`.
 If something isn't, the fix is to widen `astrodyn`'s curated re-export
-surface, not to add a direct `astrodyn_*` physics dep. Issue #390
-removed an earlier exception that let `astrodyn_runner` reach around
-the gateway.
+surface, not to add a direct `astrodyn_*` physics dep.
 
 **Verification crates** (`astrodyn_verif_jeod`,
 `astrodyn_verif_parity`) are the explicit exception — they reach
