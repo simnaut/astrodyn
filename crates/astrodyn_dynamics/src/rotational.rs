@@ -171,7 +171,7 @@ impl<V: Vehicle> RotationalStateTyped<V> {
     /// `BodyFrame<V>` for the angular velocity.
     ///
     /// Panics if `s.quaternion` has drifted from unit norm beyond
-    /// [`NormalizedQuat::DEFAULT_TOLERANCE`] (1e-12), surfacing a
+    /// `NormalizedQuat::DEFAULT_TOLERANCE` (1e-12), surfacing a
     /// missing renormalization upstream rather than silently
     /// witnessing a non-unit quaternion.
     #[inline]
