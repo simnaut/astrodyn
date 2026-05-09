@@ -64,27 +64,6 @@ impl<F: Frame> Default for TranslationalStateTyped<F> {
 }
 
 impl<F: Frame> TranslationalStateTyped<F> {
-    /// Drop the frame phantom and emit the untyped storage form. The
-    /// numeric values (in base SI units: m, m/s) are preserved exactly.
-    #[inline]
-    pub fn to_untyped(&self) -> TranslationalState {
-        TranslationalState {
-            position: self.position.raw_si(),
-            velocity: self.velocity.raw_si(),
-        }
-    }
-
-    /// Wrap an untyped [`TranslationalState`] as a typed one. **The
-    /// caller asserts** that the untyped state is expressed in frame
-    /// `F` — there is no runtime check.
-    #[inline]
-    pub fn from_untyped_unchecked(s: &TranslationalState) -> Self {
-        Self {
-            position: Position::<F>::from_raw_si(s.position),
-            velocity: Velocity::<F>::from_raw_si(s.velocity),
-        }
-    }
-
     /// JEOD initialization heuristic — both position and velocity zero.
     ///
     /// Mirrors [`TranslationalState::is_likely_uninitialized`] for
@@ -108,18 +87,6 @@ impl<F: Frame> TranslationalStateTyped<F> {
             position: self.position.relabel_to::<F2>(),
             velocity: self.velocity.relabel_to::<F2>(),
         }
-    }
-}
-
-impl<F: Frame> From<TranslationalState> for TranslationalStateTyped<F> {
-    /// Lift an untyped [`TranslationalState`] into the typed form,
-    /// asserting the caller's frame phantom `F` is correct. This is
-    /// the documented test-fixture / scenario-construction boundary;
-    /// per-step pipelines should use the typed `*_typed` siblings or
-    /// build via [`Vec3Ext::m_at`](astrodyn_quantities::ext::Vec3Ext::m_at).
-    #[inline]
-    fn from(s: TranslationalState) -> Self {
-        Self::from_untyped_unchecked(&s)
     }
 }
 
@@ -207,13 +174,14 @@ mod tests {
 
     #[test]
     fn typed_round_trips_through_untyped() {
-        let untyped = TranslationalState {
-            position: DVec3::new(7e6, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7500.0, 0.0),
+        let pos = DVec3::new(7e6, 0.0, 0.0);
+        let vel = DVec3::new(0.0, 7500.0, 0.0);
+        let typed = TranslationalStateTyped::<RootInertial> {
+            position: Position::<RootInertial>::from_raw_si(pos),
+            velocity: Velocity::<RootInertial>::from_raw_si(vel),
         };
-        let typed = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&untyped);
-        let back = typed.to_untyped();
-        assert_eq!(back, untyped);
+        assert_eq!(typed.position.raw_si(), pos);
+        assert_eq!(typed.velocity.raw_si(), vel);
     }
 
     #[test]
@@ -235,12 +203,10 @@ mod tests {
 
     #[test]
     fn to_inertial_with_zero_origin_is_bit_identical() {
-        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-            &TranslationalState {
-                position: DVec3::new(7e6, 0.0, 0.0),
-                velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
-        );
+        let s_integ = TranslationalStateTyped::<IntegrationFrame> {
+            position: Position::<IntegrationFrame>::from_raw_si(DVec3::new(7e6, 0.0, 0.0)),
+            velocity: Velocity::<IntegrationFrame>::from_raw_si(DVec3::new(0.0, 7500.0, 0.0)),
+        };
         let o = IntegOrigin::zero();
         let s_inertial = s_integ.to_inertial(&o);
         assert_eq!(s_inertial.position.raw_si(), DVec3::new(7e6, 0.0, 0.0));
@@ -252,12 +218,10 @@ mod tests {
         // Random non-zero state and origin — the inverse is a straight
         // arithmetic flip, so any non-zero offset that's preserved
         // bit-exactly through `add` then `sub` is sufficient evidence.
-        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-            &TranslationalState {
-                position: DVec3::new(7e6, 0.0, 0.0),
-                velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
-        );
+        let s_integ = TranslationalStateTyped::<IntegrationFrame> {
+            position: Position::<IntegrationFrame>::from_raw_si(DVec3::new(7e6, 0.0, 0.0)),
+            velocity: Velocity::<IntegrationFrame>::from_raw_si(DVec3::new(0.0, 7500.0, 0.0)),
+        };
         let o = IntegOrigin {
             position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
             velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
@@ -270,11 +234,10 @@ mod tests {
 
     #[test]
     fn from_inertial_with_zero_origin_is_identity() {
-        let s_inertial =
-            TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
-                position: DVec3::new(7e6, 0.0, 0.0),
-                velocity: DVec3::new(0.0, 7500.0, 0.0),
-            });
+        let s_inertial = TranslationalStateTyped::<RootInertial> {
+            position: Position::<RootInertial>::from_raw_si(DVec3::new(7e6, 0.0, 0.0)),
+            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7500.0, 0.0)),
+        };
         let o = IntegOrigin::zero();
         let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_inertial(s_inertial, &o);
         assert_eq!(s_integ.position.raw_si(), s_inertial.position.raw_si());
@@ -283,12 +246,10 @@ mod tests {
 
     #[test]
     fn to_inertial_with_nonzero_origin_adds_offset() {
-        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-            &TranslationalState {
-                position: DVec3::new(7e6, 0.0, 0.0),
-                velocity: DVec3::new(0.0, 7500.0, 0.0),
-            },
-        );
+        let s_integ = TranslationalStateTyped::<IntegrationFrame> {
+            position: Position::<IntegrationFrame>::from_raw_si(DVec3::new(7e6, 0.0, 0.0)),
+            velocity: Velocity::<IntegrationFrame>::from_raw_si(DVec3::new(0.0, 7500.0, 0.0)),
+        };
         let o = IntegOrigin {
             position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
             velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),

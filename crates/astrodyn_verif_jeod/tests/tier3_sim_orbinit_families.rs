@@ -51,7 +51,7 @@ fn build_sim(trans: TranslationalState, dt: f64) -> Simulation {
     );
 
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -97,12 +97,16 @@ fn verify_conservation(
     h_tol: f64,
 ) -> ConservationResult {
     let body0 = sim.body(0);
-    let energy_0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
-    let h0 = specific_ang_momentum(body0.trans.position, body0.trans.velocity);
+    let energy_0 = specific_energy(
+        body0.trans.position.raw_si(),
+        body0.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
+    let h0 = specific_ang_momentum(body0.trans.position.raw_si(), body0.trans.velocity.raw_si());
 
     // For near-parabolic orbits, |E₀| can be near zero, making relative
     // energy error ill-conditioned (inf/NaN). Use mu/r₀ as a stable scale.
-    let r0 = body0.trans.position.length();
+    let r0 = body0.trans.position.raw_si().length();
     let energy_scale = if energy_0.abs() > MU_EARTH / r0 * 1e-6 {
         energy_0.abs() // standard relative error
     } else {
@@ -117,9 +121,14 @@ fn verify_conservation(
     for step in 1..=n_steps {
         sim.step().expect("step failed");
         let body = sim.body(0);
-        let energy_now = specific_energy(body.trans.position, body.trans.velocity, MU_EARTH);
-        let h_now = specific_ang_momentum(body.trans.position, body.trans.velocity);
-        let r_now = body.trans.position.length();
+        let energy_now = specific_energy(
+            body.trans.position.raw_si(),
+            body.trans.velocity.raw_si(),
+            MU_EARTH,
+        );
+        let h_now =
+            specific_ang_momentum(body.trans.position.raw_si(), body.trans.velocity.raw_si());
+        let r_now = body.trans.position.raw_si().length();
 
         let energy_err = ((energy_now - energy_0) / energy_scale).abs();
         let h_rel = ((h_now - h0) / h0).abs();
@@ -133,8 +142,8 @@ fn verify_conservation(
             println!(
                 "  {label} step {step}/{n_steps}: E_err={energy_err:.3e}, h_rel={h_rel:.3e}, \
                  r={:.1} km, v={:.3} km/s",
-                body.trans.position.length() / 1000.0,
-                body.trans.velocity.length() / 1000.0,
+                body.trans.position.raw_si().length() / 1000.0,
+                body.trans.velocity.raw_si().length() / 1000.0,
             );
         }
     }
@@ -308,7 +317,11 @@ fn tier3_orbinit_retrograde() {
 
     // Verify orbit is retrograde: angular momentum Z component should be negative
     let body = sim.body(0);
-    let h = body.trans.position.cross(body.trans.velocity);
+    let h = body
+        .trans
+        .position
+        .raw_si()
+        .cross(body.trans.velocity.raw_si());
     assert!(
         h.z < 0.0,
         "Retrograde orbit should have negative h_z, got {:.3e}",
@@ -347,7 +360,8 @@ fn tier3_orbinit_equatorial() {
     for _ in 0..n_steps {
         eq_sim.step().expect("step failed");
         let body = eq_sim.body(0);
-        let z_frac = body.trans.position.z.abs() / body.trans.position.length();
+        let pos = body.trans.position.raw_si();
+        let z_frac = pos.z.abs() / pos.length();
         max_z_frac = max_z_frac.max(z_frac);
     }
     println!("  Equatorial: max |z|/r = {max_z_frac:.3e}");
@@ -388,7 +402,8 @@ fn tier3_orbinit_polar() {
     for _ in 0..n_steps {
         sim.step().expect("step failed");
         let body = sim.body(0);
-        let z_frac = body.trans.position.z.abs() / body.trans.position.length();
+        let pos = body.trans.position.raw_si();
+        let z_frac = pos.z.abs() / pos.length();
         max_z_frac = max_z_frac.max(z_frac);
     }
     println!("  Polar: max |z|/r = {max_z_frac:.4}");
@@ -400,10 +415,11 @@ fn tier3_orbinit_polar() {
     // For polar orbit, angular momentum should be perpendicular to Z:
     // h_z = x*vy - y*vx should be ~0 for i=90.
     let body = sim.body(0);
-    let r_mag = body.trans.position.length();
-    let h_z = body.trans.position.x * body.trans.velocity.y
-        - body.trans.position.y * body.trans.velocity.x;
-    let h_mag = specific_ang_momentum(body.trans.position, body.trans.velocity);
+    let pos = body.trans.position.raw_si();
+    let vel = body.trans.velocity.raw_si();
+    let r_mag = pos.length();
+    let h_z = pos.x * vel.y - pos.y * vel.x;
+    let h_mag = specific_ang_momentum(pos, vel);
     let h_z_frac = h_z.abs() / h_mag;
     println!(
         "  Polar: h_z/|h| = {h_z_frac:.3e}, r={:.1} km",
@@ -446,7 +462,11 @@ fn tier3_orbinit_hyperbolic() {
 
     // Energy should be positive for hyperbolic
     let body0 = sim.body(0);
-    let e0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
+    let e0 = specific_energy(
+        body0.trans.position.raw_si(),
+        body0.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
     assert!(
         e0 > 0.0,
         "Hyperbolic orbit should have positive energy: E={e0:.6e}"
@@ -456,7 +476,7 @@ fn tier3_orbinit_hyperbolic() {
 
     // Verify the body is moving away (radius increasing after periapsis)
     let body = sim.body(0);
-    let r_final = body.trans.position.length();
+    let r_final = body.trans.position.raw_si().length();
     assert!(
         r_final > r_peri * 1.1,
         "Hyperbolic orbit should be escaping: r_final={:.0} m, r_peri={:.0} m",
@@ -497,7 +517,11 @@ fn tier3_orbinit_near_parabolic() {
 
     // Near-parabolic orbits have near-zero energy
     let body0 = sim.body(0);
-    let e0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
+    let e0 = specific_energy(
+        body0.trans.position.raw_si(),
+        body0.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
     println!("  Initial energy: {e0:.6e} J/kg (should be near zero)");
 
     // Relaxed tolerance for near-parabolic: numerical sensitivity is higher

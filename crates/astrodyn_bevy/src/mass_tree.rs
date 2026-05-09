@@ -45,6 +45,15 @@ use astrodyn::{
 };
 
 use crate::components::{MassChildOf, MassPropertiesC};
+use astrodyn::typed_bridge::{mass_raw_to_self_ref, mass_typed_to_raw};
+
+// allowed: typed↔raw kernel-boundary helper for the many test sites that
+// build a fresh `MassProperties::new(...)` and need a Component for
+// `World::spawn`. Replaces the deleted `MassPropertiesC::from_untyped`.
+#[inline]
+fn mp_c_from_raw(mp: MassProperties) -> MassPropertiesC {
+    MassPropertiesC(mass_raw_to_self_ref(&mp))
+}
 
 /// Internal cache: snapshot of an entity's *core* mass properties.
 ///
@@ -215,7 +224,7 @@ impl MassTreeView {
         let mut roots: Vec<Entity> = Vec::new();
 
         for (entity, mass) in mass_q.iter() {
-            let untyped = mass.0.to_untyped();
+            let untyped = mass_typed_to_raw(&mass.0);
             let structure_point = match edge_data.get(&entity) {
                 Some(edge) => MassPointState {
                     position: edge.offset,
@@ -477,7 +486,10 @@ impl MassTreeQueries<'_, '_> {
                 return Some(core.0);
             }
         }
-        self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
+        self.mass
+            .get(entity)
+            .ok()
+            .map(|(_, m)| mass_typed_to_raw(&m.0))
     }
 
     /// Return this entity's **composite** mass properties — the
@@ -487,7 +499,10 @@ impl MassTreeQueries<'_, '_> {
     /// counterpart to [`Self::core_mass`] so call sites read
     /// symmetrically.
     pub fn composite_mass(&self, entity: Entity) -> Option<astrodyn::MassProperties> {
-        self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
+        self.mass
+            .get(entity)
+            .ok()
+            .map(|(_, m)| mass_typed_to_raw(&m.0))
     }
 
     /// Build a cache-backed [`MassTreeView`] using
@@ -541,12 +556,12 @@ impl MassTreeQueries<'_, '_> {
                         .last_changed()
                         .is_newer_than(c.last_changed(), this_run)
                     {
-                        mass.0.to_untyped()
+                        mass_typed_to_raw(&mass.0)
                     } else {
                         c.0
                     }
                 }
-                Err(_) => mass.0.to_untyped(),
+                Err(_) => mass_typed_to_raw(&mass.0),
             };
             cores.insert(entity, core);
         }
@@ -719,7 +734,7 @@ pub fn composite_mass_system(
             for (entity, props_ref) in &changed {
                 commands
                     .entity(entity)
-                    .insert(CoreMassPropertiesC(props_ref.0.to_untyped()));
+                    .insert(CoreMassPropertiesC(mass_typed_to_raw(&props_ref.0)));
                 just_edited.insert(entity);
             }
         }
@@ -733,12 +748,15 @@ pub fn composite_mass_system(
                 continue;
             }
             if let Ok(mut live) = writes.get_mut(entity) {
-                let live_untyped = live.0.to_untyped();
+                let live_untyped = mass_typed_to_raw(&live.0);
                 if live_untyped.mass != core.0.mass
                     || live_untyped.position != core.0.position
                     || live_untyped.inertia != core.0.inertia
                 {
-                    *live.bypass_change_detection() = MassPropertiesC::from(core.0);
+                    // allowed: typed↔raw kernel-boundary lift on the
+                    // mass-tree fast-path writeback (named-method
+                    // opt-in; see #397).
+                    *live.bypass_change_detection() = mp_c_from_raw(core.0);
                 }
             }
         }
@@ -774,7 +792,7 @@ pub fn composite_mass_system(
     {
         let changed = props.p0();
         for (entity, props_ref) in &changed {
-            let core = props_ref.0.to_untyped();
+            let core = mass_typed_to_raw(&props_ref.0);
             cores.insert(entity, core);
             to_seed.push((entity, core));
         }
@@ -808,7 +826,9 @@ pub fn composite_mass_system(
     let mut writes = props.p1();
     for (entity, out) in outputs {
         if let Ok(mut p) = writes.get_mut(entity) {
-            *p.bypass_change_detection() = MassPropertiesC::from(out.composite);
+            // allowed: typed↔raw kernel-boundary lift on the mass-tree
+            // composite writeback (named-method opt-in; see #397).
+            *p.bypass_change_detection() = mp_c_from_raw(out.composite);
         }
     }
 }
@@ -930,11 +950,11 @@ mod tests {
         app.add_systems(Update, composite_mass_system);
 
         let core = MassProperties::new(10.0);
-        let e = app.world_mut().spawn(MassPropertiesC::from(core)).id();
+        let e = app.world_mut().spawn(mp_c_from_raw(core)).id();
         app.update();
 
         let world = app.world();
-        let stored = world.get::<MassPropertiesC>(e).unwrap().0.to_untyped();
+        let stored = mass_typed_to_raw(&world.get::<MassPropertiesC>(e).unwrap().0);
         assert!((stored.mass - core.mass).abs() < 1e-12);
         assert_eq!(stored.position, core.position);
         // Single root with no MassChildOf — fast-path returns
@@ -959,23 +979,14 @@ mod tests {
         let child_core = MassProperties::new(5.0);
         let offset = DVec3::new(3.0, 0.0, 0.0);
 
-        let parent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(parent_core))
-            .id();
-        app.world_mut().spawn((
-            MassPropertiesC::from(child_core),
-            MassChildOf::new(parent, offset),
-        ));
+        let parent = app.world_mut().spawn(mp_c_from_raw(parent_core)).id();
+        app.world_mut()
+            .spawn((mp_c_from_raw(child_core), MassChildOf::new(parent, offset)));
 
         app.update();
 
-        let stored = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped();
+        let stored = app.world().get::<MassPropertiesC>(parent).unwrap().0;
+        let stored = mass_typed_to_raw(&stored);
 
         // Reference: same topology in the arena.
         let mut tree = astrodyn::MassTree::new();
@@ -1029,27 +1040,15 @@ mod tests {
         let parent_core = MassProperties::new(10.0);
         let child_core = MassProperties::new(5.0);
         let offset = DVec3::new(2.0, 0.0, 0.0);
-        let parent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(parent_core))
-            .id();
+        let parent = app.world_mut().spawn(mp_c_from_raw(parent_core)).id();
         let child = app
             .world_mut()
-            .spawn((
-                MassPropertiesC::from(child_core),
-                MassChildOf::new(parent, offset),
-            ))
+            .spawn((mp_c_from_raw(child_core), MassChildOf::new(parent, offset)))
             .id();
 
         // Tick 1: seed cache. Composite parent mass = 15.
         app.update();
-        let m1 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let m1 = mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!((m1 - 15.0).abs() < 1e-12, "tick1 parent mass {m1}");
 
         // Mission edits the child's MassPropertiesC mid-sim
@@ -1058,16 +1057,10 @@ mod tests {
         // cache and recomposes.
         {
             let mut props = app.world_mut().get_mut::<MassPropertiesC>(child).unwrap();
-            *props = MassPropertiesC::from(MassProperties::new(8.0));
+            *props = mp_c_from_raw(MassProperties::new(8.0));
         }
         app.update();
-        let m2 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let m2 = mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!(
             (m2 - 18.0).abs() < 1e-12,
             "mid-sim edit not picked up: parent mass {m2} (expected 18)"
@@ -1086,7 +1079,7 @@ mod tests {
         // Spawn a "parent" entity *without* MassPropertiesC.
         let bad_parent = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
-            MassPropertiesC::from(MassProperties::new(5.0)),
+            mp_c_from_raw(MassProperties::new(5.0)),
             MassChildOf::new(bad_parent, DVec3::ZERO),
         ));
 
@@ -1113,7 +1106,7 @@ mod tests {
         // mass and clears the initial `Changed<MassPropertiesC>`
         // flag.
         let core = MassProperties::new(10.0);
-        let e = app.world_mut().spawn(MassPropertiesC::from(core)).id();
+        let e = app.world_mut().spawn(mp_c_from_raw(core)).id();
         app.update();
 
         // Mission code edits the body's mass mid-sim (10 -> 42),
@@ -1121,18 +1114,14 @@ mod tests {
         // the next step" contract.
         {
             let mut props = app.world_mut().get_mut::<MassPropertiesC>(e).unwrap();
-            *props = MassPropertiesC::from(MassProperties::new(42.0));
+            *props = mp_c_from_raw(MassProperties::new(42.0));
         }
 
         // Tick 2 must run the fast path AND preserve the new mass.
         app.update();
 
-        let after = app
-            .world()
-            .get::<MassPropertiesC>(e)
-            .unwrap()
-            .0
-            .to_untyped();
+        let after_typed = app.world().get::<MassPropertiesC>(e).unwrap().0;
+        let after = mass_typed_to_raw(&after_typed);
         assert!(
             (after.mass - 42.0).abs() < 1e-12,
             "fast-path rolled back mid-tick edit: mass {} (expected 42)",
@@ -1167,28 +1156,17 @@ mod tests {
         let parent_core = MassProperties::new(10.0);
         let child_core = MassProperties::new(5.0);
         let offset = DVec3::new(2.0, 0.0, 0.0);
-        let parent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(parent_core))
-            .id();
+        let parent = app.world_mut().spawn(mp_c_from_raw(parent_core)).id();
         let child = app
             .world_mut()
-            .spawn((
-                MassPropertiesC::from(child_core),
-                MassChildOf::new(parent, offset),
-            ))
+            .spawn((mp_c_from_raw(child_core), MassChildOf::new(parent, offset)))
             .id();
 
         // Tick 1 composes the tree: parent's `MassPropertiesC`
         // becomes the composite (mass 15).
         app.update();
-        let composite_mass = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let composite_mass =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!(
             (composite_mass - 15.0).abs() < 1e-12,
             "tick1 parent composite mass {composite_mass}"
@@ -1208,12 +1186,8 @@ mod tests {
         // Tick 2: fast path must revert the parent to its core
         // (mass 10).
         app.update();
-        let reverted = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped();
+        let reverted_typed = app.world().get::<MassPropertiesC>(parent).unwrap().0;
+        let reverted = mass_typed_to_raw(&reverted_typed);
         assert!(
             (reverted.mass - 10.0).abs() < 1e-12,
             "just-detached parent not reverted: mass {} (expected 10)",
@@ -1232,7 +1206,7 @@ mod tests {
         app.add_systems(Update, composite_mass_system);
 
         let core = MassProperties::new(10.0);
-        let e = app.world_mut().spawn(MassPropertiesC::from(core)).id();
+        let e = app.world_mut().spawn(mp_c_from_raw(core)).id();
         // Tick once to seed CoreMassPropertiesC and clear the
         // initial Changed flag on MassPropertiesC.
         app.update();
@@ -1303,21 +1277,18 @@ mod tests {
         let parent_core = MassProperties::new(5.0);
         let child_core = MassProperties::new(2.0);
 
-        let grandparent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(grandparent_core))
-            .id();
+        let grandparent = app.world_mut().spawn(mp_c_from_raw(grandparent_core)).id();
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(parent_core),
+                mp_c_from_raw(parent_core),
                 MassChildOf::new(grandparent, DVec3::new(2.0, 0.0, 0.0)),
             ))
             .id();
         let child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(child_core),
+                mp_c_from_raw(child_core),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
             ))
             .id();
@@ -1341,20 +1312,10 @@ mod tests {
             .get::<CoreMassPropertiesC>(child)
             .expect("child cache seeded after tick 1")
             .0;
-        let gp_composite_t1 = app
-            .world()
-            .get::<MassPropertiesC>(grandparent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
-        let p_composite_t1 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let gp_composite_t1 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(grandparent).unwrap().0).mass;
+        let p_composite_t1 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
 
         // Sanity: composites match cores plus children.
         assert!(
@@ -1391,20 +1352,10 @@ mod tests {
             .0;
         let p_core_t2 = app.world().get::<CoreMassPropertiesC>(parent).unwrap().0;
         let c_core_t2 = app.world().get::<CoreMassPropertiesC>(child).unwrap().0;
-        let gp_composite_t2 = app
-            .world()
-            .get::<MassPropertiesC>(grandparent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
-        let p_composite_t2 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let gp_composite_t2 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(grandparent).unwrap().0).mass;
+        let p_composite_t2 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
 
         // Cores must be byte-identical to tick 1 — no mission code
         // touched them.
@@ -1454,25 +1405,25 @@ mod tests {
 
         let parent = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         let child_a = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(2.0)),
+                mp_c_from_raw(MassProperties::new(2.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
             ))
             .id();
         let child_b = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(3.0)),
+                mp_c_from_raw(MassProperties::new(3.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
             ))
             .id();
         let lone_root = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(7.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(7.0)))
             .id();
 
         // Build the view via the public from_queries entry point.
@@ -1513,16 +1464,10 @@ mod tests {
         let child_core = MassProperties::new(5.0);
         let offset = DVec3::new(3.0, 0.0, 0.0);
 
-        let parent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(parent_core))
-            .id();
+        let parent = app.world_mut().spawn(mp_c_from_raw(parent_core)).id();
         let child = app
             .world_mut()
-            .spawn((
-                MassPropertiesC::from(child_core),
-                MassChildOf::new(parent, offset),
-            ))
+            .spawn((mp_c_from_raw(child_core), MassChildOf::new(parent, offset)))
             .id();
 
         // Run one tick of composition. Now `MassPropertiesC[parent]`
@@ -1618,19 +1563,19 @@ mod tests {
         // 3-body chain: a → b → c, all mass 1.
         let a = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(1.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(1.0)))
             .id();
         let b = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(1.0)),
+                mp_c_from_raw(MassProperties::new(1.0)),
                 MassChildOf::new(a, DVec3::new(1.0, 0.0, 0.0)),
             ))
             .id();
         let _c = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(1.0)),
+                mp_c_from_raw(MassProperties::new(1.0)),
                 MassChildOf::new(b, DVec3::new(1.0, 0.0, 0.0)),
             ))
             .id();
@@ -1638,13 +1583,8 @@ mod tests {
         // Tick 1: compose. After this `a`'s `MassPropertiesC` is the
         // composite (mass 3).
         app.update();
-        let composite_after_tick1 = app
-            .world()
-            .get::<MassPropertiesC>(a)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let composite_after_tick1 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(a).unwrap().0).mass;
         assert!(
             (composite_after_tick1 - 3.0).abs() < 1e-12,
             "tick1 composite mass {composite_after_tick1}"
@@ -1661,19 +1601,13 @@ mod tests {
             let mut props = e
                 .get_mut::<MassPropertiesC>()
                 .expect("entity has MassPropertiesC");
-            *props.bypass_change_detection() = MassPropertiesC::from(sentinel);
+            *props.bypass_change_detection() = mp_c_from_raw(sentinel);
         }
 
         // Tick 2: no topology change, no mass change. Gate must
         // skip the walk; sentinel must survive.
         app.update();
-        let after_tick2 = app
-            .world()
-            .get::<MassPropertiesC>(a)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let after_tick2 = mass_typed_to_raw(&app.world().get::<MassPropertiesC>(a).unwrap().0).mass;
         assert!(
             (after_tick2 - 999.0).abs() < 1e-12,
             "gate did not skip walk: sentinel was overwritten ({after_tick2}, expected 999)"
@@ -1704,7 +1638,7 @@ mod tests {
                 .world_mut()
                 .get_mut::<MassPropertiesC>(c_entity)
                 .unwrap();
-            *props = MassPropertiesC::from(MassProperties::new(10.0));
+            *props = mp_c_from_raw(MassProperties::new(10.0));
         }
         // Also restore `a`'s `MassPropertiesC` to the previous
         // composite so the walk has a sane starting point —
@@ -1714,16 +1648,10 @@ mod tests {
         {
             let mut e = app.world_mut().entity_mut(a);
             let mut props = e.get_mut::<MassPropertiesC>().unwrap();
-            *props.bypass_change_detection() = MassPropertiesC::from(MassProperties::new(3.0));
+            *props.bypass_change_detection() = mp_c_from_raw(MassProperties::new(3.0));
         }
         app.update();
-        let after_tick3 = app
-            .world()
-            .get::<MassPropertiesC>(a)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let after_tick3 = mass_typed_to_raw(&app.world().get::<MassPropertiesC>(a).unwrap().0).mass;
         // Tick 3 composite: a (1) + b (1) + c (10) = 12.
         assert!(
             (after_tick3 - 12.0).abs() < 1e-12,
@@ -1743,32 +1671,27 @@ mod tests {
 
         let parent = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         let child_a = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(2.0)),
+                mp_c_from_raw(MassProperties::new(2.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
             ))
             .id();
         let _child_b = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(3.0)),
+                mp_c_from_raw(MassProperties::new(3.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
             ))
             .id();
 
         // Tick 1: compose → parent composite mass 15.
         app.update();
-        let composite_tick1 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let composite_tick1 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!(
             (composite_tick1 - 15.0).abs() < 1e-12,
             "tick1 composite mass {composite_tick1}"
@@ -1784,13 +1707,8 @@ mod tests {
         // Tick 2: kernel must run and recompute the parent's
         // composite as parent (10) + child_b (3) = 13.
         app.update();
-        let composite_tick2 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let composite_tick2 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!(
             (composite_tick2 - 13.0).abs() < 1e-12,
             "gate skipped a real detach: parent mass {} (expected 13)",
@@ -1827,27 +1745,16 @@ mod tests {
         let child_core = MassProperties::new(5.0);
         let offset = DVec3::new(2.0, 0.0, 0.0);
 
-        let parent = app
-            .world_mut()
-            .spawn(MassPropertiesC::from(parent_core))
-            .id();
+        let parent = app.world_mut().spawn(mp_c_from_raw(parent_core)).id();
         let _child = app
             .world_mut()
-            .spawn((
-                MassPropertiesC::from(child_core),
-                MassChildOf::new(parent, offset),
-            ))
+            .spawn((mp_c_from_raw(child_core), MassChildOf::new(parent, offset)))
             .id();
 
         // Tick 1: parent's `MassPropertiesC` becomes composite (15).
         app.update();
-        let composite_after_tick1 = app
-            .world()
-            .get::<MassPropertiesC>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .mass;
+        let composite_after_tick1 =
+            mass_typed_to_raw(&app.world().get::<MassPropertiesC>(parent).unwrap().0).mass;
         assert!(
             (composite_after_tick1 - 15.0).abs() < 1e-12,
             "tick1 composite mass {composite_after_tick1}"
@@ -1907,7 +1814,7 @@ mod tests {
 
         let parent = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         // Spawn a child with `MassChildOf` but no `MassPropertiesC`.
         // The system must reject this on the first tick.
@@ -1926,7 +1833,7 @@ mod tests {
 
         let parent = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         let _child = app.world_mut().spawn(MassChildOf::at_origin(parent)).id();
 
@@ -1954,7 +1861,7 @@ mod tests {
 
         let leaf = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         // Run once so the cache is seeded.
         app.update();
@@ -1963,7 +1870,7 @@ mod tests {
         // `MassPropertiesC` between system runs.
         {
             let mut p = app.world_mut().get_mut::<MassPropertiesC>(leaf).unwrap();
-            *p = MassPropertiesC::from(MassProperties::new(7.0));
+            *p = mp_c_from_raw(MassProperties::new(7.0));
         }
 
         #[derive(Resource, Default)]
@@ -2002,12 +1909,12 @@ mod tests {
 
         let parent = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         let _child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(2.0, 0.0, 0.0)),
             ))
             .id();
@@ -2021,7 +1928,7 @@ mod tests {
         // `recompute_composites` should still see the new core 8.
         {
             let mut p = app.world_mut().get_mut::<MassPropertiesC>(parent).unwrap();
-            *p = MassPropertiesC::from(MassProperties::new(8.0));
+            *p = mp_c_from_raw(MassProperties::new(8.0));
         }
 
         #[derive(Resource, Default)]
@@ -2071,14 +1978,14 @@ mod tests {
         // links so the view has both leaf and internal nodes.
         let root = app
             .world_mut()
-            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .spawn(mp_c_from_raw(MassProperties::new(10.0)))
             .id();
         let mut children = Vec::new();
         for i in 0..5 {
             let c = app
                 .world_mut()
                 .spawn((
-                    MassPropertiesC::from(MassProperties::new(1.0 + i as f64)),
+                    mp_c_from_raw(MassProperties::new(1.0 + i as f64)),
                     MassChildOf::new(root, DVec3::new(i as f64, 0.0, 0.0)),
                 ))
                 .id();

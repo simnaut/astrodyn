@@ -46,7 +46,7 @@ fn main() {
     sb.dt = 10.0;
     let mut sim = sb.build().expect("iss_leo must validate");
 
-    let r0 = sim.body(0).trans.position.length();
+    let r0 = sim.body(0).trans.position.raw_si().length();
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();
     let nominal_orbits = 10;
     let dt = sim.dt;
@@ -56,7 +56,11 @@ fn main() {
     let actual_orbits = steps as f64 * dt / period;
 
     let initial = sim.body(0).trans;
-    let initial_energy = specific_energy(mu_earth, initial.position, initial.velocity);
+    let initial_energy = specific_energy(
+        mu_earth,
+        initial.position.raw_si(),
+        initial.velocity.raw_si(),
+    );
 
     println!("Batch Kepler Orbit Propagation (no Bevy)");
     println!("=========================================");
@@ -74,10 +78,12 @@ fn main() {
         }
         if step % report_interval == 0 || step == steps {
             let s = sim.body(0).trans;
-            let energy = specific_energy(mu_earth, s.position, s.velocity);
+            let pos = s.position.raw_si();
+            let vel = s.velocity.raw_si();
+            let energy = specific_energy(mu_earth, pos, vel);
             let drift = energy - initial_energy;
-            let alt_km = (s.position.length() - 6_378_137.0) / 1000.0;
-            let e_mag = eccentricity(mu_earth, s.position, s.velocity);
+            let alt_km = (pos.length() - 6_378_137.0) / 1000.0;
+            let e_mag = eccentricity(mu_earth, pos, vel);
             println!(
                 "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
                 step as f64 * dt,
@@ -89,7 +95,11 @@ fn main() {
     }
 
     let final_state = sim.body(0).trans;
-    let final_energy = specific_energy(mu_earth, final_state.position, final_state.velocity);
+    let final_energy = specific_energy(
+        mu_earth,
+        final_state.position.raw_si(),
+        final_state.velocity.raw_si(),
+    );
     let drift = (final_energy - initial_energy).abs();
     let relative_drift = drift / final_energy.abs();
     println!();

@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Mass-tree topology and detached-subtree machinery for [`super::Simulation`].
 //!
 //! Carries the bigger attach/detach methods that previously lived in
@@ -9,10 +10,13 @@
 
 use glam::{DMat3, DVec3};
 
+use astrodyn::typed_bridge::{
+    mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, trans_raw_to_typed,
+};
 use astrodyn::{
     combine_states_at_attach, AttachCombineInputs, CrossIntegFrameStateShift, DetachedSubtreeState,
     IntegrationFrame, MassBodyId, MassPointState, RefFrameRot, RefFrameState, RefFrameTrans,
-    RotationalState, TranslationalState, TranslationalStateTyped,
+    RotationalState, TranslationalState,
 };
 
 use super::Simulation;
@@ -52,7 +56,7 @@ impl Simulation {
             .mass
             .expect("add_body_to_tree requires mass properties");
         let tree = self.mass_tree.get_or_insert_with(astrodyn::MassTree::new);
-        let id = tree.add_body(name.into(), mass);
+        let id = tree.add_body(name.into(), mass_typed_to_raw(&mass));
         self.bodies[body_idx].mass_body_id = Some(id);
         id
     }
@@ -386,9 +390,12 @@ impl Simulation {
             let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
             (root_pre_state.trans.position, root_pre_state.trans.velocity) =
                 root_lift.apply(root_pre_state.trans.position, root_pre_state.trans.velocity);
-            let root_pre_composite_props = self.bodies[root_idx]
-                .mass
-                .expect("attach: tree root has no mass properties");
+            let root_pre_composite_props = mass_typed_to_raw(
+                self.bodies[root_idx]
+                    .mass
+                    .as_ref()
+                    .expect("attach: tree root has no mass properties"),
+            );
             let mut child_pre_state =
                 Self::body_composite_state_or_default(&self.bodies[subject_root_idx]);
             (
@@ -398,9 +405,12 @@ impl Simulation {
                 child_pre_state.trans.position,
                 child_pre_state.trans.velocity,
             );
-            let child_pre_composite_props = self.bodies[subject_root_idx]
-                .mass
-                .expect("attach: subject root has no mass properties");
+            let child_pre_composite_props = mass_typed_to_raw(
+                self.bodies[subject_root_idx]
+                    .mass
+                    .as_ref()
+                    .expect("attach: subject root has no mass properties"),
+            );
             let root_has_rot = self.bodies[root_idx].rot.is_some();
             Some(AttachSnapshot {
                 root_integ_origin_pos,
@@ -435,7 +445,10 @@ impl Simulation {
         for body in self.bodies.iter_mut() {
             if let Some(id) = body.mass_body_id {
                 if affected_ids.binary_search(&id).is_ok() {
-                    body.mass = Some(tree.get(id).composite_properties);
+                    // allowed: typed↔raw kernel-boundary lift from
+                    // mass-tree raw composite (see #397).
+                    let raw = tree.get(id).composite_properties;
+                    body.mass = Some(mass_raw_to_self_ref(&raw));
                 }
             }
         }
@@ -517,22 +530,23 @@ impl Simulation {
                 combined.composite_state.trans.velocity,
             );
             self.bodies[root_idx].trans =
-                TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                    &TranslationalState {
-                        position: writeback_position,
-                        velocity: writeback_velocity,
-                    },
-                );
+                trans_raw_to_typed::<IntegrationFrame>(&TranslationalState {
+                    position: writeback_position,
+                    velocity: writeback_velocity,
+                });
             // Write rotational state only when the root already carried
             // one — the merged body inherits the root's DOF. JEOD does
             // the same: a 3-DOF root stays 3-DOF post-merge regardless
             // of whether the child contributed `Iω` to the
             // angular-momentum solve.
             if snap.root_has_rot {
-                self.bodies[root_idx].rot = Some(RotationalState {
+                // allowed: typed↔raw kernel-boundary lift from kinematic
+                // composite-state writeback (see #397).
+                let raw = RotationalState {
                     quaternion: combined.composite_state.rot.q_parent_this,
                     ang_vel_body: combined.composite_state.rot.ang_vel_this,
-                });
+                };
+                self.bodies[root_idx].rot = Some(rot_raw_to_self_ref(&raw));
             }
         }
 
@@ -640,7 +654,10 @@ impl Simulation {
         let position = body.trans.position.raw_si();
         let velocity = body.trans.velocity.raw_si();
         let (q, w) = match body.rot {
-            Some(rot) => (rot.quaternion, rot.ang_vel_body),
+            Some(rot) => (
+                rot.q_inertial_body.to_jeod_quat(),
+                rot.ang_vel_body.raw_si(),
+            ),
             None => (astrodyn::JeodQuat::identity(), DVec3::ZERO),
         };
         RefFrameState {
@@ -798,9 +815,12 @@ impl Simulation {
         let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
         (root_pre_state.trans.position, root_pre_state.trans.velocity) =
             root_lift.apply(root_pre_state.trans.position, root_pre_state.trans.velocity);
-        let root_pre_composite_props = self.bodies[root_idx]
-            .mass
-            .expect("detach: tree root has no mass properties");
+        let root_pre_composite_props = mass_typed_to_raw(
+            self.bodies[root_idx]
+                .mass
+                .as_ref()
+                .expect("detach: tree root has no mass properties"),
+        );
 
         // The walk runs in root-inertial coordinates (the seed has been
         // lifted above), so `child_pre_state` is also root-inertial.
@@ -819,7 +839,10 @@ impl Simulation {
         for body in self.bodies.iter_mut() {
             if let Some(id) = body.mass_body_id {
                 if affected_ids.binary_search(&id).is_ok() {
-                    body.mass = Some(tree.get(id).composite_properties);
+                    // allowed: typed↔raw kernel-boundary lift from
+                    // mass-tree raw composite (see #397).
+                    let raw = tree.get(id).composite_properties;
+                    body.mass = Some(mass_raw_to_self_ref(&raw));
                 }
             }
         }
@@ -880,13 +903,10 @@ impl Simulation {
         );
         let (root_writeback_position, root_writeback_velocity) =
             root_lower.apply(new_root_position, new_root_velocity);
-        self.bodies[root_idx].trans =
-            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &TranslationalState {
-                    position: root_writeback_position,
-                    velocity: root_writeback_velocity,
-                },
-            );
+        self.bodies[root_idx].trans = trans_raw_to_typed::<IntegrationFrame>(&TranslationalState {
+            position: root_writeback_position,
+            velocity: root_writeback_velocity,
+        });
         // root.rot is unchanged — composite/core share body axes (the
         // mass tree's recompute keeps composite_properties.t_parent_this
         // == core_properties.t_parent_this throughout). A 3-DOF body
@@ -929,17 +949,17 @@ impl Simulation {
             child_pre_state.trans.velocity,
         );
         self.bodies[child_idx].trans =
-            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &TranslationalState {
-                    position: child_writeback_position,
-                    velocity: child_writeback_velocity,
-                },
-            );
+            trans_raw_to_typed::<IntegrationFrame>(&TranslationalState {
+                position: child_writeback_position,
+                velocity: child_writeback_velocity,
+            });
         if child_has_rot {
-            self.bodies[child_idx].rot = Some(RotationalState {
+            // allowed: typed↔raw kernel-boundary lift on detach writeback (see #397).
+            let raw = RotationalState {
                 quaternion: child_pre_state.rot.q_parent_this,
                 ang_vel_body: child_pre_state.rot.ang_vel_this,
-            });
+            };
+            self.bodies[child_idx].rot = Some(rot_raw_to_self_ref(&raw));
         }
         // `parent_id` is the immediate parent in the chain; the actual
         // shift target is the integrated tree root (`root_idx`), which
@@ -1185,9 +1205,12 @@ impl Simulation {
                     velocity: body_trans.velocity.raw_si(),
                 },
                 rot: RefFrameRot {
-                    q_parent_this: body_rot.quaternion,
-                    t_parent_this: body_rot.quaternion.left_quat_to_transformation(),
-                    ang_vel_this: body_rot.ang_vel_body,
+                    q_parent_this: body_rot.q_inertial_body.to_jeod_quat(),
+                    t_parent_this: body_rot
+                        .q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation(),
+                    ang_vel_this: body_rot.ang_vel_body.raw_si(),
                 },
             }
         } else {
@@ -1283,14 +1306,14 @@ impl Simulation {
             let omega_body = parent_composite_state.rot.ang_vel_this;
             let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
             self.bodies[integrated_body_idx].trans =
-                TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                    &TranslationalState {
-                        position: parent_composite_state.trans.position + cm_delta_inertial,
-                        velocity: parent_composite_state.trans.velocity + dvel_inertial,
-                    },
-                );
+                trans_raw_to_typed::<IntegrationFrame>(&TranslationalState {
+                    position: parent_composite_state.trans.position + cm_delta_inertial,
+                    velocity: parent_composite_state.trans.velocity + dvel_inertial,
+                });
             // body.rot unchanged — composite/core share body axes.
-            self.bodies[integrated_body_idx].mass = Some(parent_post_composite_props);
+            // allowed: typed↔raw kernel-boundary lift on post-detach mass writeback (see #397).
+            self.bodies[integrated_body_idx].mass =
+                Some(mass_raw_to_self_ref(&parent_post_composite_props));
         } else {
             // Parent is a detached subtree — update its tracked
             // composite-body state to reflect the new (smaller) composite.
@@ -1466,9 +1489,12 @@ impl Simulation {
                 velocity: body_trans.velocity.raw_si(),
             },
             rot: RefFrameRot {
-                q_parent_this: body_rot.quaternion,
-                t_parent_this: body_rot.quaternion.left_quat_to_transformation(),
-                ang_vel_this: body_rot.ang_vel_body,
+                q_parent_this: body_rot.q_inertial_body.to_jeod_quat(),
+                t_parent_this: body_rot
+                    .q_inertial_body
+                    .as_witness()
+                    .left_quat_to_transformation(),
+                ang_vel_this: body_rot.ang_vel_body.raw_si(),
             },
         };
         let _ = core_wrt_composite_pre; // unused under composite-body convention
@@ -1634,17 +1660,18 @@ impl Simulation {
         // `Vel_Rate` per `set_state_source_internal` at the end of
         // `DynBody::attach_update_properties`).
         self.bodies[integrated_body_idx].trans =
-            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &TranslationalState {
-                    position: combined.composite_state.trans.position,
-                    velocity: combined.composite_state.trans.velocity,
-                },
-            );
-        self.bodies[integrated_body_idx].rot = Some(RotationalState {
+            trans_raw_to_typed::<IntegrationFrame>(&TranslationalState {
+                position: combined.composite_state.trans.position,
+                velocity: combined.composite_state.trans.velocity,
+            });
+        // allowed: typed↔raw kernel-boundary lift on post-attach combine writeback (see #397).
+        let raw_rot = RotationalState {
             quaternion: combined.composite_state.rot.q_parent_this,
             ang_vel_body: combined.composite_state.rot.ang_vel_this,
-        });
-        self.bodies[integrated_body_idx].mass = Some(combined_composite_props);
+        };
+        self.bodies[integrated_body_idx].rot = Some(rot_raw_to_self_ref(&raw_rot));
+        self.bodies[integrated_body_idx].mass =
+            Some(mass_raw_to_self_ref(&combined_composite_props));
 
         // Combine succeeded — only now remove the subtree's detached
         // entry. If any earlier step panicked (missing mass points,
@@ -1715,7 +1742,7 @@ mod tests {
     use astrodyn::{
         Abm4State, GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls,
         GravityModel, GravitySource, GravitySourceEntry, IntegratorType, MassProperties,
-        SimulationTime, TranslationalState, VehicleConfig,
+        RootInertial, SimulationTime, TranslationalState, VehicleConfig,
     };
 
     /// JEOD's `dyn_body_attach.cc::reset_integrators()` precedent: after an
@@ -1768,9 +1795,9 @@ mod tests {
 
         let gj_cfg = GaussJacksonConfig::with_order(8);
         let make_cfg = |trans: TranslationalState| VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -1871,9 +1898,9 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make = |trans: TranslationalState| VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -1948,9 +1975,9 @@ mod tests {
         );
 
         let make_cfg = |trans: TranslationalState| VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::Abm4,
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2038,9 +2065,9 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make = |trans: TranslationalState| VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::Abm4,
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2117,9 +2144,9 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let make_cfg = || VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2250,9 +2277,9 @@ mod tests {
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
         let cm = sim.add_body(VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2432,14 +2459,13 @@ mod tests {
         // in by hand after validate to exercise detach_subtree's IG.37
         // reset block — see the module-level comment above for why.
         let cm_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState {
                 position: DVec3::new(9e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 8000.0, 0.0),
-            }
-            .into(),
-            rot: Some(astrodyn::RotationalState::default().into()),
+            }),
+            rot: Some(rot_raw_to_self_ref(&(astrodyn::RotationalState::default()))),
             integrator: IntegratorType::Rk4,
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2767,9 +2793,9 @@ mod tests {
 
         let gj_cfg = GaussJacksonConfig::with_order(8);
         let body_idx = sim.add_body(VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2854,9 +2880,9 @@ mod tests {
         );
 
         let body_idx = sim.add_body(VehicleConfig {
-            trans: trans.into(),
+            trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::Abm4,
-            mass: Some(MassProperties::new(1000.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, false)],
             },
@@ -2926,15 +2952,14 @@ mod tests {
         // Add a 6-DOF child SimBody, register both in the mass tree,
         // attach with a non-zero offset, and mark the child kinematic.
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default().into(),
-            rot: Some(
-                RotationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
+            rot: Some(rot_raw_to_self_ref(
+                &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
-                }
-                .into(),
-            ),
-            mass: Some(MassProperties::new(5.0).into()),
+                }),
+            )),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -3001,21 +3026,20 @@ mod tests {
         // composite-body inertial state to build the chain walk).
         // Install identity attitude + zero rate so the subtree path is
         // exercised without changing the orbit.
-        sim.bodies[parent_idx].rot = Some(RotationalState {
+        sim.bodies[parent_idx].rot = Some(rot_raw_to_self_ref(&RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
-        });
+        }));
 
         let child_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState::default().into(),
-            rot: Some(
-                RotationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
+            rot: Some(rot_raw_to_self_ref(
+                &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
-                }
-                .into(),
-            ),
-            mass: Some(MassProperties::new(5.0).into()),
+                }),
+            )),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
@@ -3088,54 +3112,49 @@ mod tests {
         // iss_leo ships a 3-DOF root; promote parent_a in place to
         // 6-DOF so the post-reroot tree is well-formed (parent_a is
         // the integrated root of the merged tree).
-        sim.bodies[parent_a_idx].rot = Some(RotationalState {
+        sim.bodies[parent_a_idx].rot = Some(rot_raw_to_self_ref(&RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
-        });
+        }));
 
         let parent_b_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            }
-            .into(),
-            rot: Some(
-                RotationalState {
+            }),
+            rot: Some(rot_raw_to_self_ref(
+                &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
-                }
-                .into(),
-            ),
-            mass: Some(MassProperties::new(100.0).into()),
+                }),
+            )),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(100.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
         let intermediate_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState {
                 position: DVec3::new(7e6 + 1.0, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            }
-            .into(),
-            rot: Some(
-                RotationalState {
+            }),
+            rot: Some(rot_raw_to_self_ref(
+                &(RotationalState {
                     quaternion: JeodQuat::identity(),
                     ang_vel_body: DVec3::ZERO,
-                }
-                .into(),
-            ),
-            mass: Some(MassProperties::new(50.0).into()),
+                }),
+            )),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(50.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
         // 3-DOF body — no `rot` field.
         let three_dof_idx = sim.add_body(VehicleConfig {
-            trans: TranslationalState {
+            trans: trans_raw_to_typed::<RootInertial>(&TranslationalState {
                 position: DVec3::new(7e6 + 2.0, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
-            }
-            .into(),
+            }),
             rot: None,
-            mass: Some(MassProperties::new(10.0).into()),
+            mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });

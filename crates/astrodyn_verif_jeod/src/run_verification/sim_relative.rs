@@ -61,21 +61,31 @@ fn build_two_body(
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut b = SimulationBuilder::new(time, RELATIVE_DT);
     let dummy_mass = MassProperties::new(1.0);
+    // allowed: typed↔raw kernel-boundary lifts at the public scenario
+    // builder (named-method opt-in; see #397).
     b.add_body(VehicleConfig {
-        trans: trans_a.into(),
-        rot: if sixdof { Some(rot_a.into()) } else { None },
+        trans: super::typed_helpers::trans_typed(&trans_a),
+        rot: if sixdof {
+            Some(super::typed_helpers::rot_typed(&rot_a))
+        } else {
+            None
+        },
         mass: if sixdof {
-            Some(dummy_mass.into())
+            Some(super::typed_helpers::mass_typed(&dummy_mass))
         } else {
             None
         },
         ..Default::default()
     });
     b.add_body(VehicleConfig {
-        trans: trans_b.into(),
-        rot: if sixdof { Some(rot_b.into()) } else { None },
+        trans: super::typed_helpers::trans_typed(&trans_b),
+        rot: if sixdof {
+            Some(super::typed_helpers::rot_typed(&rot_b))
+        } else {
+            None
+        },
         mass: if sixdof {
-            Some(dummy_mass.into())
+            Some(super::typed_helpers::mass_typed(&dummy_mass))
         } else {
             None
         },

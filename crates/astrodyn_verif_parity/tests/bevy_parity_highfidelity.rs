@@ -54,7 +54,7 @@ fn tier3_bevy_sh4x4_rnp() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -88,7 +88,7 @@ fn tier3_bevy_sh4x4_rnp() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
@@ -98,7 +98,7 @@ fn tier3_bevy_sh4x4_rnp() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_state = sim.body(0).trans;
+    let sim_state = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
 
     assert_trans_eq("Bevy vs Sim (SH 4x4)", &bevy_state, &sim_state);
 }
@@ -160,7 +160,7 @@ fn tier3_bevy_tidal_sh4x4() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -194,7 +194,7 @@ fn tier3_bevy_tidal_sh4x4() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
@@ -204,7 +204,7 @@ fn tier3_bevy_tidal_sh4x4() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_state = sim.body(0).trans;
+    let sim_state = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
 
     assert_trans_eq("Bevy vs Sim (SH 4x4 + tides)", &bevy_state, &sim_state);
     println!("  Bevy vs Sim SH 4x4 + tides: bit-identical");
@@ -226,7 +226,7 @@ fn tier3_bevy_run2p_polar_motion() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -249,7 +249,7 @@ fn tier3_bevy_run2p_polar_motion() {
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -258,11 +258,8 @@ fn tier3_bevy_run2p_polar_motion() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    assert_trans_eq(
-        "Bevy vs Sim (polar motion)",
-        &bevy_trans,
-        &sim.body(0).trans,
-    );
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
+    assert_trans_eq("Bevy vs Sim (polar motion)", &bevy_trans, &sim_trans);
 }
 
 // ── Gauss-Jackson parity ──
@@ -296,7 +293,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC::<astrodyn::Earth>::from(gj_trans),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(gj_trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
@@ -323,7 +320,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     let earth_idx = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
-        trans: gj_trans.into(),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&gj_trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
@@ -333,7 +330,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     sim.validate().unwrap();
     sim.step_n(n_steps).expect("step_n failed");
 
-    let sim_trans = sim.body(0).trans;
+    let sim_trans = astrodyn::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
 
     assert_trans_eq(label, &bevy_trans, &sim_trans);
     println!("  {label}: bit-identical");

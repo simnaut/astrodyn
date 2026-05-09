@@ -71,9 +71,11 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
         .world_mut()
         .spawn((
             Name::new("body"),
-            TranslationalStateC::<astrodyn::Earth>::from(trans),
-            RotationalStateC::from(rot),
-            MassPropertiesC::from(MassProperties::new(1.0)),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(MassProperties::new(1.0)),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,

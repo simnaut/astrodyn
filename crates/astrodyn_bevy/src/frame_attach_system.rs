@@ -506,7 +506,8 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
                 .get(body_entity)
                 .ok()
                 .map(|mp| {
-                    let untyped = mp.0.to_untyped();
+                    // allowed: typed↔raw kernel boundary
+                    let untyped = astrodyn::typed_bridge::mass_typed_to_raw(&mp.0);
                     MassPointState {
                         position: untyped.position,
                         t_parent_this: untyped.t_parent_this,
@@ -607,16 +608,16 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
             position: derived.trans.position - *integ_origin_pos,
             velocity: derived.trans.velocity - *integ_origin_vel,
         };
-        // allowed: kernel boundary — the kernel returns root-inertial values lowered through the body's `IntegOrigin`; the resulting integration-frame coords carry the `<P>` planet-inertial phantom matching `TranslationalStateC<P>`'s storage convention (system instantiation gates by `<P>`).
-        trans.0 = astrodyn::TranslationalStateTyped::<astrodyn::PlanetInertial<P>>::from_untyped_unchecked(&derived_trans);
+        // allowed: typed↔raw kernel boundary (#397)
+        trans.0 = astrodyn::typed_bridge::trans_raw_to_planet::<P>(&derived_trans);
 
         if let Some(mut rot) = rot_opt {
             let derived_rot = astrodyn::RotationalState {
                 quaternion: derived.rot.q_parent_this,
                 ang_vel_body: derived.rot.ang_vel_this,
             };
-            // allowed: kernel boundary — the kernel produces a composed quaternion + body-frame angular velocity; re-tagging into the SelfRef-marked RotationalStateTyped is the same zero-cost phantom relabel `staging_system` uses on the mass-tree side.
-            rot.0 = astrodyn::RotationalStateTyped::from_untyped_unchecked(&derived_rot);
+            // allowed: typed↔raw kernel boundary (#397)
+            rot.0 = astrodyn::typed_bridge::rot_raw_to_self_ref(&derived_rot);
         }
 
         // Sync the body's frame entity (if it has one) so frame-tree
@@ -777,8 +778,12 @@ mod tests {
     fn spawn_test_body(app: &mut App) -> Entity {
         app.world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(1.0)),
-                RotationalStateC::from_untyped(RotationalState::default()),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                    &(MassProperties::new(1.0)),
+                )),
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
+                    &(RotationalState::default()),
+                )),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1054,8 +1059,12 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("frame_attached_root"),
-                MassPropertiesC::from(MassProperties::new(10.0)),
-                RotationalStateC::from_untyped(RotationalState::default()),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                    &(MassProperties::new(10.0)),
+                )),
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
+                    &(RotationalState::default()),
+                )),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1086,10 +1095,14 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("kinematic_child"),
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                    &(MassProperties::new(5.0)),
+                )),
                 MassChildOf::with_rotation(parent_body, child_link_offset, glam::DMat3::IDENTITY),
                 KinematicChildC,
-                RotationalStateC::from_untyped(RotationalState::default()),
+                RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
+                    &(RotationalState::default()),
+                )),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),

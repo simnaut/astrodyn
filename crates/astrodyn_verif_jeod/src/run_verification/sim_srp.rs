@@ -236,20 +236,19 @@ fn build_srp(
     let num_plates = plates.len();
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
-        mass: Some(
-            MassProperties::with_inertia(
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
+        // allowed: typed↔raw kernel-boundary lift on scenario mass
+        // construction (named-method opt-in; see #397).
+        mass: Some(super::typed_helpers::mass_typed(
+            &MassProperties::with_inertia(
                 SRP_MASS,
                 DMat3::from_diagonal(DVec3::splat(1.0)),
                 DVec3::ZERO,
-            )
-            .into(),
-        ),
+            ),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

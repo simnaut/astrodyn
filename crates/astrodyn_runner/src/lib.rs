@@ -15,7 +15,7 @@
 //! let mut sim = Mission::iss_leo().into_builder().build().unwrap();
 //! sim.step_n(10);
 //! let output = sim.body(0);
-//! assert!(output.trans.position.length() > 6_000_000.0);
+//! assert!(output.trans.position.raw_si().length() > 6_000_000.0);
 //! ```
 
 #![forbid(unsafe_code)]

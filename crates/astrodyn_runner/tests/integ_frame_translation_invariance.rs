@@ -156,7 +156,10 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
     };
 
     let mut cfg = VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial> {
+            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(trans.position), // allowed: typed↔raw kernel boundary
+            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(trans.velocity), // allowed: typed↔raw kernel boundary
+        },
         rot: None,
         mass: None,
         gravity_controls: GravityControls {
@@ -240,8 +243,8 @@ fn integ_frame_translation_invariance_geodetic_and_orbit() {
         // Body translational state — both are stored in the body's
         // integration frame, which equals Earth.inertial in both setups.
         // Exact match expected (offset add then subtract is bit-clean).
-        let pos_diff = (a.trans.position - b.trans.position).length();
-        let vel_diff = (a.trans.velocity - b.trans.velocity).length();
+        let pos_diff = (a.trans.position.raw_si() - b.trans.position.raw_si()).length();
+        let vel_diff = (a.trans.velocity.raw_si() - b.trans.velocity.raw_si()).length();
         assert!(
             pos_diff < 1e-4 && vel_diff < 1e-6,
             "step {step}: position diff {pos_diff:e} m, velocity diff {vel_diff:e} m/s \

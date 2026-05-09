@@ -74,11 +74,10 @@ fn gj_energy_error(order: usize) -> f64 {
     let init_vel = DVec3::new(0.0, circular_velocity(), 0.0);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(order)),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -96,7 +95,7 @@ fn gj_energy_error(order: usize) -> f64 {
     for _ in 1..=n_steps {
         sim.step().expect("step failed");
         let body = sim.body(0);
-        let e = specific_energy(body.trans.position, body.trans.velocity);
+        let e = specific_energy(body.trans.position.raw_si(), body.trans.velocity.raw_si());
         let rel_err = ((e - e0) / e0).abs();
         max_rel_err = max_rel_err.max(rel_err);
     }

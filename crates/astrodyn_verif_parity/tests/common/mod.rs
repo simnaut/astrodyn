@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Shared helpers for Bevy-vs-Simulation parity tests.
 //!
 //! Provides common initial conditions, assertion functions, and setup
@@ -101,25 +102,25 @@ pub fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
 
 pub fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
-        trans: world
-            .get::<TranslationalStateC<astrodyn::Earth>>(entity)
-            .unwrap()
-            .0
-            .to_untyped(),
-        rot: world
-            .get::<RotationalStateC>(entity)
-            .unwrap()
-            .0
-            .to_untyped(),
+        trans: astrodyn::typed_bridge::trans_typed_to_raw(
+            &world
+                .get::<TranslationalStateC<astrodyn::Earth>>(entity)
+                .unwrap()
+                .0,
+        ),
+        rot: astrodyn::typed_bridge::rot_typed_to_raw(
+            &world.get::<RotationalStateC>(entity).unwrap().0,
+        ),
     }
 }
 
 pub fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    world
-        .get::<TranslationalStateC<astrodyn::Earth>>(entity)
-        .unwrap()
-        .0
-        .to_untyped()
+    astrodyn::typed_bridge::trans_typed_to_raw(
+        &world
+            .get::<TranslationalStateC<astrodyn::Earth>>(entity)
+            .unwrap()
+            .0,
+    )
 }
 
 /// Assert two f64 values are bit-identical.
@@ -217,9 +218,9 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
 
 pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
     VehicleConfig {
-        trans: iss_trans().into(),
-        rot: Some(tumble_rot().into()),
-        mass: Some(iss_mass().into()),
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },

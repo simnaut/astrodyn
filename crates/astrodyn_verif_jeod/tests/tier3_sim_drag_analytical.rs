@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Analytical drag verification tests.
 //!
 //! These tests exercise aerodynamic drag through `Simulation::step()` and verify
@@ -87,19 +88,19 @@ fn make_drag_sim(
     };
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(MassProperties::new(mass).into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(mass)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -147,7 +148,11 @@ fn tier3_drag_constant_density_energy_loss() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e_final = specific_orbital_energy(
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
 
     println!("  Initial energy: {e_initial:.6e} J/kg");
     println!("  Final energy:   {e_final:.6e} J/kg");
@@ -196,7 +201,11 @@ fn tier3_drag_altitude_decay() {
 
     let body = sim.body(0);
     let a_final = semi_major_axis_from_energy(
-        specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH),
+        specific_orbital_energy(
+            body.trans.position.raw_si(),
+            body.trans.velocity.raw_si(),
+            MU_EARTH,
+        ),
         MU_EARTH,
     );
 
@@ -249,7 +258,11 @@ fn tier3_drag_higher_density_faster_decay() {
     sim_low.step_n(n_steps).expect("step_n failed");
     let body_low = sim_low.body(0);
     let e_loss_low = e_initial
-        - specific_orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
+        - specific_orbital_energy(
+            body_low.trans.position.raw_si(),
+            body_low.trans.velocity.raw_si(),
+            MU_EARTH,
+        );
 
     // Case 2: high density (10x)
     let density_high = 1e-11;
@@ -257,7 +270,11 @@ fn tier3_drag_higher_density_faster_decay() {
     sim_high.step_n(n_steps).expect("step_n failed");
     let body_high = sim_high.body(0);
     let e_loss_high = e_initial
-        - specific_orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
+        - specific_orbital_energy(
+            body_high.trans.position.raw_si(),
+            body_high.trans.velocity.raw_si(),
+            MU_EARTH,
+        );
 
     let density_ratio = density_high / density_low;
     let loss_ratio = e_loss_high / e_loss_low;
@@ -298,8 +315,8 @@ fn tier3_drag_larger_area_faster_decay() {
     let body_small = sim_small.body(0);
     let e_loss_small = e_initial
         - specific_orbital_energy(
-            body_small.trans.position,
-            body_small.trans.velocity,
+            body_small.trans.position.raw_si(),
+            body_small.trans.velocity.raw_si(),
             MU_EARTH,
         );
 
@@ -310,8 +327,8 @@ fn tier3_drag_larger_area_faster_decay() {
     let body_large = sim_large.body(0);
     let e_loss_large = e_initial
         - specific_orbital_energy(
-            body_large.trans.position,
-            body_large.trans.velocity,
+            body_large.trans.position.raw_si(),
+            body_large.trans.velocity.raw_si(),
             MU_EARTH,
         );
 
@@ -352,8 +369,17 @@ fn tier3_drag_no_drag_at_zero_density() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
-    let h_final = body.trans.position.cross(body.trans.velocity).length();
+    let e_final = specific_orbital_energy(
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
+    let h_final = body
+        .trans
+        .position
+        .raw_si()
+        .cross(body.trans.velocity.raw_si())
+        .length();
 
     let de = (e_final - e_initial).abs();
     let dh = (h_final - h_initial).abs();
@@ -418,7 +444,11 @@ fn tier3_drag_corotation_wind_effect() {
     sim_pro.step_n(n_steps).expect("step_n failed");
     let body_pro = sim_pro.body(0);
     let e_loss_pro = e_initial
-        - specific_orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
+        - specific_orbital_energy(
+            body_pro.trans.position.raw_si(),
+            body_pro.trans.velocity.raw_si(),
+            MU_EARTH,
+        );
 
     // Retrograde orbit with co-rotation wind
     let mut sim_retro = make_drag_sim_with_wind(pos, vel_retrograde, mass, cd, area, density, dt);
@@ -427,8 +457,8 @@ fn tier3_drag_corotation_wind_effect() {
     // For retrograde, initial energy is the same magnitude
     let e_loss_retro = e_initial
         - specific_orbital_energy(
-            body_retro.trans.position,
-            body_retro.trans.velocity,
+            body_retro.trans.position.raw_si(),
+            body_retro.trans.velocity.raw_si(),
             MU_EARTH,
         );
 
@@ -515,19 +545,19 @@ fn make_drag_sim_with_wind(
     };
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(MassProperties::new(mass).into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(mass)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

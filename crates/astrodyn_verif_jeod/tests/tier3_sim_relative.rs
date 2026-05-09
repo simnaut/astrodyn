@@ -92,37 +92,33 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
 
     // Body 0: vehicle A (subject)
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh_a_pos,
             velocity: init.veh_a_vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: init.veh_a_quat,
                 ang_vel_body: init.veh_a_ang_vel,
-            }
-            .into(),
-        ),
-        mass: Some(dummy_mass.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(dummy_mass))),
         ..Default::default()
     });
 
     // Body 1: vehicle B (reference)
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.veh_b_pos,
             velocity: init.veh_b_vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: init.veh_b_quat,
                 ang_vel_body: init.veh_b_ang_vel,
-            }
-            .into(),
-        ),
-        mass: Some(dummy_mass.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(dummy_mass))),
         ..Default::default()
     });
 
@@ -135,11 +131,21 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     {
         let a = sim.body(0);
         let b = sim.body(1);
+        let a_trans = astrodyn::TranslationalState {
+            position: a.trans.position.raw_si(),
+            velocity: a.trans.velocity.raw_si(),
+        };
+        let b_trans = astrodyn::TranslationalState {
+            position: b.trans.position.raw_si(),
+            velocity: b.trans.velocity.raw_si(),
+        };
+        let a_rot = a.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
+        let b_rot = b.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
         let rel = compute_relative_state::<SelfRef, SelfRef>(
-            &b.trans,
-            b.rot.as_ref(),
-            &a.trans,
-            a.rot.as_ref(),
+            &b_trans,
+            b_rot.as_ref(),
+            &a_trans,
+            a_rot.as_ref(),
         );
         // Scenario fixtures cover both branches of `RelativeTranslation`
         // (with/without reference rotational state), so the metric
@@ -158,12 +164,22 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
 
         let a = sim.body(0);
         let b = sim.body(1);
+        let a_trans = astrodyn::TranslationalState {
+            position: a.trans.position.raw_si(),
+            velocity: a.trans.velocity.raw_si(),
+        };
+        let b_trans = astrodyn::TranslationalState {
+            position: b.trans.position.raw_si(),
+            velocity: b.trans.velocity.raw_si(),
+        };
+        let a_rot = a.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
+        let b_rot = b.rot.as_ref().map(astrodyn::typed_bridge::rot_typed_to_raw);
 
         let rel = compute_relative_state::<SelfRef, SelfRef>(
-            &b.trans,
-            b.rot.as_ref(),
-            &a.trans,
-            a.rot.as_ref(),
+            &b_trans,
+            b_rot.as_ref(),
+            &a_trans,
+            a_rot.as_ref(),
         );
 
         let pos_err = (rel.trans.position_raw() - rec.jeod_rel_pos).length();

@@ -128,7 +128,9 @@ fn body_despawn_despawns_body_frame_entity() {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7.5e3, 0.0),
             }),
-            MassPropertiesC::from(MassProperties::new(1000.0)),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(MassProperties::new(1000.0)),
+            )),
             DynamicsConfigC(DynamicsConfig::default()),
             GravityControlsC(GravityControls::<Entity> {
                 controls: Vec::new(),

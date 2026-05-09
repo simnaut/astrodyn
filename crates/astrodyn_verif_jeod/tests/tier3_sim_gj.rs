@@ -86,11 +86,10 @@ fn run_gj_test(
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
-        }
-        .into(),
+        }),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -117,8 +116,8 @@ fn run_gj_test(
         let body = sim.body(0);
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
             ang_accel: body.rot_accel,
             ..Default::default()

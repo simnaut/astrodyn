@@ -79,19 +79,17 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
     let mass =
         MassProperties::with_inertia(100.0, DMat3::from_diagonal(DVec3::splat(10.0)), DVec3::ZERO);
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(1.5e11, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::new(0.0, 0.0, 0.05),
-            }
-            .into(),
-        ),
-        mass: Some(mass.into()),
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp],
@@ -111,7 +109,7 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
     let t = sim
         .srp_plate_temperatures(0)
         .expect("flat-plate SRP configured")[0];
-    let pos = sim.body(0).trans.position;
+    let pos = sim.body(0).trans.position.raw_si();
     (t, pos)
 }
 

@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructors for the derived-state Tier 3 family
 //! (SIM_OrbElem, SIM_LVLH, SIM_NED, SIM_Euler).
 //!
@@ -82,12 +83,10 @@ fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -139,12 +138,10 @@ fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -243,12 +240,10 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     };
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -400,20 +395,19 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
-        rot: Some(
-            RotationalState {
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: JeodQuat::from_glam(q),
                 ang_vel_body: w,
-            }
-            .into(),
-        ),
-        mass: Some(iss_euler_mass_properties().into()),
+            }),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(
+            &(iss_euler_mass_properties()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -444,20 +438,19 @@ fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
-        rot: Some(
-            RotationalState {
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: init_quat,
                 ang_vel_body: DVec3::ZERO, // SIM_Euler initializes with zero ang vel
-            }
-            .into(),
-        ),
-        mass: Some(iss_euler_mass_properties().into()),
+            }),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(
+            &(iss_euler_mass_properties()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

@@ -264,36 +264,6 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         self
     }
 
-    /// Drop the phantoms and emit the untyped storage form. Numeric
-    /// values (kg, kg·m², m) are preserved exactly.
-    pub fn to_untyped(&self) -> MassProperties {
-        MassProperties {
-            mass: self.mass.get::<kilogram>(),
-            inverse_mass: self.inverse_mass,
-            inertia: self.inertia.as_dmat3(),
-            inverse_inertia: self.inverse_inertia,
-            position: self.center_of_mass.raw_si(),
-            t_parent_this: self.t_parent_this,
-            dirty: self.dirty,
-        }
-    }
-
-    /// Wrap an untyped [`MassProperties`] as typed for vehicle `V`.
-    /// **The caller asserts** the inertia is in `BodyFrame<V>` and the
-    /// position is in `StructuralFrame<V>`.
-    pub fn from_untyped_unchecked(mp: &MassProperties) -> Self {
-        Self {
-            mass: Mass::new::<kilogram>(mp.mass),
-            inverse_mass: mp.inverse_mass,
-            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(mp.inertia),
-            inverse_inertia: mp.inverse_inertia,
-            center_of_mass: Position::<StructuralFrame<V>>::from_raw_si(mp.position),
-            t_parent_this: mp.t_parent_this,
-            dirty: mp.dirty,
-            _v: PhantomData,
-        }
-    }
-
     /// Recompute `inverse_mass` and `inverse_inertia`.
     // JEOD_INV: MA.03 — inverse_mass = 1/mass (recomputed)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed)
@@ -325,16 +295,6 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             "MassPropertiesTyped: inertia and inverse_inertia inconsistent \
              (I·I⁻¹ != identity to {tol:.0e})"
         );
-    }
-}
-
-impl<V: Vehicle> From<MassProperties> for MassPropertiesTyped<V> {
-    /// Lift an untyped [`MassProperties`] into the typed form,
-    /// asserting the caller's vehicle phantom `V`. Documented
-    /// test/scenario / BodyAction-payload boundary.
-    #[inline]
-    fn from(mp: MassProperties) -> Self {
-        Self::from_untyped_unchecked(&mp)
     }
 }
 
@@ -438,13 +398,12 @@ mod tests {
         use astrodyn_quantities::frame::TestVehicle;
 
         let typed = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
-        let untyped = typed.to_untyped();
 
-        assert_eq!(untyped.mass, 10.0);
-        assert_eq!(untyped.inverse_mass, 0.1);
-        assert_eq!(untyped.inertia, DMat3::IDENTITY * 10.0);
-        assert_eq!(untyped.inverse_inertia, DMat3::IDENTITY / 10.0);
-        assert_eq!(untyped.position, DVec3::ZERO);
+        assert_eq!(typed.mass.get::<kilogram>(), 10.0);
+        assert_eq!(typed.inverse_mass, 0.1);
+        assert_eq!(typed.inertia.as_dmat3(), DMat3::IDENTITY * 10.0);
+        assert_eq!(typed.inverse_inertia, DMat3::IDENTITY / 10.0);
+        assert_eq!(typed.center_of_mass.raw_si(), DVec3::ZERO);
     }
 
     #[test]
@@ -462,22 +421,13 @@ mod tests {
         );
         let untyped = MassProperties::with_inertia(m, i, pos);
 
-        assert_eq!(typed.to_untyped(), untyped);
-    }
-
-    #[test]
-    fn typed_round_trip_through_from_untyped_unchecked() {
-        use astrodyn_quantities::frame::TestVehicle;
-
-        let untyped = MassProperties::with_inertia(
-            7.5,
-            DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
-            DVec3::new(0.0, 0.05, 0.0),
-        );
-        let typed = MassPropertiesTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
-        let back = typed.to_untyped();
-
-        assert_eq!(back, untyped);
+        assert_eq!(typed.mass.get::<kilogram>(), untyped.mass);
+        assert_eq!(typed.inverse_mass, untyped.inverse_mass);
+        assert_eq!(typed.inertia.as_dmat3(), untyped.inertia);
+        assert_eq!(typed.inverse_inertia, untyped.inverse_inertia);
+        assert_eq!(typed.center_of_mass.raw_si(), untyped.position);
+        assert_eq!(typed.t_parent_this, untyped.t_parent_this);
+        assert_eq!(typed.dirty, untyped.dirty);
     }
 
     #[test]
