@@ -92,6 +92,26 @@ impl<V: Vehicle, F: Frame> SixDofStateTyped<V, F> {
             rot: self.rot,
         }
     }
+
+    /// Drop the phantoms and emit the untyped composite storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> SixDofState {
+        SixDofState {
+            trans: self.trans.to_untyped(),
+            rot: self.rot.to_untyped(),
+        }
+    }
+
+    /// Wrap an untyped [`SixDofState`] as typed. Panics if the
+    /// rotational half's quaternion is not unit-norm (see
+    /// [`RotationalStateTyped::from_untyped_unchecked`]).
+    #[inline]
+    pub fn from_untyped_unchecked(s: &SixDofState) -> Self {
+        Self {
+            trans: TranslationalStateTyped::<F>::from_untyped_unchecked(&s.trans),
+            rot: RotationalStateTyped::<V>::from_untyped_unchecked(&s.rot),
+        }
+    }
 }
 
 /// Typed sibling of [`RotationalState`] parameterized by a vehicle marker
@@ -131,6 +151,34 @@ impl<V: Vehicle> RotationalStateTyped<V> {
         Self {
             q_inertial_body,
             ang_vel_body,
+            _v: PhantomData,
+        }
+    }
+
+    /// Drop the phantoms and emit the untyped storage form. The
+    /// quaternion is the underlying [`JeodQuat`] held by the
+    /// `BodyAttitude` witness (no renormalization).
+    #[inline]
+    pub fn to_untyped(&self) -> RotationalState {
+        RotationalState {
+            quaternion: self.q_inertial_body.to_jeod_quat(),
+            ang_vel_body: self.ang_vel_body.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`RotationalState`] as typed. **The caller
+    /// asserts** parent-to-body semantics for the quaternion and
+    /// `BodyFrame<V>` for the angular velocity.
+    ///
+    /// Panics if `s.quaternion` has drifted from unit norm beyond
+    /// [`NormalizedQuat::DEFAULT_TOLERANCE`] (1e-12), surfacing a
+    /// missing renormalization upstream rather than silently
+    /// witnessing a non-unit quaternion.
+    #[inline]
+    pub fn from_untyped_unchecked(s: &RotationalState) -> Self {
+        Self {
+            q_inertial_body: BodyAttitude::<V>::from_jeod_quat(s.quaternion),
+            ang_vel_body: AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
             _v: PhantomData,
         }
     }
@@ -523,4 +571,99 @@ mod tests {
     // moved there; the type-level guarantee that no caller can write
     // the wrong multiply at all is exercised by the compile-fail
     // doctests on `BodyAttitude` itself.
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use crate::state::TranslationalState;
+    use astrodyn_quantities::frame::{RootInertial, TestVehicle};
+    use astrodyn_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3_finite() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_unit_jeod_quat() -> impl Strategy<Value = JeodQuat> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_filter("non-zero norm", |(a, b, c, d)| {
+                let n2 = a * a + b * b + c * c + d * d;
+                n2.is_finite() && n2 > 1.0e-18
+            })
+            .prop_filter_map("renormalize succeeds", |(a, b, c, d)| {
+                let q = JeodQuat::from_array([a, b, c, d]);
+                NormalizedQuat::<ScalarFirst, LeftTransform>::renormalize(q).map(|n| n.inner())
+            })
+    }
+
+    fn arb_rotational_state() -> impl Strategy<Value = RotationalState> {
+        (arb_unit_jeod_quat(), arb_dvec3_finite()).prop_map(|(quaternion, ang_vel_body)| {
+            RotationalState {
+                quaternion,
+                ang_vel_body,
+            }
+        })
+    }
+
+    fn arb_translational_state_for_six_dof() -> impl Strategy<Value = TranslationalState> {
+        (arb_dvec3_finite(), arb_dvec3_finite())
+            .prop_map(|(position, velocity)| TranslationalState { position, velocity })
+    }
+
+    fn arb_six_dof_state() -> impl Strategy<Value = SixDofState> {
+        (
+            arb_translational_state_for_six_dof(),
+            arb_rotational_state(),
+        )
+            .prop_map(|(trans, rot)| SixDofState { trans, rot })
+    }
+
+    // The "typed -> untyped -> typed" leg compares via the untyped
+    // projection because the typed sibling's derived PartialEq requires
+    // the phantom types (`TestVehicle`/`RootInertial`) to implement
+    // PartialEq, which they do not. Equivalent coverage for the bug
+    // class we're guarding against.
+    proptest! {
+        #[test]
+        fn round_trip_rotational_untyped_typed_untyped(orig in arb_rotational_state()) {
+            let typed = RotationalStateTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_rotational_typed_untyped_typed(orig in arb_rotational_state()) {
+            let typed = RotationalStateTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            let lifted = RotationalStateTyped::<TestVehicle>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_six_dof_untyped_typed_untyped(orig in arb_six_dof_state()) {
+            let typed = SixDofStateTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_six_dof_typed_untyped_typed(orig in arb_six_dof_state()) {
+            let typed = SixDofStateTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&orig);
+            let lifted = SixDofStateTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+    }
 }
