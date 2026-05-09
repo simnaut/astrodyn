@@ -93,34 +93,35 @@ state. `astrodyn_runner` provides that owned-state harness for:
   ECS scheduling, parallelism, or Bevy plugins.
 
 `astrodyn_runner` and `astrodyn_bevy` sit *next to* each other in the dep graph —
-both depend on `astrodyn` (and the wider `astrodyn_*` family); neither
-depends on the other. Any improvement that lands in `astrodyn_*` or
-`astrodyn` (typed quantities, phantom-frame discipline, witness-gated
-constructors like `BodyAttitude<V>`, …) benefits both consumers
-identically. Any guarantee that lives only in `astrodyn_runner`'s
-`simulation/` submodule is, by construction, **not** available to Bevy
-mission code — so type-system work that targets a class of bugs
-(rather than a runner-internal helper) belongs in `astrodyn_quantities` or
-`astrodyn_dynamics`, not in `astrodyn_runner`.
+both depend on `astrodyn` and *only* `astrodyn` for physics; neither
+depends on the other (except that `astrodyn_bevy` carries
+`astrodyn_runner` as a dev-dep for parity-style tests). Any improvement
+that lands in `astrodyn_*` or `astrodyn` (typed quantities,
+phantom-frame discipline, witness-gated constructors like
+`BodyAttitude<V>`, …) benefits both consumers identically.
 
-The two consumers have **deliberately different dep-graph rights**, and
-the difference is non-negotiable in both directions:
+**Every workspace consumer of the `astrodyn` pipeline — mission crates,
+`astrodyn_bevy`, `astrodyn_runner`, and the verification crates
+(`astrodyn_verif_jeod`, `astrodyn_verif_parity`) — depends on
+`astrodyn` and only `astrodyn` for physics** (+ `bevy` for the Bevy
+adapter, + `astrodyn_runner` as a dev-dep on `astrodyn_bevy` for
+parity tests, + `astrodyn_runner` and `astrodyn_verif_jeod` as
+gateway-consumer deps for `astrodyn_verif_parity`). The "single API
+surface" rule applies uniformly: every physics type, function, or
+module that any consumer reaches must be reachable through `astrodyn`.
+If something isn't, the fix is to widen `astrodyn`'s curated
+re-export surface, not to add a direct `astrodyn_*` physics dep.
 
-- **`astrodyn_bevy` and any mission crate** (production path) depend only on
-  `astrodyn` plus `bevy`. They **must not** add a direct `astrodyn_*` physics
-  dependency. The "single API surface" rule from the previous section
-  applies here, full stop — every physics type that the production path
-  needs has to be reachable through `astrodyn`. If something isn't, the
-  fix is to widen `astrodyn`'s curated re-export surface, not to bypass it.
-- **`astrodyn_runner`** (in-workspace test harness) is allowed to depend
-  directly on the physics crates it needs to populate its `Simulation`
-  state container — today that is `astrodyn_dynamics`, `astrodyn_gravity`,
-  `astrodyn_time`, `astrodyn_frames`, `astrodyn_interactions`, and `astrodyn_math`.
-  Those direct deps are intentional: the runner owns its own state and
-  constructs concrete physics types by hand at the kernel boundary;
-  routing them through `astrodyn` would force `astrodyn` to expose
-  internal vocabulary purely for one in-workspace consumer's benefit.
-  The runner is *not* a mission consumer and is never published as one.
+Owner-crate unit / Tier 2 / Tier 3 tests live inside their owning
+crate's own `tests/` directory and reach the crate under test through
+normal in-crate test access (no gateway, no verif crate). The verif
+crates host the *cross-validation* against JEOD trajectories; they no
+longer host kernel-level subsystem tests.
+
+A CI lint (`scripts/check_no_bypass_deps.sh`) enforces the rule
+structurally by failing the build if `astrodyn_runner`,
+`astrodyn_bevy`, `astrodyn_verif_jeod`, or `astrodyn_verif_parity`
+declare any direct `astrodyn_*` physics-crate dep.
 
 Mission crates that target the production runtime depend on
 `astrodyn_bevy` (and transitively `astrodyn`). They never depend on

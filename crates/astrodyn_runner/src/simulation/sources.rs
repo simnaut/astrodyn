@@ -10,10 +10,8 @@ use glam::{DMat3, DVec3};
 use astrodyn::{
     set_source_position as sim_set_source_position, set_source_state as sim_set_source_state,
     source_pfix_rotation as sim_source_pfix_rotation, source_position as sim_source_position,
-    GravitySourceEntry, JeodQuat, RotationModel, SourceFrameIds,
-};
-use astrodyn_frames::{
-    FrameId, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
+    FrameId, FrameTree, GravitySourceEntry, JeodQuat, RefFrameKind, RefFrameRot, RefFrameState,
+    RefFrameTrans, RotationModel, SourceFrameIds,
 };
 
 use super::types::GravityData;
@@ -281,7 +279,7 @@ impl Simulation {
     pub fn source_tidal_config_mut(
         &mut self,
         source_idx: usize,
-    ) -> Option<&mut astrodyn_gravity::tides::TidalConfig> {
+    ) -> Option<&mut astrodyn::TidalConfig> {
         let len = self.gravity_data.len();
         self.gravity_data
             .get_mut(source_idx)

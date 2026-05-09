@@ -3,7 +3,7 @@
 //! Implements JEOD's `DynBody::attach_to_frame` /
 //! `DynBody::detach()`-from-frame semantics for the runner's owned-state
 //! harness, as the runner-side counterpart of the kernel that lives in
-//! `astrodyn_dynamics::frame_attach`. The Bevy adapter has the equivalent
+//! `astrodyn::frame_attach` (kernel in `astrodyn_dynamics`). The Bevy adapter has the equivalent
 //! glue in `astrodyn_bevy::frame_attach_system`.
 //!
 //! ### What `attach_to_frame` does
@@ -14,7 +14,7 @@
 //! composite-body state from the parent reference frame's state plus
 //! the captured offset (see
 //! [`Simulation::propagate_frame_attached_state`]). The kernel is
-//! [`astrodyn_dynamics::derive_frame_attached_state`] — the same algebra
+//! [`astrodyn::derive_frame_attached_state`] — the same algebra
 //! `propagate_forward` runs for mass-tree kinematic propagation, just
 //! seeded from the frame tree instead of the mass tree.
 //!
@@ -49,9 +49,9 @@
 
 use glam::DMat3;
 
-use astrodyn::{RotationalState, TranslationalState, TranslationalStateTyped};
-use astrodyn_frames::FrameId;
-use astrodyn_quantities::frame::IntegrationFrame;
+use astrodyn::{
+    FrameId, IntegrationFrame, RotationalState, TranslationalState, TranslationalStateTyped,
+};
 
 use super::types::FrameAttachState;
 use super::Simulation;
@@ -150,7 +150,7 @@ impl Simulation {
 
         self.bodies[body_idx].frame_attach = Some(FrameAttachState {
             parent_frame_id,
-            attach_offset: astrodyn_dynamics::MassPointState {
+            attach_offset: astrodyn::MassPointState {
                 position: attach_offset_position,
                 t_parent_this: t_parent_struct,
             },
@@ -341,7 +341,7 @@ impl Simulation {
     /// - The body has no mass-tree node yet.
     /// - The named mass-point does not exist on the subject body.
     ///
-    /// [`MassTree::attach_to_frame_offset`]: astrodyn_dynamics::MassTree::attach_to_frame_offset
+    /// [`MassTree::attach_to_frame_offset`]: astrodyn::MassTree::attach_to_frame_offset
     // JEOD_INV: MA.21 — named points must exist on body
     pub fn attach_to_frame_named_point(
         &mut self,
@@ -406,7 +406,7 @@ impl Simulation {
     /// composite-body state from its parent reference frame's current
     /// state composed with the captured offset.
     ///
-    /// Drives [`astrodyn_dynamics::derive_frame_attached_state`] on each
+    /// Drives [`astrodyn::derive_frame_attached_state`] on each
     /// flagged body. The kernel returns a state in *root-inertial*
     /// coordinates (the parent frame state was lifted via
     /// `frame_tree.compute_relative_state(root, parent)` first); the
@@ -437,7 +437,7 @@ impl Simulation {
     // `IntegOrigin`
     pub(crate) fn propagate_frame_attached_state(
         &mut self,
-        body_integ_origins: &[astrodyn_quantities::IntegOrigin],
+        body_integ_origins: &[astrodyn::IntegOrigin],
     ) {
         // Snapshot whether any body is attached at all so we can
         // bail before doing the per-body sweep on the common
@@ -492,7 +492,7 @@ impl Simulation {
             // fallback.
             let composite_offset = self.bodies[body_idx]
                 .mass
-                .map(|mp| astrodyn_dynamics::MassPointState {
+                .map(|mp| astrodyn::MassPointState {
                     position: mp.position,
                     t_parent_this: mp.t_parent_this,
                 })
@@ -502,13 +502,11 @@ impl Simulation {
             // composite-body inertial state.
             // JEOD_INV: DB.31 — frame-attach derives composite from
             // captured struct offset.
-            let derived = astrodyn_dynamics::derive_frame_attached_state(
-                astrodyn_dynamics::FrameAttachInputs {
-                    parent_frame: parent_state,
-                    attach_offset: attach.attach_offset,
-                    composite_offset,
-                },
-            );
+            let derived = astrodyn::derive_frame_attached_state(astrodyn::FrameAttachInputs {
+                parent_frame: parent_state,
+                attach_offset: attach.attach_offset,
+                composite_offset,
+            });
 
             // Lower the kernel's root-inertial output back into
             // integration-frame storage. Bit-identical no-op when the

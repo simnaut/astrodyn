@@ -7,12 +7,12 @@
 
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
+use astrodyn::JeodQuat;
 use astrodyn::VehicleConfig;
 use astrodyn::{
     compute_relative_state, MassProperties, RotationalState, SelfRef, SimulationTime,
     TranslationalState,
 };
-use astrodyn_math::JeodQuat;
 use astrodyn_runner::Simulation;
 use glam::DVec3;
 

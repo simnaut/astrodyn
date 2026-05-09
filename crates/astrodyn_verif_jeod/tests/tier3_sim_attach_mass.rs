@@ -26,8 +26,8 @@
 //! `crates/astrodyn_dynamics/tests/tier3_mass_attach_detach.rs` with direct
 //! JEOD cross-validation.
 
-use astrodyn_dynamics::{MassBodyId, MassProperties, MassTree};
-use astrodyn_math::euler_angles::{compute_matrix_from_euler_angles_typed, EulerSequence};
+use astrodyn::{compute_matrix_from_euler_angles_typed, EulerSequence};
+use astrodyn::{MassBodyId, MassProperties, MassTree};
 use glam::{DMat3, DVec3};
 use uom::si::angle::radian;
 use uom::si::f64::Angle;

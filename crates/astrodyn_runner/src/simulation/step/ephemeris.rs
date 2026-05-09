@@ -5,13 +5,10 @@
 
 use glam::DMat3;
 
+use astrodyn::nutation_j2000::nutation;
+use astrodyn::precession_j2000::precession_matrix;
+use astrodyn::rotation_j2000::{gast_rotation_matrix, polar_motion_matrix};
 use astrodyn::{sync_pfix_rotation, RotationModel};
-use astrodyn_frames::{
-    nutation_j2000::nutation,
-    precession_j2000::precession_matrix,
-    rotation_j2000::{gast_rotation_matrix, polar_motion_matrix},
-};
-use astrodyn_math::matrix3x3_product_transpose_transpose;
 
 use super::super::Simulation;
 use crate::error::StepError;
@@ -68,11 +65,9 @@ impl Simulation {
                 }
                 RotationModel::MarsIAU => {
                     // JEOD's RNPMars receives TT seconds since J2000 (time_tt.seconds).
-                    let tt_s_since_j2000 = (self.time.tt_tjt()
-                        - astrodyn_time::epoch::J2000_TT_TJT)
-                        * astrodyn_time::epoch::SECONDS_PER_DAY;
-                    let rotation =
-                        astrodyn_frames::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                    let tt_s_since_j2000 =
+                        (self.time.tt_tjt() - astrodyn::J2000_TT_TJT) * astrodyn::SECONDS_PER_DAY;
+                    let rotation = astrodyn::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
                         sync_pfix_rotation(
                             &mut self.frame_tree,
@@ -84,10 +79,10 @@ impl Simulation {
                 }
                 RotationModel::MoonIAU => {
                     let tdb_jd = self.time.tdb_julian_date();
-                    let tdb_s_since_j2000 = (tdb_jd - astrodyn_time::epoch::J2000_TT_JD)
-                        * astrodyn_time::epoch::SECONDS_PER_DAY;
+                    let tdb_s_since_j2000 =
+                        (tdb_jd - astrodyn::J2000_TT_JD) * astrodyn::SECONDS_PER_DAY;
                     let rotation =
-                        astrodyn_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                        astrodyn::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
                         sync_pfix_rotation(
                             &mut self.frame_tree,
@@ -122,7 +117,7 @@ impl Simulation {
                     .pfix
                     .expect("tidal_config requires a planet-fixed frame (set rotation_model or t_inertial_pfix).");
                 let rotation = self.frame_tree.get(pfix_id).state.rot.t_parent_this;
-                grav.delta_c20 = astrodyn_gravity::tides::compute_delta_c20(config, &rotation);
+                grav.delta_c20 = astrodyn::compute_delta_c20(config, &rotation);
             } else {
                 grav.delta_c20 = 0.0;
             }
@@ -220,7 +215,7 @@ impl Simulation {
             let tt_centuries = (self.time.tt_tjt() - 11544.5) / 36525.0;
             let prec = precession_matrix(tt_centuries);
             let nut = nutation(tt_centuries);
-            let np = matrix3x3_product_transpose_transpose(&nut.rotation, &prec);
+            let np = nut.rotation.transpose() * prec.transpose();
             let polar_t = self
                 .polar_motion
                 .map(|(xp, yp)| polar_motion_matrix(xp, yp).transpose());

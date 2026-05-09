@@ -17,8 +17,8 @@ use glam::DVec3;
 
 use astrodyn::atmosphere::{run_atmosphere_stage, AtmosphereBodyInputs};
 use astrodyn::gravity::{run_gravity_stage, GravityBodyInputs};
+use astrodyn::IntegOrigin;
 use astrodyn::SelfPlanet;
-use astrodyn_quantities::IntegOrigin;
 
 use super::super::Simulation;
 

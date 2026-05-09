@@ -10,15 +10,10 @@
 use glam::{DMat3, DVec3};
 
 use astrodyn::{
-    CrossIntegFrameStateShift, RotationalState, TranslationalState, TranslationalStateTyped,
+    combine_states_at_attach, AttachCombineInputs, CrossIntegFrameStateShift, DetachedSubtreeState,
+    IntegrationFrame, MassBodyId, MassPointState, RefFrameRot, RefFrameState, RefFrameTrans,
+    RotationalState, TranslationalState, TranslationalStateTyped,
 };
-use astrodyn_dynamics::{
-    combine_states_at_attach, AttachCombineInputs, MassBodyId, MassPointState,
-};
-use astrodyn_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
-use astrodyn_quantities::frame::IntegrationFrame;
-
-use astrodyn_dynamics::DetachedSubtreeState;
 
 use super::Simulation;
 
@@ -33,9 +28,9 @@ struct AttachSnapshot {
     root_integ_origin_pos: glam::DVec3,
     root_integ_origin_vel: glam::DVec3,
     root_pre_state: RefFrameState,
-    root_pre_composite_props: astrodyn_dynamics::MassProperties,
+    root_pre_composite_props: astrodyn::MassProperties,
     child_pre_state: RefFrameState,
-    child_pre_composite_props: astrodyn_dynamics::MassProperties,
+    child_pre_composite_props: astrodyn::MassProperties,
     root_has_rot: bool,
 }
 
@@ -52,13 +47,11 @@ impl Simulation {
         &mut self,
         body_idx: usize,
         name: impl Into<String>,
-    ) -> astrodyn_dynamics::MassBodyId {
+    ) -> astrodyn::MassBodyId {
         let mass = self.bodies[body_idx]
             .mass
             .expect("add_body_to_tree requires mass properties");
-        let tree = self
-            .mass_tree
-            .get_or_insert_with(astrodyn_dynamics::MassTree::new);
+        let tree = self.mass_tree.get_or_insert_with(astrodyn::MassTree::new);
         let id = tree.add_body(name.into(), mass);
         self.bodies[body_idx].mass_body_id = Some(id);
         id
@@ -289,7 +282,7 @@ impl Simulation {
         // mass-sync pass) can use `binary_search` for O(log n)
         // membership instead of a linear `Vec::contains` scan,
         // mirroring the Bevy path's affected-id discipline.
-        let mut affected_ids: Vec<astrodyn_dynamics::MassBodyId> = vec![child_id];
+        let mut affected_ids: Vec<astrodyn::MassBodyId> = vec![child_id];
         {
             let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
             affected_ids.extend(tree_ro.ancestors_inclusive(parent_id));
@@ -477,11 +470,11 @@ impl Simulation {
                 .get(root_id)
                 .composite_properties;
             let root_t_struct_to_body = snap.root_pre_composite_props.t_parent_this;
-            let root_t_inertial_struct = astrodyn_dynamics::compute_t_inertial_struct(
+            let root_t_inertial_struct = astrodyn::compute_t_inertial_struct(
                 &root_t_struct_to_body,
                 &snap.root_pre_state.rot.t_parent_this,
             );
-            let combined = combine_states_at_attach(astrodyn_dynamics::AttachCombineInputs {
+            let combined = combine_states_at_attach(astrodyn::AttachCombineInputs {
                 parent_composite: snap.root_pre_state,
                 parent_mass: snap.root_pre_composite_props,
                 parent_t_inertial_struct: root_t_inertial_struct,
@@ -599,13 +592,13 @@ impl Simulation {
             // attach is a hot path on larger trees (chained docking,
             // multi-stage separation) where the subject subtree may be
             // O(10) bodies and the runner may carry O(10²) sim bodies.
-            let subject_descendants: std::collections::HashSet<astrodyn_dynamics::MassBodyId> =
-                self.mass_tree
-                    .as_ref()
-                    .expect("attach: mass tree dropped between mutate and auto-flag")
-                    .subtree_ids(subject_root_id)
-                    .into_iter()
-                    .collect();
+            let subject_descendants: std::collections::HashSet<astrodyn::MassBodyId> = self
+                .mass_tree
+                .as_ref()
+                .expect("attach: mass tree dropped between mutate and auto-flag")
+                .subtree_ids(subject_root_id)
+                .into_iter()
+                .collect();
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
                 if let Some(id) = body.mass_body_id {
                     if subject_descendants.contains(&id) {
@@ -648,7 +641,7 @@ impl Simulation {
         let velocity = body.trans.velocity.raw_si();
         let (q, w) = match body.rot {
             Some(rot) => (rot.quaternion, rot.ang_vel_body),
-            None => (astrodyn_math::JeodQuat::identity(), DVec3::ZERO),
+            None => (astrodyn::JeodQuat::identity(), DVec3::ZERO),
         };
         RefFrameState {
             trans: RefFrameTrans { position, velocity },
@@ -711,7 +704,7 @@ impl Simulation {
         // mass-sync pass) can use `binary_search` for O(log n)
         // membership instead of a linear `Vec::contains` scan,
         // mirroring the Bevy path's affected-id discipline.
-        let mut affected_ids: Vec<astrodyn_dynamics::MassBodyId> = vec![child_id];
+        let mut affected_ids: Vec<astrodyn::MassBodyId> = vec![child_id];
         let parent_id = {
             let tree_ro = self.mass_tree.as_ref().expect("detach: no mass tree");
             let pid = tree_ro
@@ -978,7 +971,7 @@ impl Simulation {
     }
 
     /// Walk root → target through the mass tree applying
-    /// [`astrodyn_dynamics::propagate_forward`] at each level using
+    /// [`astrodyn::propagate_forward`] at each level using
     /// `composite_wrt_pstr` offsets and structure-point rotations.
     /// Returns the target node's instantaneous composite-body inertial
     /// state assuming the whole chain shares the root's rigid motion
@@ -992,15 +985,15 @@ impl Simulation {
     /// the same eight lines a third time.
     fn derive_subtree_composite_state(
         sim: &Simulation,
-        root_id: astrodyn_dynamics::MassBodyId,
-        target_id: astrodyn_dynamics::MassBodyId,
+        root_id: astrodyn::MassBodyId,
+        target_id: astrodyn::MassBodyId,
         root_state: RefFrameState,
     ) -> RefFrameState {
         let tree = sim
             .mass_tree
             .as_ref()
             .expect("derive_subtree_composite_state: no mass tree");
-        let mut chain = Vec::<astrodyn_dynamics::MassBodyId>::new();
+        let mut chain = Vec::<astrodyn::MassBodyId>::new();
         let mut cur = target_id;
         while cur != root_id {
             chain.push(cur);
@@ -1027,7 +1020,7 @@ impl Simulation {
                 position: offset_in_current_body,
                 t_parent_this: t_current_body_to_next_body,
             };
-            current_state = astrodyn_dynamics::propagate_forward(&current_state, &rel);
+            current_state = astrodyn::propagate_forward(&current_state, &rel);
             current_node_id = next_id;
         }
         current_state
@@ -1058,7 +1051,7 @@ impl Simulation {
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     pub(super) fn mark_body_integrators_dirty_by_id(
         bodies: &mut [super::types::SimBody],
-        affected_ids: &[astrodyn_dynamics::MassBodyId],
+        affected_ids: &[astrodyn::MassBodyId],
     ) {
         debug_assert!(
             affected_ids.windows(2).all(|w| w[0] < w[1]),
@@ -1096,7 +1089,7 @@ impl Simulation {
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     pub(super) fn reset_body_integrators_by_id(
         bodies: &mut [super::types::SimBody],
-        affected_ids: &[astrodyn_dynamics::MassBodyId],
+        affected_ids: &[astrodyn::MassBodyId],
     ) {
         debug_assert!(
             affected_ids.windows(2).all(|w| w[0] < w[1]),
@@ -1110,7 +1103,10 @@ impl Simulation {
             if affected_ids.binary_search(&id).is_err() {
                 continue;
             }
-            astrodyn::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
+            astrodyn::reset_integrators(
+                body.gj_state.as_mut().map(|s| s.inner_mut()),
+                body.abm4_state.as_mut().map(|s| s.inner_mut()),
+            );
         }
     }
 
@@ -1251,7 +1247,7 @@ impl Simulation {
                 position: offset_in_current_body,
                 t_parent_this: t_current_body_to_next_body,
             };
-            current_state = astrodyn_dynamics::propagate_forward(&current_state, &rel);
+            current_state = astrodyn::propagate_forward(&current_state, &rel);
             current_node_id = next_id;
         }
         let subtree_state = current_state;
@@ -1304,7 +1300,7 @@ impl Simulation {
             //
             //   T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
             //
-            // (matching `astrodyn_dynamics::compute_t_inertial_struct`). The
+            // (matching `astrodyn::compute_t_inertial_struct`). The
             // earlier form `T_struct_to_body * T_inertial_to_body` was
             // only correct when `T_struct_to_body` is symmetric (identity
             // or yaw_180) and silently produced wrong CoM-shift directions
@@ -1312,7 +1308,7 @@ impl Simulation {
             let cm_delta_struct =
                 parent_post_composite_props.position - parent_pre_composite_props.position;
             let t_struct_to_body = parent_pre_composite_props.t_parent_this;
-            let t_inertial_struct = astrodyn_dynamics::compute_t_inertial_struct(
+            let t_inertial_struct = astrodyn::compute_t_inertial_struct(
                 &t_struct_to_body,
                 &parent_composite_state.rot.t_parent_this,
             );
@@ -1383,7 +1379,10 @@ impl Simulation {
                 abm.mark_topology_dirty();
             }
             // Site B: reset history (separate observation site).
-            astrodyn::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
+            astrodyn::reset_integrators(
+                body.gj_state.as_mut().map(|s| s.inner_mut()),
+                body.abm4_state.as_mut().map(|s| s.inner_mut()),
+            );
         }
 
         // ── Clear `kinematic_only` on the freshly-detached subtree root,
@@ -1500,7 +1499,7 @@ impl Simulation {
         //
         //   T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
         //
-        // (matching `astrodyn_dynamics::compute_t_inertial_struct` and JEOD's
+        // (matching `astrodyn::compute_t_inertial_struct` and JEOD's
         // `dyn_body_collect.cc` lines 219-221). composite_properties
         // .t_parent_this is the struct→body rotation. The earlier form
         // `T_struct_to_body * T_inertial_to_body` was only valid for
@@ -1508,7 +1507,7 @@ impl Simulation {
         // ones Apollo happens to use); non-symmetric vehicle orientations
         // would silently get a wrong torque arm in the combine algorithm.
         let t_struct_to_body = parent_pre_composite_props.t_parent_this;
-        let parent_t_inertial_struct = astrodyn_dynamics::compute_t_inertial_struct(
+        let parent_t_inertial_struct = astrodyn::compute_t_inertial_struct(
             &t_struct_to_body,
             &parent_composite_pre.rot.t_parent_this,
         );
@@ -1674,7 +1673,10 @@ impl Simulation {
             abm.mark_topology_dirty();
         }
         // Site B: reset integrator history (separate observation site).
-        astrodyn::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
+        astrodyn::reset_integrators(
+            body.gj_state.as_mut().map(|s| s.inner_mut()),
+            body.abm4_state.as_mut().map(|s| s.inner_mut()),
+        );
 
         if std::env::var("APOLLO_TRACE").is_ok() {
             eprintln!(
@@ -1711,10 +1713,10 @@ mod tests {
     use super::*;
     use crate::Simulation;
     use astrodyn::{
-        GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-        GravitySourceEntry, IntegratorType, SimulationTime, TranslationalState, VehicleConfig,
+        Abm4State, GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls,
+        GravityModel, GravitySource, GravitySourceEntry, IntegratorType, MassProperties,
+        SimulationTime, TranslationalState, VehicleConfig,
     };
-    use astrodyn_dynamics::MassProperties;
 
     /// JEOD's `dyn_body_attach.cc::reset_integrators()` precedent: after an
     /// attach, both bodies' Gauss-Jackson predictor / corrector history
@@ -2466,7 +2468,7 @@ mod tests {
     /// Drive a `GaussJacksonState` past priming using its public
     /// `integrate()` API at constant zero acceleration. The post-step
     /// state values aren't used — only the priming flag is.
-    fn drive_gj_past_priming(gj: &mut astrodyn_dynamics::GaussJacksonState) {
+    fn drive_gj_past_priming(gj: &mut GaussJacksonState) {
         let dt = 1.0_f64;
         let mut state = TranslationalState {
             position: DVec3::ZERO,
@@ -2474,7 +2476,7 @@ mod tests {
         };
         // GJ8 needs ~50 stages to bootstrap; 200 stages is comfortably past.
         for _ in 0..200 {
-            let _ = gj.integrate(dt, 1.0, DVec3::ZERO, &mut state);
+            let _ = gj.inner_mut().integrate(dt, 1.0, DVec3::ZERO, &mut state);
         }
         assert!(
             !gj.is_priming(),
@@ -2485,15 +2487,19 @@ mod tests {
     /// Drive an `Abm4State` past priming using `abm4_translational_step`
     /// at constant zero acceleration. ABM4 primes after `HIST_LEN - 1 = 3`
     /// steps; 5 is comfortably past.
-    fn drive_abm4_past_priming(abm: &mut astrodyn_dynamics::Abm4State) {
+    fn drive_abm4_past_priming(abm: &mut Abm4State) {
         let dt = 1.0_f64;
         let mut state = TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
         };
         for _ in 0..5 {
-            state =
-                astrodyn_dynamics::abm4_translational_step(&state, |_s, _t| DVec3::ZERO, dt, abm);
+            state = astrodyn::abm4_translational_step(
+                &state,
+                |_s, _t| DVec3::ZERO,
+                dt,
+                abm.inner_mut(),
+            );
         }
         assert!(
             !abm.is_priming(),
@@ -2515,7 +2521,7 @@ mod tests {
         // Splice GJ8 state onto cm post-validate (validate forbids
         // GJ+6DOF; we're exercising the inline reset block defensively).
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = astrodyn_dynamics::GaussJacksonState::new(cfg.into());
+        let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
         sim.bodies[cm_idx].gj_state = Some(gj);
@@ -2550,7 +2556,7 @@ mod tests {
         let (mut sim, cm_idx, _cm_id, _middle, leaf) = build_three_body_chain_with_rot();
         sim.validate().expect("validate failed");
 
-        let mut abm = astrodyn_dynamics::Abm4State::new();
+        let mut abm = Abm4State::new();
         drive_abm4_past_priming(&mut abm);
         assert!(!abm.is_topology_dirty());
         sim.bodies[cm_idx].abm4_state = Some(abm);
@@ -2613,7 +2619,7 @@ mod tests {
         // Splice GJ8 state onto cm AFTER the detach so
         // attach_subtree_aligned's reset block has something to clear.
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = astrodyn_dynamics::GaussJacksonState::new(cfg.into());
+        let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
         sim.bodies[cm_idx].gj_state = Some(gj);
@@ -2655,7 +2661,7 @@ mod tests {
         sim.validate().expect("validate failed");
         sim.detach_subtree(cm_idx, leaf);
 
-        let mut abm = astrodyn_dynamics::Abm4State::new();
+        let mut abm = Abm4State::new();
         drive_abm4_past_priming(&mut abm);
         assert!(!abm.is_topology_dirty());
         sim.bodies[cm_idx].abm4_state = Some(abm);
@@ -2686,7 +2692,7 @@ mod tests {
     #[should_panic(expected = "topology")]
     fn dirty_gauss_jackson_state_panics_on_integrate() {
         let cfg = GaussJacksonConfig::with_order(8);
-        let mut gj = astrodyn_dynamics::GaussJacksonState::new(cfg.into());
+        let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
 
         // Simulate a regression where Site A (mark) fired but Site B
@@ -2699,14 +2705,14 @@ mod tests {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
         };
-        let _ = gj.integrate(1.0, 1.0, DVec3::ZERO, &mut state);
+        let _ = gj.inner_mut().integrate(1.0, 1.0, DVec3::ZERO, &mut state);
     }
 
     /// ABM4 sibling of `dirty_gauss_jackson_state_panics_on_integrate`.
     #[test]
     #[should_panic(expected = "topology")]
     fn dirty_abm4_state_panics_on_integrate() {
-        let mut abm = astrodyn_dynamics::Abm4State::new();
+        let mut abm = Abm4State::new();
         drive_abm4_past_priming(&mut abm);
 
         abm.mark_topology_dirty();
@@ -2716,8 +2722,7 @@ mod tests {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
         };
-        let _ =
-            astrodyn_dynamics::abm4_translational_step(&state, |_, _| DVec3::ZERO, 1.0, &mut abm);
+        let _ = astrodyn::abm4_translational_step(&state, |_, _| DVec3::ZERO, 1.0, abm.inner_mut());
     }
 
     /// JEOD_INV: IG.37 — `tree.attach` + `sync_body_mass_from_tree` is the

@@ -25,9 +25,7 @@
 
 use glam::DVec3;
 
-use astrodyn::Vec3Ext;
-use astrodyn_frames::FrameId;
-use astrodyn_quantities::IntegOrigin;
+use astrodyn::{FrameId, IntegOrigin, Vec3Ext};
 
 use super::Simulation;
 use crate::error::StepError;
@@ -277,8 +275,7 @@ impl Simulation {
             let has_multistep = self.bodies.iter().any(|b| {
                 matches!(
                     b.integrator,
-                    astrodyn_dynamics::IntegratorType::GaussJackson(..)
-                        | astrodyn_dynamics::IntegratorType::Abm4
+                    astrodyn::IntegratorType::GaussJackson(..) | astrodyn::IntegratorType::Abm4
                 )
             });
             assert!(

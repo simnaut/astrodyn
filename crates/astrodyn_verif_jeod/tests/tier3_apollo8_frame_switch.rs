@@ -12,12 +12,12 @@
 
 #![allow(clippy::excessive_precision)]
 
+use astrodyn::JeodQuat;
 use astrodyn::{FrameSwitchConfig, GravitySourceEntry, SwitchSense, VehicleConfig};
 use astrodyn::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
     SimulationTime,
 };
-use astrodyn_math::JeodQuat;
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::{DMat3, DQuat, DVec3};

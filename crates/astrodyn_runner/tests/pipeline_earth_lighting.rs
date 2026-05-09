@@ -27,7 +27,7 @@ fn pipeline_earth_lighting_smoke() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 60.0);

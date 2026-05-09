@@ -77,16 +77,14 @@ impl Simulation {
             }
 
             // GaussJackson is translational-only (6-DOF not yet supported)
-            if matches!(
-                body.integrator,
-                astrodyn_dynamics::IntegratorType::GaussJackson(..)
-            ) && body.config.rotational_dynamics
+            if matches!(body.integrator, astrodyn::IntegratorType::GaussJackson(..))
+                && body.config.rotational_dynamics
             {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
             // ABM4 is translational-only (6-DOF not yet supported)
-            if matches!(body.integrator, astrodyn_dynamics::IntegratorType::Abm4)
+            if matches!(body.integrator, astrodyn::IntegratorType::Abm4)
                 && body.config.rotational_dynamics
             {
                 all_errors.push(ValidationError::Abm4With6Dof { body_idx });
@@ -94,7 +92,7 @@ impl Simulation {
 
             // GaussJackson config validation — delegates to GaussJacksonConfig::check()
             // so the predicate is defined in one place.
-            if let astrodyn_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
+            if let astrodyn::IntegratorType::GaussJackson(ref config) = body.integrator {
                 for detail in config.check() {
                     all_errors
                         .push(ValidationError::GaussJacksonConfigInvalid { body_idx, detail });
@@ -247,7 +245,7 @@ impl Simulation {
             !self.contact_pairs.is_empty() || !self.ground_contact_pairs.is_empty();
         if any_contact_pairs {
             for (body_idx, body) in self.bodies.iter().enumerate() {
-                if !matches!(body.integrator, astrodyn_dynamics::IntegratorType::Rk4) {
+                if !matches!(body.integrator, astrodyn::IntegratorType::Rk4) {
                     all_errors.push(ValidationError::ContactPairsRequireRk4 { body_idx });
                 }
                 if body.rot.is_none() || body.mass.is_none() {
@@ -338,22 +336,20 @@ impl Simulation {
         // Auto-initialize Gauss-Jackson state for bodies that need it.
         // Check config consistency for pre-existing states.
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            if let astrodyn_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
+            if let astrodyn::IntegratorType::GaussJackson(ref config) = body.integrator {
                 match &body.gj_state {
                     None => {
-                        body.gj_state = Some(astrodyn_dynamics::GaussJacksonState::new(*config));
+                        body.gj_state = Some(astrodyn::GaussJacksonState::new(*config));
                     }
-                    Some(state) if state.config() != config => {
+                    Some(state) if state.config() != *config => {
                         fatal.push(ValidationError::GaussJacksonConfigInvalid {
                             body_idx,
                             detail: format!(
-                                "existing gj_state config does not match IntegratorType config \
-                                 (initial_order {}/{}, final_order {}/{}). \
+                                "existing gj_state config {:?} does not match \
+                                 IntegratorType config {:?}. \
                                  Remove gj_state or recreate from the same config.",
-                                state.config().initial_order,
-                                config.initial_order,
-                                state.config().final_order,
-                                config.final_order,
+                                state.config(),
+                                config,
                             ),
                         });
                     }
@@ -361,10 +357,10 @@ impl Simulation {
                 }
             }
             // Auto-initialize ABM4 state for bodies that need it.
-            if matches!(body.integrator, astrodyn_dynamics::IntegratorType::Abm4)
+            if matches!(body.integrator, astrodyn::IntegratorType::Abm4)
                 && body.abm4_state.is_none()
             {
-                body.abm4_state = Some(astrodyn_dynamics::Abm4State::new());
+                body.abm4_state = Some(astrodyn::Abm4State::new());
             }
         }
         if !fatal.is_empty() {

@@ -55,10 +55,10 @@
 use std::path::PathBuf;
 
 use astrodyn::IntegratorType;
+use astrodyn::MassProperties;
 use astrodyn::{
     GravityControls, JeodQuat, RotationalState, SimulationTime, TranslationalState, VehicleConfig,
 };
-use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};

@@ -59,7 +59,7 @@ fn setup_run9(
     // Dynamics timestep: 0.03125 s (32 Hz) per
     // verif/SIM_dyncomp/S_define `#define DYNAMICS`.
     let dt = 0.03125_f64;
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     // ISS mass properties from
     // verif/SIM_dyncomp/Modified_data/mass.py `def set_mass_iss()`.

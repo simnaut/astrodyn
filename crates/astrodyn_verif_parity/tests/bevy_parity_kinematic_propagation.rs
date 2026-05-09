@@ -51,6 +51,7 @@
 #![allow(deprecated)]
 
 use astrodyn::IntegratorType;
+use astrodyn::MassProperties;
 use astrodyn::{
     DynamicsConfig, GravityControls, JeodQuat, MassTree, RotationalState, SimulationTime,
     SixDofState, TranslationalState, VehicleConfig,
@@ -60,7 +61,6 @@ use astrodyn_bevy::{
     FrameDerivativesC, GravityControlsC, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
     RotationalStateC, TotalForceC, TranslationalStateC,
 };
-use astrodyn_dynamics::MassProperties;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 
@@ -314,9 +314,7 @@ fn kernel_from_parent(
     parent: &TranslationalState,
     parent_rot: &RotationalState,
 ) -> (TranslationalState, RotationalState) {
-    use astrodyn_dynamics::kinematic_propagation::{
-        compute_kinematic_child_state, KinematicChildInputs,
-    };
+    use astrodyn::{compute_kinematic_child_state, KinematicChildInputs};
     let parent_t_inertial_body = parent_rot.quaternion.left_quat_to_transformation();
     // Combined composite CoM in parent struct frame (for atomic
     // bodies the core position equals the composite position).

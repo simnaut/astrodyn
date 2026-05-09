@@ -37,12 +37,12 @@
 
 use glam::DVec3;
 
+use astrodyn::ExponentialAtmosphere;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
     GravitySource, GravitySourceEntry, RootInertial, RotationModel, SimulationBuilder,
     SimulationTime, TranslationalState, Vec3Ext, VehicleConfig, EARTH,
 };
-use astrodyn_atmosphere::exponential::ExponentialAtmosphere;
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
 
 const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2

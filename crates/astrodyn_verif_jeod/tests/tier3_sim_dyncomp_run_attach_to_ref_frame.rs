@@ -95,13 +95,13 @@
 
 use std::path::PathBuf;
 
+use astrodyn::GeoIndexType;
 use astrodyn::{
     default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
     EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState,
     SimulationBuilder, SimulationTime, TranslationalState, Vec3Ext, VehicleConfig, EARTH,
 };
-use astrodyn_atmosphere::met as met_atmosphere;
 use astrodyn_runner::{RotationModel, Simulation, SimulationBuilderExt};
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use astrodyn_verif_jeod::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
@@ -259,9 +259,9 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
 
     // ── Earth gravity (GGM05C 8×8 SH per RUN_attach_to_ref_frame
     //     `vehicle.earth_grav_control.degree=8, order=8`) ──
-    let earth_sh = astrodyn_gravity::fixtures::load_ggm05c();
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let earth_sh = astrodyn::gravity_fixtures::load_ggm05c();
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     // Initial Sun / Moon positions at the dyncomp epoch, refreshed each
     // step by the pre-step closure in `pre_step_closure`.
@@ -312,7 +312,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
         f10: 128.8,
         f10b: 128.8,
         geo_index: 15.7,
-        geo_index_type: met_atmosphere::GeoIndexType::Ap,
+        geo_index_type: GeoIndexType::Ap,
     };
     sb = sb.atmosphere(
         AtmosphereConfig {

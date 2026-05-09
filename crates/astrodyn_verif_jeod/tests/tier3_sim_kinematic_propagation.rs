@@ -74,10 +74,10 @@
 use std::path::PathBuf;
 
 use astrodyn::IntegratorType;
+use astrodyn::MassProperties;
 use astrodyn::{
     GravityControls, JeodQuat, RotationalState, SimulationTime, TranslationalState, VehicleConfig,
 };
-use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
@@ -432,9 +432,7 @@ const POST_DETACH_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 /// Compute the kinematic kernel from veh2's state and the link
 /// geometry, returning the predicted veh1 composite-body state.
 fn kernel_from_veh2(veh2: &VehSnapshot, veh1_mass: f64, veh2_mass: f64) -> VehSnapshot {
-    use astrodyn_dynamics::kinematic_propagation::{
-        compute_kinematic_child_state, KinematicChildInputs,
-    };
+    use astrodyn::{compute_kinematic_child_state, KinematicChildInputs};
     let parent_t_inertial_body = veh2.quaternion.left_quat_to_transformation();
     let (offset, t_pc) = simple_attach_offset_and_rotation();
     // Combined composite CoM in veh2's structural frame:

@@ -30,7 +30,7 @@ use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_gravity::fixtures::load_ggm05c().mu
+    astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
 /// Sun at a cartoon distance in the +X direction produces `sun_direction = +X`

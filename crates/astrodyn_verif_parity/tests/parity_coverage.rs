@@ -133,11 +133,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "analytical drag verification — out of trait scope (no propagation)",
     ),
     (
-        "drag_flatplate_ver",
-        "pre-recipe sibling — drag-family recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "drag_rot_verif",
         "pre-recipe sibling — drag-rotation recipe factory not yet defined \
          (#389 follow-up)",
@@ -305,10 +300,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "time_reversal",
         "pre-recipe sibling exercising time reversal — recipe factory \
          not yet defined (#389 follow-up)",
-    ),
-    (
-        "time_scales_comprehensive",
-        "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
     ),
     (
         "timescale",

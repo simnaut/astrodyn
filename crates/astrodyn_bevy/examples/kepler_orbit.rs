@@ -13,6 +13,7 @@
 //! extension that lets a Bevy app consume a full scenario in one
 //! line; until then, the Bevy spawning is still manual.
 
+use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{GravityControl, GravityControls, MassProperties, TranslationalState};
 use astrodyn_bevy::{
@@ -20,7 +21,6 @@ use astrodyn_bevy::{
     GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
     TranslationalStateC,
 };
-use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use glam::DVec3;

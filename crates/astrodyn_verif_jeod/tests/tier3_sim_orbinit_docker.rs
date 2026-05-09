@@ -26,10 +26,10 @@
 
 use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
 
+use astrodyn::compute_t_parent_this_from_tjt;
+use astrodyn::init_from_mean_anomaly;
+use astrodyn::{calendar_to_tjt, CalendarDate};
 use astrodyn::{default_leap_second_table, TranslationalState};
-use astrodyn_dynamics::init_from_mean_anomaly;
-use astrodyn_frames::rotation_j2000::compute_t_parent_this_from_tjt;
-use astrodyn_time::time_utc::{calendar_to_tjt, CalendarDate};
 use glam::{DMat3, DVec3};
 
 /// SIM_orbinit epoch: 2005-07-28 10:09:59 UT1 (from `Modified_data/earth.py`).
@@ -73,7 +73,7 @@ fn compute_t_inertial_pfix_at_orbinit_epoch() -> DMat3 {
     // GMST seconds since J2000 noon UT1, computed from UT1 directly.
     // Matches SimulationTime::recompute_derived(): du = ut1_tjt - 11544.5
     let du = ut1_tjt - 11_544.5;
-    let gmst_seconds = astrodyn_time::time_converter_ut1_gmst::ut1_to_gmst_seconds(du);
+    let gmst_seconds = astrodyn::ut1_to_gmst_seconds(du);
 
     // SIM_orbinit sets enable_polar = False → no polar motion
     compute_t_parent_this_from_tjt(gmst_seconds, tt_tjt)
@@ -97,7 +97,7 @@ fn assert_orbinit_match(
     pos_tol: f64,
     vel_tol: f64,
 ) {
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     // Load JEOD orbital elements input from the committed body_init fixture
     // (originally extracted from Modified_data/<vehicle>/<init_name>.py).

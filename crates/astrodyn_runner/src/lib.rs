@@ -46,7 +46,7 @@ pub use builder::SimulationBuilderExt;
 // `astrodyn_runner::astrodyn::VehicleConfig`-style paths continue to compile.
 
 // Re-export FrameId for downstream API.
-pub use astrodyn_frames::FrameId;
+pub use astrodyn::FrameId;
 
 // `Simulation` and its supporting public types live in the `simulation`
 // submodule (issue #253). Re-exported here for API stability.

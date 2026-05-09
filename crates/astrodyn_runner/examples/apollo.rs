@@ -17,8 +17,7 @@
 
 use astrodyn::recipes::scenarios::apollo;
 use astrodyn::recipes::{ephemeris as ephemeris_recipes, Mission};
-use astrodyn::{EphemerisBody, TranslationalState};
-use astrodyn_dynamics::MassProperties;
+use astrodyn::{EphemerisBody, MassProperties, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::{DMat3, DVec3};
 

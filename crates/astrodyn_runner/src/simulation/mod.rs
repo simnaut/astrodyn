@@ -28,8 +28,7 @@ mod step;
 pub(crate) mod types;
 mod validate;
 
-pub use astrodyn_dynamics::DetachedSubtreeState;
-pub use astrodyn_interactions::{GroundFacet, SphericalTerrain, Terrain};
+pub use astrodyn::{DetachedSubtreeState, GroundFacet, SphericalTerrain, Terrain};
 pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, VehicleOutput};
 
 use std::collections::HashMap;
@@ -37,9 +36,7 @@ use std::collections::HashMap;
 use glam::DMat3;
 
 use astrodyn::atmosphere::AtmosphereConfig;
-use astrodyn::{SimulationTime, SourceFrameIds};
-use astrodyn_dynamics::MassBodyId;
-use astrodyn_frames::{FrameId, FrameTree, RefFrameKind};
+use astrodyn::{FrameId, FrameTree, MassBodyId, RefFrameKind, SimulationTime, SourceFrameIds};
 
 use crate::simulation::types::{GravityData, SimBody};
 
@@ -207,7 +204,7 @@ pub struct Simulation {
     /// integrators (RK4, RKF4(5)) carry no per-step history, so the
     /// reset is a no-op for them — but `sync_body_mass_from_tree` is
     /// still the correct sync site regardless of integrator choice.
-    pub mass_tree: Option<astrodyn_dynamics::MassTree>,
+    pub mass_tree: Option<astrodyn::MassTree>,
     /// Composite-body inertial state of free-flying mass-tree subtrees
     /// that have been detached from the integrated body's tree but not
     /// yet re-attached. Populated by [`detach_subtree`](Self::detach_subtree),

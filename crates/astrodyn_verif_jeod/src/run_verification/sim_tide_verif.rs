@@ -25,7 +25,7 @@ use astrodyn::{
     GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationModel,
     RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
-use astrodyn_gravity::tides::{TidalBody, TidalConfig, EARTH_K2};
+use astrodyn::{TidalBody, TidalConfig, EARTH_K2};
 use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
 use uom::si::time::second;
@@ -78,11 +78,11 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
 
     // Earth GGM05C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_grav = astrodyn_gravity::fixtures::load_ggm05c();
+    let earth_grav = astrodyn::gravity_fixtures::load_ggm05c();
     let earth_mu = earth_grav.mu;
     let earth_radius = earth_grav.radius;
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     let time = dyncomp_time();
     let epoch_tdb_jd = time.tdb_julian_date();

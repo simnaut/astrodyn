@@ -42,8 +42,8 @@ pub struct LvlhInitData {
     /// degrees regardless of how the source file expressed them.
     pub euler_angles_deg: [f64; 3],
     /// Euler-sequence name as written in the JEOD source (e.g.
-    /// `"Yaw_Pitch_Roll"`). Callers map this to a
-    /// [`astrodyn_math::EulerSequence`].
+    /// `"Yaw_Pitch_Roll"`). Callers map this to an
+    /// [`astrodyn::EulerSequence`].
     pub euler_sequence: String,
     /// Angular velocity of the body wrt the LVLH frame, in rad/s.
     /// JEOD's `ang_velocity` is in rad/s with no `attach_units`

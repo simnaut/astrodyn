@@ -34,8 +34,8 @@ use astrodyn::{
     evaluate_contact_pair, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
     MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
+use astrodyn::{ContactFacet, ContactMaterial};
 use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_interactions::{ContactFacet, ContactMaterial};
 use astrodyn_runner::{GroundFacet, RotationModel, Simulation, SphericalTerrain};
 use glam::{DMat3, DVec3};
 use std::path::Path;

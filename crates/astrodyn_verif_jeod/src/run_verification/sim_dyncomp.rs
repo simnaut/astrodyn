@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use crate::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
+use astrodyn::GeoIndexType;
 use astrodyn::{
     default_leap_second_table, AtmosphereConfig, AtmosphereModel, BodyAction, DragConfig,
     Ephemeris, EphemerisBody, EulerSequence, GravityControl, GravityControls, GravityModel,
@@ -21,7 +22,6 @@ use astrodyn::{
     MetAtmosphere, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, VehicleConfig, EARTH,
 };
-use astrodyn_atmosphere::met as met_atmosphere;
 use glam::{DMat3, DVec3};
 use uom::si::angle::degree;
 use uom::si::f64::Angle;
@@ -87,7 +87,7 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -106,7 +106,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_init = crate::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
@@ -206,7 +206,7 @@ pub fn run2_6dof() -> VerificationCase {
 
 /// Yaw-Pitch-Roll (ZYX) Euler triple from a JEOD `state.py` LVLH-init
 /// function name, converted to a JEOD scalar-first left-transformation
-/// quaternion via [`astrodyn_math::compute_quaternion_from_euler_angles_typed`].
+/// quaternion via [`astrodyn::compute_quaternion_from_euler_angles_typed`].
 ///
 /// Maps the source's `trick.Orientation.<sequence>` string to the
 /// matching [`EulerSequence`]. Only the sequences that appear in
@@ -234,7 +234,7 @@ fn lvlh_init_from_state_py(
         Angle::new::<degree>(lvlh.euler_angles_deg[2]),
     ];
     let q_lvlh_body =
-        astrodyn_math::compute_quaternion_from_euler_angles_typed(angles, sequence).inner();
+        astrodyn::compute_quaternion_from_euler_angles_typed(angles, sequence).inner();
     let ang_vel = DVec3::from_array(lvlh.ang_velocity);
     // SIM_dyncomp `set_orientation_lvlh` does not set `rate_in_parent`,
     // so JEOD's default `rate_in_parent = false` applies — the
@@ -275,7 +275,7 @@ fn init_lvlh_rot_state(state_py: &std::path::Path) -> RotationalState {
 fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
     let state_py = sim_dir.join("Modified_data/state.py");
 
@@ -422,7 +422,7 @@ fn dyncomp_time() -> SimulationTime {
 /// step. Used by the RUN_3A / RUN_3B / RUN_5* / RUN_6* configurations.
 fn earth_sh_with_rnp() -> GravitySourceEntry {
     // GGM02C SH coefficients from the committed fixture (Wave 1 of #232).
-    let sh_data = astrodyn_gravity::fixtures::load_ggm02c();
+    let sh_data = astrodyn::gravity_fixtures::load_ggm02c();
     GravitySourceEntry {
         source: GravitySource {
             mu: sh_data.mu,
@@ -579,9 +579,9 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
 
     // Earth GGM05C mu, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     // Initial Sun/Moon positions at the dyncomp epoch — re-queried each
     // step by the `pre_step` hook below.
@@ -725,9 +725,9 @@ fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> Gr
 pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinScenario {
     // Earth GGM05C mu, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     // Initial Sun/Moon state at the dyncomp epoch — refreshed each step
     // by the `pre_step` hook returned from [`battin_pre_step`].
@@ -840,9 +840,9 @@ fn build_run7(
 
     // Earth GGM02C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_grav = astrodyn_gravity::fixtures::load_ggm02c();
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let earth_grav = astrodyn::gravity_fixtures::load_ggm02c();
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     let time = dyncomp_time();
     let epoch_tdb_jd = time.tdb_julian_date();
@@ -882,7 +882,7 @@ fn build_run7(
             f10: 128.8,
             f10b: 128.8,
             geo_index: 15.7,
-            geo_index_type: met_atmosphere::GeoIndexType::Ap,
+            geo_index_type: GeoIndexType::Ap,
         };
         sb = sb.atmosphere(
             AtmosphereConfig {
@@ -1048,7 +1048,7 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -1121,7 +1121,7 @@ fn met_solar_mean() -> MetAtmosphere {
         f10: 128.8,
         f10b: 128.8,
         geo_index: 15.7,
-        geo_index_type: met_atmosphere::GeoIndexType::Ap,
+        geo_index_type: GeoIndexType::Ap,
     }
 }
 
@@ -1133,7 +1133,7 @@ fn build_run6_drag(
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = sphere_mass_properties();
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
@@ -1260,7 +1260,7 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -1338,7 +1338,7 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
     // RUN_5A: minimum solar activity (F10.7 = 70, Ap = 0)
@@ -1346,7 +1346,7 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
         f10: 70.0,
         f10b: 70.0,
         geo_index: 0.0,
-        geo_index_type: met_atmosphere::GeoIndexType::Ap,
+        geo_index_type: GeoIndexType::Ap,
     };
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
@@ -1410,7 +1410,7 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_pm_with_rnp(mu_earth));

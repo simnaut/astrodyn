@@ -16,15 +16,10 @@ use astrodyn::integration::{
 };
 use astrodyn::{
     aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
-    Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force, GravityControls,
-    MassProperties, MassStorage, Position, RadiationForce, RotationalState, SelfRef, Torque,
-    TranslationalState, Velocity,
+    Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force, GravityControls, IntegOrigin,
+    IntegrationFrame, MassBodyId, MassProperties, MassStorage, Phase, Position, RadiationForce,
+    RotationalState, SelfRef, Torque, TranslationalState, Velocity, Wrench,
 };
-use astrodyn_dynamics::wrench::Wrench;
-use astrodyn_dynamics::MassBodyId;
-use astrodyn_interactions::Phase;
-use astrodyn_quantities::frame::IntegrationFrame;
-use astrodyn_quantities::IntegOrigin;
 
 use std::collections::HashMap;
 
@@ -166,7 +161,7 @@ impl Simulation {
             f64,
             DVec3,
             DVec3,
-            Vec<astrodyn_gravity::relativistic::RelativisticSource>,
+            Vec<astrodyn::relativistic::RelativisticSource>,
         );
         let per_body_rel_data: Vec<Vec<RelDatum>> = self
             .bodies
@@ -198,7 +193,7 @@ impl Simulation {
                                 } else {
                                     frame_tree.get(sf.inertial).state.trans.position
                                 };
-                                Some(astrodyn_gravity::relativistic::RelativisticSource {
+                                Some(astrodyn::relativistic::RelativisticSource {
                                     mu: g.source.mu,
                                     position: pos,
                                 })
@@ -263,7 +258,7 @@ impl Simulation {
             let pos_eci = pos + origin;
             let vel_eci = vel + integ_vel;
             for &(mu, src_pos, src_vel, ref other) in &per_body_rel_data[body_idx] {
-                accel += astrodyn_gravity::relativistic::compute_relativistic_correction(
+                accel += astrodyn::relativistic::compute_relativistic_correction(
                     mu, src_pos, pos_eci, vel_eci, src_vel, other,
                 );
             }
@@ -325,9 +320,9 @@ impl Simulation {
                     // step-constant (scheduled-class) and captured once
                     // from total_force.
                     assert!(
-                        matches!(body.integrator, astrodyn_dynamics::IntegratorType::Rk4),
+                        matches!(body.integrator, astrodyn::IntegratorType::Rk4),
                         "ThermalIntegrationOrder::{thermal_order:?} requires \
-                         astrodyn_dynamics::IntegratorType::Rk4 for body {body_idx}; \
+                         astrodyn::IntegratorType::Rk4 for body {body_idx}; \
                          switch the body integrator to Rk4, or choose \
                          ThermalIntegrationOrder::Scheduled to avoid the coupled \
                          RK4 thermal path.",
@@ -511,12 +506,9 @@ impl Simulation {
                         Torque::<BodyFrame<SelfRef>>::from_raw_si(body.total_force.torque), // allowed: typed-sibling call boundary — step-constant torque lift
                         uom::si::f64::Time::new::<uom::si::time::second>(dt),
                         time_scale_factor,
-                        // Runner stores the raw astrodyn_dynamics enum; the
-                        // astrodyn kernel takes the wrapped flavor —
-                        // convert at the boundary (cheap copy).
-                        body.integrator.into(),
-                        body.gj_state.as_mut(),
-                        body.abm4_state.as_mut(),
+                        body.integrator,
+                        body.gj_state.as_mut().map(|s| s.inner_mut()),
+                        body.abm4_state.as_mut().map(|s| s.inner_mut()),
                     );
                 }
             }
@@ -533,7 +525,7 @@ impl Simulation {
             assert!(
                 self.bodies
                     .iter()
-                    .all(|b| matches!(b.integrator, astrodyn_dynamics::IntegratorType::Rk4)),
+                    .all(|b| matches!(b.integrator, astrodyn::IntegratorType::Rk4)),
                 "contact-coupled path (inter-body or ground-contact pairs) requires \
                  RK4 integrator on all bodies"
             );
@@ -826,7 +818,7 @@ impl Simulation {
         // with ECS adapters (issue #71). Phase C made the helper generic
         // over the source-id type via a closure-based source lookup; the
         // runner uses the default `usize` instantiation.
-        let inertial_fids: Vec<astrodyn_frames::FrameId> =
+        let inertial_fids: Vec<astrodyn::FrameId> =
             self.source_frame_ids.iter().map(|sf| sf.inertial).collect();
         let num_sources = inertial_fids.len();
         let root_frame_id = self.root_frame_id;
