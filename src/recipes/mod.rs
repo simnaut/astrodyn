@@ -32,6 +32,7 @@
 pub mod atmosphere;
 pub mod constants;
 pub mod earth;
+pub mod ephemeris;
 pub mod epoch;
 pub mod helpers;
 pub mod mars;

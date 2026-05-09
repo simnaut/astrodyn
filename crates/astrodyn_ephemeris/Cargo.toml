@@ -8,12 +8,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# Keep the published .crate lean: assets/ holds large binary ephemerides
-# (de421.bsp ~17 MB, moon PA BPC ~2 MB) used by in-workspace tests and
-# downstream consumers via `assets_path`. Those consumers can ship their
-# own copy or vendor these from JPL; we don't want to upload ~20 MB on
+# The DE421 SPK (~17 MB) and Moon PA BPC (~1.7 MB) are bundled into the
+# published .crate so downstream consumers can call
+# `Ephemeris::from_bsp_bytes(astrodyn_ephemeris::data::DE421_BSP)` (and
+# the higher-level `astrodyn::recipes::ephemeris::de421()`) without
+# vendoring kernels themselves. Cargo's default packager already ships
+# `assets/`; we only need to be explicit about the `Cargo.toml`-listed
+# include set so future additions to `assets/` don't accidentally bloat
 # every release.
-exclude = ["assets/*.bsp", "assets/*.bpc"]
+include = [
+    "src/**",
+    "assets/de421.bsp",
+    "assets/moon_pa_de421_1900-2050.bpc",
+    "README.md",
+    "Cargo.toml",
+]
 
 [package.metadata.docs.rs]
 all-features = true

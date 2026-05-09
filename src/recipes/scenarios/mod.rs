@@ -14,12 +14,14 @@
 //!
 //! Scenarios that mirror JEOD verification simulations (Tier 3
 //! reference cases) need high-fidelity gravity / ephemeris / rotation
-//! kernels. Phase 6 of #101 routed those data dependencies into
-//! `astrodyn_verif_jeod::verification::reference_data`
-//! so mission scenarios in this module function independently of any
-//! JEOD checkout. Tier 3 scenarios (and the examples that mirror
-//! them) compose `verification::reference_data::*` with the
-//! mission-side building blocks.
+//! kernels. Those binaries ship with the workspace (and inside the
+//! published `.crate`) via `include_bytes!` in `astrodyn_gravity` and
+//! `astrodyn_ephemeris`, exposed as the mission-facing recipes
+//! [`crate::recipes::earth::ggm05c`], [`crate::recipes::moon::lp150q`],
+//! [`crate::recipes::mars::mro110b2`], and
+//! [`crate::recipes::ephemeris::de421`]. Scenarios in this module
+//! compose those recipes with the mission-side building blocks; no JEOD
+//! checkout is required.
 
 pub mod apollo;
 pub mod clementine_lunar;
