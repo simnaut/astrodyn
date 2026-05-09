@@ -48,12 +48,12 @@ use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
 use uom::si::time::second;
 
-/// Synthetic time-cadence CSV for parity (no JEOD reference). 31 rows
-/// at 0.1 s cadence covering NUM_STEPS=30 ticks of sim time.
-const KINEMATIC_PARITY_CSV: &str = "kinematic_propagation_parity_times.csv";
-
 /// Sim-time DT shared with the hand-rolled parity test.
 const KINEMATIC_DT: f64 = 0.1;
+
+/// Number of `KINEMATIC_DT` ticks to drive — matches the
+/// `NUM_STEPS = 30` constant in the pre-#395 hand-rolled parity test.
+const KINEMATIC_NUM_STEPS: usize = 30;
 
 fn parent_mass() -> MassProperties {
     let inertia = DMat3::from_diagonal(DVec3::splat(20.0));
@@ -149,7 +149,10 @@ pub fn simple_chain() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_kinematic_propagation_simple_chain",
         scenario: build_kinematic_propagation,
-        reference: CsvReference::TimesOnly(KINEMATIC_PARITY_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: KINEMATIC_DT,
+            num_steps: KINEMATIC_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: Tolerances {
             position_m: [0.0; 3],

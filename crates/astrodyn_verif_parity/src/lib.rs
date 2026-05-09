@@ -79,19 +79,29 @@ pub trait VerificationCaseParityExt {
 
 impl VerificationCaseParityExt for VerificationCase {
     fn run_and_assert_parity<P: astrodyn::Planet>(&self) {
-        // 1. Load the reference CSV exactly once. Only timestamps and
-        //    the t=0 row matter for parity — JEOD-logged state never
-        //    enters the comparison (that's the runner-vs-JEOD job in
-        //    `run_and_assert`).
-        let ref_path = tier3_csv::test_data_path(self.reference.file_name());
-        assert!(
-            ref_path.exists(),
-            "JEOD reference CSV not found at {} for `{}`. Generate with: \
-             docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-             -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-            ref_path.display(),
-            self.name,
-        );
+        // 1. Load the reference cadence exactly once. Only timestamps
+        //    and the t=0 row matter for parity — JEOD-logged state
+        //    never enters the comparison (that's the runner-vs-JEOD
+        //    job in `run_and_assert`).
+        //    `CsvReference::SyntheticTimes` short-circuits the disk
+        //    lookup and generates the cadence in memory; every other
+        //    variant pairs with a committed reference under
+        //    `test_data/`.
+        let ref_path = match self.reference.file_name() {
+            Some(name) => {
+                let p = tier3_csv::test_data_path(name);
+                assert!(
+                    p.exists(),
+                    "JEOD reference CSV not found at {} for `{}`. Generate with: \
+                     docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
+                     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+                    p.display(),
+                    self.name,
+                );
+                p
+            }
+            None => std::path::PathBuf::new(),
+        };
         let ref_states = load_reference_states(&self.reference, &ref_path);
         assert!(
             !ref_states.is_empty(),

@@ -24,9 +24,14 @@ use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
 use uom::si::time::second;
 
-const ATTACH_PARITY_CSV: &str = "attach_detach_trajectory_parity_times.csv";
 const ATTACH_DT: f64 = 0.1;
 const ATTACH_TIME: f64 = 10.0;
+/// Number of `ATTACH_DT`-sized ticks. Equals `(DETACH_TIME / DT) - 1`
+/// per the pre-#395 hand-rolled test, so the loop's last step lands
+/// at `t = DETACH_TIME - DT` (= 19.9 s) and never reaches
+/// `t == DETACH_TIME` — the dual-write fence #308 the hand-rolled
+/// test documents.
+const ATTACH_NUM_STEPS: usize = (20.0 / 0.1) as usize - 1;
 
 fn veh1_mass() -> MassProperties {
     MassProperties::with_inertia(
@@ -168,9 +173,11 @@ pub fn simple() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_attach_detach_trajectory_simple",
         scenario: build_attach_detach_trajectory,
-        reference: CsvReference::TimesOnly(ATTACH_PARITY_CSV),
-        // Stop one record before `t = DETACH_TIME = 20 s`.
-        duration: Time::new::<second>(20.0 - ATTACH_DT),
+        reference: CsvReference::SyntheticTimes {
+            dt: ATTACH_DT,
+            num_steps: ATTACH_NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
         tolerances: Tolerances {
             position_m: [0.0; 3],
             velocity_m_s: [0.0; 3],

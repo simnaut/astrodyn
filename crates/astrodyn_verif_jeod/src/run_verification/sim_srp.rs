@@ -379,14 +379,14 @@ pub fn srp_orbit_trajectory() -> VerificationCase {
 /// per-record state injection.
 const PARITY_SUN_POS: DVec3 = DVec3::new(1.496e11, 0.0, 0.0);
 
-/// Synthetic 100-step CSV at 10 s cadence shared by every
-/// Bevy-mechanism SRP recipe. 101 rows: t = 0, 10, 20, …, 1000.
-const PARITY_SYNTH_CSV: &str = "srp_parity_synthetic_times.csv";
-
 /// `DT` shared with `astrodyn_verif_parity::common::DT`. The
-/// synthetic CSV's 10 s cadence pins this; `SimulationBuilder::new`
+/// synthetic-times cadence pins this; `SimulationBuilder::new`
 /// receives the same value so runner ↔ bevy step in lockstep.
 const PARITY_DT: f64 = 10.0;
+
+/// Number of `PARITY_DT`-sized ticks driven by the parity loop.
+/// Mirrors `astrodyn_verif_parity::common::NUM_STEPS = 100`.
+const PARITY_NUM_STEPS: usize = 100;
 
 /// Bevy-parity ISS-like initial position. Mirrors
 /// `astrodyn_verif_parity::common::iss_trans()`.
@@ -598,7 +598,10 @@ pub fn full_stack_sixdof() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_full_stack_sixdof",
         scenario: build_full_stack_sixdof,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -654,7 +657,10 @@ pub fn flat_plate_with_shadow() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_flat_plate_srp_with_shadow",
         scenario: build_flat_plate_with_shadow,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -697,7 +703,10 @@ pub fn shadow_2a_annular() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_shadow_2a_annular",
         scenario: build_shadow_2a_annular,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -712,7 +721,10 @@ pub fn shadow_2a_cooling() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_shadow_2a_cooling",
         scenario: build_shadow_2a_cooling,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -747,7 +759,10 @@ pub fn srp_basic_default() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_srp_basic_default",
         scenario: build_srp_basic_default,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -761,7 +776,10 @@ pub fn srp_basic_varied_cr() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_srp_basic_varied_cr",
         scenario: build_srp_basic_varied_cr,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -796,7 +814,10 @@ pub fn srp_derivative_first_order() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_srp_derivative_first_order",
         scenario: build_srp_derivative_first_order,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -810,7 +831,10 @@ pub fn srp_derivative_rk4() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_srp_derivative_rk4",
         scenario: build_srp_derivative_rk4,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
@@ -865,7 +889,10 @@ pub fn srp_derivative_rk4_rotated_struct() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame",
         scenario: build_srp_derivative_rk4_rotated_struct,
-        reference: CsvReference::TimesOnly(PARITY_SYNTH_CSV),
+        reference: CsvReference::SyntheticTimes {
+            dt: PARITY_DT,
+            num_steps: PARITY_NUM_STEPS,
+        },
         duration: Time::new::<second>(0.0),
         tolerances: parity_zero_tolerances(),
         extras: None,
