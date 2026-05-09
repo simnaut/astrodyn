@@ -8,15 +8,15 @@
 //! `Simulation`. This is the "use a scenario as the starting point,
 //! then customize" archetype recipes are designed to support.
 //!
-//! Uses DE421 ephemeris from `crates/astrodyn_ephemeris/assets/de421.bsp` for Moon and Sun
-//! positions.
+//! Uses the bundled DE421 ephemeris (loaded via
+//! [`recipes::ephemeris::de421`]) for Moon and Sun positions.
 //!
 //! ```bash
 //! cargo run -p astrodyn_runner --example apollo
 //! ```
 
 use astrodyn::recipes::scenarios::apollo;
-use astrodyn::recipes::Mission;
+use astrodyn::recipes::{ephemeris as ephemeris_recipes, Mission};
 use astrodyn::{EphemerisBody, TranslationalState};
 use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::SimulationBuilderExt;
@@ -57,13 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Override scenario state with Apollo parking orbit, attach DE421
     // ephemeris, then build.
 
-    let bsp_path = astrodyn::ephemeris_assets::de421_path();
-    assert!(
-        bsp_path.exists(),
-        "DE421 not found at {}",
-        bsp_path.display()
-    );
-    let ephemeris = astrodyn::Ephemeris::from_bsp(&bsp_path)?;
+    let ephemeris = ephemeris_recipes::de421()?;
 
     let r_park = R_EARTH + PARKING_ALT;
     let v_circ = (MU_EARTH / r_park).sqrt();

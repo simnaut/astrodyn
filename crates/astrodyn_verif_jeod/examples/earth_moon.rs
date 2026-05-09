@@ -8,23 +8,20 @@
 //! - Cannonball solar radiation pressure (no shadow body — illumination
 //!   stays at 1.0; matches the original example's behaviour)
 //!
-//! This example consumes
-//! [`recipes::verification::reference_data`](astrodyn_verif_jeod::verification::reference_data),
-//! which reads the committed `test_data/gravity/moon_lp150q.bin`
-//! fixture for the Moon LP150Q gravity model. DE421 ephemeris and Moon
-//! libration come from the committed `crates/astrodyn_ephemeris/assets/de421.bsp` and
-//! `crates/astrodyn_ephemeris/assets/moon_pa_de421_1900-2050.bpc`. No JEOD checkout is
-//! required to run the example.
+//! Moon LP150Q gravity, DE421 planetary positions, and the Moon
+//! principal-axes orientation kernel are all loaded from
+//! [`recipes::ephemeris::de421_with_moon_pa`] and
+//! [`recipes::moon::lp150q`], which embed the underlying binaries at
+//! compile time. No JEOD checkout is required.
 //!
 //! ```bash
-//! cargo run -p astrodyn_runner --example earth_moon
+//! cargo run -p astrodyn_verif_jeod --example earth_moon
 //! ```
 
-use astrodyn::recipes::{epoch, sun, vehicle};
+use astrodyn::recipes::{self, epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
-use astrodyn::{Ephemeris, EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
+use astrodyn::{EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
-use astrodyn_verif_jeod::verification::reference_data;
 use glam::DVec3;
 
 // Initial state from JEOD SIM_Earth_Moon RUN_clem at t=0 (Moon-centered inertial).
@@ -57,30 +54,12 @@ fn parse_steps_arg(default: usize) -> usize {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load DE421 + Moon BPC libration (committed at test_data/).
-
-    let bsp_path = astrodyn::ephemeris_assets::de421_path();
-    let bpc_path = astrodyn::ephemeris_assets::moon_pa_path();
-    assert!(
-        bsp_path.exists(),
-        "DE421 not found at {}",
-        bsp_path.display()
-    );
-    assert!(
-        bpc_path.exists(),
-        "Moon BPC not found at {}",
-        bpc_path.display()
-    );
-
-    let mut ephemeris = Ephemeris::from_bsp(&bsp_path)?;
-    ephemeris.load_bpc(&bpc_path)?;
+    let ephemeris = recipes::ephemeris::de421_with_moon_pa()?;
 
     let time = epoch::clementine_1994();
     let epoch_tdb_jd = time.tdb_julian_date();
 
-    // Moon central body with high-fidelity LP150Q SH gravity (verification
-    // reference data — requires $JEOD_HOME).
-    let mut moon_source = reference_data::moon_lp150q();
+    let mut moon_source = recipes::moon::lp150q();
     moon_source.t_inertial_pfix =
         Some(ephemeris.get_body_rotation(EphemerisBody::Moon, epoch_tdb_jd)?);
     let moon_mu = moon_source.source.mu;

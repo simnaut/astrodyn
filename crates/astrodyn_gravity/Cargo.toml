@@ -8,6 +8,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Cargo defaults to publishing only `src/` plus a few well-known files.
+# We need the binary gravity fixtures (~1.9 MB total) to ride along so
+# `include_bytes!` in `src/data.rs` resolves correctly when building
+# from the published .crate.
+include = [
+    "src/**",
+    "test_data/gravity/*.bin",
+    "test_data/gravity/*.json",
+    "README.md",
+    "Cargo.toml",
+]
 
 [package.metadata.docs.rs]
 all-features = true

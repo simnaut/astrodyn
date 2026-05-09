@@ -2,15 +2,10 @@
 //!
 //! Loads spherical-harmonics coefficient sets (and point-mass `mu`
 //! values) from the binary fixtures committed under `test_data/gravity/`.
-//! These fixtures are produced by parsing JEOD's `.cc` source files into
-//! the production [`crate::coefficients::save_binary`] format —
-//! see the `extract_grav_coeffs` and `extract_mars_data` binaries in
-//! this crate for the regen step.
-//!
-//! Every test that previously called
-//! `astrodyn_gravity::jeod_cc::load_from_jeod_cc(...)` to read a JEOD
-//! checkout at test time should call one of these loaders instead so the
-//! test runs with `JEOD_HOME` unset.
+//! The bytes are embedded at compile time via the [`crate::data`] module,
+//! so these loaders work identically inside the workspace and from a
+//! published `.crate` — no filesystem lookups, no `JEOD_HOME`, no
+//! `CARGO_MANIFEST_DIR` resolution at runtime.
 //!
 //! ## Coverage
 //!
@@ -37,32 +32,21 @@
 //! ```
 //!
 //! Commit the updated `test_data/gravity/*.bin` and the sidecar
-//! `*.json` metadata files together.
+//! `*.json` metadata files together — `include_bytes!` re-reads them at
+//! every compile.
 
 use crate::SphericalHarmonicsData;
-use std::path::PathBuf;
 
-/// Resolve a fixture path under `astrodyn_gravity/test_data/gravity/`.
-fn fixture_path(filename: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("test_data/gravity")
-        .join(filename)
-}
-
-fn load_fixture(label: &str) -> SphericalHarmonicsData {
-    let path = fixture_path(&format!("{label}.bin"));
-    crate::coefficients::load_binary(&path).unwrap_or_else(|e| {
+fn load_embedded(label: &str, bytes: &[u8]) -> SphericalHarmonicsData {
+    crate::coefficients::load_binary_from_bytes(bytes).unwrap_or_else(|e| {
         let regen_bin = match label {
             "ggm02c" | "ggm05c" | "gemt1" => "extract_grav_coeffs",
-            "mars_mro110b2" | "moon_lp150q" | "moon_grail150" | "sun_spherical" => {
-                "extract_mars_data"
-            }
-            _ => "extract_grav_coeffs",
+            _ => "extract_mars_data",
         };
         panic!(
-            "Failed to load gravity fixture {label} from {}: {e:?}.\n\
-             Regenerate via: cargo run -p astrodyn_verif_jeod --bin {regen_bin}",
-            path.display(),
+            "Failed to decode embedded gravity fixture {label}: {e:?}.\n\
+             The committed binary is corrupt. Regenerate via: \
+             cargo run -p astrodyn_gravity --bin {regen_bin}"
         )
     })
 }
@@ -70,59 +54,59 @@ fn load_fixture(label: &str) -> SphericalHarmonicsData {
 /// Load the GGM02C Earth gravity coefficient set (degree=order=200).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/earth_GGM02C.cc`
-/// from a JEOD checkout — but reads the committed binary fixture instead, so
+/// from a JEOD checkout, but reads the embedded binary fixture instead, so
 /// callers do not need `JEOD_HOME` set.
 pub fn load_ggm02c() -> SphericalHarmonicsData {
-    load_fixture("ggm02c")
+    load_embedded("ggm02c", crate::data::GGM02C_BIN)
 }
 
 /// Load the GGM05C Earth gravity coefficient set (degree=order=360).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/earth_GGM05C.cc`
-/// from a JEOD checkout — but reads the committed binary fixture instead, so
+/// from a JEOD checkout, but reads the embedded binary fixture instead, so
 /// callers do not need `JEOD_HOME` set.
 pub fn load_ggm05c() -> SphericalHarmonicsData {
-    load_fixture("ggm05c")
+    load_embedded("ggm05c", crate::data::GGM05C_BIN)
 }
 
 /// Load the GEM-T1 Earth gravity coefficient set (degree=order=36).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/earth_GEMT1.cc`
-/// from a JEOD checkout — but reads the committed binary fixture instead.
+/// from a JEOD checkout, but reads the embedded binary fixture instead.
 /// Used by `SIM_7_time_reversal` Tier 3 tests.
 pub fn load_gemt1() -> SphericalHarmonicsData {
-    load_fixture("gemt1")
+    load_embedded("gemt1", crate::data::GEMT1_BIN)
 }
 
 /// Load Mars MRO110B2 spherical harmonics coefficients (degree=order=110).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/mars_MRO110B2.cc`
-/// from a JEOD checkout — but reads the committed binary fixture
+/// from a JEOD checkout, but reads the embedded binary fixture
 /// (regenerable via `extract_mars_data`).
 pub fn load_mars_mro110b2() -> SphericalHarmonicsData {
-    load_fixture("mars_mro110b2")
+    load_embedded("mars_mro110b2", crate::data::MARS_MRO110B2_BIN)
 }
 
 /// Load Moon LP150Q (Lunar Prospector) spherical harmonics coefficients
 /// (degree=order=150).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/moon_LP150Q.cc`
-/// from a JEOD checkout — but reads the committed binary fixture
+/// from a JEOD checkout, but reads the embedded binary fixture
 /// (regenerable via `extract_mars_data`). Used by `SIM_Earth_Moon`.
 pub fn load_moon_lp150q() -> SphericalHarmonicsData {
-    load_fixture("moon_lp150q")
+    load_embedded("moon_lp150q", crate::data::MOON_LP150Q_BIN)
 }
 
 /// Load Moon GRAIL150 spherical harmonics coefficients (degree=order=150).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/moon_GRAIL150.cc`
-/// from a JEOD checkout — but reads the committed binary fixture
+/// from a JEOD checkout, but reads the embedded binary fixture
 /// (regenerable via `extract_mars_data`). The GRAIL field is the newer
 /// JEOD default for the Moon and is used by SIM_dyncomp's third-body
 /// Moon source as well as the gravity-gradient torque rigs
 /// (`SIM_torque_compare_simple`, `SIM_tide_verif`).
 pub fn load_moon_grail150() -> SphericalHarmonicsData {
-    load_fixture("moon_grail150")
+    load_embedded("moon_grail150", crate::data::MOON_GRAIL150_BIN)
 }
 
 /// Load the Moon GRAIL150 gravitational parameter (mu, m³/s²).
@@ -136,14 +120,14 @@ pub fn load_moon_grail150_mu() -> f64 {
 /// Load the full Sun point-mass record (mu and reference radius).
 ///
 /// `sun_spherical.cc` is a JEOD point-mass entry — it has no Cnm/Snm
-/// coefficients. The committed fixture encodes it as a degree-1 SH with
+/// coefficients. The embedded fixture encodes it as a degree-1 SH with
 /// all-zero coefficients so the production binary loader works
 /// uniformly. Only `mu` and `radius` are physically meaningful; do not
 /// evaluate this as a non-spherical model.
 ///
 /// Regenerable via `extract_mars_data`.
 pub fn load_sun_spherical() -> SphericalHarmonicsData {
-    load_fixture("sun_spherical")
+    load_embedded("sun_spherical", crate::data::SUN_SPHERICAL_BIN)
 }
 
 /// Load the Sun point-mass gravitational parameter (mu, m³/s²).
