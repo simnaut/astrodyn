@@ -306,6 +306,7 @@ dependencies = [
  "astrodyn_time",
  "astrodyn_verif_jeod",
  "glam 0.30.10",
+ "proptest",
  "uom",
 ]
 
