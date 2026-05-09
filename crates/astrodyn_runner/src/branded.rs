@@ -30,7 +30,7 @@
 //!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
 //!         .build();
 //!     let sat = sim.add_body(cfg);
-//!     sim.body(sat).trans.position.x
+//!     sim.body(sat).trans.position.raw_si().x
 //! });
 //! assert!(final_pos_x.abs() > 6_000_000.0);
 //! ```
@@ -295,7 +295,7 @@ impl Simulation {
     ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
     ///         .build();
     ///     let sat = sim.add_body(cfg);
-    ///     sim.body(sat).trans.position.length()
+    ///     sim.body(sat).trans.position.raw_si().length()
     /// });
     /// assert!(r > 6_000_000.0);
     /// ```

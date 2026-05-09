@@ -859,7 +859,7 @@ impl Simulation {
 
             // Writeback the bridged untyped rot scratch to the typed
             // `body.rot` slot.
-            for (body, rot) in bodies_mut.iter_mut().zip(rot_untyped_vec.into_iter()) {
+            for (body, rot) in bodies_mut.iter_mut().zip(rot_untyped_vec) {
                 // allowed: typed↔raw kernel-boundary writeback for the
                 // contact-coupled scratch slot (see #397).
                 body.rot = Some(rot_raw_to_typed(&rot));
