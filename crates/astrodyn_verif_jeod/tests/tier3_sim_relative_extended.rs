@@ -62,7 +62,7 @@ fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
 
 fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -128,8 +128,16 @@ fn tier3_relative_two_coorbiting_vehicles() {
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
+        let chief_trans = astrodyn::TranslationalState {
+            position: chief.trans.position.raw_si(),
+            velocity: chief.trans.velocity.raw_si(),
+        };
+        let deputy_trans = astrodyn::TranslationalState {
+            position: deputy.trans.position.raw_si(),
+            velocity: deputy.trans.velocity.raw_si(),
+        };
         let rel_inertial =
-            compute_relative_state::<SelfRef, SelfRef>(&chief.trans, None, &deputy.trans, None);
+            compute_relative_state::<SelfRef, SelfRef>(&chief_trans, None, &deputy_trans, None);
         // `None` reference rotation: producer returns the `Inertial`
         // variant, so we read the typed root-inertial position
         // directly (the type assertion would catch any future
@@ -145,10 +153,26 @@ fn tier3_relative_two_coorbiting_vehicles() {
         // both bodies is `<PlanetInertial<Earth>>`; tag at the call
         // site to satisfy the typed entry's planet-inertial contract.
         let rel = compute_lvlh_relative_state_typed::<Earth, SelfRef>(
-            chief.trans.position.m_at::<PlanetInertial<Earth>>(),
-            chief.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
-            deputy.trans.position.m_at::<PlanetInertial<Earth>>(),
-            deputy.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
+            chief
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
+            chief
+                .trans
+                .velocity
+                .raw_si()
+                .m_per_s_at::<PlanetInertial<Earth>>(),
+            deputy
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
+            deputy
+                .trans
+                .velocity
+                .raw_si()
+                .m_per_s_at::<PlanetInertial<Earth>>(),
         );
         // LVLH: X ≈ along-track, Y ≈ -orbit-normal, Z ≈ -radial.
         // For co-orbiting bodies, the along-track component dominates and
@@ -222,12 +246,12 @@ fn tier3_relative_hohmann_transfer_geometry() {
     sim.validate().unwrap();
 
     // Initial separation: both bodies at the same point → 0.
-    let init_rel = compute_relative_state::<SelfRef, SelfRef>(
-        &sim.body(0).trans,
-        None,
-        &sim.body(1).trans,
-        None,
-    );
+    let body0 = sim.body(0);
+    let body1 = sim.body(1);
+    let body0_trans = astrodyn_verif_jeod::typed_bridge::trans_typed_to_raw(&body0.trans);
+    let body1_trans = astrodyn_verif_jeod::typed_bridge::trans_typed_to_raw(&body1.trans);
+    let init_rel =
+        compute_relative_state::<SelfRef, SelfRef>(&body0_trans, None, &body1_trans, None);
     let init_sep = init_rel.trans.position_raw().length();
     assert!(
         init_sep < 1e-9,
@@ -250,8 +274,17 @@ fn tier3_relative_hohmann_transfer_geometry() {
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
-        let rel =
-            compute_relative_state::<SelfRef, SelfRef>(&chief.trans, None, &deputy.trans, None);
+        let rel = {
+            let chief_t = astrodyn::TranslationalState {
+                position: chief.trans.position.raw_si(),
+                velocity: chief.trans.velocity.raw_si(),
+            };
+            let deputy_t = astrodyn::TranslationalState {
+                position: deputy.trans.position.raw_si(),
+                velocity: deputy.trans.velocity.raw_si(),
+            };
+            compute_relative_state::<SelfRef, SelfRef>(&chief_t, None, &deputy_t, None)
+        };
         let sep = rel.trans.position_raw().length();
         max_sep = max_sep.max(sep);
     }
@@ -315,7 +348,17 @@ fn tier3_relative_same_orbit_phase_difference() {
     {
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
+        let rel = {
+            let a_t = astrodyn::TranslationalState {
+                position: a.trans.position.raw_si(),
+                velocity: a.trans.velocity.raw_si(),
+            };
+            let b_t = astrodyn::TranslationalState {
+                position: b.trans.position.raw_si(),
+                velocity: b.trans.velocity.raw_si(),
+            };
+            compute_relative_state::<SelfRef, SelfRef>(&a_t, None, &b_t, None)
+        };
         let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
@@ -327,7 +370,17 @@ fn tier3_relative_same_orbit_phase_difference() {
         sim.step_until(t).expect("step_until failed");
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
+        let rel = {
+            let a_t = astrodyn::TranslationalState {
+                position: a.trans.position.raw_si(),
+                velocity: a.trans.velocity.raw_si(),
+            };
+            let b_t = astrodyn::TranslationalState {
+                position: b.trans.position.raw_si(),
+                velocity: b.trans.velocity.raw_si(),
+            };
+            compute_relative_state::<SelfRef, SelfRef>(&a_t, None, &b_t, None)
+        };
         let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
@@ -389,7 +442,9 @@ fn tier3_relative_different_inclinations() {
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
-        let dz = (deputy.trans.position - chief.trans.position).z.abs();
+        let dz = (deputy.trans.position.raw_si() - chief.trans.position.raw_si())
+            .z
+            .abs();
         max_abs_z = max_abs_z.max(dz);
     }
 
@@ -452,9 +507,29 @@ fn tier3_relative_round_trip_frames() {
         let b = sim.body(1);
 
         // State of A wrt B (reference = B, subject = A).
-        let a_wrt_b = compute_relative_state::<SelfRef, SelfRef>(&b.trans, None, &a.trans, None);
+        let a_wrt_b = {
+            let b_t = astrodyn::TranslationalState {
+                position: b.trans.position.raw_si(),
+                velocity: b.trans.velocity.raw_si(),
+            };
+            let a_t = astrodyn::TranslationalState {
+                position: a.trans.position.raw_si(),
+                velocity: a.trans.velocity.raw_si(),
+            };
+            compute_relative_state::<SelfRef, SelfRef>(&b_t, None, &a_t, None)
+        };
         // State of B wrt A (reference = A, subject = B).
-        let b_wrt_a = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
+        let b_wrt_a = {
+            let a_t = astrodyn::TranslationalState {
+                position: a.trans.position.raw_si(),
+                velocity: a.trans.velocity.raw_si(),
+            };
+            let b_t = astrodyn::TranslationalState {
+                position: b.trans.position.raw_si(),
+                velocity: b.trans.velocity.raw_si(),
+            };
+            compute_relative_state::<SelfRef, SelfRef>(&a_t, None, &b_t, None)
+        };
 
         // Both call sites pass `None` for the reference rotation, so
         // the producer always lands in the `Inertial` variant. We

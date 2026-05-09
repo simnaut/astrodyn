@@ -47,8 +47,8 @@ fn propagate(battin: bool, init: &InitialConditions) -> (Vec<DVec3>, Vec<DVec3>)
         pre_step(&mut sim, target_time);
         sim.step_until(target_time).expect("step_until failed");
         let body = sim.body(0);
-        positions.push(body.trans.position);
-        velocities.push(body.trans.velocity);
+        positions.push(body.trans.position.raw_si());
+        velocities.push(body.trans.velocity.raw_si());
     }
     (positions, velocities)
 }

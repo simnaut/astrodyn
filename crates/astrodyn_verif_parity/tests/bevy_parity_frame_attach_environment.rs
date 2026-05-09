@@ -62,9 +62,13 @@ fn bevy_parity_frame_attach_gravity_sees_propagated_state() {
         .world_mut()
         .spawn((
             Name::new("frame_attached_body"),
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState::default()),
-            RotationalStateC::from(RotationalState::default()),
-            MassPropertiesC::from(MassProperties::new(1_000.0)),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(RotationalState::default()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(MassProperties::new(1_000.0)),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,

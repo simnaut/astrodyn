@@ -80,11 +80,12 @@ fn step_bevy(app: &mut App, n: usize, dt: f64) {
 }
 
 fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    world
-        .get::<TranslationalStateC<astrodyn::Earth>>(entity)
-        .unwrap()
-        .0
-        .to_untyped()
+    astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+        &world
+            .get::<TranslationalStateC<astrodyn::Earth>>(entity)
+            .unwrap()
+            .0,
+    )
 }
 
 fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
@@ -155,7 +156,7 @@ fn run_gj_bootstrap_parity(
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC::<astrodyn::Earth>::from(trans),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
@@ -181,7 +182,7 @@ fn run_gj_bootstrap_parity(
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
@@ -190,7 +191,7 @@ fn run_gj_bootstrap_parity(
     });
     sim.validate().unwrap();
     sim.step_n(n_steps).expect("step_n failed");
-    let sim_trans = sim.body(0).trans;
+    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
 
     assert_trans_eq(label, &bevy_trans, &sim_trans);
 }

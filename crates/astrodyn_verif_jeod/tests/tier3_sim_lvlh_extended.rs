@@ -50,7 +50,7 @@ fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simu
     );
 
     sim.add_body(VehicleConfig {
-        trans: body.into(),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&body),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -191,7 +191,7 @@ fn tier3_lvlh_eccentric_orbit() {
     for step in 1..=n_steps {
         sim.step_until(step as f64 * dt).expect("step_until failed");
         let body = sim.body(0);
-        let r = body.trans.position.length();
+        let r = body.trans.position.raw_si().length();
         let lvlh = body.lvlh_frame.expect("LVLH not computed");
         let omega = lvlh.ang_vel_this.length();
         if r < min_r {
@@ -291,7 +291,7 @@ fn tier3_lvlh_periodicity() {
 
     // Additionally verify the orbit position at one period is close to the
     // initial position (confirms we did indeed complete ~1 full revolution).
-    let pos_return_err = (sim.body(0).trans.position - initial_state.position).length();
+    let pos_return_err = (sim.body(0).trans.position.raw_si() - initial_state.position).length();
     // RK4 truncation over one orbit on a dt ≈ period/560 is tens of cm.
     assert!(
         pos_return_err < 1.0,

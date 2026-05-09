@@ -137,6 +137,23 @@ impl<V: Vehicle> BodyAttitude<V> {
         Self { q, _v: PhantomData }
     }
 
+    /// Wrap a raw [`JeodQuat`] as the inertial-to-body attitude of
+    /// vehicle `V`. Validates unit-norm against
+    /// [`NormalizedQuat::DEFAULT_TOLERANCE`] (1e-12) and **panics** on
+    /// drift, mirroring [`NormalizedQuat::new`] + [`Self::from_witness`]
+    /// — this is the canonical entry point for constructing a typed
+    /// attitude from a raw scalar-first quaternion at boundaries that
+    /// don't already hold a witness (e.g., orbital-init helpers,
+    /// integrator stage writeback). The caller still asserts
+    /// inertial-to-body semantics.
+    #[inline]
+    pub fn from_jeod_quat(q: JeodQuat) -> Self {
+        let witnessed = NormalizedQuat::new(q).unwrap_or_else(|err| {
+            panic!("BodyAttitude::from_jeod_quat: quaternion is not unit-norm: {err}")
+        });
+        Self::from_witness(witnessed)
+    }
+
     /// Read-only view of the underlying normalized quaternion.
     ///
     /// Use for matrix derivation

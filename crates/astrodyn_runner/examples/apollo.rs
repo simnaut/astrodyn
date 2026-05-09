@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Apollo trans-lunar injection: multi-body gravity, staging, impulsive maneuver.
 //!
 //! Demonstrates a recipe-aware pattern: starts from
@@ -17,9 +18,13 @@
 
 use astrodyn::recipes::scenarios::apollo;
 use astrodyn::recipes::{ephemeris as ephemeris_recipes, Mission};
-use astrodyn::{EphemerisBody, MassProperties, TranslationalState};
+use astrodyn::{
+    BodyFrame, EphemerisBody, InertiaTensor, Mass, MassProperties, MassPropertiesTyped, Position,
+    RootInertial, SelfRef, StructuralFrame, TranslationalStateTyped, Velocity,
+};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::{DMat3, DVec3};
+use uom::si::mass::kilogram;
 
 const MU_EARTH: f64 = 3.986_004_418e14;
 const R_EARTH: f64 = 6_371_000.0;
@@ -67,16 +72,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sb = Mission::apollo_translunar().into_builder();
     sb.dt = DT;
     // Override the scenario's default vehicle state with the parking-orbit IC.
-    sb.bodies[0].trans = TranslationalState {
-        position: init_pos,
-        velocity: init_vel,
-    }
-    .into();
+    // allowed: typed↔raw kernel-boundary lift on scenario state init (#397)
+    sb.bodies[0].trans = TranslationalStateTyped::<RootInertial> {
+        position: Position::<RootInertial>::from_raw_si(init_pos),
+        velocity: Velocity::<RootInertial>::from_raw_si(init_vel),
+    };
     // Initialize the body with CSM-only mass; the S-IVB is added separately
     // below as a child in the mass tree, and `add_body_to_tree` will snapshot
     // the body's current mass into the tree node. Initializing with
     // CSM+S-IVB here would double-count the S-IVB once it's attached.
-    sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM).into());
+    // allowed: typed↔raw kernel-boundary lift on scenario mass
+    // initialization (#397).
+    let csm_raw = MassProperties::new(MASS_CSM);
+    sb.bodies[0].mass = Some(
+        MassPropertiesTyped::<SelfRef>::with_inertia(
+            Mass::new::<kilogram>(csm_raw.mass),
+            InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(csm_raw.inertia),
+            Position::<StructuralFrame<SelfRef>>::from_raw_si(csm_raw.position),
+        )
+        .with_t_parent_this(csm_raw.t_parent_this),
+    );
     // Wire DE421 ephemeris on the Moon/Sun sources (indices exposed by
     // the scenario as named constants — robust against any future
     // reordering inside `apollo_translunar`).
@@ -128,8 +143,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t = (step as f64) * DT;
         if !tli_applied && t >= tli_time {
             let body = sim.body(0);
-            let vel_hat = body.trans.velocity.normalize();
-            sim.set_body_velocity(0, body.trans.velocity + vel_hat * TLI_DELTA_V);
+            let vel = body.trans.velocity.raw_si();
+            let vel_hat = vel.normalize();
+            sim.set_body_velocity(0, vel + vel_hat * TLI_DELTA_V);
             tli_applied = true;
             println!(
                 "{:10.1}  {:>12}  {:>12}  {:>12}  {:>10}  TLI BURN",
@@ -157,8 +173,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sim.step().expect("step failed");
         if step % steps_per_print == 0 {
             let body = sim.body(0);
-            let pos = body.trans.position;
-            let vel = body.trans.velocity;
+            let pos = body.trans.position.raw_si();
+            let vel = body.trans.velocity.raw_si();
             let moon_pos = sim.source_position(apollo::MOON_IDX);
             let alt_km = (pos.length() - R_EARTH) / 1000.0;
             let dist_moon_km = (pos - moon_pos).length() / 1000.0;
@@ -184,7 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let final_body = sim.body(0);
     let final_moon_dist =
-        (final_body.trans.position - sim.source_position(apollo::MOON_IDX)).length();
+        (final_body.trans.position.raw_si() - sim.source_position(apollo::MOON_IDX)).length();
     println!();
     println!(
         "Final distance to Moon: {:.0} km after {elapsed_days:.2} days",

@@ -178,44 +178,48 @@ impl VerificationCaseParityExt for VerificationCase {
             //    same body.
             for (body_idx, &entity) in handles.body_entities.iter().enumerate() {
                 let runner_body = runner_sim.body(body_idx);
-                let bevy_trans = app
-                    .world()
-                    .get::<TranslationalStateC<P>>(entity)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "`{}`: bevy body {body_idx} missing TranslationalStateC<{}>",
-                            self.name,
-                            std::any::type_name::<P>(),
-                        )
-                    })
-                    .0
-                    .to_untyped();
+                let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+                    &app.world()
+                        .get::<TranslationalStateC<P>>(entity)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "`{}`: bevy body {body_idx} missing TranslationalStateC<{}>",
+                                self.name,
+                                std::any::type_name::<P>(),
+                            )
+                        })
+                        .0,
+                );
+                let runner_trans_untyped =
+                    astrodyn_bevy::typed_bridge::trans_typed_to_raw(&runner_body.trans);
                 assert_translational_bits_eq(
                     self.name,
                     body_idx,
                     record.time,
                     &bevy_trans,
-                    &runner_body.trans,
+                    &runner_trans_untyped,
                 );
                 if let Some(runner_rot) = runner_body.rot.as_ref() {
-                    let bevy_rot = app
-                        .world()
-                        .get::<RotationalStateC>(entity)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "`{}`: bevy body {body_idx} missing RotationalStateC \
-                                 (runner has rotational state)",
-                                self.name,
-                            )
-                        })
-                        .0
-                        .to_untyped();
+                    let bevy_rot = astrodyn_bevy::typed_bridge::rot_typed_to_raw(
+                        &app.world()
+                            .get::<RotationalStateC>(entity)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "`{}`: bevy body {body_idx} missing RotationalStateC \
+                                     (runner has rotational state)",
+                                    self.name,
+                                )
+                            })
+                            .0,
+                    );
+                    let runner_rot_untyped =
+                        astrodyn_bevy::typed_bridge::rot_typed_to_raw(runner_rot);
                     assert_rotational_bits_eq(
                         self.name,
                         body_idx,
                         record.time,
                         &bevy_rot,
-                        runner_rot,
+                        &runner_rot_untyped,
                     );
                 }
             }

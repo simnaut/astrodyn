@@ -30,8 +30,8 @@ use glam::{DMat3, DVec3};
 use astrodyn::{
     AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
     FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls, GravitySource,
-    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RootInertial, RotationModel,
-    RotationalState, SelfPlanet, SrpModel, TotalForce, TranslationalState, TranslationalStateTyped,
+    LvlhFrame, MassPropertiesTyped, OrbitalElements, RadiationForce, RootInertial, RotationModel,
+    RotationalStateTyped, SelfPlanet, SelfRef, SrpModel, TotalForce, TranslationalStateTyped,
     VehicleConfig,
 };
 use astrodyn::{ContactFacet, FrameId, GroundFacet, IntegrationFrame, MassBodyId, MassPointState};
@@ -161,11 +161,17 @@ pub(crate) struct GravityData {
 #[derive(Debug, Clone)]
 pub struct VehicleOutput {
     /// Current translational state (position, velocity) in the integration frame.
-    pub trans: TranslationalState,
+    ///
+    /// Carries the `IntegrationFrame` phantom (mirrors `SimBody.trans`'s
+    /// integration-frame storage). Consumers that need root-inertial
+    /// coordinates apply `body.trans.to_inertial(&integ_origin)` first;
+    /// see `JEOD_invariants.md` row RF.10 for the shift discipline.
+    pub trans: TranslationalStateTyped<IntegrationFrame>,
     /// Frame ID of the current integration frame in the simulation's frame tree.
     pub integ_frame_id: FrameId,
-    /// Current rotational state (quaternion, angular velocity). `None` for 3-DOF.
-    pub rot: Option<RotationalState>,
+    /// Current rotational state (attitude, body-frame angular velocity).
+    /// `None` for 3-DOF.
+    pub rot: Option<RotationalStateTyped<SelfRef>>,
     /// Total translational acceleration in the integration frame (m/s²) at the
     /// end of the last `step()`. Sum of gravity and non-gravity contributions —
     /// mirrors JEOD's `derivs.trans_accel`. Zero before the first `step()`.
@@ -209,8 +215,8 @@ pub(crate) struct SimBody {
     /// planet-relative coordinates and produce wrong physics. See
     /// issue #255 and `JEOD_invariants.md` RF.10 for the split.
     pub trans: TranslationalStateTyped<IntegrationFrame>,
-    pub rot: Option<RotationalState>,
-    pub mass: Option<MassProperties>,
+    pub rot: Option<RotationalStateTyped<SelfRef>>,
+    pub mass: Option<MassPropertiesTyped<SelfRef>>,
     /// If this body participates in a mass tree, its node ID.
     pub mass_body_id: Option<MassBodyId>,
     /// When `true`, this body's `trans`/`rot` are derived each step from
@@ -344,11 +350,11 @@ impl SimBody {
             // coincides with root for root-integrated bodies). See #255.
             trans: config.trans.relabel_to::<IntegrationFrame>(),
             // VehicleConfig stores typed `<SelfRef>` rot/mass at the
-            // mission boundary; the runner is a non-shipping consumer
-            // (CLAUDE.md "two parallel consumers") and stores raw types
-            // in SimBody, so drop to untyped here.
-            rot: config.rot.map(|r| r.to_untyped()),
-            mass: config.mass.map(|m| m.to_untyped()),
+            // mission boundary; SimBody now carries the same typed
+            // siblings end-to-end (issue #397), so this is a direct
+            // hand-off — no untyped demotion.
+            rot: config.rot,
+            mass: config.mass,
             mass_body_id: None,
             kinematic_only: false,
             frame_attach: None,
@@ -406,10 +412,10 @@ impl SimBody {
     /// Create a VehicleOutput view of the current state.
     pub(crate) fn output(&self) -> VehicleOutput {
         VehicleOutput {
-            // VehicleOutput::trans is the public, untyped integration-frame
-            // storage form. Drop the IntegrationFrame phantom at the API
-            // boundary; the values are bit-identical.
-            trans: self.trans.to_untyped(),
+            // VehicleOutput::trans is typed against the integration
+            // frame, matching `SimBody.trans`. Direct copy — no phantom
+            // change, no demotion.
+            trans: self.trans,
             integ_frame_id: self.integ_frame_id,
             rot: self.rot,
             trans_accel: self.frame_derivs.trans_accel,

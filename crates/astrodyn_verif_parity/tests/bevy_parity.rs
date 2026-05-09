@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Bevy App vs astrodyn_runner::Simulation parity test.
 //!
 //! Validates that the Bevy ECS pipeline and the standalone Simulation runner
@@ -74,7 +75,7 @@ fn build_app() -> (App, Entity, Entity) {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState::default()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
         ))
         .id();
 
@@ -87,9 +88,13 @@ fn build_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::<astrodyn::Earth>::from(initial_trans()),
-            RotationalStateC::from(initial_rot()),
-            MassPropertiesC::from(mass_props()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(initial_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(mass_props()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -118,8 +123,8 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
         .unwrap();
     let rot = world.get::<RotationalStateC>(vehicle).unwrap();
     SixDofState {
-        trans: trans.0.to_untyped(),
-        rot: rot.0.to_untyped(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&trans.0),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&rot.0),
     }
 }
 
@@ -141,9 +146,13 @@ fn run_simulation_steps() -> SixDofState {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: initial_trans().into(),
-        rot: Some(initial_rot().into()),
-        mass: Some(mass_props().into()),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            &(initial_rot()),
+        )),
+        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -155,8 +164,8 @@ fn run_simulation_steps() -> SixDofState {
 
     let body = sim.body(0);
     SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     }
 }
 
@@ -236,7 +245,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState::default()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
         ))
         .id();
 
@@ -248,9 +257,13 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::<astrodyn::Earth>::from(initial_trans()),
-            RotationalStateC::from(initial_rot()),
-            MassPropertiesC::from(mass_props()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(initial_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(mass_props()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -279,9 +292,13 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
-        trans: initial_trans().into(),
-        rot: Some(initial_rot().into()),
-        mass: Some(mass_props().into()),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            &(initial_rot()),
+        )),
+        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props()),
+        )),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -294,8 +311,8 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_bit_identical("Bevy RKF45 vs Sim RKF45", &bevy_state, &sim_state);

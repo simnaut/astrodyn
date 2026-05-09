@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_Apollo trajectory cross-validation through 9 detaches + 2 attaches.
 //!
 //! Reproduces JEOD's `sims/SIM_Apollo/SET_test/RUN_test` 12-second
@@ -428,19 +429,19 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
     let row0 = &csv[0];
 
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: row0.position,
             velocity: row0.velocity,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: row0.quaternion,
                 ang_vel_body: row0.ang_vel_body,
-            }
-            .into(),
-        ),
-        mass: Some(cm_only_mass.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(cm_only_mass),
+        )),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth, GRAV_DEGREE, GRAV_ORDER, false),
@@ -711,8 +712,11 @@ fn tier3_sim_apollo_trajectory() {
             position: Some(core_position),
             velocity: Some(core_velocity),
             acceleration: Some(body.trans_accel),
-            quaternion: body.rot.as_ref().map(|r| r.quaternion.to_glam()),
-            ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body),
+            quaternion: body
+                .rot
+                .as_ref()
+                .map(|r| r.q_inertial_body.as_witness().inner().to_glam()),
+            ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body.raw_si()),
             ang_accel: body.rot_accel,
         });
         ref_log.push(StateLog {

@@ -16,10 +16,42 @@ use astrodyn::integration::{
 };
 use astrodyn::{
     aggregate_wrenches_via_storage, evaluate_contact_pair, evaluate_ground_contact_pair,
-    Acceleration, BodyFrame, CoupledStageEval, EdgeGeometry, Force, GravityControls, IntegOrigin,
-    IntegrationFrame, MassBodyId, MassProperties, MassStorage, Phase, Position, RadiationForce,
-    RotationalState, SelfRef, Torque, TranslationalState, Velocity, Wrench,
+    kilogram, Acceleration, AngularVelocity, BodyAttitude, BodyFrame, CoupledStageEval,
+    EdgeGeometry, Force, GravityControls, IntegOrigin, IntegrationFrame, MassBodyId,
+    MassProperties, MassPropertiesTyped, MassStorage, Phase, Position, RadiationForce,
+    RotationalState, RotationalStateTyped, SelfRef, Torque, TranslationalState, Velocity, Wrench,
 };
+
+// allowed: typed↔raw kernel-boundary helpers used by force collection
+// and integrator dispatch (issue #397).
+#[inline]
+fn mass_typed_to_raw(m: &MassPropertiesTyped<SelfRef>) -> MassProperties {
+    MassProperties {
+        mass: m.mass.get::<kilogram>(),
+        inverse_mass: m.inverse_mass,
+        inertia: m.inertia.as_dmat3(),
+        inverse_inertia: m.inverse_inertia,
+        position: m.center_of_mass.raw_si(),
+        t_parent_this: m.t_parent_this,
+        dirty: m.dirty,
+    }
+}
+
+#[inline]
+fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
+    RotationalState {
+        quaternion: s.q_inertial_body.to_jeod_quat(),
+        ang_vel_body: s.ang_vel_body.raw_si(),
+    }
+}
+
+#[inline]
+fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::from_jeod_quat(s.quaternion),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body),
+    )
+}
 
 use std::collections::HashMap;
 
@@ -37,13 +69,17 @@ impl Simulation {
     ) -> Result<(), StepError> {
         // ── 7. Force collection ──
         for body in &mut self.bodies {
+            // allowed: typed↔raw kernel boundary — `collect_and_resolve_forces`
+            // is the untyped force-collection kernel.
+            let rot_untyped = body.rot.as_ref().map(rot_typed_to_raw);
+            let mass_untyped = body.mass.as_ref().map(mass_typed_to_raw);
             let (total, derivs) = collect_and_resolve_forces(
                 body.aero_force.as_ref(),
                 body.radiation_force.as_ref(),
                 body.gravity_torque,
-                body.rot.as_ref(),
+                rot_untyped.as_ref(),
                 body.t_struct_body,
-                body.mass.as_ref(),
+                mass_untyped.as_ref(),
                 // allowed: typed→raw boundary — `collect_and_resolve_forces`
                 // is the untyped force-collection kernel; the runner stores
                 // gravity acceleration typed against `RootInertial`.
@@ -81,7 +117,7 @@ impl Simulation {
                 || body.external_torque_struct != DVec3::ZERO
             {
                 let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
-                    r.quaternion.left_quat_to_transformation()
+                    r.q_inertial_body.as_witness().left_quat_to_transformation()
                 });
                 let t_inertial_struct =
                     astrodyn::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
@@ -342,7 +378,12 @@ impl Simulation {
                     // integrator behavior while still evaluating SRP per stage
                     // for the orbital RK4).
                     let mut k1_temp_dots: Option<Vec<f64>> = None;
-                    let mass_copy = body.mass;
+                    // allowed: typed↔raw kernel boundary
+                    let mass_copy = body.mass.as_ref().map(mass_typed_to_raw);
+
+                    // allowed: typed↔raw kernel boundary — coupled integrator
+                    // takes &mut RotationalState.
+                    let mut rot_untyped = body.rot.as_ref().map(rot_typed_to_raw);
 
                     // body.trans flows end-to-end as typed through the
                     // coupled integrator boundary. The kernel's `stage_fn`
@@ -351,7 +392,7 @@ impl Simulation {
                     integrate_body_coupled_typed::<SelfRef, IntegrationFrame>(
                         &config,
                         &mut body.trans,
-                        body.rot.as_mut(),
+                        rot_untyped.as_mut(),
                         mass_copy.as_ref(),
                         |stage_trans, stage_rot, stage_thermal, time_frac| {
                             let gravity_accel = eval_body_gravity(
@@ -459,6 +500,11 @@ impl Simulation {
                         dt,
                         time_scale_factor,
                     );
+                    // Writeback typed rot from the bridged untyped local.
+                    if let Some(updated) = rot_untyped {
+                        // allowed: typed↔raw kernel-boundary writeback (see #397).
+                        body.rot = Some(rot_raw_to_typed(&updated));
+                    }
 
                     body.radiation_force = Some(RadiationForce {
                         force: final_srp_inertial_force,
@@ -482,6 +528,9 @@ impl Simulation {
                     }
                 } else {
                     let controls = &body.gravity_controls;
+                    // allowed: typed↔raw kernel boundary
+                    let mut rot_untyped = body.rot.as_ref().map(rot_typed_to_raw);
+                    let mass_untyped = body.mass.as_ref().map(mass_typed_to_raw);
                     // Typed integrator boundary: `body.trans` flows
                     // end-to-end as `TranslationalStateTyped<IntegrationFrame>`.
                     // Force/torque/dt are lifted once at the call site;
@@ -490,8 +539,8 @@ impl Simulation {
                     integrate_body_typed::<SelfRef, IntegrationFrame>(
                         &body.config,
                         &mut body.trans,
-                        body.rot.as_mut(),
-                        body.mass.as_ref(),
+                        rot_untyped.as_mut(),
+                        mass_untyped.as_ref(),
                         |pos, vel, time_frac| {
                             // allowed: typed-sibling call boundary — wraps gravity_fn closure output for the typed gravity contract
                             Acceleration::<IntegrationFrame>::from_raw_si(eval_body_gravity(
@@ -510,6 +559,11 @@ impl Simulation {
                         body.gj_state.as_mut().map(|s| s.inner_mut()),
                         body.abm4_state.as_mut().map(|s| s.inner_mut()),
                     );
+                    // Writeback typed rot from the bridged untyped local.
+                    if let Some(updated) = rot_untyped {
+                        // allowed: typed↔raw kernel-boundary writeback (see #397).
+                        body.rot = Some(rot_raw_to_typed(&updated));
+                    }
                 }
             }
         } else {
@@ -664,9 +718,11 @@ impl Simulation {
             // non-empty) — the non-contact path above borrows directly.
             let t_struct_body_vec: Vec<DMat3> =
                 bodies_mut.iter().map(|b| b.t_struct_body).collect();
+            // allowed: typed↔raw kernel boundary — contact-coupled kernel
+            // takes raw MassProperties.
             let mass_vec: Vec<MassProperties> = bodies_mut
                 .iter()
-                .map(|b| b.mass.expect("validated"))
+                .map(|b| mass_typed_to_raw(b.mass.as_ref().expect("validated")))
                 .collect();
             let non_grav_non_contact_vec: Vec<DVec3> =
                 bodies_mut.iter().map(|b| b.total_force.force).collect();
@@ -694,24 +750,34 @@ impl Simulation {
             // The `expect`s match the validated invariants — the
             // contact-coupled path requires 6-DOF + 3-component mass on
             // every body (enforced by `Self::validate`).
+            // allowed: typed↔raw kernel boundary — contact-coupled kernel
+            // takes &mut RotationalState. Convert all body rots to untyped
+            // scratch Vec, split for the per-body &mut, then write back
+            // typed after the kernel returns.
+            let mut rot_untyped_vec: Vec<RotationalState> = bodies_mut
+                .iter()
+                .map(|b| {
+                    rot_typed_to_raw(
+                        b.rot
+                            .as_ref()
+                            .expect("validated: 6-DOF required for contact-coupled path"),
+                    )
+                })
+                .collect();
+
             // body.trans flows end-to-end as typed through the typed
             // sibling; the kernel allocates the transient untyped
             // buffer and writes back through the same `&mut`s.
             let inputs: Vec<CoupledBodyInputTyped<'_, IntegrationFrame>> = bodies_mut
                 .iter_mut()
+                .zip(rot_untyped_vec.iter_mut())
                 .enumerate()
-                .map(|(i, b)| {
-                    let rot = b
-                        .rot
-                        .as_mut()
-                        .expect("validated: 6-DOF required for contact-coupled path");
-                    CoupledBodyInputTyped {
-                        trans: &mut b.trans,
-                        rot,
-                        mass: &mass_vec[i],
-                        non_grav_non_contact_force: non_grav_non_contact_vec[i],
-                        non_contact_torque_body: non_contact_torque_vec[i],
-                    }
+                .map(|(i, (b, rot))| CoupledBodyInputTyped {
+                    trans: &mut b.trans,
+                    rot,
+                    mass: &mass_vec[i],
+                    non_grav_non_contact_force: non_grav_non_contact_vec[i],
+                    non_contact_torque_body: non_contact_torque_vec[i],
                 })
                 .collect();
 
@@ -790,6 +856,14 @@ impl Simulation {
             // `integrate_bodies_contact_coupled_typed` consumed the
             // `&mut body.trans` borrows; the integrated state is
             // already written back through them.
+
+            // Writeback the bridged untyped rot scratch to the typed
+            // `body.rot` slot.
+            for (body, rot) in bodies_mut.iter_mut().zip(rot_untyped_vec.into_iter()) {
+                // allowed: typed↔raw kernel-boundary writeback for the
+                // contact-coupled scratch slot (see #397).
+                body.rot = Some(rot_raw_to_typed(&rot));
+            }
 
             // Mark pending init impulses as consumed so subsequent steps
             // don't reapply them. (Matches JEOD: the impulsive force is
@@ -940,7 +1014,7 @@ impl Simulation {
         for (id, &idx) in &sim_body_for_id {
             let body = &self.bodies[idx];
             let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
-                r.quaternion.left_quat_to_transformation()
+                r.q_inertial_body.as_witness().left_quat_to_transformation()
             });
             let t_inertial_struct =
                 astrodyn::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
@@ -998,7 +1072,7 @@ impl Simulation {
             if roots.contains_key(&id) {
                 let agg = aggregated.get(&id).copied().unwrap_or_else(Wrench::zero);
                 let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
-                    r.quaternion.left_quat_to_transformation()
+                    r.q_inertial_body.as_witness().left_quat_to_transformation()
                 });
                 let t_inertial_struct =
                     astrodyn::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
@@ -1019,8 +1093,10 @@ impl Simulation {
                         // aggregated body-frame torque. Matches
                         // `compute_frame_derivatives` for the
                         // rotational arm only.
-                        let h_body = mass.inertia * rot.ang_vel_body;
-                        let euler = rot.ang_vel_body.cross(h_body);
+                        let omega_raw = rot.ang_vel_body.raw_si();
+                        let inertia_raw = mass.inertia.as_dmat3();
+                        let h_body = inertia_raw * omega_raw;
+                        let euler = omega_raw.cross(h_body);
                         body.frame_derivs.rot_accel = mass.inverse_inertia * (torque_body - euler);
                     } else {
                         body.frame_derivs.rot_accel = DVec3::ZERO;

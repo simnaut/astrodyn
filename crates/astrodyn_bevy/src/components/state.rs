@@ -7,10 +7,9 @@
 
 use astrodyn::{
     BodyFrame, DynamicsConfig, FrameDerivatives, FrameDerivativesTyped, FrameTransform,
-    GravityAcceleration, GravityAccelerationTyped, MassProperties, MassPropertiesTyped, Planet,
-    PlanetInertial, Position, RootInertial, RotationalState, RotationalStateTyped, SelfRef,
-    StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    GravityAcceleration, GravityAccelerationTyped, MassPropertiesTyped, Planet, PlanetInertial,
+    Position, RootInertial, RotationalStateTyped, SelfRef, StructuralFrame, Torque, TotalForce,
+    TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
 };
 use bevy::prelude::*;
 
@@ -29,7 +28,7 @@ use bevy::prelude::*;
 // `From<Untyped>` impls are provided on every spatial Component so
 // existing test/example code that constructs `TranslationalStateC(state)`
 // from an untyped `TranslationalState` switches to
-// `TranslationalStateC::<astrodyn::Earth>::from(state)` without other changes.
+// `TranslationalStateC::<astrodyn::Earth>::from_untyped(state)` without other changes.
 
 /// Translational state (position, velocity) for the body being
 /// integrated. Wraps a typed
@@ -103,22 +102,17 @@ impl<P: Planet> Default for TranslationalStateC<P> {
 impl<P: Planet> TranslationalStateC<P> {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
     /// Component. The caller asserts the values are in `P`'s
-    /// planet-inertial frame: for non-root-integrated bodies this is
-    /// the body's `IntegSourceC` planet; for root-integrated bodies
-    /// the integration frame is the simulation's [`RootInertial`]
-    /// frame, which is numerically coincident with `PlanetInertial<P>`
-    /// for the central body but kind-distinct in the type system.
-    ///
-    /// Crossing between `RootInertial` and `PlanetInertial<P>` is via
-    /// the explicit integ-origin shift at RF.10 shift sites, not via
-    /// type unification.
-    ///
-    /// No runtime check is performed; the conversion is a zero-cost
-    /// type-tag attachment via
-    /// [`TranslationalStateTyped::from_untyped_unchecked`].
+    /// planet-inertial frame. Typed↔raw kernel-boundary helper —
+    /// the matching `From<TranslationalState>` impl was removed in
+    /// #397, so callers must opt in by this named method rather than
+    /// `.into()`.
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
-        Self(TranslationalStateTyped::<PlanetInertial<P>>::from_untyped_unchecked(&state))
+        // allowed: typed↔raw kernel boundary
+        Self(TranslationalStateTyped::<PlanetInertial<P>> {
+            position: Position::<PlanetInertial<P>>::from_raw_si(state.position),
+            velocity: Velocity::<PlanetInertial<P>>::from_raw_si(state.velocity),
+        })
     }
 
     /// Witness-gated constructor: wrap an already-typed
@@ -149,13 +143,6 @@ impl<P: Planet> TranslationalStateC<P> {
     }
 }
 
-impl<P: Planet> From<TranslationalState> for TranslationalStateC<P> {
-    #[inline]
-    fn from(state: TranslationalState) -> Self {
-        Self::from_untyped(state)
-    }
-}
-
 impl<P: Planet> From<TranslationalStateTyped<RootInertial>> for TranslationalStateC<P> {
     /// Insertion-time boundary from the gateway's
     /// `<RootInertial>`-typed `VehicleConfig.trans` into the Bevy
@@ -173,30 +160,6 @@ impl<P: Planet> From<TranslationalStateTyped<RootInertial>> for TranslationalSta
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct RotationalStateC(pub RotationalStateTyped<SelfRef>);
 
-impl RotationalStateC {
-    /// Wrap an untyped [`RotationalState`] as the typed Bevy Component.
-    /// The vehicle phantom is `SelfRef` (the Bevy adapter's wildcard
-    /// "this entity's vehicle" tag). Panics if the quaternion is not
-    /// unit-norm within `NormalizedQuat::DEFAULT_TOLERANCE` (1e-12) —
-    /// the typed `RotationalStateTyped` carries a `NormalizedQuat`
-    /// witness, so callers must pass a normalized input. Use
-    /// `JeodQuat::normalize()` (or construct via the orbital-init
-    /// helpers, which guarantee unit-norm) before constructing.
-    #[inline]
-    pub fn from_untyped(state: RotationalState) -> Self {
-        Self(RotationalStateTyped::<SelfRef>::from_untyped_unchecked(
-            &state,
-        ))
-    }
-}
-
-impl From<RotationalState> for RotationalStateC {
-    #[inline]
-    fn from(state: RotationalState) -> Self {
-        Self::from_untyped(state)
-    }
-}
-
 impl From<RotationalStateTyped<SelfRef>> for RotationalStateC {
     /// Wrap an already-typed `<SelfRef>` rotational state directly. The
     /// inner phantom matches the storage phantom — this is the
@@ -213,26 +176,6 @@ impl From<RotationalStateTyped<SelfRef>> for RotationalStateC {
 /// requiring acceleration conversion.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct MassPropertiesC(pub MassPropertiesTyped<SelfRef>);
-
-impl MassPropertiesC {
-    /// Wrap an untyped [`MassProperties`] as the typed Bevy Component.
-    /// The caller asserts the inertia tensor is in `BodyFrame<SelfRef>`
-    /// and the center-of-mass position in `StructuralFrame<SelfRef>`.
-    /// No runtime check is performed; the conversion is a zero-cost
-    /// type-tag attachment via `MassPropertiesTyped::from_untyped_unchecked`
-    /// (and `InertiaTensor::from_dmat3_unchecked` internally).
-    #[inline]
-    pub fn from_untyped(mp: MassProperties) -> Self {
-        Self(MassPropertiesTyped::<SelfRef>::from_untyped_unchecked(&mp))
-    }
-}
-
-impl From<MassProperties> for MassPropertiesC {
-    #[inline]
-    fn from(mp: MassProperties) -> Self {
-        Self::from_untyped(mp)
-    }
-}
 
 impl From<MassPropertiesTyped<SelfRef>> for MassPropertiesC {
     /// Wrap an already-typed `<SelfRef>` mass properties directly. The

@@ -130,12 +130,10 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
     );
     sb = sb.sun(sun);
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -272,12 +270,10 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
     sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
     sb = sb.sun(sun);
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -358,12 +354,10 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
     sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
     sb = sb.sun(sun);
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth, 8, 8, false)],
         },

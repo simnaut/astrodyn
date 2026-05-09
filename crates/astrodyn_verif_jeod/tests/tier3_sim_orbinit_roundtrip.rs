@@ -73,7 +73,7 @@ fn roundtrip_via_simulation(
     );
 
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -89,9 +89,11 @@ fn roundtrip_via_simulation(
         F64Ext::m3_per_s2(MU_EARTH),
         body.trans
             .position
+            .raw_si()
             .m_at::<PlanetInertial<astrodyn::Earth>>(),
         body.trans
             .velocity
+            .raw_si()
             .m_per_s_at::<PlanetInertial<astrodyn::Earth>>(),
     )
     .expect("from_cartesian_typed failed after propagation");
@@ -206,7 +208,7 @@ fn tier3_orbinit_roundtrip_circular() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: trans.into(),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -217,8 +219,8 @@ fn tier3_orbinit_roundtrip_circular() {
 
     // Compute initial specific energy
     let body0 = sim.body(0);
-    let energy_0 =
-        body0.trans.velocity.length_squared() / 2.0 - MU_EARTH / body0.trans.position.length();
+    let energy_0 = body0.trans.velocity.raw_si().length_squared() / 2.0
+        - MU_EARTH / body0.trans.position.raw_si().length();
 
     sim.step_n(n_steps).expect("step_n failed");
 
@@ -228,16 +230,18 @@ fn tier3_orbinit_roundtrip_circular() {
         F64Ext::m3_per_s2(MU_EARTH),
         body.trans
             .position
+            .raw_si()
             .m_at::<PlanetInertial<astrodyn::Earth>>(),
         body.trans
             .velocity
+            .raw_si()
             .m_per_s_at::<PlanetInertial<astrodyn::Earth>>(),
     )
     .expect("from_cartesian_typed failed after propagation");
 
     // Specific energy: E = v^2/2 - mu/r = -mu/(2a), branch-independent
-    let energy_now =
-        body.trans.velocity.length_squared() / 2.0 - MU_EARTH / body.trans.position.length();
+    let energy_now = body.trans.velocity.raw_si().length_squared() / 2.0
+        - MU_EARTH / body.trans.position.raw_si().length();
     let energy_err = (energy_now - energy_0).abs() / energy_0.abs();
     println!("  circular_leo: energy_rel_err={energy_err:.3e}");
     assert!(

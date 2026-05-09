@@ -12,7 +12,7 @@ use astrodyn::VehicleConfig;
 use astrodyn::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry};
 use astrodyn::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
-    SimulationTime, TranslationalState,
+    SimulationTime,
 };
 use astrodyn_runner::{RotationModel, Simulation};
 use glam::DVec3;
@@ -106,11 +106,16 @@ fn pipeline_earth_lighting_smoke() {
     // ISS-like LEO body with earth lighting enabled
     // earth_lighting_config = (earth_radius, moon_radius, sun_radius)
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: DVec3::new(6_778_137.0, 0.0, 0.0),
-            velocity: DVec3::new(0.0, 7_668.558, 0.0),
-        }
-        .into(),
+        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial> {
+            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
+                6_778_137.0,
+                0.0,
+                0.0,
+            )),
+            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
+                0.0, 7_668.558, 0.0,
+            )),
+        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

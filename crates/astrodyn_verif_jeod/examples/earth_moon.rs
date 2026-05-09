@@ -94,11 +94,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         velocity: INIT_VEL,
     };
     let clementine = VehicleBuilder::new()
-        .with_translational(
-            astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-                &trans,
-            ),
-        )
+        .with_translational(astrodyn_verif_jeod::typed_bridge::trans_raw_to_typed(
+            &trans,
+        ))
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
         .gravity(GravityControl::new_nonspherical(moon, 60, 60, false))
@@ -131,8 +129,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sim.step().expect("step failed");
         if step % steps_per_print == 0 {
             let body = sim.body(0);
-            let pos = body.trans.position;
-            let vel = body.trans.velocity;
+            let pos = body.trans.position.raw_si();
+            let vel = body.trans.velocity.raw_si();
             let r = pos.length();
             let v = vel.length();
             let altitude_km = (r - R_MOON) / 1000.0;
@@ -149,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     let final_body = sim.body(0);
-    let final_alt = (final_body.trans.position.length() - R_MOON) / 1000.0;
+    let final_alt = (final_body.trans.position.raw_si().length() - R_MOON) / 1000.0;
     println!("Final altitude: {final_alt:.1} km after {elapsed_days:.2} days");
     Ok(())
 }

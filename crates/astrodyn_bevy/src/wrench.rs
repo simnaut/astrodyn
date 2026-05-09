@@ -518,12 +518,20 @@ pub fn wrench_aggregation_system(
             if dyn_cfg_q.get(entity).is_err() {
                 continue;
             }
-            let mass = mass_q.get(entity).ok().map(|(_, m)| m.0.to_untyped());
+            // allowed: typed↔raw kernel boundary
+            let mass = mass_q
+                .get(entity)
+                .ok()
+                .map(|(_, m)| crate::typed_bridge::mass_typed_to_raw(&m.0));
             let grav_accel = grav_q
                 .get(entity)
                 .map_or(DVec3::ZERO, |g| g.0.grav_accel.raw_si());
             let total = updated_totals.get(&entity).copied().unwrap_or_default();
-            let rot = rot_q.get(entity).ok().map(|r| r.0.to_untyped());
+            // allowed: typed↔raw kernel boundary
+            let rot = rot_q
+                .get(entity)
+                .ok()
+                .map(|r| crate::typed_bridge::rot_typed_to_raw(&r.0));
             let new_derivs = if let (Some(rot), Some(m)) = (rot, mass) {
                 astrodyn::compute_frame_derivatives(
                     &total,
@@ -555,11 +563,24 @@ mod tests {
     use super::*;
     use crate::components::{
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, MassChildOf,
-        MassPropertiesC, TotalForceC,
+        MassPropertiesC, RotationalStateC, TotalForceC,
     };
     use crate::mass_tree::composite_mass_system;
     use crate::systems::force_collection_system;
     use astrodyn::MassProperties;
+
+    // allowed: typed↔raw kernel-boundary helpers for test scaffolding
+    // (issue #397). Replace the deleted `MassPropertiesC::from_untyped`
+    // / `RotationalStateC::from_untyped`.
+    #[inline]
+    fn mp_c_from_raw(mp: MassProperties) -> MassPropertiesC {
+        MassPropertiesC(crate::typed_bridge::mass_raw_to_self_ref(&mp))
+    }
+
+    #[inline]
+    fn rot_c_from_raw(r: astrodyn::RotationalState) -> RotationalStateC {
+        RotationalStateC(crate::typed_bridge::rot_raw_to_self_ref(&r))
+    }
 
     fn add_test_app() -> App {
         let mut app = App::new();
@@ -632,7 +653,7 @@ mod tests {
         let entity = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(core),
+                mp_c_from_raw(core),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -668,7 +689,7 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -679,7 +700,7 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -725,7 +746,7 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -737,7 +758,7 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -800,7 +821,7 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -816,7 +837,7 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -863,11 +884,11 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(identity_rot),
+                rot_c_from_raw(identity_rot),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
             ))
@@ -880,12 +901,12 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(identity_rot),
+                rot_c_from_raw(identity_rot),
                 ext_force_in_root_inertial(DVec3::new(5.0, 0.0, 0.0)),
                 ExternalTorqueC::default(),
             ))
@@ -940,11 +961,11 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("rotated_parent"),
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(identity_rot),
+                rot_c_from_raw(identity_rot),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
             ))
@@ -958,12 +979,12 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("rotated_child"),
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(rot_parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(identity_rot),
+                rot_c_from_raw(identity_rot),
                 ext_force_in_root_inertial(DVec3::new(5.0, 0.0, 0.0)),
                 ExternalTorqueC::default(),
             ))
@@ -977,7 +998,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("identity_parent"),
-                MassPropertiesC::from(MassProperties::new(8.0)),
+                mp_c_from_raw(MassProperties::new(8.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -989,7 +1010,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("identity_child"),
-                MassPropertiesC::from(MassProperties::new(2.0)),
+                mp_c_from_raw(MassProperties::new(2.0)),
                 MassChildOf::new(id_parent, DVec3::new(0.0, 1.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1063,7 +1084,7 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -1074,7 +1095,7 @@ mod tests {
         let _a = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1086,7 +1107,7 @@ mod tests {
         let _b = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, -1.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1186,11 +1207,11 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(parent_rot_state),
+                rot_c_from_raw(parent_rot_state),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
             ))
@@ -1201,12 +1222,12 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                RotationalStateC::from(parent_rot_state),
+                rot_c_from_raw(parent_rot_state),
                 ext_force_in_root_inertial(DVec3::new(1.0, 0.0, 0.0)),
                 ExternalTorqueC::default(),
             ))
@@ -1307,23 +1328,23 @@ mod tests {
         // the child's pose every step from the root; for this
         // regression test we only need to confirm the integrator
         // does not move it.)
-        let parent_pos = app
-            .world()
-            .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .position;
+        let parent_pos = crate::typed_bridge::trans_typed_to_raw(
+            &app.world()
+                .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
+                .unwrap()
+                .0,
+        )
+        .position;
         let child = app
             .world_mut()
             .spawn((
                 Name::new("child"),
-                MassPropertiesC::from(MassProperties::new(100.0)),
+                mp_c_from_raw(MassProperties::new(100.0)),
                 MassChildOf::new(parent, DVec3::new(0.5, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                crate::TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+                crate::TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                     position: parent_pos,
                     velocity: DVec3::ZERO,
                 }),
@@ -1353,13 +1374,13 @@ mod tests {
         // gravity would have integrated it ~9.8/2 m in the first
         // step alone (4.9 m), with growing drift each subsequent
         // step.
-        let child_pos = app
-            .world()
-            .get::<crate::TranslationalStateC<astrodyn::Earth>>(child)
-            .unwrap()
-            .0
-            .to_untyped()
-            .position;
+        let child_pos = crate::typed_bridge::trans_typed_to_raw(
+            &app.world()
+                .get::<crate::TranslationalStateC<astrodyn::Earth>>(child)
+                .unwrap()
+                .0,
+        )
+        .position;
         let drift = (child_pos - parent_pos).length();
         // The child should not have moved under integration. Allow
         // numerical noise but fail loudly on any meaningful drift.
@@ -1373,13 +1394,13 @@ mod tests {
         // Sanity: the parent (root) DID integrate. If neither moved,
         // the test would silently pass even with a broken
         // integration system.
-        let parent_pos_after = app
-            .world()
-            .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
-            .unwrap()
-            .0
-            .to_untyped()
-            .position;
+        let parent_pos_after = crate::typed_bridge::trans_typed_to_raw(
+            &app.world()
+                .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
+                .unwrap()
+                .0,
+        )
+        .position;
         let parent_drift = (parent_pos_after - parent_pos).length();
         assert!(
             parent_drift > 1.0,
@@ -1426,7 +1447,7 @@ mod tests {
         // Sun ~1 AU along +x. Pure inertial position; no gravity / mass.
         app.world_mut().spawn((
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(1.496e11, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
@@ -1438,13 +1459,13 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("parent"),
-                MassPropertiesC::from(MassProperties::new(10.0)),
+                mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+                TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1478,14 +1499,14 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("child_appendage"),
-                MassPropertiesC::from(MassProperties::new(1.0)),
+                mp_c_from_raw(MassProperties::new(1.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+                TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1627,7 +1648,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("parent"),
-                MassPropertiesC::from(parent_mass),
+                mp_c_from_raw(parent_mass),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -1655,7 +1676,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Name::new("child"),
-                MassPropertiesC::from(MassProperties::new(5.0)),
+                mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1664,7 +1685,9 @@ mod tests {
                 ExternalTorqueC::default(),
                 IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
                 GaussJacksonStateC(primed_gj),
-                crate::TranslationalStateC::<astrodyn::Earth>::from(TranslationalState::default()),
+                crate::TranslationalStateC::<astrodyn::Earth>::from_untyped(
+                    TranslationalState::default(),
+                ),
             ))
             .id();
 

@@ -87,8 +87,9 @@ pub fn force_collection_system(
         // signature itself is out of scope for the ECS-surface typing;
         // the win here is at the ECS surface where mission code
         // interacts.)
-        let rot_untyped = rot_state.map(|r| r.0.to_untyped());
-        let mass_untyped = mass.map(|m| m.0.to_untyped());
+        // allowed: typed↔raw kernel boundary
+        let rot_untyped = rot_state.map(|r| crate::typed_bridge::rot_typed_to_raw(&r.0));
+        let mass_untyped = mass.map(|m| crate::typed_bridge::mass_typed_to_raw(&m.0));
 
         let (collected, frame_derivs_raw) = astrodyn::collect_and_resolve_forces(
             aero_ref.as_ref(),

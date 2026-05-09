@@ -142,11 +142,10 @@ fn tier3_simulation_mars_dawn() {
     sim.ephemeris = Some(ephemeris);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(mars, 110, 110, false),
@@ -169,13 +168,13 @@ fn tier3_simulation_mars_dawn() {
         sim.step_until(record.time).expect("step_until failed");
         let body = sim.body(0);
         if i < 3 || i == ref_states.len() - 2 {
-            let err = (body.trans.position - record.position.unwrap()).length();
+            let err = (body.trans.position.raw_si() - record.position.unwrap()).length();
             println!("  t={:.0}: error={:.1} m", record.time, err);
         }
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
             ang_accel: body.rot_accel,
             ..Default::default()

@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_dyncomp RUN_9A/9C/9D — External force/torque via Simulation pipeline
 //!
 //! Uses `Simulation::step()` with `external_force` / `external_torque` fields
@@ -100,19 +101,19 @@ fn setup_run9(
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
                 ang_vel_body: init_ang_vel,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -132,7 +133,13 @@ where
     F: Fn(f64, &JeodQuat) -> (DVec3, DVec3),
 {
     while sim.elapsed() + dt <= target_time + 0.001 {
-        let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
+        let quat = sim
+            .body(0)
+            .rot
+            .as_ref()
+            .unwrap()
+            .q_inertial_body
+            .to_jeod_quat();
         let (force, torque) = force_torque_fn(sim.elapsed(), &quat);
         sim.set_body_external_force(0, force);
         sim.set_body_external_torque(0, torque);
@@ -141,7 +148,13 @@ where
     // Fractional remainder
     let remainder = target_time - sim.elapsed();
     if remainder > 0.001 {
-        let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
+        let quat = sim
+            .body(0)
+            .rot
+            .as_ref()
+            .unwrap()
+            .q_inertial_body
+            .to_jeod_quat();
         let (force, torque) = force_torque_fn(sim.elapsed(), &quat);
         sim.set_body_external_force(0, force);
         sim.set_body_external_torque(0, torque);
@@ -177,11 +190,19 @@ fn tier3_simulation_run9a_torque() {
         let body = sim.body(0);
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
-            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
-            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
+            quaternion: Some(
+                body.rot
+                    .as_ref()
+                    .unwrap()
+                    .q_inertial_body
+                    .as_witness()
+                    .inner()
+                    .to_glam(),
+            ),
+            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body.raw_si()),
             ang_accel: body.rot_accel,
         });
     }
@@ -241,11 +262,19 @@ fn tier3_simulation_run9c_force_torque() {
         let body = sim.body(0);
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
-            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
-            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
+            quaternion: Some(
+                body.rot
+                    .as_ref()
+                    .unwrap()
+                    .q_inertial_body
+                    .as_witness()
+                    .inner()
+                    .to_glam(),
+            ),
+            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body.raw_si()),
             ang_accel: body.rot_accel,
         });
     }
@@ -311,11 +340,19 @@ fn tier3_simulation_run9d_force_torque_rate() {
         let body = sim.body(0);
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
-            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
-            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
+            quaternion: Some(
+                body.rot
+                    .as_ref()
+                    .unwrap()
+                    .q_inertial_body
+                    .as_witness()
+                    .inner()
+                    .to_glam(),
+            ),
+            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body.raw_si()),
             ang_accel: body.rot_accel,
         });
     }

@@ -74,11 +74,10 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_position(),
             velocity: init_velocity(),
-        }
-        .into(),
+        }),
         integrator,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -113,13 +112,13 @@ fn propagate_one_orbit(integrator: IntegratorType, dt: f64) -> (DVec3, DVec3, f6
         let t = (i as f64) * adjusted_dt;
         sim.step_until(t).expect("step_until failed");
         let body = sim.body(0);
-        monitor.observe(body.trans.position, body.trans.velocity);
+        monitor.observe(body.trans.position.raw_si(), body.trans.velocity.raw_si());
     }
 
     let body = sim.body(0);
     (
-        body.trans.position,
-        body.trans.velocity,
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
         monitor.max_relative_error(),
     )
 }
@@ -225,7 +224,7 @@ fn tier3_integ_rk4_vs_gj_agreement() {
 fn propagate_fixed_time(integrator: IntegratorType, dt: f64, duration: f64) -> DVec3 {
     let mut sim = make_sim(integrator, dt);
     sim.step_until(duration).expect("step_until failed");
-    sim.body(0).trans.position
+    sim.body(0).trans.position.raw_si()
 }
 
 #[test]

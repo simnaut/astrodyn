@@ -11,6 +11,7 @@
 use crate::rotational::RotationalState;
 use crate::state::{TranslationalState, TranslationalStateTyped};
 use astrodyn_math::{mat3_from_rows, GeodeticState, JeodQuat, OrbitalElements};
+use astrodyn_quantities::aliases::{Position, Velocity};
 use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::ext::Vec3Ext;
 use astrodyn_quantities::frame::RootInertial;
@@ -107,7 +108,11 @@ pub fn init_from_orbital_elements_typed<P: astrodyn_quantities::frame::Planet>(
         true_anomaly.get::<radian>(),
         mu.value, // base SI: m³/s²
     );
-    TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&untyped)
+    // allowed: typed↔raw kernel boundary
+    TranslationalStateTyped::<RootInertial> {
+        position: Position::<RootInertial>::from_raw_si(untyped.position),
+        velocity: Velocity::<RootInertial>::from_raw_si(untyped.velocity),
+    }
 }
 
 /// Initialize translational state from Keplerian orbital elements (mean anomaly).

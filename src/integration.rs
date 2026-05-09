@@ -395,7 +395,11 @@ pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
     let mut forces: Vec<DVec3> = Vec::with_capacity(n);
     let mut torques: Vec<DVec3> = Vec::with_capacity(n);
     for typed in bodies {
-        raw_trans.push(typed.trans.to_untyped());
+        // allowed: typed↔raw kernel boundary
+        raw_trans.push(TranslationalState {
+            position: typed.trans.position.raw_si(),
+            velocity: typed.trans.velocity.raw_si(),
+        });
         typed_trans_refs.push(typed.trans);
         rots.push(typed.rot);
         masses.push(typed.mass);
@@ -419,8 +423,11 @@ pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
         integrate_bodies_contact_coupled(&mut inputs, scratch, gravity_fn, contact_eval, dt);
     }
     for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans) {
-        // allowed: typed-sibling boundary writeback. See note above.
-        *typed_ref = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw);
+        // allowed: typed↔raw kernel boundary writeback. See note above.
+        *typed_ref = TranslationalStateTyped::<F> {
+            position: Position::<F>::from_raw_si(raw.position),
+            velocity: Velocity::<F>::from_raw_si(raw.velocity),
+        };
     }
 }
 
@@ -995,10 +1002,13 @@ pub fn integrate_body_coupled_typed<V: astrodyn_quantities::frame::Vehicle, F: F
     dt: f64,
     time_scale_factor: f64,
 ) {
-    // allowed: typed-sibling boundary — round-trips body.trans through
+    // allowed: typed↔raw kernel boundary — round-trips body.trans through
     // the untyped kernel storage. See `integrate_body_typed` for why
     // this orchestration boundary stays in the gateway.
-    let mut raw_trans = trans.to_untyped();
+    let mut raw_trans = TranslationalState {
+        position: trans.position.raw_si(),
+        velocity: trans.velocity.raw_si(),
+    };
     integrate_body_coupled(
         config,
         &mut raw_trans,
@@ -1009,8 +1019,11 @@ pub fn integrate_body_coupled_typed<V: astrodyn_quantities::frame::Vehicle, F: F
         dt,
         time_scale_factor,
     );
-    // allowed: typed-sibling boundary writeback. See note above.
-    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
+    // allowed: typed↔raw kernel boundary writeback. See note above.
+    *trans = TranslationalStateTyped::<F> {
+        position: Position::<F>::from_raw_si(raw_trans.position),
+        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity),
+    };
 }
 
 /// 6-DOF coupled RK4: translational + rotational + thermal.
@@ -1225,7 +1238,11 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
         )
         .raw_si()
     };
-    let mut raw_trans = trans.to_untyped();
+    // allowed: typed↔raw kernel boundary
+    let mut raw_trans = TranslationalState {
+        position: trans.position.raw_si(),
+        velocity: trans.velocity.raw_si(),
+    };
     integrate_body(
         config,
         &mut raw_trans,
@@ -1240,9 +1257,11 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
         gj_state,
         abm4_state,
     );
-    // allowed: typed-sibling boundary writing the raw integrator output
-    // back into the typed `trans`. See note above.
-    *trans = TranslationalStateTyped::<F>::from_untyped_unchecked(&raw_trans);
+    // allowed: typed↔raw kernel boundary writeback. See note above.
+    *trans = TranslationalStateTyped::<F> {
+        position: Position::<F>::from_raw_si(raw_trans.position),
+        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity),
+    };
 }
 
 /// Compute total translational acceleration from a stage evaluation.

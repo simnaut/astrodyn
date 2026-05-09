@@ -83,7 +83,7 @@ fn tier3_bevy_full_stack_sixdof() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -93,9 +93,13 @@ fn tier3_bevy_full_stack_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(tumble_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(iss_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -162,8 +166,8 @@ fn tier3_bevy_full_stack_sixdof() {
 
     let body = sim.body(0);
     let sim_state = SixDofState {
-        trans: body.trans,
-        rot: body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&body.rot.unwrap()),
     };
 
     assert_sixdof_eq("Bevy vs Sim (full stack)", &bevy_state, &sim_state);
@@ -280,7 +284,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -290,11 +294,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: vehicle_pos,
                 velocity: vehicle_vel,
             }),
-            MassPropertiesC::from(mass),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -341,12 +345,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: vehicle_pos,
             velocity: vehicle_vel,
-        }
-        .into(),
-        mass: Some(mass.into()),
+        }),
+        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(&(mass))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -366,7 +369,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
-    let sim_state = sim.body(0).trans;
+    let sim_state = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim.body(0).trans);
 
     assert_trans_eq(
         "Bevy vs Sim (flat-plate SRP + shadow)",
@@ -431,7 +434,7 @@ fn run_shadow_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -441,9 +444,13 @@ fn run_shadow_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(tumble_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(iss_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -496,8 +503,8 @@ fn run_shadow_parity(
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }
@@ -536,7 +543,7 @@ fn run_srp_basic_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -546,9 +553,13 @@ fn run_srp_basic_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(tumble_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(iss_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -597,8 +608,8 @@ fn run_srp_basic_parity(
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }
@@ -644,7 +655,7 @@ fn run_srp_deriv_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -654,9 +665,13 @@ fn run_srp_deriv_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(tumble_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(iss_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -707,8 +722,8 @@ fn run_srp_deriv_parity(
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
     assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
 }
@@ -791,7 +806,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -801,9 +816,13 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
-            RotationalStateC::from(tumble_rot()),
-            MassPropertiesC::from(iss_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(tumble_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(iss_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -856,8 +875,8 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
-        trans: sim_body.trans,
-        rot: sim_body.rot.unwrap(),
+        trans: astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans),
+        rot: astrodyn_bevy::typed_bridge::rot_typed_to_raw(&sim_body.rot.unwrap()),
     };
 
     // Bevy must agree with the Simulation runner under the rotated frame.

@@ -272,7 +272,10 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                              SimulationBuilder::register_in_mass_tree should have caught this."
                         )
                     });
-                    ids.push(Some(tree.add_body(name.clone(), mass.to_untyped())));
+                    ids.push(Some(tree.add_body(
+                        name.clone(),
+                        crate::typed_bridge::mass_typed_to_raw(&mass),
+                    )));
                 } else {
                     ids.push(None);
                 }
@@ -408,7 +411,10 @@ fn spawn_source<P: Planet>(
         // the source's root-inertial position/velocity. The default
         // for the central source is zero — same as the runner's root
         // mapping.
-        TranslationalStateC::<P>::from(astrodyn::TranslationalState {
+        // allowed: typed↔raw kernel-boundary lift at the gateway
+        // gravity-source insertion point (named-method opt-in; see
+        // #397).
+        TranslationalStateC::<P>::from_untyped(astrodyn::TranslationalState {
             position: position.raw_si(),
             velocity: velocity.raw_si(),
         }),
@@ -531,7 +537,8 @@ mod tests {
         earth.central = true;
         let earth_idx = b.add_source("Earth", earth);
         b.add_body(VehicleConfig {
-            trans: iss_trans().into(),
+            // allowed: typed↔raw kernel boundary (#397)
+            trans: crate::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },
@@ -568,7 +575,8 @@ mod tests {
         runner_sim
             .step_n(NUM_STEPS)
             .expect("runner step_n must succeed");
-        let runner_state = runner_sim.body(0).trans;
+        // allowed: typed↔raw kernel boundary
+        let runner_state = crate::typed_bridge::trans_typed_to_raw(&runner_sim.body(0).trans);
 
         // Bridge — populate a fresh app from the same builder, step.
         let mut app = App::new();
@@ -579,12 +587,13 @@ mod tests {
         assert_eq!(handles.source_entities.len(), 1);
         assert_eq!(handles.body_entities.len(), 1);
         step_bevy(&mut app, NUM_STEPS);
-        let bevy_state = app
-            .world()
-            .get::<TranslationalStateC<astrodyn::Earth>>(handles.body_entities[0])
-            .expect("vehicle entity must carry TranslationalStateC<Earth>")
-            .0
-            .to_untyped();
+        // allowed: typed↔raw kernel boundary
+        let bevy_state = crate::typed_bridge::trans_typed_to_raw(
+            &app.world()
+                .get::<TranslationalStateC<astrodyn::Earth>>(handles.body_entities[0])
+                .expect("vehicle entity must carry TranslationalStateC<Earth>")
+                .0,
+        );
 
         // Bit-identity per component.
         for i in 0..3 {
@@ -646,7 +655,8 @@ mod tests {
             },
         );
         b.add_body(VehicleConfig {
-            trans: iss_trans().into(),
+            // allowed: typed↔raw kernel boundary (#397)
+            trans: crate::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
             },

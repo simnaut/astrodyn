@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_Earth_Moon — Clementine lunar orbit cross-validation.
 //!
 //! Validates multi-body gravity (Earth + Moon LP150Q 60×60 spherical harmonics,
@@ -170,11 +171,10 @@ fn tier3_simulation_earth_moon_clem() {
     sim.ephemeris = Some(ephemeris);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init_pos,
             velocity: init_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(moon, 60, 60, false),
@@ -183,7 +183,9 @@ fn tier3_simulation_earth_moon_clem() {
             ],
         },
         // Clementine mass: 424 kg (from Modified_data/mass.py)
-        mass: Some(astrodyn::MassProperties::new(424.0).into()),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(astrodyn::MassProperties::new(424.0)),
+        )),
         // Cannonball SRP matching JEOD Clementine: cx_area=2.1432 m²,
         // albedo=1.0, diffuse=0.27 (from Modified_data/radiation_pressure.py)
         srp: Some(SrpModel::Cannonball {
@@ -208,21 +210,22 @@ fn tier3_simulation_earth_moon_clem() {
         let body = sim.body(0);
         if i == 0 {
             let jeod_pos = record.position.unwrap();
+            let our_pos = body.trans.position.raw_si();
             println!(
                 "  t={}: ours=[{:.1}, {:.1}, {:.1}]",
-                record.time, body.trans.position.x, body.trans.position.y, body.trans.position.z
+                record.time, our_pos.x, our_pos.y, our_pos.z
             );
             println!(
                 "  t={}: JEOD=[{:.1}, {:.1}, {:.1}]",
                 record.time, jeod_pos.x, jeod_pos.y, jeod_pos.z
             );
-            let err = (body.trans.position - jeod_pos).length();
+            let err = (body.trans.position.raw_si() - jeod_pos).length();
             println!("  t={}: error={:.1} m", record.time, err);
         }
         our_states.push(StateLog {
             time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
             acceleration: Some(body.trans_accel),
             ang_accel: body.rot_accel,
             ..Default::default()

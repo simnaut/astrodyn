@@ -123,11 +123,10 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
     );
 
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

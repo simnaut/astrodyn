@@ -66,7 +66,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+        TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -74,7 +74,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+        TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -83,7 +83,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: veh_pos,
                 velocity: DVec3::new(0.0, 7668.56, 0.0),
             }),
@@ -135,11 +135,10 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: veh_pos,
             velocity: DVec3::new(0.0, 7668.56, 0.0),
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -281,7 +280,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+        TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -289,7 +288,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+        TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -298,7 +297,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -348,7 +347,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: iss_trans().into(),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -366,10 +365,11 @@ fn tier3_bevy_earth_lighting_pipeline() {
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
+    let sim_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(&sim_body.trans);
     assert_trans_eq(
         "Bevy vs Sim (earth lighting pipeline)",
         &bevy_trans,
-        &sim_body.trans,
+        &sim_trans,
     );
     let sim_lighting = sim_body
         .earth_lighting
@@ -478,7 +478,7 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from(TranslationalState {
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: body_moon_rel_pos,
                 velocity: body_moon_rel_vel,
             }),
@@ -544,11 +544,10 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: lifted_pos,
             velocity: lifted_vel,
-        }
-        .into(),
+        }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

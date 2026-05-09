@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Analytical physics-combination tests inspired by SIM_dyncomp RUNs.
 //!
 //! The numbered SIM_dyncomp RUN_* scenarios already have Docker-backed
@@ -89,13 +90,14 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
+        }),
         rot: None,
-        mass: Some(MassProperties::new(mass).into()),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(mass)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -126,8 +128,16 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
-    let h1 = body.trans.position.cross(body.trans.velocity);
+    let e1 = specific_orbital_energy(
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
+    let h1 = body
+        .trans
+        .position
+        .raw_si()
+        .cross(body.trans.velocity.raw_si());
 
     let de = (e1 - e0).abs() / e0.abs();
     let dh = (h1 - h0).length() / h0.length();
@@ -213,13 +223,14 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
+        }),
         rot: None,
-        mass: Some(MassProperties::new(1000.0).into()),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(1000.0)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_spherical(earth, false),
@@ -241,8 +252,16 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
-    let h1 = body.trans.position.cross(body.trans.velocity);
+    let e1 = specific_orbital_energy(
+        body.trans.position.raw_si(),
+        body.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
+    let h1 = body
+        .trans
+        .position
+        .raw_si()
+        .cross(body.trans.velocity.raw_si());
 
     // Orbital energy about Earth should remain bounded (~third-body magnitude
     // times one orbit).  Angular momentum *direction* should shift measurably.
@@ -307,19 +326,19 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
     sim.atmosphere_planet_source = Some(earth);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(MassProperties::new(mass).into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(mass)),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -341,7 +360,11 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
     for _ in 0..5 {
         sim.step_n(steps_per_orbit).expect("step_n failed");
         let body = sim.body(0);
-        let e = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+        let e = specific_orbital_energy(
+            body.trans.position.raw_si(),
+            body.trans.velocity.raw_si(),
+            MU_EARTH,
+        );
         let a = -MU_EARTH / (2.0 * e);
         sma_samples.push(a);
     }
@@ -397,19 +420,19 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
     // Initial omega tipped off the major axis to exercise all three Euler eqs.
     let omega0_body = DVec3::new(0.1, 0.02, 0.0); // rad/s
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: omega0_body,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -422,7 +445,7 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
 
     // H_inertial(0) = T^T * I * omega_body
     let body = sim.body(0);
-    let q0 = body.rot.as_ref().unwrap().quaternion;
+    let q0 = body.rot.as_ref().unwrap().q_inertial_body.to_jeod_quat();
     let t0 = q0.left_quat_to_transformation(); // inertial→body
     let h_body0 = inertia * omega0_body;
     let h_inertial_0 = t0.transpose() * h_body0;
@@ -431,8 +454,8 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
     sim.step_n((60.0 / dt) as usize).expect("step_n failed");
 
     let body = sim.body(0);
-    let q1 = body.rot.as_ref().unwrap().quaternion;
-    let omega1_body = body.rot.as_ref().unwrap().ang_vel_body;
+    let q1 = body.rot.as_ref().unwrap().q_inertial_body.to_jeod_quat();
+    let omega1_body = body.rot.as_ref().unwrap().ang_vel_body.raw_si();
     let t1 = q1.left_quat_to_transformation();
     let h_body1 = inertia * omega1_body;
     let h_inertial_1 = t1.transpose() * h_body1;
@@ -477,7 +500,7 @@ fn tier3_dyncomp_external_force_impulse_response() {
     let force_duration = 10.0;
 
     // Record velocity immediately before force window.
-    let v_before = sim.body(0).trans.velocity;
+    let v_before = sim.body(0).trans.velocity.raw_si();
 
     // Apply force for force_duration seconds.
     sim.set_body_external_force(0, force_inertial);
@@ -485,7 +508,7 @@ fn tier3_dyncomp_external_force_impulse_response() {
         .expect("step_n failed");
     sim.set_body_external_force(0, DVec3::ZERO);
 
-    let v_after = sim.body(0).trans.velocity;
+    let v_after = sim.body(0).trans.velocity.raw_si();
     let delta_v = v_after - v_before;
 
     // Expected delta-v components from impulse: F*dt/m
@@ -497,7 +520,7 @@ fn tier3_dyncomp_external_force_impulse_response() {
     ref_sim
         .step_n((force_duration / dt) as usize)
         .expect("step_n failed");
-    let v_reference = ref_sim.body(0).trans.velocity;
+    let v_reference = ref_sim.body(0).trans.velocity.raw_si();
 
     let force_delta_v = v_after - v_reference;
     let expected_dv = force_inertial * force_duration / mass;
@@ -557,19 +580,19 @@ fn tier3_dyncomp_external_torque_impulse_response() {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel0,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -587,7 +610,7 @@ fn tier3_dyncomp_external_torque_impulse_response() {
         .expect("step_n failed");
     sim.set_body_external_torque(0, DVec3::ZERO);
 
-    let omega_after = sim.body(0).rot.as_ref().unwrap().ang_vel_body;
+    let omega_after = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
     // Expected: omega_x = tau_x * dt / I_xx (y, z remain ~zero).
     let expected_omega_x = torque_body.x * torque_duration / i_x;
 
@@ -649,19 +672,19 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
     let earth = add_earth_point_mass(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: pos,
             velocity: vel,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: omega0,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -675,14 +698,14 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
     let mut max_perp = 0.0_f64;
     for _ in 0..600 {
         sim.step_n(1).expect("step_n failed");
-        let omega = sim.body(0).rot.as_ref().unwrap().ang_vel_body;
+        let omega = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
         let perp = (omega.x.powi(2) + omega.y.powi(2)).sqrt();
         if perp > max_perp {
             max_perp = perp;
         }
     }
 
-    let omega_final = sim.body(0).rot.as_ref().unwrap().ang_vel_body;
+    let omega_final = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
     println!(
         "  Major-axis spin: omega_final={:?}, max |omega_perp|={max_perp:.6} rad/s",
         omega_final

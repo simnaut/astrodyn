@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_2A_SHADOW_CALC — shadow geometry via Simulation pipeline
 //!
 //! JEOD's SIM_2A_SHADOW_CALC uses prescribed (non-integrated) motion to sweep
@@ -119,12 +120,13 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     // test configuration, which explicitly disables integration.
     let init = &records[0];
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.position,
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        mass: Some(astrodyn::MassProperties::new(1.0).into()),
+        }),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(astrodyn::MassProperties::new(1.0)),
+        )),
         shadow_body: Some(ShadowBody {
             source_idx: earth,
             radius: R_EARTH,

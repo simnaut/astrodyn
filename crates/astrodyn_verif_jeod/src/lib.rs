@@ -53,6 +53,7 @@ pub mod run_verification;
 pub mod s_define;
 pub mod tier3_csv;
 pub mod time_config;
+pub mod typed_bridge;
 pub mod verification;
 
 pub use run_verification::VerificationCaseExt;

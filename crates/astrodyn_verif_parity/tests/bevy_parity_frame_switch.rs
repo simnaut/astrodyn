@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Bevy frame-switch parity.
 //!
 //! Verifies that distance-based integration-frame switching is
@@ -102,9 +103,13 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("EarthToMoon"),
-            TranslationalStateC::<astrodyn::Earth>::from(initial_trans()),
-            RotationalStateC::from(initial_rot()),
-            MassPropertiesC::from(vehicle_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(initial_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(vehicle_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -156,12 +161,12 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 
-    let bevy_trans = app
-        .world()
-        .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
-        .unwrap()
-        .0
-        .to_untyped();
+    let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
+            .unwrap()
+            .0,
+    );
     // Post-switch: the body frame entity's `ChildOf` parent must be
     // the Moon's frame entity (the load-bearing ECS reparent).
     let bevy_integ_frame_entity = app
@@ -217,9 +222,13 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: initial_trans().into(),
-        rot: Some(initial_rot().into()),
-        mass: Some(vehicle_mass().into()),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            &(initial_rot()),
+        )),
+        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            &(vehicle_mass()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(0_usize, false), {
                 let mut c = GravityControl::new_spherical(moon_idx, false);
@@ -239,6 +248,8 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
+    let sim_pos = sim_body.trans.position.raw_si();
+    let sim_vel = sim_body.trans.velocity.raw_si();
 
     // Body trans state in post-switch (Moon-centered) coords must match.
     for i in 0..3 {
@@ -246,13 +257,13 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
             "Bevy vs Sim post-switch position",
             &format!("[{i}]"),
             bevy_trans.position[i],
-            sim_body.trans.position[i],
+            sim_pos[i],
         );
         assert_bits_eq(
             "Bevy vs Sim post-switch velocity",
             &format!("[{i}]"),
             bevy_trans.velocity[i],
-            sim_body.trans.velocity[i],
+            sim_vel[i],
         );
     }
     // Body frame entity's relative-state-in-Moon position should
@@ -266,7 +277,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
             "Bevy frame-relative pos vs Sim",
             &format!("pos[{i}]"),
             frame_relative_pos[i],
-            sim_body.trans.position[i],
+            sim_pos[i],
         );
     }
 }
@@ -315,9 +326,13 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("EarthDeparture"),
-            TranslationalStateC::<astrodyn::Earth>::from(initial_trans()),
-            RotationalStateC::from(initial_rot()),
-            MassPropertiesC::from(vehicle_mass()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
+            RotationalStateC::from(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+                &(initial_rot()),
+            )),
+            MassPropertiesC::from(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+                &(vehicle_mass()),
+            )),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -351,12 +366,12 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 
-    let bevy_trans = app
-        .world()
-        .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
-        .unwrap()
-        .0
-        .to_untyped();
+    let bevy_trans = astrodyn_bevy::typed_bridge::trans_typed_to_raw(
+        &app.world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
+            .unwrap()
+            .0,
+    );
     let bevy_integ_frame_entity = app
         .world()
         .get::<bevy::prelude::ChildOf>(body_frame_entity)
@@ -379,9 +394,13 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         ),
     );
     sim.add_body(VehicleConfig {
-        trans: initial_trans().into(),
-        rot: Some(initial_rot().into()),
-        mass: Some(vehicle_mass().into()),
+        trans: astrodyn_bevy::typed_bridge::trans_raw_to_root(&initial_trans()),
+        rot: Some(astrodyn_bevy::typed_bridge::rot_raw_to_self_ref(
+            &(initial_rot()),
+        )),
+        mass: Some(astrodyn_bevy::typed_bridge::mass_raw_to_self_ref(
+            &(vehicle_mass()),
+        )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(0_usize, false), {
                 let mut c = GravityControl::new_spherical(moon_idx, false);
@@ -400,19 +419,21 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
     let sim_body = sim.body(0);
+    let sim_pos = sim_body.trans.position.raw_si();
+    let sim_vel = sim_body.trans.velocity.raw_si();
 
     for i in 0..3 {
         assert_bits_eq(
             "Bevy vs Sim OnDeparture position",
             &format!("[{i}]"),
             bevy_trans.position[i],
-            sim_body.trans.position[i],
+            sim_pos[i],
         );
         assert_bits_eq(
             "Bevy vs Sim OnDeparture velocity",
             &format!("[{i}]"),
             bevy_trans.velocity[i],
-            sim_body.trans.velocity[i],
+            sim_vel[i],
         );
     }
 }

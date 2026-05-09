@@ -77,21 +77,19 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
 
     // Body 0: reference vehicle
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.ref_pos,
             velocity: init.ref_vel,
-        }
-        .into(),
+        }),
         ..Default::default()
     });
 
     // Body 1: subject vehicle
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: init.subj_pos,
             velocity: init.subj_vel,
-        }
-        .into(),
+        }),
         ..Default::default()
     });
 
@@ -109,15 +107,25 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         // typed entry's `<PlanetInertial<P>>` contract (the LVLH
         // anchor is conventionally Earth in the existing test fixture).
         let lvlh_rel = compute_lvlh_relative_state_typed::<Earth, astrodyn::SelfRef>(
-            ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            ref_body
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
             ref_body
                 .trans
                 .velocity
+                .raw_si()
                 .m_per_s_at::<PlanetInertial<Earth>>(),
-            subj_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            subj_body
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
             subj_body
                 .trans
                 .velocity
+                .raw_si()
                 .m_per_s_at::<PlanetInertial<Earth>>(),
         );
         let pos_err = (lvlh_rel.position.raw_si() - init.jeod_rel_pos).length();
@@ -137,15 +145,25 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         // typed entry's `<PlanetInertial<P>>` contract (the LVLH
         // anchor is conventionally Earth in the existing test fixture).
         let lvlh_rel = compute_lvlh_relative_state_typed::<Earth, astrodyn::SelfRef>(
-            ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            ref_body
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
             ref_body
                 .trans
                 .velocity
+                .raw_si()
                 .m_per_s_at::<PlanetInertial<Earth>>(),
-            subj_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            subj_body
+                .trans
+                .position
+                .raw_si()
+                .m_at::<PlanetInertial<Earth>>(),
             subj_body
                 .trans
                 .velocity
+                .raw_si()
                 .m_per_s_at::<PlanetInertial<Earth>>(),
         );
 

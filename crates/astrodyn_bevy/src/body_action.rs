@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Bevy adapter for [`astrodyn::BodyAction`]: queue body actions
 //! against an entity at startup *or mid-sim*, then have them applied
 //! by [`body_action_system`] each tick before the rest of the
@@ -620,10 +621,9 @@ pub fn body_action_system<P: Planet>(
                     )
                 });
             // Action-fire boundary — `BodyAction::apply_translational`
-            // returns the ECS-agnostic `TranslationalState`. Use the
-            // `From<TranslationalState>` impl in `astrodyn_dynamics`
-            // (witness-asserted) to lift to the typed slot in one step.
-            comp.0 = state.into();
+            // returns the ECS-agnostic `TranslationalState` (#397).
+            // allowed: typed↔raw kernel boundary at action-fire time.
+            comp.0 = crate::typed_bridge::trans_raw_to_planet::<P>(&state);
             state_mutated = true;
         }
         if let Some(state) = action.action.apply_rotational() {
@@ -636,9 +636,9 @@ pub fn body_action_system<P: Planet>(
                         action.entity, action.name,
                     )
                 });
-            // Same action-fire boundary as the translational branch
-            // above; use the `From<RotationalState>` impl.
-            comp.0 = state.into();
+            // Same action-fire boundary as the translational branch above (#397).
+            // allowed: typed↔raw kernel boundary at action-fire time.
+            comp.0 = crate::typed_bridge::rot_raw_to_self_ref(&state);
             state_mutated = true;
         }
         if let Some(props) = action.action.apply_mass() {
@@ -647,7 +647,7 @@ pub fn body_action_system<P: Planet>(
                 .unwrap_or_else(|| {
                     panic!(
                         "BodyAction targets mass properties on entity {:?} (action_name={:?}) but the entity has no MassPropertiesC. \
-                         Add `MassPropertiesC::from(MassProperties::new(...))` to the entity before queuing this action.",
+                         Add `MassPropertiesC::from(MassPropertiesTyped::<SelfRef>::new(420_000.0.kg()))` (or `with_inertia(...)`) to the entity before queuing this action.",
                         action.entity, action.name,
                     )
                 });
@@ -663,10 +663,10 @@ pub fn body_action_system<P: Planet>(
             // `dirty` here is the safe action-fire contract: the
             // recompute is a `dirty`-guarded no-op when nothing
             // changed.
-            // Action-fire boundary — `MassProperties` is the
-            // ECS-agnostic untyped form. Use the `From<MassProperties>`
-            // impl to lift to the typed slot.
-            comp.0 = props.into();
+            // Action-fire boundary — `MassProperties` is the ECS-agnostic
+            // untyped form (#397).
+            // allowed: typed↔raw kernel boundary at action-fire time.
+            comp.0 = crate::typed_bridge::mass_raw_to_self_ref(&props);
             comp.0.dirty = true;
             mass_mutated = true;
         }
@@ -887,7 +887,9 @@ mod tests {
             .spawn((
                 TranslationalStateC::<astrodyn::Earth>::default(),
                 RotationalStateC::default(),
-                MassPropertiesC::from(MassProperties::new(400_000.0)),
+                MassPropertiesC::from(crate::typed_bridge::mass_raw_to_self_ref(
+                    &(MassProperties::new(400_000.0)),
+                )),
                 // `body_action_system` filters by `With<DynamicsConfigC>`;
                 // a real vehicle entity always carries this Component.
                 DynamicsConfigC(DynamicsConfig {
@@ -938,14 +940,14 @@ mod tests {
         );
         app.update();
 
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 100_000.0);
     }
 
@@ -967,13 +969,13 @@ mod tests {
             ),
         );
         app.update();
-        let state: RotationalState = app
-            .world()
-            .entity(entity)
-            .get::<RotationalStateC>()
-            .expect("rot state present")
-            .0
-            .to_untyped();
+        let state: RotationalState = crate::typed_bridge::rot_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<RotationalStateC>()
+                .expect("rot state present")
+                .0,
+        );
         assert_eq!(state.quaternion, q);
         assert_eq!(state.ang_vel_body, omega);
     }
@@ -1005,13 +1007,13 @@ mod tests {
             ),
         );
         app.update();
-        let trans = app
-            .world()
-            .entity(entity)
-            .get::<TranslationalStateC<astrodyn::Earth>>()
-            .expect("trans state present")
-            .0
-            .to_untyped();
+        let trans = crate::typed_bridge::trans_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<TranslationalStateC<astrodyn::Earth>>()
+                .expect("trans state present")
+                .0,
+        );
         assert!(trans.position.length() > 1.0e6);
         assert!(trans.velocity.length() > 1.0);
     }
@@ -1045,14 +1047,14 @@ mod tests {
             .expect("run_system_cached_with");
         app.update();
 
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 100_000.0);
     }
 
@@ -1073,14 +1075,14 @@ mod tests {
         write_msg(&mut app, BodyActionEvent::remove("anything"));
         app.update();
 
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 123.0);
     }
 
@@ -1115,14 +1117,14 @@ mod tests {
             ),
         );
         app.update();
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 22.0);
     }
 
@@ -1158,14 +1160,14 @@ mod tests {
         app.update();
         // Neither add fired: the entity still has its original
         // 400 000 kg from `spawn_vehicle`.
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 400_000.0);
     }
 
@@ -1208,14 +1210,14 @@ mod tests {
         // If the empty-name `remove` had iterated `retain` it would
         // have cleared both pending entries and the mass would still
         // be the spawn-time 400 000.
-        let final_mass = app
-            .world()
-            .entity(entity)
-            .get::<MassPropertiesC>()
-            .expect("mass props present")
-            .0
-            .to_untyped()
-            .mass;
+        let final_mass = crate::typed_bridge::mass_typed_to_raw(
+            &app.world()
+                .entity(entity)
+                .get::<MassPropertiesC>()
+                .expect("mass props present")
+                .0,
+        )
+        .mass;
         assert_eq!(final_mass, 22.0);
     }
 }

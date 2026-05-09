@@ -148,12 +148,13 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     let plates = sim1_basic_plates();
     let num_plates = plates.len();
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::new(1.5e11, 0.0, 0.0),
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        mass: Some(astrodyn::MassProperties::new(1.0).into()),
+        }),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(astrodyn::MassProperties::new(1.0)),
+        )),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp; num_plates],

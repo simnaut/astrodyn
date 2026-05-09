@@ -118,7 +118,9 @@ impl<P: Planet> SunBundle<P> {
         Self {
             name: Name::new("Sun"),
             marker: SunMarker,
-            trans: TranslationalStateC::<P>::from(state),
+            // allowed: typed↔raw kernel boundary at the public bundle
+            // ctor — named-method opt-in (see #397).
+            trans: TranslationalStateC::<P>::from_untyped(state),
         }
     }
 }
@@ -156,7 +158,9 @@ impl<P: Planet> MoonBundle<P> {
         Self {
             name: Name::new("Moon"),
             marker: MoonMarker,
-            trans: TranslationalStateC::<P>::from(state),
+            // allowed: typed↔raw kernel boundary at the public bundle
+            // ctor — named-method opt-in (see #397).
+            trans: TranslationalStateC::<P>::from_untyped(state),
         }
     }
 }

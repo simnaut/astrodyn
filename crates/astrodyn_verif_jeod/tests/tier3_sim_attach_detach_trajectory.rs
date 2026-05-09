@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_verif_attach_detach RUN_simple_attach_detach end-to-end
 //! through the production [`Simulation::attach`] / [`Simulation::detach`]
 //! API (the runner-side equivalent of `astrodyn_bevy`'s
@@ -277,25 +278,37 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, dt);
 
     let v1 = sim.add_body(VehicleConfig {
-        trans: veh1_initial_trans().into(),
-        rot: Some(veh1_initial_rot().into()),
-        mass: Some(veh1_mass().into()),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh1_initial_trans()),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(veh1_initial_rot()),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(veh1_mass()),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
-        trans: veh2_initial_trans().into(),
-        rot: Some(veh2_initial_rot().into()),
-        mass: Some(veh2_mass().into()),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh2_initial_trans()),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(veh2_initial_rot()),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(veh2_mass()),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
-        trans: veh3_initial_trans().into(),
-        rot: Some(veh3_initial_rot().into()),
-        mass: Some(veh3_mass().into()),
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&veh3_initial_trans()),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(veh3_initial_rot()),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(veh3_mass()),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -431,10 +444,10 @@ fn body_snapshot(sim: &Simulation, idx: usize) -> VehSnapshot {
         .rot
         .expect("attach/detach trajectory test runs every body in 6-DOF");
     VehSnapshot {
-        position: out.trans.position,
-        velocity: out.trans.velocity,
-        quaternion: rot.quaternion,
-        ang_vel_body: rot.ang_vel_body,
+        position: out.trans.position.raw_si(),
+        velocity: out.trans.velocity.raw_si(),
+        quaternion: rot.q_inertial_body.to_jeod_quat(),
+        ang_vel_body: rot.ang_vel_body.raw_si(),
     }
 }
 

@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Analytical verification of SIM_force_torque physics.
 //!
 //! JEOD's `dyn_body/verif/SIM_force_torque/` is an empty-space test rig that
@@ -59,13 +60,14 @@ fn make_free_body_3dof(mass: f64, dt: f64) -> Simulation {
     add_dummy_central_source(&mut sim);
 
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        }
-        .into(),
+        }),
         rot: None,
-        mass: Some(MassProperties::new(mass).into()),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(MassProperties::new(mass)),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         ..Default::default()
     });
@@ -84,19 +86,19 @@ fn make_free_body_6dof(mass: f64, inertia: DMat3, dt: f64) -> Simulation {
 
     let mass_props = MassProperties::with_inertia(mass, inertia, DVec3::ZERO);
     sim.add_body(VehicleConfig {
-        trans: TranslationalState {
+        trans: astrodyn_verif_jeod::typed_bridge::trans_raw_to_root(&TranslationalState {
             position: DVec3::ZERO,
             velocity: DVec3::ZERO,
-        }
-        .into(),
-        rot: Some(
-            RotationalState {
+        }),
+        rot: Some(astrodyn_verif_jeod::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
                 quaternion: JeodQuat::identity(),
                 ang_vel_body: DVec3::ZERO,
-            }
-            .into(),
-        ),
-        mass: Some(mass_props.into()),
+            }),
+        )),
+        mass: Some(astrodyn_verif_jeod::typed_bridge::mass_raw_to_self_ref(
+            &(mass_props),
+        )),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -133,19 +135,21 @@ fn tier3_force_constant_acceleration() {
     let expected_v = force * t_total / mass;
     let expected_x = 0.5 * force * t_total * t_total / mass;
 
-    let err_v = (body.trans.velocity - expected_v).length();
-    let err_x = (body.trans.position - expected_x).length();
+    let err_v = (body.trans.velocity.raw_si() - expected_v).length();
+    let err_x = (body.trans.position.raw_si() - expected_x).length();
 
     let rel_v = err_v / expected_v.length();
     let rel_x = err_x / expected_x.length();
 
     println!(
         "  F=m*a: v={:?}, expected={:?}, rel_err={rel_v:.3e}",
-        body.trans.velocity, expected_v
+        body.trans.velocity.raw_si(),
+        expected_v
     );
     println!(
         "         x={:?}, expected={:?}, rel_err={rel_x:.3e}",
-        body.trans.position, expected_x
+        body.trans.position.raw_si(),
+        expected_x
     );
 
     // RK4 is exact for linear ODEs up to roundoff; tolerances are tight.
@@ -181,14 +185,13 @@ fn tier3_torque_constant_angular_acceleration() {
     sim.step_n((t_total / dt) as usize).expect("step_n failed");
 
     let body = sim.body(0);
-    let omega = body.rot.as_ref().unwrap().ang_vel_body;
+    let omega = body.rot.as_ref().unwrap().ang_vel_body.raw_si();
 
     let expected_omega_x = tau.x * t_total / i_x;
 
     let rel_err = (omega.x - expected_omega_x).abs() / expected_omega_x.abs();
     println!(
-        "  tau=I*alpha: omega={:?}, expected_x={expected_omega_x}, rel_err={rel_err:.3e}",
-        omega
+        "  tau=I*alpha: omega={omega:?}, expected_x={expected_omega_x}, rel_err={rel_err:.3e}"
     );
 
     assert!(rel_err < 1.0e-10, "omega_x rel err {rel_err:.3e}");
@@ -236,8 +239,8 @@ fn tier3_force_and_torque_decoupled() {
     sim_a
         .step_n((t_total / dt) as usize)
         .expect("step_n failed");
-    let v_a = sim_a.body(0).trans.velocity;
-    let omega_a = sim_a.body(0).rot.as_ref().unwrap().ang_vel_body;
+    let v_a = sim_a.body(0).trans.velocity.raw_si();
+    let omega_a = sim_a.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
 
     // Case B: only torque.
     let mut sim_b = make_free_body_6dof(mass, inertia, dt);
@@ -245,8 +248,8 @@ fn tier3_force_and_torque_decoupled() {
     sim_b
         .step_n((t_total / dt) as usize)
         .expect("step_n failed");
-    let v_b = sim_b.body(0).trans.velocity;
-    let omega_b = sim_b.body(0).rot.as_ref().unwrap().ang_vel_body;
+    let v_b = sim_b.body(0).trans.velocity.raw_si();
+    let omega_b = sim_b.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
 
     // Case C: both.
     let mut sim_c = make_free_body_6dof(mass, inertia, dt);
@@ -255,8 +258,8 @@ fn tier3_force_and_torque_decoupled() {
     sim_c
         .step_n((t_total / dt) as usize)
         .expect("step_n failed");
-    let v_c = sim_c.body(0).trans.velocity;
-    let omega_c = sim_c.body(0).rot.as_ref().unwrap().ang_vel_body;
+    let v_c = sim_c.body(0).trans.velocity.raw_si();
+    let omega_c = sim_c.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
 
     println!("  A (force only): v={:?}, omega={:?}", v_a, omega_a);
     println!("  B (torque only): v={:?}, omega={:?}", v_b, omega_b);
@@ -320,13 +323,13 @@ fn tier3_force_symmetric_impulse_returns_to_rest() {
     sim.set_body_external_force(0, force);
     sim.step_n((half_duration / dt) as usize)
         .expect("step_n failed");
-    let v_mid = sim.body(0).trans.velocity;
+    let v_mid = sim.body(0).trans.velocity.raw_si();
 
     sim.set_body_external_force(0, -force);
     sim.step_n((half_duration / dt) as usize)
         .expect("step_n failed");
-    let v_end = sim.body(0).trans.velocity;
-    let x_end = sim.body(0).trans.position;
+    let v_end = sim.body(0).trans.velocity.raw_si();
+    let x_end = sim.body(0).trans.position.raw_si();
 
     // Velocity should be back to zero within roundoff.
     println!("  v_mid = {v_mid:?}");

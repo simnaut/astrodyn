@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructors for SIM_torque_compare_simple.
 //!
 //! Six runs with progressive gravity + gravity-gradient complexity:
@@ -197,20 +198,17 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
     let w = init.ang_vel.expect("torque_simple: 6-DOF init.ang_vel");
 
     sb.add_body(VehicleConfig {
-        trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
-            &TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            },
-        ),
-        rot: Some(
-            RotationalState {
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        }),
+        rot: Some(super::typed_helpers::rot_typed(
+            &(RotationalState {
                 quaternion: astrodyn::JeodQuat::from_glam(q),
                 ang_vel_body: w,
-            }
-            .into(),
-        ),
-        mass: Some(iss_mass_props().into()),
+            }),
+        )),
+        mass: Some(super::typed_helpers::mass_typed(&(iss_mass_props()))),
         gravity_controls: GravityControls {
             controls: vec![
                 earth_ctrl,
