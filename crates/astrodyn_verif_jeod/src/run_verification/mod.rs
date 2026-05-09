@@ -90,6 +90,7 @@ use uom::si::time::second;
 
 use astrodyn_runner::builder::SimulationBuilderExt;
 use astrodyn_runner::{Simulation, VehicleOutput};
+use glam::DMat3;
 
 /// Forward `SimContext` to the runtime simulation so `pre_step` closures
 /// stored on a `VerificationCase` can drive source ephemeris updates
@@ -120,6 +121,24 @@ impl SimContext for Simulation {
              out of bounds; tidal_bodies.len() = {tidal_bodies_len}"
         );
         cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
+    }
+
+    fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        Simulation::attach(self, child_idx, parent_idx, offset, t_parent_child);
+    }
+
+    fn detach(&mut self, child_idx: usize) {
+        Simulation::detach(self, child_idx);
+    }
+
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        Simulation::mark_kinematic_only(self, child_idx);
     }
 }
 
