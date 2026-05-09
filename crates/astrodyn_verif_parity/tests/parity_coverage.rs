@@ -25,13 +25,25 @@ use std::path::Path;
 
 /// Topics whose Tier 3 sibling exists but whose parity counterpart is
 /// deliberately absent (or `#[ignore]`d) for a documented structural
-/// reason. Each entry MUST link to the tracking note that explains the
-/// gap; the entries here are the "intentional gap" set the
+/// reason. The entries here are the "intentional gap" set the
 /// `parity_coverage` test exempts.
 ///
+/// Two flavors of gap live in this list:
+///
+/// 1. **Deferred** — the bridge or recipe layer doesn't cover the
+///    topic *yet*, but a parity wrapper is expected once the blocker
+///    lifts. These entries MUST link to the tracking issue (typically
+///    `#389` or a follow-up) so the gap can be closed and the entry
+///    dropped when the issue lands.
+/// 2. **Permanent** — the topic is structurally out of scope for the
+///    `VerificationCaseParityExt` trait (no trajectory CSV, pure
+///    analytical/solver test, structural mass-tree composition). The
+///    reason field states *why* the topic doesn't fit; no issue link
+///    is required because there is no follow-up planned.
+///
 /// The set is intentionally small. Issue #389 closes the bulk of the
-/// gap; entries that remain are the long-tail features the bridge
-/// doesn't cover yet.
+/// deferred cluster; entries that remain are either narrowly-scoped
+/// follow-ups or permanent out-of-scope cases.
 const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     // ── Multi-planet scenarios: the bridge spawns all bodies under a
     //    single `<P>` today, so cases that integrate in two
