@@ -486,7 +486,7 @@ fn apply_event(
             // `T_inertial_pfix` gives the struct in pfix.
             let composite_offset_struct = sim
                 .body_mass(body_idx)
-                .map(|mp| mp.position)
+                .map(|mp| mp.center_of_mass.raw_si())
                 .unwrap_or(DVec3::ZERO);
             let struct_inertial = body_out.trans.position.raw_si()
                 - t_inertial_struct.transpose() * composite_offset_struct;

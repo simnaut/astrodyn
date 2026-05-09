@@ -17,8 +17,8 @@ use astrodyn::typed_bridge::{
 };
 use astrodyn::{
     evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
-    MassBodyId, MassPointState, MassProperties, Phase, Position, RefFrameKind, RefFrameRot,
-    RefFrameState, RefFrameTrans, VehicleConfig, Velocity,
+    MassBodyId, MassPointState, MassProperties, MassPropertiesTyped, Phase, Position, RefFrameKind,
+    RefFrameRot, RefFrameState, RefFrameTrans, SelfRef, VehicleConfig, Velocity,
 };
 
 use super::types::{
@@ -347,25 +347,24 @@ impl Simulation {
 
     /// Mass / inertia / CoM-offset block for the body at index `idx`,
     /// or `None` for 3-DOF bodies that were configured without a
-    /// `MassProperties`. Mirrors JEOD's
+    /// `MassPropertiesTyped`. Mirrors JEOD's
     /// `dyn_body.mass.composite_properties` accessor for atomic
     /// (non-mass-tree) bodies — for tree-attached bodies the live
     /// composite is recomputed in the mass tree, but the per-body
-    /// `MassProperties` carried here still reflects the body's own
+    /// `MassPropertiesTyped` carried here still reflects the body's own
     /// mass properties at its structural origin. Used by the JEOD
     /// surface-attach test fixtures that need to compute the body's
     /// structure pose from its composite-body inertial state.
     ///
     /// # Panics
     /// Panics if `idx` is out of range.
-    pub fn body_mass(&self, idx: usize) -> Option<astrodyn::MassProperties> {
+    pub fn body_mass(&self, idx: usize) -> Option<&MassPropertiesTyped<SelfRef>> {
         assert!(
             idx < self.bodies.len(),
             "body_mass: body index {idx} out of range (have {} bodies)",
             self.bodies.len()
         );
-        // TODO(#408): expose typed sibling once callers migrate.
-        self.bodies[idx].mass.as_ref().map(mass_typed_to_raw)
+        self.bodies[idx].mass.as_ref()
     }
 
     /// Adjust an integrated body's `trans` from a `core_body` inertial
