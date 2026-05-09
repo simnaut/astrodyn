@@ -54,23 +54,23 @@ use uom::si::mass::kilogram;
 // (issue #397).
 fn trans_typed(t: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
     TranslationalStateTyped::<RootInertial> {
-        position: Position::<RootInertial>::from_raw_si(t.position),
-        velocity: Velocity::<RootInertial>::from_raw_si(t.velocity),
+        position: Position::<RootInertial>::from_raw_si(t.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<RootInertial>::from_raw_si(t.velocity), // allowed: typed↔raw kernel boundary
     }
 }
 
 fn rot_typed(r: &RotationalState) -> RotationalStateTyped<SelfRef> {
     RotationalStateTyped::<SelfRef>::new(
         BodyAttitude::from_jeod_quat(r.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(r.ang_vel_body),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(r.ang_vel_body), // allowed: typed↔raw kernel boundary
     )
 }
 
 fn mass_typed(mp: &SimMassProperties) -> MassPropertiesTyped<SelfRef> {
     MassPropertiesTyped::<SelfRef>::with_inertia(
         Mass::new::<kilogram>(mp.mass),
-        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia),
-        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia), // allowed: typed↔raw kernel boundary
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position), // allowed: typed↔raw kernel boundary
     )
     .with_t_parent_this(mp.t_parent_this)
 }

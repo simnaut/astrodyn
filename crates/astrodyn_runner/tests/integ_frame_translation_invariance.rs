@@ -157,8 +157,8 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
 
     let mut cfg = VehicleConfig {
         trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial> {
-            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(trans.position),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(trans.velocity),
+            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(trans.position), // allowed: typed↔raw kernel boundary
+            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(trans.velocity), // allowed: typed↔raw kernel boundary
         },
         rot: None,
         mass: None,

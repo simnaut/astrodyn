@@ -270,12 +270,12 @@ impl VehicleBuilder<NeedsMass> {
         // boundary into the typed builder state.
         self.rot = Some(RotationalStateTyped::<SelfRef>::new(
             BodyAttitude::from_jeod_quat(rot.quaternion),
-            AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(rot.ang_vel_body),
+            AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(rot.ang_vel_body), // allowed: typed↔raw kernel boundary
         ));
         let typed_mass = MassPropertiesTyped::<SelfRef>::with_inertia(
             Mass::new::<kilogram>(mass.mass),
-            InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia),
-            Position::<StructuralFrame<SelfRef>>::from_raw_si(mass.position),
+            InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia), // allowed: typed↔raw kernel boundary
+            Position::<StructuralFrame<SelfRef>>::from_raw_si(mass.position), // allowed: typed↔raw kernel boundary
         )
         .with_t_parent_this(mass.t_parent_this);
         self.mass = Some(typed_mass);

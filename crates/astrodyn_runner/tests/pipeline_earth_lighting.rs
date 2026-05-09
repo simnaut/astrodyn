@@ -107,11 +107,13 @@ fn pipeline_earth_lighting_smoke() {
     // earth_lighting_config = (earth_radius, moon_radius, sun_radius)
     sim.add_body(VehicleConfig {
         trans: astrodyn::TranslationalStateTyped::<astrodyn::RootInertial> {
+            // allowed: typed↔raw kernel boundary
             position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
                 6_778_137.0,
                 0.0,
                 0.0,
             )),
+            // allowed: typed↔raw kernel boundary
             velocity: astrodyn::Velocity::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
                 0.0, 7_668.558, 0.0,
             )),

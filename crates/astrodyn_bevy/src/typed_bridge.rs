@@ -38,8 +38,8 @@ pub fn mass_typed_to_raw<V: Vehicle>(m: &MassPropertiesTyped<V>) -> MassProperti
 pub fn mass_raw_to_typed<V: Vehicle>(mp: &MassProperties) -> MassPropertiesTyped<V> {
     MassPropertiesTyped::<V>::with_inertia(
         Mass::new::<kilogram>(mp.mass),
-        InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(mp.inertia),
-        Position::<StructuralFrame<V>>::from_raw_si(mp.position),
+        InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(mp.inertia), // allowed: typed↔raw kernel boundary
+        Position::<StructuralFrame<V>>::from_raw_si(mp.position), // allowed: typed↔raw kernel boundary
     )
     .with_t_parent_this(mp.t_parent_this)
 }
@@ -60,7 +60,7 @@ pub fn rot_typed_to_raw<V: Vehicle>(s: &RotationalStateTyped<V>) -> RotationalSt
 pub fn rot_raw_to_typed<V: Vehicle>(s: &RotationalState) -> RotationalStateTyped<V> {
     RotationalStateTyped::<V>::new(
         BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
+        AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body), // allowed: typed↔raw kernel boundary
     )
 }
 
@@ -79,8 +79,8 @@ pub fn trans_typed_to_raw<F: Frame>(s: &TranslationalStateTyped<F>) -> Translati
 #[inline]
 pub fn trans_raw_to_typed<F: Frame>(s: &TranslationalState) -> TranslationalStateTyped<F> {
     TranslationalStateTyped::<F> {
-        position: Position::<F>::from_raw_si(s.position),
-        velocity: Velocity::<F>::from_raw_si(s.velocity),
+        position: Position::<F>::from_raw_si(s.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<F>::from_raw_si(s.velocity), // allowed: typed↔raw kernel boundary
     }
 }
 

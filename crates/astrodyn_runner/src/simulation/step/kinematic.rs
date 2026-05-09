@@ -69,8 +69,8 @@ use super::super::Simulation;
 fn mass_raw_to_typed(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
     MassPropertiesTyped::<SelfRef>::with_inertia(
         Mass::new::<kilogram>(mp.mass),
-        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia),
-        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mp.inertia), // allowed: typed↔raw kernel boundary
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(mp.position), // allowed: typed↔raw kernel boundary
     )
     .with_t_parent_this(mp.t_parent_this)
 }
@@ -87,15 +87,15 @@ fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
 fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
     RotationalStateTyped::<SelfRef>::new(
         BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body), // allowed: typed↔raw kernel boundary
     )
 }
 
 #[inline]
 fn trans_raw_to_typed<F: Frame>(s: &TranslationalState) -> TranslationalStateTyped<F> {
     TranslationalStateTyped::<F> {
-        position: Position::<F>::from_raw_si(s.position),
-        velocity: Velocity::<F>::from_raw_si(s.velocity),
+        position: Position::<F>::from_raw_si(s.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<F>::from_raw_si(s.velocity), // allowed: typed↔raw kernel boundary
     }
 }
 

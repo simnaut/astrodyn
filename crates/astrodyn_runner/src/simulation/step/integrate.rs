@@ -49,7 +49,7 @@ fn rot_typed_to_raw(s: &RotationalStateTyped<SelfRef>) -> RotationalState {
 fn rot_raw_to_typed(s: &RotationalState) -> RotationalStateTyped<SelfRef> {
     RotationalStateTyped::<SelfRef>::new(
         BodyAttitude::from_jeod_quat(s.quaternion),
-        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.ang_vel_body), // allowed: typed↔raw kernel boundary
     )
 }
 

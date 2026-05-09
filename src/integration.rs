@@ -425,8 +425,8 @@ pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
     for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans) {
         // allowed: typed↔raw kernel boundary writeback. See note above.
         *typed_ref = TranslationalStateTyped::<F> {
-            position: Position::<F>::from_raw_si(raw.position),
-            velocity: Velocity::<F>::from_raw_si(raw.velocity),
+            position: Position::<F>::from_raw_si(raw.position), // allowed: typed↔raw kernel boundary
+            velocity: Velocity::<F>::from_raw_si(raw.velocity), // allowed: typed↔raw kernel boundary
         };
     }
 }
@@ -1021,8 +1021,8 @@ pub fn integrate_body_coupled_typed<V: astrodyn_quantities::frame::Vehicle, F: F
     );
     // allowed: typed↔raw kernel boundary writeback. See note above.
     *trans = TranslationalStateTyped::<F> {
-        position: Position::<F>::from_raw_si(raw_trans.position),
-        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity),
+        position: Position::<F>::from_raw_si(raw_trans.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity), // allowed: typed↔raw kernel boundary
     };
 }
 
@@ -1259,8 +1259,8 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
     );
     // allowed: typed↔raw kernel boundary writeback. See note above.
     *trans = TranslationalStateTyped::<F> {
-        position: Position::<F>::from_raw_si(raw_trans.position),
-        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity),
+        position: Position::<F>::from_raw_si(raw_trans.position), // allowed: typed↔raw kernel boundary
+        velocity: Velocity::<F>::from_raw_si(raw_trans.velocity), // allowed: typed↔raw kernel boundary
     };
 }
 
