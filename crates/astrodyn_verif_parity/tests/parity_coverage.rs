@@ -190,12 +190,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          but no parity wrapper yet (#389 follow-up)",
     ),
     (
-        "met",
-        "pre-recipe MET atmosphere sibling — recipe exists \
-         (sim_dyncomp::run5a_met) but uses pre_step (Bevy SimContext gap, \
-         #389 follow-up)",
-    ),
-    (
         "ned",
         "pre-recipe sibling — NED recipe factories exist in sim_derived_state \
          but no parity wrapper has been added yet (#389 follow-up)",
@@ -251,17 +245,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          CsvReference variant; follow-up to #389",
     ),
     (
-        "shadow_2a",
-        "pre-recipe sibling — shadow-calc recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
-        "solar_beta",
-        "pre-recipe sibling — recipes exist (sim_solar_beta::*) but most \
-         use pre_step (Bevy SimContext gap, #389 follow-up); the pre_step-free \
-         variant has no parity wrapper yet",
-    ),
-    (
         "solar_beta_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
@@ -272,24 +255,13 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "srp_1st_order",
-        "pre-recipe sibling — recipe exists (sim_srp::srp_1st_order_trajectory) \
-         but uses pre_step (Bevy SimContext gap, #389 follow-up)",
-    ),
-    (
-        "srp_basic",
-        "pre-recipe sibling — basic SRP recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
-        "srp_rk4_thermal",
-        "pre-recipe sibling — RK4 thermal SRP recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "tide_verif",
-        "pre-recipe sibling — recipe exists (sim_tide_verif::run01) but uses \
-         pre_step (Bevy SimContext gap, #389 follow-up)",
+        "recipe exists (sim_tide_verif::run01) but uses \
+         `set_tidal_body_position`, which is default-panic on \
+         `AppSimContext`; bridging needs `populate_app` to expose \
+         tidal-body entities so the parity trait can route the \
+         per-step tidal update through the same `SimContext` surface \
+         it uses for source positions (#395 follow-up).",
     ),
     (
         "time_docker",
@@ -305,11 +277,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "timescale",
         "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
     ),
-    (
-        "torque_simple",
-        "pre-recipe sibling — recipe exists (sim_torque_simple::run0[1-6]) \
-         but no parity wrapper has been added yet (#389 follow-up)",
-    ),
     // ── dyncomp run3-run10: most have recipe factories
     //    (sim_dyncomp::run3a_sh4x4, run4_3rd_body, run7a_*, run10a_*, …)
     //    but several rely on `pre_step` for ephemeris updates and the
@@ -319,11 +286,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "dyncomp_run3",
         "recipes exist (sim_dyncomp::run3a_sh4x4, run3b_sh8x8) — wrapper \
          not yet added (#389 follow-up)",
-    ),
-    (
-        "dyncomp_run4",
-        "recipe exists (sim_dyncomp::run4_3rd_body) but uses pre_step \
-         (Bevy SimContext gap, #389 follow-up)",
     ),
     (
         "dyncomp_run5",
@@ -336,11 +298,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "recipes exist (sim_dyncomp::run6a_const_density_drag, run6b_drag, \
          run6b_drag_rotated_struct, run6b_drag_aero_traj) — wrapper not yet \
          added (#389 follow-up)",
-    ),
-    (
-        "dyncomp_run7",
-        "recipes exist (sim_dyncomp::run7a-d_*) but every variant uses \
-         pre_step (Bevy SimContext gap, #389 follow-up)",
     ),
     (
         "dyncomp_run10",

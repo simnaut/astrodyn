@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_dyncomp;
 pub mod sim_gj;
@@ -85,7 +86,7 @@ use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 use uom::si::time::second;
 
 use astrodyn_runner::builder::SimulationBuilderExt;
@@ -121,6 +122,21 @@ impl SimContext for Simulation {
         );
         cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
     }
+    fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        Simulation::attach(self, child_idx, parent_idx, offset, t_parent_child);
+    }
+    fn detach(&mut self, child_idx: usize) {
+        Simulation::detach(self, child_idx);
+    }
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        Simulation::mark_kinematic_only(self, child_idx);
+    }
 }
 
 /// Per-family typed records held alongside the [`StateLog`] vec so
@@ -134,6 +150,7 @@ enum CsvRecords {
     Euler(Vec<tier3_csv::EulerRecord>),
     SolarBeta(Vec<tier3_csv::SolarBetaRecord>),
     Tide(Vec<tier3_csv::TideRecord>),
+    Relative(Vec<tier3_csv::RelativeRecord>),
     /// Variants without family-specific extras keep only the per-step
     /// time so [`StateLog`]-based assertions still align.
     Times(Vec<f64>),
@@ -149,6 +166,7 @@ impl CsvRecords {
             Self::Euler(v) => v.len(),
             Self::SolarBeta(v) => v.len(),
             Self::Tide(v) => v.len(),
+            Self::Relative(v) => v.len(),
             Self::Times(v) => v.len(),
         }
     }
@@ -601,6 +619,30 @@ fn load_reference(
             };
             (states, typed)
         }
+        CsvReference::Relative(_) => {
+            // SIM_Relative is a 2-body kinematic sim; the per-step
+            // assertion is body-A's state (the runner's body 0) against
+            // CSV columns 1..7 (interleaved position/velocity), so the
+            // generic `StateLog` only carries body 0's state. Body B
+            // and the JEOD-logged relative columns flow through the
+            // typed records vec for the `Relative` extras comparator.
+            let records = load_relative_csv(path);
+            let states = records
+                .iter()
+                .map(|r| StateLog {
+                    time: r.time,
+                    position: Some(r.veh_a_pos),
+                    velocity: Some(r.veh_a_vel),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let typed = if matches!(extras, Some(ExtrasComparator::Relative)) {
+                CsvRecords::Relative(records)
+            } else {
+                CsvRecords::Times(states.iter().map(|s| s.time).collect())
+            };
+            (states, typed)
+        }
         CsvReference::TimesOnly(_) => {
             // Cadence-only path: read column 0 of each non-header row
             // and emit `StateLog`s with only `time` populated. Used by
@@ -684,6 +726,7 @@ impl ExtrasAccumulator {
             ],
             ExtrasComparator::SolarBeta => vec![("beta", 0.0, "rad")],
             ExtrasComparator::TideDc20 { .. } => vec![("dc20", 0.0, "")],
+            ExtrasComparator::Relative => vec![("rel_pos", 0.0, "m"), ("rel_vel", 0.0, "m/s")],
         };
         Self {
             kind: kind.clone(),
@@ -802,6 +845,50 @@ impl ExtrasAccumulator {
                 // tidal-host source explicitly.
                 let our_dc20 = sim.source_delta_c20(*earth_source_idx);
                 self.update_max("dc20", (our_dc20 - r.delta_c20).abs());
+            }
+            (ExtrasComparator::Relative, CsvRecords::Relative(recs)) => {
+                let r = &recs[idx];
+                // Two-body kinematic sim: body 0 is vehicle A
+                // ("subject"), body 1 is vehicle B ("reference"). We
+                // call `compute_relative_state::<SelfRef, SelfRef>`
+                // exactly the way the bespoke `tier3_sim_relative.rs`
+                // did — both phantom slots resolve to runtime-typed
+                // wildcards because per-entity vehicle identity is
+                // decided at the storage boundary (JEOD_INV: TS.01).
+                // The metric reads `position_raw` / `velocity_raw` so
+                // it matches whichever frame branch
+                // `RelativeTranslation` landed in for the scenario.
+                let body_b = sim.body(1);
+                // JEOD_INV: TS.01 — `<SelfRef, SelfRef>` resolves both
+                // vehicle phantoms to the storage-boundary wildcard
+                // because per-entity vehicle identity is decided at
+                // runtime by the simulation's body slot.
+                //
+                // `compute_relative_state` consumes raw `TranslationalState` /
+                // `RotationalState`; demote the typed `body.trans` /
+                // `body.rot` through the kernel-boundary bridge helpers
+                // (the `from_untyped_unchecked` opt-ins were deleted in
+                // #397).
+                let body_a_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body.trans);
+                let body_b_trans = astrodyn::typed_bridge::trans_typed_to_raw(&body_b.trans);
+                let body_a_rot = body
+                    .rot
+                    .as_ref()
+                    .map(astrodyn::typed_bridge::rot_typed_to_raw);
+                let body_b_rot = body_b
+                    .rot
+                    .as_ref()
+                    .map(astrodyn::typed_bridge::rot_typed_to_raw);
+                let rel = astrodyn::compute_relative_state::<astrodyn::SelfRef, astrodyn::SelfRef>(
+                    &body_b_trans,
+                    body_b_rot.as_ref(),
+                    &body_a_trans,
+                    body_a_rot.as_ref(),
+                );
+                let pos_err = (rel.trans.position_raw() - r.jeod_rel_pos).length();
+                let vel_err = (rel.trans.velocity_raw() - r.jeod_rel_vel).length();
+                self.update_max("rel_pos", pos_err);
+                self.update_max("rel_vel", vel_err);
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \

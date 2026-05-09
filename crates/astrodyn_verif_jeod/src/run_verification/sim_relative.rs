@@ -21,18 +21,21 @@
 //!
 //! ## CSV reference
 //!
-//! The recipes route through [`CsvReference::TimesOnly`] for cadence
-//! lookup. The `relative_*_relative.csv` reference files have a
-//! 57-column interleaved-state layout that no per-variant loader
-//! models, but the parity trait reads only `record.time` from the CSV
-//! (initial conditions are hardcoded in each scenario factory), so a
-//! cadence-only dispatch is exactly what's needed and `TimesOnly`
-//! parses just column 0.
-//!
-//! The tier3 sibling does need the full CSV layout; it uses a
-//! private hand-rolled `load_relative_csv` parser, not the recipe path.
+//! The recipes route through [`CsvReference::Relative`], a 57-column
+//! variant the central `tier3_csv` loader knows how to parse. The
+//! parity trait still consumes only the time column for cadence
+//! (parity asserts bit-identity body-by-body, not against
+//! JEOD-logged state), but the runner-vs-JEOD oracle now has
+//! everything it needs to assert the bespoke
+//! `compute_relative_state` metric directly through
+//! [`ExtrasComparator::Relative`] rather than re-implementing the CSV
+//! parse + per-step compare in a hand-rolled `tier3_sim_relative.rs`
+//! body.
 
-use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
+use crate::tier3_csv::{load_relative_csv, test_data_path};
+use crate::verification::{
+    CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
+};
 use astrodyn::{
     default_leap_second_table, JeodQuat, MassProperties, RotationalState, SimulationBuilder,
     SimulationTime, TranslationalState, VehicleConfig,
@@ -95,34 +98,20 @@ fn build_two_body(
 }
 
 // ── 6-DOF variants ──
+//
+// The 6-DOF cases match the JEOD SIM_Relative reference CSV directly:
+// every body's t=0 state is read from the matching CSV's first non-
+// header row, so the runner-vs-JEOD oracle (`tier3_sim_relative.rs`)
+// can assert `compute_relative_state` against the JEOD-logged
+// relative-state columns. The factories take `_init` (which is body 0's
+// t=0, populated by the central `load_reference` from CSV columns 1–6)
+// and re-read the CSV to also get body B's t=0 plus quaternions /
+// angular velocities for both bodies.
 
 fn iss_like_trans_a() -> TranslationalState {
     TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
-    }
-}
-
-fn iss_like_trans_b() -> TranslationalState {
-    TranslationalState {
-        position: DVec3::new(6_778_237.0, 100.0, -50.0),
-        velocity: DVec3::new(0.01, 7668.55, 0.005),
-    }
-}
-
-fn rot_a_tumble() -> RotationalState {
-    let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
-    q.normalize();
-    RotationalState {
-        quaternion: q,
-        ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
-    }
-}
-
-fn rot_b_z_spin() -> RotationalState {
-    RotationalState {
-        quaternion: JeodQuat::identity(),
-        ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
     }
 }
 
@@ -133,30 +122,67 @@ fn rot_zero() -> RotationalState {
     }
 }
 
+/// Read both bodies' t=0 state from the matching `relative_*_relative.csv`
+/// fixture. Returns `(trans_a, rot_a, trans_b, rot_b)`. Panics with the
+/// standard "regenerate Tier 3 reference" diagnostic if the CSV is
+/// missing.
+fn ics_from_csv(
+    csv_name: &str,
+) -> (
+    TranslationalState,
+    RotationalState,
+    TranslationalState,
+    RotationalState,
+) {
+    let path = test_data_path(csv_name);
+    let records = load_relative_csv(&path);
+    assert!(
+        !records.is_empty(),
+        "ics_from_csv({csv_name}): reference CSV produced 0 records"
+    );
+    let r = &records[0];
+    let trans_a = TranslationalState {
+        position: r.veh_a_pos,
+        velocity: r.veh_a_vel,
+    };
+    let rot_a = RotationalState {
+        quaternion: JeodQuat::new(
+            r.veh_a_quat[0],
+            r.veh_a_quat[1],
+            r.veh_a_quat[2],
+            r.veh_a_quat[3],
+        ),
+        ang_vel_body: r.veh_a_ang_vel,
+    };
+    let trans_b = TranslationalState {
+        position: r.veh_b_pos,
+        velocity: r.veh_b_vel,
+    };
+    let rot_b = RotationalState {
+        quaternion: JeodQuat::new(
+            r.veh_b_quat[0],
+            r.veh_b_quat[1],
+            r.veh_b_quat[2],
+            r.veh_b_quat[3],
+        ),
+        ang_vel_body: r.veh_b_ang_vel,
+    };
+    (trans_a, rot_a, trans_b, rot_b)
+}
+
 fn build_ab_rot_ab_trans(_init: &InitialConditions) -> SimulationBuilder {
-    build_two_body(
-        iss_like_trans_a(),
-        rot_a_tumble(),
-        iss_like_trans_b(),
-        rot_b_z_spin(),
-        true,
-    )
+    let (trans_a, rot_a, trans_b, rot_b) = ics_from_csv("relative_ab_rot_ab_trans_relative.csv");
+    build_two_body(trans_a, rot_a, trans_b, rot_b, true)
 }
 
 fn build_no_rot_ab_trans(_init: &InitialConditions) -> SimulationBuilder {
-    build_two_body(
-        iss_like_trans_a(),
-        rot_zero(),
-        iss_like_trans_b(),
-        rot_zero(),
-        true,
-    )
+    let (trans_a, rot_a, trans_b, rot_b) = ics_from_csv("relative_no_rot_ab_trans_relative.csv");
+    build_two_body(trans_a, rot_a, trans_b, rot_b, true)
 }
 
 fn build_a_rot_no_trans(_init: &InitialConditions) -> SimulationBuilder {
-    // Same translational ICs for both — only rotation differs.
-    let trans = iss_like_trans_a();
-    build_two_body(trans, rot_a_tumble(), trans, rot_zero(), true)
+    let (trans_a, rot_a, trans_b, rot_b) = ics_from_csv("relative_a_rot_no_trans_relative.csv");
+    build_two_body(trans_a, rot_a, trans_b, rot_b, true)
 }
 
 // ── 3-DOF LVLH-relative variants ──
@@ -208,15 +234,32 @@ fn zero_tolerances() -> Tolerances {
     }
 }
 
+/// Tolerance literals inherited verbatim from the bespoke
+/// `tier3_sim_relative.rs` (`max_pos_err < 3.8e-5`,
+/// `max_vel_err < 3.0e-6`). The metric is the magnitude of the
+/// relative-state error vector, so it lands on a single per-step
+/// scalar; expose it through the `extras` channel.
+const RELATIVE_EXTRAS_TOL: &[(&str, f64)] = &[("rel_pos", 3.8e-5), ("rel_vel", 3.0e-6)];
+
+fn relative_tolerances() -> Tolerances {
+    Tolerances {
+        position_m: [0.0; 3],
+        velocity_m_s: [0.0; 3],
+        quat_angle_rad: 0.0,
+        ang_vel_rad_s: [0.0; 3],
+        extras: RELATIVE_EXTRAS_TOL,
+    }
+}
+
 /// 6-DOF: distinct quaternions and translational states for both bodies.
 pub fn relative_ab_rot_ab_trans() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_relative_ab_rot_ab_trans",
+        name: "tier3_simulation_relative_ab_rot_ab_trans",
         scenario: build_ab_rot_ab_trans,
-        reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
+        reference: CsvReference::Relative("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
-        tolerances: zero_tolerances(),
-        extras: None,
+        tolerances: relative_tolerances(),
+        extras: Some(ExtrasComparator::Relative),
         pre_step: None,
     }
 }
@@ -224,12 +267,12 @@ pub fn relative_ab_rot_ab_trans() -> VerificationCase {
 /// 6-DOF: identity rotation, distinct translational states.
 pub fn relative_no_rot_ab_trans() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_relative_no_rot_ab_trans",
+        name: "tier3_simulation_relative_no_rot_ab_trans",
         scenario: build_no_rot_ab_trans,
-        reference: CsvReference::TimesOnly("relative_no_rot_ab_trans_relative.csv"),
+        reference: CsvReference::Relative("relative_no_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
-        tolerances: zero_tolerances(),
-        extras: None,
+        tolerances: relative_tolerances(),
+        extras: Some(ExtrasComparator::Relative),
         pre_step: None,
     }
 }
@@ -237,12 +280,12 @@ pub fn relative_no_rot_ab_trans() -> VerificationCase {
 /// 6-DOF: identity translational state, distinct rotations.
 pub fn relative_a_rot_no_trans() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_relative_a_rot_no_trans",
+        name: "tier3_simulation_relative_a_rot_no_trans",
         scenario: build_a_rot_no_trans,
-        reference: CsvReference::TimesOnly("relative_a_rot_no_trans_relative.csv"),
+        reference: CsvReference::Relative("relative_a_rot_no_trans_relative.csv"),
         duration: full_csv_duration(),
-        tolerances: zero_tolerances(),
-        extras: None,
+        tolerances: relative_tolerances(),
+        extras: Some(ExtrasComparator::Relative),
         pre_step: None,
     }
 }

@@ -1144,6 +1144,38 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
         }
+        // ── Interactions ──
+        //
+        // `VehicleConfig.drag / srp` are the runner-builder-side
+        // declarations of the body's interaction surface. The bridge
+        // mirrors them onto the matching Bevy components so a recipe
+        // that wires drag/SRP through `VehicleConfig` produces a Bevy
+        // entity bit-identical to the runner without the recipe author
+        // having to insert `DragConfigC` / `FlatPlateConfigC` /
+        // `CannonballSrpC` by hand. The body-side `ShadowBody` index is
+        // dropped here — the matching `ShadowBodyC` lives on the
+        // source entity and is inserted at `populate_app` time, where
+        // `source_entities[source_idx]` is reachable.
+        if let Some(drag) = self.drag {
+            entity.insert(components::DragConfigC::from_untyped(&drag));
+        }
+        match self.srp {
+            None => {}
+            Some(astrodyn::SrpModel::FlatPlate(state)) => {
+                entity.insert(components::FlatPlateConfigC(state));
+            }
+            Some(astrodyn::SrpModel::Cannonball {
+                cx_area,
+                albedo,
+                diffuse,
+            }) => {
+                entity.insert(components::CannonballSrpC {
+                    cx_area,
+                    albedo,
+                    diffuse,
+                });
+            }
+        }
         // Non-root integration: translate the `usize` source index to
         // the matching ECS Entity so `register_body_frames_system` can
         // parent the body's frame entity under that source's frame
