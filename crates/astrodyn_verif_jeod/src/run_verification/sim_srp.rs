@@ -24,8 +24,8 @@ use crate::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
-    default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig,
-    Ephemeris, EphemerisBody, ExponentialAtmosphere, FlatPlate, FlatPlateParams, FlatPlateState,
+    default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
+    EphemerisBody, ExponentialAtmosphere, FlatPlate, FlatPlateParams, FlatPlateState,
     FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState, ShadowBody,
     SimulationBuilder, SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState,
@@ -856,12 +856,3 @@ pub fn srp_derivative_rk4_rotated_struct() -> VerificationCase {
         pre_step: None,
     }
 }
-
-// `DynamicsConfig` is imported by mission code that constructs vehicles
-// directly; recipes use struct-update syntax against `VehicleConfig`'s
-// `Default` (which already encodes `translational_dynamics: true`,
-// `three_dof: false` once `rot` is `Some`). Suppress the unused warning
-// — the import documents the public API for mission code reading this
-// file as a worked example.
-#[allow(dead_code)]
-const _DYNCFG: Option<DynamicsConfig> = None;
