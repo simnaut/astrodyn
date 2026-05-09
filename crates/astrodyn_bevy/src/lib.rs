@@ -1144,37 +1144,37 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
         }
-        // Drag — when `VehicleConfig.drag = Some(config)`, the runner
-        // computes drag for that body. Mirror on the Bevy side by
-        // inserting `DragConfigC`. Pre-issue #395 sub-task B
-        // root-cause, this insertion was missing here, so recipe-driven
-        // scenarios silently lost drag on the Bevy side; now the
-        // bridge keeps the runner and Bevy adapters in lock step.
+        // ── Interactions ──
+        //
+        // `VehicleConfig.{drag, srp, shadow_body}` are the runner-
+        // builder-side declarations of the body's interaction surface.
+        // The bridge mirrors them onto matching Bevy components so a
+        // recipe that wires drag / SRP / shadow through `VehicleConfig`
+        // produces a Bevy entity bit-identical to the runner without
+        // the recipe author having to insert `DragConfigC` /
+        // `FlatPlateConfigC` / `CannonballSrpC` / `ShadowBodyC` by
+        // hand. Pre root-cause-fix, these inserts were missing here,
+        // so recipe-driven scenarios silently lost drag/SRP/shadow on
+        // the Bevy side; now the bridge keeps the runner and Bevy
+        // adapters in lock step.
         if let Some(drag) = self.drag {
             entity.insert(components::DragConfigC::from_untyped(&drag));
         }
-        // SRP — `VehicleConfig.srp` is a tagged enum; lower each
-        // variant onto its matching Bevy `Component`. The hand-rolled
-        // parity tests insert these manually (`FlatPlateConfigC` /
-        // `CannonballSrpC` per scenario); spawn_bevy now does the
-        // same translation automatically so recipes don't need to
-        // round-trip through populate_app+manual-insert.
-        if let Some(srp) = self.srp {
-            match srp {
-                astrodyn::SrpModel::FlatPlate(state) => {
-                    entity.insert(components::FlatPlateConfigC(state));
-                }
-                astrodyn::SrpModel::Cannonball {
+        match self.srp {
+            None => {}
+            Some(astrodyn::SrpModel::FlatPlate(state)) => {
+                entity.insert(components::FlatPlateConfigC(state));
+            }
+            Some(astrodyn::SrpModel::Cannonball {
+                cx_area,
+                albedo,
+                diffuse,
+            }) => {
+                entity.insert(components::CannonballSrpC {
                     cx_area,
                     albedo,
                     diffuse,
-                } => {
-                    entity.insert(components::CannonballSrpC {
-                        cx_area,
-                        albedo,
-                        diffuse,
-                    });
-                }
+                });
             }
         }
         // Shadow body — `VehicleConfig.shadow_body` references a
@@ -1184,20 +1184,22 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         // `ShadowBodyC` marker on the *source* entity itself and the
         // shadow-detection system queries `(TranslationalStateC,
         // ShadowBodyC)`. Translate by inserting the component on the
-        // resolved source entity. Capture both the entity ID and the
-        // source-list reach so the failure mode here matches the
-        // `GravityControl::source` resolver above.
+        // resolved source entity. `populate_app` performs an
+        // idempotent re-walk of `shadow_body` markers (with a radius-
+        // mismatch fail-loud assertion across bodies that share a
+        // source); inserting here is safe under that re-walk and lets
+        // direct `spawn_bevy` callers (outside `populate_app`) get
+        // the marker too.
         if let Some(sb) = self.shadow_body {
             let src = resolve_source_entity(source_entities, sb.source_idx, "shadow_body");
-            // Using a fresh `entity` borrow on the source — the body's
-            // `entity` borrow above must be released first. Stash the
-            // body entity id, drop the borrow, mutate source, then
-            // continue.
+            // The body's `entity` borrow above must be released before
+            // taking a fresh borrow on the source. Stash the body
+            // entity id, drop the borrow, mutate source, then re-
+            // acquire the body entity for any downstream inserts.
             let body_id = entity.id();
             commands
                 .entity(src)
                 .insert(components::ShadowBodyC { radius: sb.radius });
-            // Re-acquire the body entity for any downstream inserts.
             entity = commands.entity(body_id);
         }
         // Non-root integration: translate the `usize` source index to

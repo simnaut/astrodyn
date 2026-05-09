@@ -658,4 +658,113 @@ mod tests {
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use astrodyn_quantities::frame::{RootInertial, TestVehicle};
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_dmat3() -> impl Strategy<Value = DMat3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(a, b, c, d, e, f, g, h, i)| {
+                DMat3::from_cols(
+                    DVec3::new(a, b, c),
+                    DVec3::new(d, e, f),
+                    DVec3::new(g, h, i),
+                )
+            })
+    }
+
+    fn arb_total_force() -> impl Strategy<Value = TotalForce> {
+        (arb_dvec3(), arb_dvec3()).prop_map(|(force, torque)| TotalForce { force, torque })
+    }
+
+    fn arb_frame_derivatives() -> impl Strategy<Value = FrameDerivatives> {
+        (arb_dvec3(), arb_dvec3()).prop_map(|(trans_accel, rot_accel)| FrameDerivatives {
+            trans_accel,
+            rot_accel,
+        })
+    }
+
+    fn arb_gravity_acceleration() -> impl Strategy<Value = GravityAcceleration> {
+        (arb_dvec3(), arb_dmat3(), arb_finite_bounded()).prop_map(
+            |(grav_accel, grav_grad, grav_pot)| GravityAcceleration {
+                grav_accel,
+                grav_grad,
+                grav_pot,
+            },
+        )
+    }
+
+    // The "typed -> untyped -> typed" legs compare via the untyped
+    // projection because the typed siblings' derived PartialEq requires
+    // the phantom types (RootInertial / TestVehicle) to be PartialEq,
+    // which they are not. Equivalent coverage for the field-drop bug
+    // class — see the rotational module for the same idiom.
+    proptest! {
+        #[test]
+        fn round_trip_total_force_untyped_typed_untyped(orig in arb_total_force()) {
+            let typed = TotalForceTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_total_force_typed_untyped_typed(orig in arb_total_force()) {
+            let typed = TotalForceTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&orig);
+            let lifted = TotalForceTyped::<TestVehicle, RootInertial>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_frame_derivatives_untyped_typed_untyped(orig in arb_frame_derivatives()) {
+            let typed = FrameDerivativesTyped::<RootInertial, TestVehicle>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_frame_derivatives_typed_untyped_typed(orig in arb_frame_derivatives()) {
+            let typed = FrameDerivativesTyped::<RootInertial, TestVehicle>::from_untyped_unchecked(&orig);
+            let lifted = FrameDerivativesTyped::<RootInertial, TestVehicle>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_gravity_acceleration_untyped_typed_untyped(orig in arb_gravity_acceleration()) {
+            let typed = GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_gravity_acceleration_typed_untyped_typed(orig in arb_gravity_acceleration()) {
+            let typed = GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&orig);
+            let lifted = GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+    }
 }

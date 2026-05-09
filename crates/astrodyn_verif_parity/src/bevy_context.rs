@@ -2,6 +2,15 @@
 //! a Bevy [`App`]'s world in lockstep with the runner-side
 //! `astrodyn_runner::Simulation`.
 //!
+//! JEOD_INV: TS.01 — this module sits at the per-entity storage
+//! boundary between the runtime-typed runner (`Simulation` carrying
+//! `<V: Vehicle>` parameters per body) and the runtime-typed Bevy
+//! world (`AttachEvent<SelfRef, SelfRef>` events on the message bus,
+//! `m_at::<StructuralFrame<SelfRef>>`-tagged offsets, etc.). Every
+//! `SelfRef` use below sits at this boundary; see
+//! `docs/JEOD_invariants.md` row TS.01 for the full rule and the
+//! lint at `tests/self_ref_self_planet_discipline.rs`.
+//!
 //! The parity trait drives both runtimes from the same scenario factory
 //! and the same [`PreStepClosure`]; on each per-tick iteration the
 //! closure is invoked twice — once with `&mut Simulation`, once with a

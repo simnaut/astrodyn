@@ -1418,4 +1418,119 @@ mod tests {
         assert!(pos_diff < 1e-10, "Position mismatch: {pos_diff:.6e} m");
         assert!(vel_diff < 1e-10, "Velocity mismatch: {vel_diff:.6e} m/s");
     }
+
+    // ---- Round-trip field-coverage test for CoupledBodyInputTyped (#398) ----
+    //
+    // `CoupledBodyInputTyped<'a, F>` holds borrows (&'a mut), so it
+    // can't be exercised by a proptest harness directly. The Apollo
+    // bug class for this type would be: a future engineer adds a field
+    // to `CoupledBodyInput` (untyped) without mirroring it on
+    // `CoupledBodyInputTyped` (typed), or vice versa. The deterministic
+    // fixture test below builds identical owned state, threads it
+    // through both struct shapes, and asserts every field on the typed
+    // input matches its untyped counterpart — destructuring both
+    // structs forces the test to be updated whenever a field is added
+    // or removed on either side.
+
+    #[test]
+    fn coupled_body_input_typed_field_coverage() {
+        use astrodyn_dynamics::state::TranslationalStateTyped;
+        use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+        use astrodyn_quantities::frame::RootInertial;
+        use glam::DVec3;
+
+        // Owned underlying state, identical across both projections.
+        let mut trans_typed =
+            TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
+                position: DVec3::new(7e6, 1e3, -2e3),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            });
+        let mut rot = RotationalState {
+            quaternion: astrodyn_math::JeodQuat::identity(),
+            ang_vel_body: DVec3::new(0.01, 0.0, 0.02),
+        };
+        let mass = MassProperties::with_inertia(
+            420_000.0,
+            glam::DMat3::from_diagonal(DVec3::new(1.0e6, 2.0e6, 3.0e6)),
+            DVec3::new(0.1, 0.2, 0.3),
+        );
+        let force = DVec3::new(10.0, 20.0, 30.0);
+        let torque = DVec3::new(0.4, 0.5, 0.6);
+
+        // Build the typed input.
+        let typed = CoupledBodyInputTyped::<'_, RootInertial> {
+            trans: &mut trans_typed,
+            rot: &mut rot,
+            mass: &mass,
+            non_grav_non_contact_force: force,
+            non_contact_torque_body: torque,
+        };
+
+        // Destructure to assert every field is reachable. Adding a
+        // field to the struct without updating this destructure pattern
+        // is a compile error, defending the field-coverage invariant.
+        let CoupledBodyInputTyped {
+            trans,
+            rot: rot_ref,
+            mass: mass_ref,
+            non_grav_non_contact_force,
+            non_contact_torque_body,
+        } = typed;
+
+        // Build the equivalent untyped projection from the same source
+        // state, then check every field matches.
+        let projected_untyped = TranslationalState {
+            position: trans.position.raw_si(),
+            velocity: trans.velocity.raw_si(),
+        };
+
+        assert_eq!(
+            projected_untyped,
+            TranslationalState {
+                position: DVec3::new(7e6, 1e3, -2e3),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            }
+        );
+        assert_eq!(rot_ref.quaternion, astrodyn_math::JeodQuat::identity());
+        assert_eq!(rot_ref.ang_vel_body, DVec3::new(0.01, 0.0, 0.02));
+        assert_eq!(mass_ref.mass, 420_000.0);
+        assert_eq!(non_grav_non_contact_force, force);
+        assert_eq!(non_contact_torque_body, torque);
+
+        // Symmetric check on the untyped sibling — same destructure
+        // discipline so both struct shapes stay covered.
+        let mut rot_u = RotationalState {
+            quaternion: astrodyn_math::JeodQuat::identity(),
+            ang_vel_body: DVec3::new(0.01, 0.0, 0.02),
+        };
+        let mut trans_u = TranslationalState {
+            position: DVec3::new(7e6, 1e3, -2e3),
+            velocity: DVec3::new(0.0, 7500.0, 0.0),
+        };
+        let untyped = CoupledBodyInput {
+            trans: &mut trans_u,
+            rot: &mut rot_u,
+            mass: &mass,
+            non_grav_non_contact_force: force,
+            non_contact_torque_body: torque,
+        };
+        let CoupledBodyInput {
+            trans: u_trans,
+            rot: u_rot,
+            mass: u_mass,
+            non_grav_non_contact_force: u_force,
+            non_contact_torque_body: u_torque,
+        } = untyped;
+        assert_eq!(
+            *u_trans,
+            TranslationalState {
+                position: DVec3::new(7e6, 1e3, -2e3),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            }
+        );
+        assert_eq!(u_rot.ang_vel_body, DVec3::new(0.01, 0.0, 0.02));
+        assert_eq!(u_mass.mass, 420_000.0);
+        assert_eq!(u_force, force);
+        assert_eq!(u_torque, torque);
+    }
 }

@@ -707,6 +707,89 @@ pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
+// ── SIM_Relative CSV (57 columns) ──────────────────────────────────────────
+
+/// One row from the SIM_Relative reference CSV (57-column layout).
+///
+/// Columns 0–25 are vehicle A's state with position / velocity stored
+/// **interleaved per axis** (`px0, vx0, py0, vy0, pz0, vz0, q0, q1,
+/// q2, q3, …, ω`); columns 26–50 mirror the layout for vehicle B;
+/// columns 51–56 carry JEOD's own `compute_relative_state` output for
+/// vehicle A relative to vehicle B (`rel_pos[3]` then `rel_vel[3]`,
+/// not interleaved).
+///
+/// The quaternion columns are emitted by JEOD multiple times (the
+/// SIM_Relative log records the same `Q_parent_this` against four
+/// different rotation matrices; only the first scalar+vector pair is
+/// the body quaternion). This loader captures the first scalar+vector
+/// at columns 7–10 / 32–35 — the same window the bespoke
+/// `tier3_sim_relative.rs` parser used.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct RelativeRecord {
+    /// Sample time in seconds.
+    pub time: f64,
+    /// Vehicle A inertial position.
+    pub veh_a_pos: DVec3,
+    /// Vehicle A inertial velocity.
+    pub veh_a_vel: DVec3,
+    /// Vehicle A scalar-first JEOD quaternion `[q0, q1, q2, q3]`.
+    pub veh_a_quat: [f64; 4],
+    /// Vehicle A body-frame angular velocity.
+    pub veh_a_ang_vel: DVec3,
+    /// Vehicle B inertial position.
+    pub veh_b_pos: DVec3,
+    /// Vehicle B inertial velocity.
+    pub veh_b_vel: DVec3,
+    /// Vehicle B scalar-first JEOD quaternion.
+    pub veh_b_quat: [f64; 4],
+    /// Vehicle B body-frame angular velocity.
+    pub veh_b_ang_vel: DVec3,
+    /// JEOD-logged relative position (vehicle A minus vehicle B,
+    /// rotated into vehicle B's body frame when both have rotational
+    /// state, else in inertial — matches our
+    /// `compute_relative_state::<SelfRef, SelfRef>` output).
+    pub jeod_rel_pos: DVec3,
+    /// JEOD-logged relative velocity (same frame as `jeod_rel_pos`).
+    pub jeod_rel_vel: DVec3,
+}
+
+/// Parse a SIM_Relative CSV at `path` into [`RelativeRecord`] rows.
+pub fn load_relative_csv(path: &Path) -> Vec<RelativeRecord> {
+    let content = read_csv(path, "SIM_Relative");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 57,
+            "line {}: expected >=57 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(RelativeRecord {
+            time: p(0),
+            // vehA: interleaved pos/vel per axis at columns 1..7.
+            veh_a_pos: DVec3::new(p(1), p(3), p(5)),
+            veh_a_vel: DVec3::new(p(2), p(4), p(6)),
+            veh_a_quat: [p(7), p(8), p(9), p(10)],
+            veh_a_ang_vel: DVec3::new(p(23), p(24), p(25)),
+            // vehB: interleaved pos/vel at columns 26..32.
+            veh_b_pos: DVec3::new(p(26), p(28), p(30)),
+            veh_b_vel: DVec3::new(p(27), p(29), p(31)),
+            veh_b_quat: [p(32), p(33), p(34), p(35)],
+            veh_b_ang_vel: DVec3::new(p(48), p(49), p(50)),
+            // JEOD-logged relative state (cols 51..57): rel_pos[3] then rel_vel[3].
+            jeod_rel_pos: DVec3::new(p(51), p(52), p(53)),
+            jeod_rel_vel: DVec3::new(p(54), p(55), p(56)),
+        });
+    }
+    records
+}
+
 // ── SIM_tide_verif CSV (8 columns: time + pos[3] + vel[3] + dC20) ──────────
 
 /// One row from a SIM_tide_verif CSV (8 columns).

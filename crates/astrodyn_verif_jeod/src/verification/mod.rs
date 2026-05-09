@@ -83,13 +83,14 @@ pub trait SimContext {
     /// `Simulation::attach` runtime entry point — the implementation
     /// must run JEOD's momentum-conservation combine kernel and reset
     /// affected integrators so the post-attach state is bit-identical
-    /// across runtimes.
+    /// across runtimes. Used by mid-flight attach/detach scenarios
+    /// that schedule topology changes via `pre_step`.
     ///
     /// The default implementation panics with an explicit
     /// "attach not supported" message so existing `SimContext`
-    /// implementors stay source-compatible. Adapters that wire
-    /// runtime mid-flight attach into a `Simulation`-equivalent should
-    /// override this.
+    /// implementors stay source-compatible. Adapters that own a
+    /// mass-tree mutation surface (the runner's `Simulation`, the
+    /// Bevy adapter's `AttachEvent` bus) override this.
     fn attach(
         &mut self,
         child_idx: usize,
@@ -113,7 +114,8 @@ pub trait SimContext {
     ///
     /// The default implementation panics with an explicit
     /// "detach not supported" message so existing `SimContext`
-    /// implementors stay source-compatible.
+    /// implementors stay source-compatible. Adapters that own a
+    /// mass-tree mutation surface override this.
     fn detach(&mut self, child_idx: usize) {
         let _ = child_idx;
         panic!(
@@ -132,7 +134,8 @@ pub trait SimContext {
     ///
     /// The default implementation panics with an explicit
     /// "mark_kinematic_only not supported" message so existing
-    /// `SimContext` implementors stay source-compatible.
+    /// `SimContext` implementors stay source-compatible. Adapters
+    /// that own the kinematic-child state machine override this.
     fn mark_kinematic_only(&mut self, child_idx: usize) {
         let _ = child_idx;
         panic!(
@@ -253,6 +256,13 @@ pub enum CsvReference {
     OrbInit(&'static str),
     /// 8-column SIM_tide_verif CSV (time + pos + vel + dC20).
     Tide(&'static str),
+    /// 57-column SIM_Relative two-body CSV (time + interleaved vehA
+    /// state[25] + interleaved vehB state[25] + JEOD-logged relative
+    /// translational state[6]). Used by the runner-vs-JEOD oracle
+    /// (`tier3_sim_relative.rs`) to assert
+    /// [`astrodyn::compute_relative_state`] against JEOD's own
+    /// SIM_Relative output via [`ExtrasComparator::Relative`].
+    Relative(&'static str),
     /// CSV consumed for time-cadence only — the per-variant loaders
     /// don't know how to parse the body of this file (or it carries
     /// columns the cross-validation report would misinterpret), so the
@@ -326,6 +336,7 @@ impl CsvReference {
             | CsvReference::AeroTraj(s)
             | CsvReference::OrbInit(s)
             | CsvReference::Tide(s)
+            | CsvReference::Relative(s)
             | CsvReference::TimesOnly(s) => Some(s),
             CsvReference::SyntheticTimes { .. } => None,
         }
@@ -425,6 +436,14 @@ pub enum ExtrasComparator {
         /// whose ΔC20 series the comparator will sample.
         earth_source_idx: usize,
     },
+    /// SIM_Relative two-body relative state: 2 extras (`rel_pos`,
+    /// `rel_vel`) computed via [`astrodyn::compute_relative_state`] on
+    /// the runner's bodies 0 and 1 and compared against the
+    /// JEOD-logged relative position / velocity vectors in CSV
+    /// columns 51–56. The metric is a vector-magnitude error
+    /// (`(ours - reference).length()`), matching the bespoke
+    /// `tier3_sim_relative.rs` assertion shape exactly.
+    Relative,
 }
 
 /// A single Tier 3 verification case.

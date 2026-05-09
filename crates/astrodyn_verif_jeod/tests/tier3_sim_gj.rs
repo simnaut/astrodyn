@@ -8,22 +8,19 @@
 //! [`crate::run_verification::sim_gj`], driven through
 //! [`VerificationCaseExt::run_and_assert`]. The recipe carries the
 //! scenario constructor, CSV reference, and per-component tolerances
-//! verbatim; this file's only job is to dispatch the variant.
+//! verbatim; this file's only job is to dispatch the variant. Both
+//! the runner-vs-JEOD oracle (this file) and the runner-vs-bevy parity
+//! sibling (`bevy_parity_gj.rs`) drive identical scenarios from the same
+//! source-of-truth recipes.
 //!
 //! Variants:
 //! - [`tier3_simulation_gj_order8`] — baseline GJ order 8, dt=1 s
 //! - [`tier3_simulation_gj_order4`] — GJ order 4, dt=1 s
 //! - [`tier3_simulation_gj_order12`] — GJ order 12, dt=1 s
 //! - [`tier3_simulation_gj_dt10`] — GJ order 8 with `time_scale_factor=10`
-//!
-//! Closes the duplication PR #394 introduced where this file hand-rolled
-//! a `Simulation::new` + `add_source` + `step_until` loop alongside
-//! `sim_gj`'s already-existing `VerificationCase` factories. Now both
-//! the runner-vs-JEOD oracle (this file) and the runner-vs-bevy parity
-//! sibling (`bevy_parity_gj.rs`) drive identical scenarios from the same
-//! source-of-truth recipes (issue #395 sub-task E).
 
-use astrodyn_verif_jeod::run_verification::{sim_gj, VerificationCaseExt};
+use astrodyn_verif_jeod::run_verification::sim_gj;
+use astrodyn_verif_jeod::VerificationCaseExt;
 
 #[test]
 fn tier3_simulation_gj_order8() {

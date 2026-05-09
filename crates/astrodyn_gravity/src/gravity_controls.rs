@@ -26,7 +26,7 @@ use log::warn;
 /// source as a `String`, a workspace-internal `usize` index, or a Bevy
 /// `Entity` handle. Use [`Self::retag_source`] to map between
 /// instantiations without enumerating the field list.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GravityControl<SourceId = String> {
     /// Source identifier.
     pub source_name: SourceId,
@@ -910,5 +910,67 @@ mod tests {
         // contributes zero for degree < 2 and `perturbing_only` is false).
         assert!(result.grav_accel.is_finite());
         assert!(result.grav_accel.length() > 0.0);
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use proptest::prelude::*;
+
+    fn arb_gravity_control() -> impl Strategy<Value = GravityControl<String>> {
+        (
+            "[a-z]{1,8}",
+            any::<bool>(),
+            any::<bool>(),
+            0usize..=64,
+            0usize..=64,
+            any::<bool>(),
+            0usize..=64,
+            0usize..=64,
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        )
+            .prop_map(
+                |(
+                    source_name,
+                    gradient,
+                    spherical,
+                    degree,
+                    order,
+                    perturbing_only,
+                    gradient_degree,
+                    gradient_order,
+                    differential,
+                    battin_method,
+                    relativistic,
+                )| GravityControl {
+                    source_name,
+                    gradient,
+                    spherical,
+                    degree,
+                    order,
+                    perturbing_only,
+                    gradient_degree,
+                    gradient_order,
+                    differential,
+                    battin_method,
+                    relativistic,
+                },
+            )
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_gravity_control_untyped_typed_untyped(orig in arb_gravity_control()) {
+            let typed = GravityControlTyped::<String>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_gravity_control_typed_untyped_typed(orig in arb_gravity_control()) {
+            let typed = GravityControlTyped::<String>::from_untyped_unchecked(&orig);
+            let lifted = GravityControlTyped::<String>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 }

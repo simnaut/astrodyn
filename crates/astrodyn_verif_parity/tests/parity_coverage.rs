@@ -25,13 +25,25 @@ use std::path::Path;
 
 /// Topics whose Tier 3 sibling exists but whose parity counterpart is
 /// deliberately absent (or `#[ignore]`d) for a documented structural
-/// reason. Each entry MUST link to the tracking note that explains the
-/// gap; the entries here are the "intentional gap" set the
+/// reason. The entries here are the "intentional gap" set the
 /// `parity_coverage` test exempts.
 ///
+/// Two flavors of gap live in this list:
+///
+/// 1. **Deferred** — the bridge or recipe layer doesn't cover the
+///    topic *yet*, but a parity wrapper is expected once the blocker
+///    lifts. These entries MUST link to the tracking issue (typically
+///    `#389` or a follow-up) so the gap can be closed and the entry
+///    dropped when the issue lands.
+/// 2. **Permanent** — the topic is structurally out of scope for the
+///    `VerificationCaseParityExt` trait (no trajectory CSV, pure
+///    analytical/solver test, structural mass-tree composition). The
+///    reason field states *why* the topic doesn't fit; no issue link
+///    is required because there is no follow-up planned.
+///
 /// The set is intentionally small. Issue #389 closes the bulk of the
-/// gap; entries that remain are the long-tail features the bridge
-/// doesn't cover yet.
+/// deferred cluster; entries that remain are either narrowly-scoped
+/// follow-ups or permanent out-of-scope cases.
 const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     // ── Multi-planet scenarios: the bridge spawns all bodies under a
     //    single `<P>` today, so cases that integrate in two
@@ -148,12 +160,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "euler",
-        "pre-recipe sibling — Euler recipe factories exist in \
-         sim_derived_state but no parity wrapper has been added yet \
-         (#389 follow-up)",
-    ),
-    (
         "euler_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
@@ -170,12 +176,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "lvlh",
-        "pre-recipe sibling — LVLH recipe factories exist in \
-         sim_derived_state but no parity wrapper has been added yet \
-         (#389 follow-up)",
-    ),
-    (
         "lvlh_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
@@ -185,30 +185,9 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
     ),
     (
-        "lvlh_rot_init_propagation",
-        "pre-recipe sibling — overlaps with sim_dyncomp::run2_lvlh_rot_init_propagation \
-         but no parity wrapper yet (#389 follow-up)",
-    ),
-    (
-        "met",
-        "pre-recipe MET atmosphere sibling — recipe exists \
-         (sim_dyncomp::run5a_met) but uses pre_step (Bevy SimContext gap, \
-         #389 follow-up)",
-    ),
-    (
-        "ned",
-        "pre-recipe sibling — NED recipe factories exist in sim_derived_state \
-         but no parity wrapper has been added yet (#389 follow-up)",
-    ),
-    (
         "ned_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
-    ),
-    (
-        "orbelem",
-        "pre-recipe sibling — orbelem recipe exists (sim_derived_state::orbelem_ecc) \
-         but no parity wrapper has been added yet (#389 follow-up)",
     ),
     (
         "orbelem_comprehensive",
@@ -236,11 +215,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          defined (#389 follow-up)",
     ),
     (
-        "polar_motion",
-        "pre-recipe sibling — recipe exists (sim_polar_motion::run2p_polar_motion) \
-         but no parity wrapper has been added yet (#389 follow-up)",
-    ),
-    (
         "ref_attach",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined (#389 follow-up)",
@@ -251,17 +225,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          CsvReference variant; follow-up to #389",
     ),
     (
-        "shadow_2a",
-        "pre-recipe sibling — shadow-calc recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
-        "solar_beta",
-        "pre-recipe sibling — recipes exist (sim_solar_beta::*) but most \
-         use pre_step (Bevy SimContext gap, #389 follow-up); the pre_step-free \
-         variant has no parity wrapper yet",
-    ),
-    (
         "solar_beta_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
@@ -270,26 +233,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "solar_beta_extended",
         "pre-recipe sibling — extended cases recipe factory not yet defined \
          (#389 follow-up)",
-    ),
-    (
-        "srp_1st_order",
-        "pre-recipe sibling — recipe exists (sim_srp::srp_1st_order_trajectory) \
-         but uses pre_step (Bevy SimContext gap, #389 follow-up)",
-    ),
-    (
-        "srp_basic",
-        "pre-recipe sibling — basic SRP recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
-        "srp_rk4_thermal",
-        "pre-recipe sibling — RK4 thermal SRP recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
-        "tide_verif",
-        "pre-recipe sibling — recipe exists (sim_tide_verif::run01) but uses \
-         pre_step (Bevy SimContext gap, #389 follow-up)",
     ),
     (
         "time_docker",
@@ -305,48 +248,16 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "timescale",
         "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
     ),
-    (
-        "torque_simple",
-        "pre-recipe sibling — recipe exists (sim_torque_simple::run0[1-6]) \
-         but no parity wrapper has been added yet (#389 follow-up)",
-    ),
     // ── dyncomp run3-run10: most have recipe factories
     //    (sim_dyncomp::run3a_sh4x4, run4_3rd_body, run7a_*, run10a_*, …)
     //    but several rely on `pre_step` for ephemeris updates and the
     //    wrapper hasn't been added yet. Tracked individually so each
     //    can be dropped from the gap list as its wrapper lands.
     (
-        "dyncomp_run3",
-        "recipes exist (sim_dyncomp::run3a_sh4x4, run3b_sh8x8) — wrapper \
-         not yet added (#389 follow-up)",
-    ),
-    (
-        "dyncomp_run4",
-        "recipe exists (sim_dyncomp::run4_3rd_body) but uses pre_step \
-         (Bevy SimContext gap, #389 follow-up)",
-    ),
-    (
-        "dyncomp_run5",
-        "recipes exist (sim_dyncomp::run5a_met, run5b/c_atmosphere_*) — \
-         atmosphere variants need verification; wrapper not yet added \
-         (#389 follow-up)",
-    ),
-    (
         "dyncomp_run6",
         "recipes exist (sim_dyncomp::run6a_const_density_drag, run6b_drag, \
          run6b_drag_rotated_struct, run6b_drag_aero_traj) — wrapper not yet \
          added (#389 follow-up)",
-    ),
-    (
-        "dyncomp_run7",
-        "recipes exist (sim_dyncomp::run7a-d_*) but every variant uses \
-         pre_step (Bevy SimContext gap, #389 follow-up)",
-    ),
-    (
-        "dyncomp_run10",
-        "recipes exist (sim_dyncomp::run10a_gravity_torque, \
-         run10c_gravity_torque_elliptical, run10d_gravity_torque_elliptical_rate) \
-         — wrapper not yet added (#389 follow-up)",
     ),
     // dyncomp_run2 covered by `bevy_parity_dyncomp_run2_3dof.rs` (the
     // pilot wrapper); the prefix-match in `is_covered_by_parity` lets
@@ -414,6 +325,22 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         stale.is_empty(),
         "KNOWN_PARITY_GAPS contains topics that no longer exist in tier3_*.rs: {stale:?}\n  \
          Either restore the missing tier3 test or drop the exemption.",
+    );
+
+    // Cross-list redundancy: a topic with an existing parity wrapper
+    // shouldn't *also* be in `KNOWN_PARITY_GAPS` (the gap entry would
+    // be a lie). Catches the "added the wrapper but forgot to drop the
+    // gap entry" failure mode.
+    let mut redundant: Vec<&str> = Vec::new();
+    for (topic, _reason) in KNOWN_PARITY_GAPS {
+        if is_covered_by_parity(topic, &parity_topics) {
+            redundant.push(topic);
+        }
+    }
+    assert!(
+        redundant.is_empty(),
+        "KNOWN_PARITY_GAPS lists topics that already have a parity wrapper: {redundant:?}\n  \
+         Drop the redundant gap entry — the wrapper supersedes it.",
     );
 }
 

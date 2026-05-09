@@ -26,7 +26,7 @@ use uom::si::f64::{Area, MassDensity, Ratio};
 /// Vehicle drag configuration for the ballistic (default) model.
 ///
 /// Port of JEOD `DefaultAero` with `DRAG_OPT_CD` option.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DragConfig {
     /// Coefficient of drag (dimensionless). Typically 2.0-2.5 for LEO.
     pub cd: f64,
@@ -535,5 +535,71 @@ mod tests {
             "ISS altitude loss should be ~100-300 m/day, got {} m/day",
             da_day
         );
+    }
+
+    // ---- proptest round-trips (#398) ----------------------------------
+
+    use astrodyn_quantities::frame::TestVehicle;
+    use proptest::prelude::*;
+
+    fn arb_finite_bounded() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            (1.0e-9_f64..1.0e9_f64),
+            (1.0e-9_f64..1.0e9_f64).prop_map(|x| -x),
+        ]
+    }
+
+    fn arb_dvec3() -> impl Strategy<Value = DVec3> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+        )
+            .prop_map(|(x, y, z)| DVec3::new(x, y, z))
+    }
+
+    fn arb_drag_config() -> impl Strategy<Value = DragConfig> {
+        (
+            arb_finite_bounded(),
+            arb_finite_bounded(),
+            proptest::option::of(arb_finite_bounded()),
+        )
+            .prop_map(|(cd, area, constant_density)| DragConfig {
+                cd,
+                area,
+                constant_density,
+            })
+    }
+
+    fn arb_aerodynamic_force() -> impl Strategy<Value = AerodynamicForce> {
+        (arb_dvec3(), arb_dvec3()).prop_map(|(force, torque)| AerodynamicForce { force, torque })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trip_drag_config_untyped_typed_untyped(orig in arb_drag_config()) {
+            let typed = DragConfigTyped::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_drag_config_typed_untyped_typed(orig in arb_drag_config()) {
+            let typed = DragConfigTyped::from_untyped_unchecked(&orig);
+            let lifted = DragConfigTyped::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
+
+        #[test]
+        fn round_trip_aerodynamic_force_untyped_typed_untyped(orig in arb_aerodynamic_force()) {
+            let typed = AerodynamicForceTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            prop_assert_eq!(typed.to_untyped(), orig);
+        }
+
+        #[test]
+        fn round_trip_aerodynamic_force_typed_untyped_typed(orig in arb_aerodynamic_force()) {
+            let typed = AerodynamicForceTyped::<TestVehicle>::from_untyped_unchecked(&orig);
+            let lifted = AerodynamicForceTyped::<TestVehicle>::from_untyped_unchecked(&typed.to_untyped());
+            prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
+        }
     }
 }
