@@ -180,7 +180,11 @@ impl VerificationCaseParityExt for VerificationCase {
             }
             if let Some(hook) = bevy_pre_step.as_mut() {
                 let world = app.world_mut();
-                let mut ctx = BevySimContext::<P>::new(world, &handles.source_entities);
+                let mut ctx = BevySimContext::<P>::new(
+                    world,
+                    &handles.source_entities,
+                    &handles.body_entities,
+                );
                 hook(&mut ctx, record.time);
             }
 

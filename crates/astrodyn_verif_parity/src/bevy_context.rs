@@ -9,28 +9,41 @@
 //!
 //! ## Scope
 //!
-//! Today this implements the source-position injection methods:
-//! [`set_source_position`], [`set_source_state`], and
-//! [`set_tidal_body_position`]. These are the only methods the
-//! `pre_step`-using recipes in
-//! `astrodyn_verif_jeod::run_verification::sim_*` actually call (third-body
-//! ephemeris updates, tidal Sun/Moon position injection).
+//! - **Source-state injection** ([`set_source_position`],
+//!   [`set_source_state`], [`set_tidal_body_position`]) — direct
+//!   `World::get_mut` writes mirroring `astrodyn_bevy::SourceMutator`.
+//! - **Mass-tree mid-flight attach/detach** ([`attach`], [`detach`])
+//!   — write `AttachEvent<SelfRef, SelfRef>` / `DetachEvent` onto the
+//!   message bus. The next `app.world_mut().run_schedule(FixedUpdate)`
+//!   drains the queue at the top of `staging_system`, before
+//!   integration runs that tick — so both runtimes feed the same
+//!   pre-attach state into the same `combine_states_at_attach` kernel
+//!   and the same integrator-reset path. Bit-identity holds.
+//! - **Kinematic-only gating** ([`mark_kinematic_only`]) — insert
+//!   `KinematicChildC` directly on the child entity. The runner sets
+//!   `bodies[idx].kinematic_only = true` synchronously; on the Bevy
+//!   side `wrench_aggregation_system` would also install
+//!   `KinematicChildC` once it observes the new mass-tree topology,
+//!   but explicit insertion here matches the runner's
+//!   call-site-synchronous semantics so the integrator-skip is in
+//!   place before the next FixedUpdate runs.
 //!
-//! [`attach`], [`detach`], [`mark_kinematic_only`] inherit the trait's
-//! default-panic behaviour for now. Wiring them up requires careful
-//! coordination with the Bevy-side `staging_system` to preserve
-//! bit-identity with the runner's synchronous `Simulation::attach`
-//! combine kernel + integrator reset; that is sub-task A's runtime
-//! attach/detach work, tracked separately.
+//! All five methods preserve the runner's "pre-step only" contract:
+//! the closure runs before `step_n`/`run_schedule(FixedUpdate)`, so a
+//! mid-step reentrant attach is structurally impossible.
 
-use astrodyn::{Planet, PlanetInertial, RootInertial, Vec3Ext};
+use astrodyn::{
+    FrameTransform, Planet, PlanetInertial, Position, RootInertial, SelfRef, StructuralFrame,
+    Vec3Ext,
+};
 use astrodyn_bevy::{
-    FrameEntityC, FrameTransC, SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC,
-    TranslationalStateC,
+    AttachEvent, DetachEvent, FrameEntityC, FrameTransC, KinematicChildC, MassChildOf,
+    SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::SimContext;
+use bevy::ecs::message::Messages;
 use bevy::prelude::*;
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 
 /// `SimContext` adapter over a Bevy [`World`].
 ///
@@ -49,16 +62,24 @@ use glam::DVec3;
 pub struct BevySimContext<'w, P: Planet> {
     world: &'w mut World,
     source_entities: &'w [Entity],
+    body_entities: &'w [Entity],
     _planet: std::marker::PhantomData<P>,
 }
 
 impl<'w, P: Planet> BevySimContext<'w, P> {
-    /// Construct a context borrowing the given world and source-entity
-    /// slice for the lifetime of one `pre_step` invocation.
-    pub fn new(world: &'w mut World, source_entities: &'w [Entity]) -> Self {
+    /// Construct a context borrowing the given world plus the
+    /// source-entity and body-entity slices for the lifetime of one
+    /// `pre_step` invocation. Both slices are parallel to the
+    /// runner-side `source_idx` / `body_idx` conventions.
+    pub fn new(
+        world: &'w mut World,
+        source_entities: &'w [Entity],
+        body_entities: &'w [Entity],
+    ) -> Self {
         Self {
             world,
             source_entities,
+            body_entities,
             _planet: std::marker::PhantomData,
         }
     }
@@ -69,6 +90,16 @@ impl<'w, P: Planet> BevySimContext<'w, P> {
                 "BevySimContext: source_idx {source_idx} out of range \
                  (have {} sources)",
                 self.source_entities.len()
+            )
+        })
+    }
+
+    fn body_entity(&self, body_idx: usize) -> Entity {
+        *self.body_entities.get(body_idx).unwrap_or_else(|| {
+            panic!(
+                "BevySimContext: body_idx {body_idx} out of range \
+                 (have {} bodies)",
+                self.body_entities.len()
             )
         })
     }
@@ -211,4 +242,84 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         );
         tidal.0.tidal_bodies[tidal_body_idx].position_inertial = position.m_at::<RootInertial>();
     }
+
+    fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        let child = self.body_entity(child_idx);
+        let parent = self.body_entity(parent_idx);
+
+        // Write `AttachEvent<SelfRef, SelfRef>` onto the message bus.
+        // The next `app.world_mut().run_schedule(FixedUpdate)` drains
+        // the queue at the top of `staging_system`, before integration
+        // — so the runner's synchronous `Simulation::attach` and the
+        // Bevy adapter's deferred attach both run their combine kernel
+        // on the same pre-attach pair, and the merged composite-body
+        // state plus integrator reset land before that tick's
+        // integration. The message payload uses `<SelfRef, SelfRef>`
+        // because the canonical Bevy adapter registers the
+        // runtime-resolved instantiation (vehicle identity is decided
+        // by per-entity storage, not at message-bus dispatch).
+        let event = AttachEvent::<SelfRef, SelfRef> {
+            child,
+            parent,
+            offset: offset.m_at::<StructuralFrame<SelfRef>>(),
+            t_parent_child:
+                FrameTransform::<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>::from_matrix(
+                    t_parent_child,
+                ),
+        };
+        let mut messages = self
+            .world
+            .resource_mut::<Messages<AttachEvent<SelfRef, SelfRef>>>();
+        messages.write(event);
+
+        // Also insert `MassChildOf` on the child entity so the
+        // ECS-native parent ↔ child edge mirrors the topology
+        // `staging_system` is about to record on the mass-tree
+        // resource. Mirrors the hand-rolled
+        // `bevy_parity_attach_detach_trajectory.rs` pattern; without
+        // it kinematic-propagation reads the wrong parent on the
+        // attach-event tick.
+        let _ = (parent, child); // silence unused if reordered later
+        self.world.entity_mut(child).insert(MassChildOf {
+            parent,
+            offset,
+            t_parent_child,
+        });
+    }
+
+    fn detach(&mut self, child_idx: usize) {
+        let child = self.body_entity(child_idx);
+        let mut messages = self.world.resource_mut::<Messages<DetachEvent>>();
+        messages.write(DetachEvent { child });
+        // Remove the ECS-native parent ↔ child edge. `staging_system`
+        // updates the mass-tree resource; removing `MassChildOf` here
+        // keeps the component-level edge in sync so the next tick's
+        // wrench / propagation systems observe a root-equivalent
+        // topology for the detached body.
+        self.world.entity_mut(child).remove::<MassChildOf>();
+    }
+
+    fn mark_kinematic_only(&mut self, child_idx: usize) {
+        let child = self.body_entity(child_idx);
+        // `wrench_aggregation_system` would also install
+        // `KinematicChildC` once it observes a non-root mass-tree
+        // node, but explicit insertion here matches the runner's
+        // synchronous `mark_kinematic_only` semantics — the marker is
+        // present *before* the next FixedUpdate's integration runs.
+        self.world.entity_mut(child).insert(KinematicChildC);
+    }
 }
+
+// We use `Position::<StructuralFrame<SelfRef>>` indirectly via
+// `m_at::<StructuralFrame<SelfRef>>()`; the unused-import lint sees
+// `Position` only through that path, so name it explicitly to silence
+// the transitive `unused_imports` check on direct use.
+const _: fn() = || {
+    let _: Position<StructuralFrame<SelfRef>> = DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>();
+};
