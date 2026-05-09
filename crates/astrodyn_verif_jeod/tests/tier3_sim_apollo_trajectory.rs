@@ -64,15 +64,15 @@
 //! complements it by exercising the full `Simulation::step()` pipeline
 //! end-to-end through the same event sequence.
 
+use astrodyn::GeoIndexType;
+use astrodyn::JeodQuat;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, EARTH,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_atmosphere::met::GeoIndexType;
-use astrodyn_dynamics::{MassBodyId, MassProperties, MassTree};
-use astrodyn_math::JeodQuat;
+use astrodyn::{MassBodyId, MassProperties, MassTree};
 use astrodyn_runner::{RotationModel, Simulation, SimulationBuilderExt};
 use astrodyn_verif_jeod::apollo_truth::{
     load_apollo_attach_truth, nearest_truth_at, ApolloTruthError, ApolloTruthRow,
@@ -322,9 +322,9 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
     // Earth: 8x8 GGM05C non-spherical, with the Earth-RNP rotation model so
     // the planet-fixed frame updates each step (matches JEOD's
     // `earth_GGM05C_MET_RNP.sm`).
-    let earth_grav = astrodyn_gravity::fixtures::load_ggm05c();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
+    let earth_grav = astrodyn::gravity_fixtures::load_ggm05c();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
 
     // Note: SIM_Apollo's Modified_data/Earth/params.py overrides Earth mu
     // to the historic 3.98600436e14 value, but `set_vehicle_grav_controls`

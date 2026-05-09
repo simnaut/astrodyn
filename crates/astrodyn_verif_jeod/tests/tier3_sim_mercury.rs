@@ -20,7 +20,7 @@ use astrodyn_runner::Simulation;
 use glam::DVec3;
 
 fn load_mu_sun() -> f64 {
-    astrodyn_gravity::fixtures::load_sun_spherical_mu()
+    astrodyn::gravity_fixtures::load_sun_spherical_mu()
 }
 
 /// Mercury at perihelion (approximate J2000 elements).

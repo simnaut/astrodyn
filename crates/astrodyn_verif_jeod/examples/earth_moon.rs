@@ -94,9 +94,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         velocity: INIT_VEL,
     };
     let clementine = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<
-            astrodyn_quantities::frame::RootInertial,
-        >::from_untyped_unchecked(&trans))
+        .with_translational(
+            astrodyn::TranslationalStateTyped::<astrodyn::RootInertial>::from_untyped_unchecked(
+                &trans,
+            ),
+        )
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
         .gravity(GravityControl::new_nonspherical(moon, 60, 60, false))

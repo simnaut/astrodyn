@@ -66,7 +66,7 @@ fn bsp_path() -> PathBuf {
 
 fn load_mu_earth() -> f64 {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    astrodyn_gravity::fixtures::load_ggm05c().mu
+    astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
 fn earth_point_mass(mu: f64) -> GravitySourceEntry {
@@ -230,9 +230,9 @@ const SIM_SOLAR_BETA_TAI_UTC_S: f64 = 26.0;
 ///   constant is kept stable for now.
 ///
 /// Computed as JD(TT) = JD(UTC) + (TAI-UTC + TT-TAI) / 86 400, where
-/// TT-TAI is the canonical [`astrodyn_time::TAI_TT_OFFSET`] (= 32.184 s).
-const SIM_SOLAR_BETA_EPOCH_TT_JD: f64 = SIM_SOLAR_BETA_EPOCH_UTC_JD
-    + (SIM_SOLAR_BETA_TAI_UTC_S + astrodyn_time::TAI_TT_OFFSET) / 86_400.0;
+/// TT-TAI is the canonical [`astrodyn::TAI_TT_OFFSET`] (= 32.184 s).
+const SIM_SOLAR_BETA_EPOCH_TT_JD: f64 =
+    SIM_SOLAR_BETA_EPOCH_UTC_JD + (SIM_SOLAR_BETA_TAI_UTC_S + astrodyn::TAI_TT_OFFSET) / 86_400.0;
 
 /// SIM_SolarBeta epoch as TAI TJT (the form `SimulationTime::new` consumes).
 /// = MJD(TAI) − 40 000 = (JD(UTC) + TAI-UTC/86 400 − 2 400 000.5) − 40 000.
@@ -258,7 +258,7 @@ fn sim_solar_beta_dt() -> f64 {
 
 fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (sun_t0, _) = ephemeris
@@ -319,7 +319,7 @@ pub fn solar_beta_equ() -> VerificationCase {
 
 fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
     // Earth GGM05C SH from the committed fixture (Wave 1 of #232).
-    let sh_data = astrodyn_gravity::fixtures::load_ggm05c();
+    let sh_data = astrodyn::gravity_fixtures::load_ggm05c();
     let mu_earth = sh_data.mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");

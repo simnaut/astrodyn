@@ -112,6 +112,7 @@
 //! fail both.
 
 use astrodyn::IntegratorType;
+use astrodyn::MassProperties;
 use astrodyn::{
     DynamicsConfig, GravityControls, JeodQuat, MassTree, RotationalState, SimulationTime,
     SixDofState, TranslationalState, VehicleConfig,
@@ -121,7 +122,6 @@ use astrodyn_bevy::{
     FrameDerivativesC, GravityControlsC, MassBodyIdC, MassPropertiesC, MassTreeR, RotationalStateC,
     TotalForceC, TranslationalStateC,
 };
-use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};

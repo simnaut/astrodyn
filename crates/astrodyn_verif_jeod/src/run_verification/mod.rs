@@ -786,10 +786,8 @@ impl ExtrasAccumulator {
             .euler_angles
             .unwrap_or_else(|| panic!("{case_name}: euler_angles not computed at idx {idx}"));
         let jeod_t = jeod_q.left_quat_to_transformation();
-        let jeod_euler = astrodyn_math::compute_euler_angles_from_matrix_typed(
-            &jeod_t,
-            astrodyn::EulerSequence::XYZ,
-        );
+        let jeod_euler =
+            astrodyn::compute_euler_angles_from_matrix_typed(&jeod_t, astrodyn::EulerSequence::XYZ);
         self.update_max(
             "euler_roll",
             angle_diff(euler[0], jeod_euler[0].get::<radian>()),

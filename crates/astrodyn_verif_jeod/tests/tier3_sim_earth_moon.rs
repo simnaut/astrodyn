@@ -24,11 +24,11 @@ use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use glam::DVec3;
 
 fn load_mu_earth() -> f64 {
-    astrodyn_gravity::fixtures::load_ggm05c().mu
+    astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
 fn load_mu_sun() -> f64 {
-    astrodyn_gravity::fixtures::load_sun_spherical_mu()
+    astrodyn::gravity_fixtures::load_sun_spherical_mu()
 }
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
@@ -99,7 +99,7 @@ fn tier3_simulation_earth_moon_clem() {
     let mut sim = Simulation::new(time, 0.03125); // 32 Hz, matching JEOD S_define
 
     // Load LP150Q spherical harmonics for Moon (matching JEOD's SIM_Earth_Moon)
-    let sh_data = astrodyn_gravity::fixtures::load_moon_lp150q();
+    let sh_data = astrodyn::gravity_fixtures::load_moon_lp150q();
     let moon_mu = sh_data.mu;
 
     // Moon rotation from DE421 BPC libration data, updated per step.

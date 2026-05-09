@@ -18,16 +18,7 @@ exclude = [
 
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
-astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
-astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
-astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
-astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
-astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
-astrodyn_interactions = { path = "../astrodyn_interactions", version = "0.1.0" }
-astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
-astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 glam = { workspace = true }
 log = { workspace = true }
 regex = "1"

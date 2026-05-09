@@ -21,15 +21,13 @@ mod common;
 
 use std::time::Duration;
 
+use astrodyn::{init_rot_from_lvlh, LvlhAngularVelocityFrame as KernelLvlhFrame};
 use astrodyn::{
     BodyAction, DynamicsConfig, JeodQuat, LvlhAngularVelocityFrame, MassProperties, RotationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, BodyActionEvent, GravitySourceC, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
-};
-use astrodyn_dynamics::body_init::{
-    init_rot_from_lvlh, LvlhAngularVelocityFrame as KernelLvlhFrame,
 };
 use bevy::prelude::*;
 use glam::DVec3;

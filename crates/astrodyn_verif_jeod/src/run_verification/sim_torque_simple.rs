@@ -120,9 +120,9 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
 
     // Earth GGM05C SH, Sun mu, and Moon GRAIL150 mu all from committed
     // gravity fixtures (#249).
-    let earth_grav = astrodyn_gravity::fixtures::load_ggm05c();
-    let mu_sun = astrodyn_gravity::fixtures::load_sun_spherical_mu();
-    let mu_moon = astrodyn_gravity::fixtures::load_moon_grail150_mu();
+    let earth_grav = astrodyn::gravity_fixtures::load_ggm05c();
+    let mu_sun = astrodyn::gravity_fixtures::load_sun_spherical_mu();
+    let mu_moon = astrodyn::gravity_fixtures::load_moon_grail150_mu();
 
     let needs_pfix = cfg.earth_nonspherical || cfg.gradient_degree > 0;
     let earth_source = if needs_pfix {

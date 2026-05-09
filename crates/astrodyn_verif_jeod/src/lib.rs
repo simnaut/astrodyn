@@ -35,8 +35,6 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-pub use astrodyn_quantities::prelude::*;
-
 pub mod apollo_mass_tree;
 pub mod apollo_truth;
 pub mod atmosphere_verif;

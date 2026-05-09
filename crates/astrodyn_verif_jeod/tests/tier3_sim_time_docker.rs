@@ -21,8 +21,8 @@
 
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
-use astrodyn_time::leap_second::default_leap_second_table;
-use astrodyn_time::{TimeManager, TimeScaleId};
+use astrodyn::default_leap_second_table;
+use astrodyn::{TimeManager, TimeScaleId};
 
 const SECONDS_PER_DAY: f64 = 86400.0;
 
@@ -142,7 +142,7 @@ fn load_time_csv(path: &std::path::Path) -> Vec<TimeRow> {
 fn initial_tai_tjt(first: &TimeRow) -> f64 {
     // SIM_1 / SIM_3 have no TAI — arbitrary anchor; everything is
     // relative to simulation epoch.
-    first.tai_tjt.unwrap_or(astrodyn_time::epoch::J2000_TAI_TJT)
+    first.tai_tjt.unwrap_or(astrodyn::J2000_TAI_TJT)
 }
 
 // ── SIM_1_dyn_only ──────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 //!
 //! Reference: `sims/SIM_Apollo/SET_test/RUN_test/input.py` in JEOD v5.4.
 
-use astrodyn_dynamics::{MassProperties, MassTree};
+use astrodyn::{MassProperties, MassTree};
 use glam::{DMat3, DVec3};
 
 // ── Unit conversion constants ──

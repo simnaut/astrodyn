@@ -173,7 +173,16 @@ pub use astrodyn_dynamics::{
 
 // astrodyn_dynamics::body_init: typed orbital-element initializer
 // consumed by mission examples (e.g. `examples/kepler_orbit.rs`).
-pub use astrodyn_dynamics::body_init::init_from_orbital_elements_typed;
+// `init_from_mean_anomaly` and `init_rot_from_lvlh` cover the JEOD
+// orbital-element / LVLH initialization paths used by mission init code
+// and JEOD parity tests.
+pub use astrodyn_dynamics::body_init::{
+    init_from_mean_anomaly, init_from_orbital_elements_typed, init_rot_from_lvlh,
+};
+
+// astrodyn_dynamics::kinematic_propagation: input struct paired with the
+// already-exposed `compute_kinematic_child_state`.
+pub use astrodyn_dynamics::kinematic_propagation::KinematicChildInputs;
 
 // astrodyn_dynamics typed siblings: ECS components built on the typed
 // state primitives so storage carries frame phantoms rather than
@@ -225,11 +234,16 @@ pub use astrodyn_frames::{
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that the
 // Bevy adapter and mission code consume through `SimulationTime` /
-// `default_leap_second_table()`.
+// `default_leap_second_table()`. `TimeManager` + `TimeScaleId` are the
+// multi-scale time API; `time_utc::{calendar_to_tjt, tjt_to_calendar,
+// CalendarDate}` are the civil-time conversion helpers used by JEOD
+// orbital-init and time-verification cross-validation.
 pub use astrodyn_time::{
-    epoch::{J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY},
+    epoch::{J2000_TAI_TJT, J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET},
     leap_second::default_leap_second_table,
-    SimulationTime,
+    time_converter_ut1_gmst::ut1_to_gmst_seconds,
+    time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate},
+    SimulationTime, TimeManager, TimeScaleId,
 };
 
 // astrodyn_frames: planet rotation (used by ephemeris stage and mission
@@ -238,7 +252,8 @@ pub use astrodyn_time::{
 // expose the lower-level primitives consumed by code that splits the
 // Earth RNP composition across cache-refresh boundaries.
 pub use astrodyn_frames::rotation_j2000::{
-    compute_t_parent_this_from_tjt_with_polar, compute_t_parent_this_from_tjt_with_polar_typed,
+    compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar,
+    compute_t_parent_this_from_tjt_with_polar_typed,
 };
 pub use astrodyn_frames::{
     nutation_j2000, precession_j2000, rotation_j2000, rotation_mars, rotation_moon,
@@ -310,3 +325,10 @@ pub use astrodyn_math::JeodQuat;
 
 // astrodyn_math: derived state types
 pub use astrodyn_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements};
+
+// astrodyn_math::euler_angles: typed-quantity Euler-angle helpers
+// paired with the already-exposed `EulerSequence`.
+pub use astrodyn_math::euler_angles::{
+    compute_euler_angles_from_matrix_typed, compute_matrix_from_euler_angles_typed,
+    compute_quaternion_from_euler_angles_typed,
+};

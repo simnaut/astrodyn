@@ -5,7 +5,7 @@
 //! per-component max absolute errors. The report is written to
 //! `target/tier3_crossval/<test_name>.json`.
 
-use astrodyn_quantities::ext::F64Ext;
+use astrodyn::F64Ext;
 use glam::{DQuat, DVec3};
 use std::io::Write;
 use std::path::PathBuf;

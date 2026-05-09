@@ -5,7 +5,7 @@
 //! (parallel axis theorem, mass-weighted CoM averaging). No JEOD reference
 //! data is needed -- all expected values are computed from first principles.
 
-use astrodyn_dynamics::{MassProperties, MassTree};
+use astrodyn::{MassProperties, MassTree};
 use glam::{DMat3, DVec3};
 
 // ── Helpers ──

@@ -21,7 +21,7 @@ use glam::DVec3;
 
 #[test]
 fn tier3_simulation_orbinit_cross_consistency() {
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let runs: Vec<(&str, &str)> = vec![
         ("orbinit_0101_orbinit.csv", "RUN_0101 (STS-114 inertial OE)"),

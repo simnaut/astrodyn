@@ -17,7 +17,7 @@ use astrodyn_runner::Simulation;
 use glam::DVec3;
 
 fn load_mu_earth_gemt1() -> f64 {
-    astrodyn_gravity::fixtures::load_gemt1().mu
+    astrodyn::gravity_fixtures::load_gemt1().mu
 }
 
 #[allow(dead_code)] // position/velocity used by run1, not by time-only run3a/run8b
@@ -109,8 +109,7 @@ fn tier3_sim_time_reversal_run1() {
     let t_inertial_body = t_inertial_lvlh * t_lvlh_body;
     // Convert rotation matrix to JeodQuat (left-transformation convention)
     let glam_quat = glam::DQuat::from_mat3(&t_inertial_body);
-    let init_quat =
-        astrodyn_math::JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
+    let init_quat = astrodyn::JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

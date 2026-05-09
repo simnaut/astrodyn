@@ -101,22 +101,27 @@ phantom-frame discipline, witness-gated constructors like
 `BodyAttitude<V>`, …) benefits both consumers identically.
 
 **Every workspace consumer of the `astrodyn` pipeline — mission crates,
-`astrodyn_bevy`, `astrodyn_runner` — depends on `astrodyn` and only
-`astrodyn`** (+ `bevy` for the Bevy adapter, and `astrodyn_runner` as a
-dev-dep on `astrodyn_bevy` for parity tests). The "single API surface"
-rule applies uniformly: every physics type, function, or module that a
-non-verification consumer reaches must be reachable through `astrodyn`.
-If something isn't, the fix is to widen `astrodyn`'s curated re-export
-surface, not to add a direct `astrodyn_*` physics dep.
+`astrodyn_bevy`, `astrodyn_runner`, and the verification crates
+(`astrodyn_verif_jeod`, `astrodyn_verif_parity`) — depends on
+`astrodyn` and only `astrodyn` for physics** (+ `bevy` for the Bevy
+adapter, + `astrodyn_runner` as a dev-dep on `astrodyn_bevy` for
+parity tests, + `astrodyn_runner` and `astrodyn_verif_jeod` as
+gateway-consumer deps for `astrodyn_verif_parity`). The "single API
+surface" rule applies uniformly: every physics type, function, or
+module that any consumer reaches must be reachable through `astrodyn`.
+If something isn't, the fix is to widen `astrodyn`'s curated
+re-export surface, not to add a direct `astrodyn_*` physics dep.
 
-**Verification crates** (`astrodyn_verif_jeod`,
-`astrodyn_verif_parity`) are the explicit exception — they reach
-physics crates directly because they need internals to construct test
-fixtures.
+Owner-crate unit / Tier 2 / Tier 3 tests live inside their owning
+crate's own `tests/` directory and reach the crate under test through
+normal in-crate test access (no gateway, no verif crate). The verif
+crates host the *cross-validation* against JEOD trajectories; they no
+longer host kernel-level subsystem tests.
 
 A CI lint (`scripts/check_no_bypass_deps.sh`) enforces the rule
-structurally by failing the build if `astrodyn_runner` or
-`astrodyn_bevy` declare any direct `astrodyn_*` physics-crate dep.
+structurally by failing the build if `astrodyn_runner`,
+`astrodyn_bevy`, `astrodyn_verif_jeod`, or `astrodyn_verif_parity`
+declare any direct `astrodyn_*` physics-crate dep.
 
 Mission crates that target the production runtime depend on
 `astrodyn_bevy` (and transitively `astrodyn`). They never depend on

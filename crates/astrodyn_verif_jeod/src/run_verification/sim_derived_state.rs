@@ -38,7 +38,7 @@ fn load_mu_earth() -> f64 {
     // fixture (Wave 1 of #232). Matches the value in JEOD's
     // `models/environment/gravity/data/src/earth_GGM05C.cc` exactly so
     // baselines stay bit-stable.
-    astrodyn_gravity::fixtures::load_ggm05c().mu
+    astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
 fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {

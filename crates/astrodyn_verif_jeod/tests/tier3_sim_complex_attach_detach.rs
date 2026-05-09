@@ -64,10 +64,10 @@
 use std::path::PathBuf;
 
 use astrodyn::IntegratorType;
+use astrodyn::MassProperties;
 use astrodyn::{
     GravityControls, JeodQuat, RotationalState, SimulationTime, TranslationalState, VehicleConfig,
 };
-use astrodyn_dynamics::MassProperties;
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
@@ -938,13 +938,13 @@ fn get_composite_mass(sim: &Simulation, body_idx: usize) -> f64 {
 /// Convenience wrapper: panic with a useful message if the body lacks
 /// a mass-tree id (means the test's `add_body_to_tree` registration
 /// was skipped — never legal in this test).
-fn mass_body_id(sim: &Simulation, body_idx: usize) -> astrodyn_dynamics::MassBodyId {
+fn mass_body_id(sim: &Simulation, body_idx: usize) -> astrodyn::MassBodyId {
     sim.body_mass_id(body_idx)
         .expect("test body must have a mass_body_id")
 }
 
 /// Look up the mass-tree parent of `body_idx`, or `None` if it's a root.
-fn parent_id_of(sim: &Simulation, body_idx: usize) -> Option<astrodyn_dynamics::MassBodyId> {
+fn parent_id_of(sim: &Simulation, body_idx: usize) -> Option<astrodyn::MassBodyId> {
     let id = mass_body_id(sim, body_idx);
     sim.mass_tree
         .as_ref()
@@ -1000,7 +1000,7 @@ fn apply_event(sim: &mut Simulation, event: ChildDerivEvent, v1: usize, v2: usiz
             // mutation — we replicate that no-op here.
             let v3_id = mass_body_id(sim, v3);
             let mut current = mass_body_id(sim, v1);
-            let mut detacher_id: Option<astrodyn_dynamics::MassBodyId> = None;
+            let mut detacher_id: Option<astrodyn::MassBodyId> = None;
             while let Some(parent) = sim.mass_tree.as_ref().and_then(|t| t.parent(current)) {
                 if parent == v3_id {
                     detacher_id = Some(current);

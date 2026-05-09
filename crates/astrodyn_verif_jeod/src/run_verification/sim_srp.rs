@@ -207,7 +207,7 @@ fn build_srp(
 
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let earth_mu = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let time = srp_time(sim_subdir);
     let epoch_tai_tjt = time.tai_tjt_at_epoch;

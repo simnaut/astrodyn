@@ -35,9 +35,9 @@
 
 use astrodyn_verif_jeod::tier3_csv::{load_drag_csv, test_data_path};
 
+use astrodyn::AtmosphereState;
 use astrodyn::SelfPlanet;
-use astrodyn_atmosphere::AtmosphereState;
-use astrodyn_interactions::{compute_ballistic_drag, DragConfig};
+use astrodyn::{compute_ballistic_drag, DragConfig};
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
 

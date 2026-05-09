@@ -24,7 +24,7 @@ use common::*;
 fn tier3_bevy_sh4x4_rnp() {
     println!("Scenario F: Spherical harmonics 4x4 + RNP");
 
-    let sh_data = astrodyn_gravity::fixtures::load_ggm02c();
+    let sh_data = astrodyn::gravity_fixtures::load_ggm02c();
     let mu = sh_data.mu;
 
     let sh_source = GravitySource {
@@ -109,7 +109,7 @@ fn tier3_bevy_sh4x4_rnp() {
 fn tier3_bevy_tidal_sh4x4() {
     println!("Scenario J: SH 4x4 + RNP + solid body tides");
 
-    let sh_data = astrodyn_gravity::fixtures::load_ggm02c();
+    let sh_data = astrodyn::gravity_fixtures::load_ggm02c();
     let mu = sh_data.mu;
     let radius = sh_data.radius;
 

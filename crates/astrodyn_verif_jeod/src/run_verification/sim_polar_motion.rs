@@ -26,7 +26,7 @@ const YP_ARCSEC: f64 = 0.24156;
 
 fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    let mu_earth = astrodyn_gravity::fixtures::load_ggm05c().mu;
+    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
     let dt =
         crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path("verif/SIM_dyncomp/S_define"));

@@ -10,9 +10,9 @@
 //! or corrupted through the pipeline.
 
 use astrodyn::recipes::helpers::state_helpers::state_from_elements;
+use astrodyn::OrbitalElements;
 use astrodyn::{GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime};
 use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_math::OrbitalElements;
 use astrodyn_runner::{RotationModel, Simulation};
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.

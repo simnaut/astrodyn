@@ -43,7 +43,7 @@
 
 use std::path::{Path, PathBuf};
 
-use astrodyn_math::JeodQuat;
+use astrodyn::JeodQuat;
 use glam::{DMat3, DVec3};
 
 /// Per-vehicle composite-body state as recorded by JEOD's truth recorder.
