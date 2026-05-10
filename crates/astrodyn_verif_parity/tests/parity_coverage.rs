@@ -160,11 +160,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "euler_edge",
-        "pre-recipe edge-case sibling — recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "force_torque_response",
         "pre-recipe sibling exercising external forces/torques — \
          recipe factory not yet defined (#389 follow-up)",
