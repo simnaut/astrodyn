@@ -82,7 +82,7 @@ fn spawn_topology(
     let parent = app
         .world_mut()
         .spawn(MassPropertiesC::from(
-            astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_core)),
+            astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_core)),
         ))
         .id();
     let mut child_entities = Vec::with_capacity(children.len());
@@ -90,7 +90,9 @@ fn spawn_topology(
         let cid = app
             .world_mut()
             .spawn((
-                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(core)),
+                MassPropertiesC::from(
+                    astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(core),
+                ),
                 MassChildOf::with_rotation(parent, *offset, *t_parent_child),
             ))
             .id();
@@ -446,14 +448,18 @@ fn bevy_parity_mass_attach_detach_bevy_staging_system_does_not_corrupt_composite
     let parent_entity = app
         .world_mut()
         .spawn((
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_core))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_core)),
+            ),
             MassBodyIdC(parent_arena_id),
         ))
         .id();
     let child_entity = app
         .world_mut()
         .spawn((
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_core))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_core)),
+            ),
             MassBodyIdC(child_arena_id),
         ))
         .id();

@@ -158,14 +158,14 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(parent_mass()),
-            )),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass())),
+            ),
             MassBodyIdC(id_parent),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(lunar_initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot())),
+            ),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
             IntegSourceC(Some(moon)),
@@ -176,14 +176,14 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(child_mass()),
-            )),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass())),
+            ),
             MassBodyIdC(id_child),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(lunar_initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot())),
+            ),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
             IntegSourceC(Some(moon)),
