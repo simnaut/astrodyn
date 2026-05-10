@@ -17,7 +17,7 @@ use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{GravityControl, GravityControls};
 use astrodyn_bevy::{
-    AstrodynPlugin, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
+    AstrodynAppExt, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
     TranslationalStateC,
 };
@@ -79,8 +79,7 @@ fn main() {
     let max_steps = parse_steps_arg();
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
-        .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(AstrodynPlugin)
+        .add_astrodyn(10.0)
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, print_state.after(AstrodynSet::Integration))
         .insert_resource(StepCounter(0))

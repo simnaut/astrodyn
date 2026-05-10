@@ -17,7 +17,7 @@ use std::time::Duration;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{F64Ext, GravityControl, VehicleBuilder};
 use astrodyn_bevy::{
-    AstrodynPlugin, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
+    AstrodynAppExt, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
     TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
 };
 use bevy::app::ScheduleRunnerPlugin;
@@ -62,8 +62,7 @@ fn main() {
     let max_steps = parse_steps_arg();
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
-        .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(AstrodynPlugin)
+        .add_astrodyn(10.0)
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, log_orbit.after(AstrodynSet::Integration))
         .insert_resource(StepCounter(0))

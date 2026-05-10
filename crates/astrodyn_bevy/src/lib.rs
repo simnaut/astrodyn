@@ -10,6 +10,7 @@
 // inside `crate::systems` and friends carries `<P: Planet>` parameters
 // and re-tags into `<SelfRef>`-marked storage at the write site only.
 
+pub mod app_ext;
 pub mod body_action;
 pub mod bundles;
 pub mod components;
@@ -26,6 +27,7 @@ pub mod systems;
 pub mod validation;
 pub mod wrench;
 
+pub use app_ext::AstrodynAppExt;
 pub use body_action::{
     add_body_action_via, body_action_intake_system, body_action_system,
     body_action_unregistered_planet_fence_system, BodyActionCommandsExt, BodyActionEvent,
