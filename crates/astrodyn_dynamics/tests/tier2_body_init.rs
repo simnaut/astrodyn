@@ -19,10 +19,7 @@ use astrodyn_dynamics::{
     init_from_mean_anomaly, init_from_orbital_elements, init_from_time_periapsis,
     TranslationalState,
 };
-
-/// Earth gravitational parameter (m^3/s^2), from JEOD `earth_GGM05C.cc`.
-/// Mirrors `astrodyn_planet::presets::EARTH.mu`.
-const EARTH_MU: f64 = 398_600.441_50e9;
+use astrodyn_quantities::body_constants::EARTH_MU;
 
 /// Load the ISS inertial reference state (position + velocity in ECI).
 fn load_iss_reference() -> TranslationalState {

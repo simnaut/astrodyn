@@ -16,18 +16,11 @@ use astrodyn_interactions::{
     FlatPlateThermal, SOLAR_RADIUS,
 };
 use astrodyn_math::{GeodeticState, JeodQuat};
+use astrodyn_quantities::body_constants::{
+    EARTH_MU as MU_EARTH, EARTH_R_EQ as R_EARTH, EARTH_R_POL as R_EARTH_POL,
+};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::{DMat3, DVec3};
-
-/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
-/// Mirrors `astrodyn_planet::presets::EARTH.mu`.
-const MU_EARTH: f64 = 398_600.441_50e9;
-/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-/// Mirrors `astrodyn_planet::presets::EARTH.r_eq`.
-const R_EARTH: f64 = 1000.0 * 6378.137;
-/// Earth polar radius (m) — JEOD `earth.cc` via presets.
-/// Mirrors `astrodyn_planet::presets::EARTH.r_pol`.
-const R_EARTH_POL: f64 = R_EARTH * (1.0 - 1.0 / 298.257_223_563);
 
 /// MET-internal GMST formula (from JEOD atmos_MET_TME.cc, Jacchia's Almanac polynomial).
 ///
