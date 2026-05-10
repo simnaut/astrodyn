@@ -652,7 +652,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0, false)],
+            controls: vec![GravityControl::new_spherical(0_usize, false)],
         },
         ..Default::default()
     };

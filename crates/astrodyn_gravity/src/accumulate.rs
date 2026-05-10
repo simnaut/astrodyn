@@ -669,12 +669,12 @@ mod tests {
         let integration_origin = DVec3::ZERO;
 
         // Spherical control with perturbing_only + battin_method = true
-        let mut ctrl = GravityControl::new_third_body(0);
+        let mut ctrl: GravityControl<usize> = GravityControl::new_third_body(0_usize);
         ctrl.battin_method = true;
         ctrl.perturbing_only = true;
 
         // Direct (no battin) with perturbing_only
-        let mut ctrl_direct = GravityControl::new_third_body(0);
+        let mut ctrl_direct: GravityControl<usize> = GravityControl::new_third_body(0_usize);
         ctrl_direct.battin_method = false;
         ctrl_direct.perturbing_only = true;
 
@@ -716,13 +716,14 @@ mod tests {
     /// Verify `battin_method` defaults to false in all constructors.
     #[test]
     fn battin_method_defaults_false() {
-        let spherical: GravityControl<usize> = GravityControl::new_spherical(0, false);
+        let spherical: GravityControl<usize> = GravityControl::new_spherical(0_usize, false);
         assert!(!spherical.battin_method);
 
-        let nonspherical: GravityControl<usize> = GravityControl::new_nonspherical(0, 4, 4, false);
+        let nonspherical: GravityControl<usize> =
+            GravityControl::new_nonspherical(0_usize, 4, 4, false);
         assert!(!nonspherical.battin_method);
 
-        let third_body: GravityControl<usize> = GravityControl::new_third_body(0);
+        let third_body: GravityControl<usize> = GravityControl::new_third_body(0_usize);
         assert!(!third_body.battin_method);
     }
 

@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{F64Ext, GravityControl, VehicleBuilder};
+use astrodyn::{F64Ext, GravityControl, SourceHandle, VehicleBuilder};
 use astrodyn_bevy::{
     AstrodynAppExt, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
     TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
@@ -104,8 +104,15 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         .from_orbital_elements(orbital_elements::iss(), mu_typed)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        // Source index 0 in the per-config map → the Earth entity below.
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        // `SourceHandle::central()` is the typed wrapper around index 0
+        // of the per-config source slice — the Earth entity passed to
+        // `spawn_bevy(...)` below. Bare-`usize` callsites continue to
+        // work via `From<usize> for SourceHandle`; new mission code
+        // should prefer the named constructor for self-documenting intent.
+        .gravity(GravityControl::new_spherical(
+            SourceHandle::central(),
+            false,
+        ))
         .build();
 
     let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);

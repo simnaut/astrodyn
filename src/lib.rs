@@ -97,6 +97,7 @@ pub mod recipes;
 pub mod rotation_model;
 pub mod simulation_builder;
 pub mod source_frames;
+pub mod source_handle;
 pub mod source_state;
 pub mod sources;
 // Internal bridge between typed `*Typed<F>` shapes and the underlying raw
@@ -164,6 +165,7 @@ pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
 pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
 pub use source_frames::SourceFrameIds;
+pub use source_handle::SourceHandle;
 pub use source_state::{
     set_source_position, set_source_state, source_frame_id, source_pfix_rotation, source_position,
 };
