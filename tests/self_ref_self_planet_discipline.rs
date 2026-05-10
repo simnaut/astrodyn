@@ -1,16 +1,19 @@
-//! Lint: enforce TS.01 — `<SelfRef>` and `<SelfPlanet>` wildcards may only
-//! appear at per-entity storage boundaries.
+//! Lint: enforce TS.01 — `<SelfRef>`, `<SelfPlanet>`, and `<MassNode>`
+//! wildcards may only appear at per-entity / mass-tree storage boundaries.
 //!
 //! Catalogued in `docs/JEOD_invariants.md` row TS.01. The wildcards
-//! `astrodyn_quantities::frame::SelfRef` and `astrodyn_quantities::frame::SelfPlanet`
-//! exist because per-entity storage decides the vehicle/planet identity at
+//! `astrodyn_quantities::frame::SelfRef`, `astrodyn_quantities::frame::SelfPlanet`,
+//! and `astrodyn_quantities::frame::MassNode` exist because the storage
+//! slot decides the vehicle/planet identity (or, for `MassNode`, the
+//! per-node integration frame in a heterogeneous mass-tree walk) at
 //! runtime — Bevy `Component`s, `Message`s, runner `SimBody`/`VehicleConfig`/
-//! `VehicleOutput` fields, and the dynamic-registry-erased return types in
-//! `astrodyn::derived` / `astrodyn::atmosphere` / `astrodyn::planet_config`.
-//! All other code paths (system functions, public APIs, `astrodyn_*` algorithm
-//! kernels) carry `<V: Vehicle>` / `<P: Planet>` parameters that flow from
-//! the call site, never `<SelfRef>` / `<SelfPlanet>` minted afresh in a
-//! system body.
+//! `VehicleOutput` fields, the kinematic-propagation `KinematicNodeState.trans`
+//! field plus its storage-caller lift sites, and the dynamic-registry-erased
+//! return types in `astrodyn::derived` / `astrodyn::atmosphere` /
+//! `astrodyn::planet_config`. All other code paths (system functions, public
+//! APIs, `astrodyn_*` algorithm kernels) carry `<V: Vehicle>` / `<P: Planet>`
+//! / `<F: Frame>` parameters that flow from the call site, never
+//! `<SelfRef>` / `<SelfPlanet>` / `<MassNode>` minted afresh in a system body.
 //!
 //! The auto-memory rule "No default type parameters on Planet-aware types"
 //! (`<P: Planet = Earth>` and friends) is the inverse-direction sister
@@ -67,7 +70,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const TARGET_TOKENS: &[&str] = &["SelfRef", "SelfPlanet"];
+const TARGET_TOKENS: &[&str] = &["SelfRef", "SelfPlanet", "MassNode"];
 const TS01_TAG: &str = "JEOD_INV: TS.01";
 const ALLOWED_PREFIX: &str = "allowed:";
 const FILE_LEVEL_PROBE_LINES: usize = 80;
@@ -390,8 +393,9 @@ fn canonical_storage_boundary_files_carry_ts01_marker() {
         ),
         (
             "crates/astrodyn_quantities/src/frame.rs",
-            "Definition site for `SelfRef` and `SelfPlanet` — the \
-             phantom markers themselves and their docstrings.",
+            "Definition site for `SelfRef`, `SelfPlanet`, and \
+             `MassNode` — the phantom markers themselves and their \
+             docstrings.",
         ),
         (
             "src/derived.rs",
@@ -409,6 +413,28 @@ fn canonical_storage_boundary_files_carry_ts01_marker() {
             "src/planet_config.rs",
             "`PlanetConfig::mu_typed -> GravParam<SelfPlanet>` — \
              entity-resolved planet identity.",
+        ),
+        (
+            "src/kinematic_propagation.rs",
+            "Mass-tree storage boundary — `KinematicNodeState.trans: \
+             TranslationalStateTyped<MassNode>` is the kinematic-walk \
+             scratch-state slot whose per-node integration frame is \
+             resolved at runtime by the storage caller.",
+        ),
+        (
+            "crates/astrodyn_runner/src/simulation/step/kinematic.rs",
+            "Mass-tree storage-caller boundary — runner-side \
+             `propagate_kinematic_state` lifts `TranslationalStateTyped\
+             <RootInertial>` into `<MassNode>` on entry to the kernel \
+             walk and re-pins to `<RootInertial>` on writeback.",
+        ),
+        (
+            "crates/astrodyn_bevy/src/kinematic_propagation.rs",
+            "Mass-tree storage-caller boundary — Bevy-side \
+             `propagate_state_from_root_system` lifts \
+             `TranslationalStateTyped<PlanetInertial<P>>` into \
+             `<MassNode>` on entry to the kernel walk and re-pins to \
+             `<PlanetInertial<P>>` on writeback.",
         ),
     ];
 

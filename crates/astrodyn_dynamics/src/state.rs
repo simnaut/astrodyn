@@ -45,12 +45,47 @@ impl TranslationalState {
 /// the position and velocity components. Defaults to the inertial frame
 /// to match the existing untyped storage convention; override with an
 /// explicit frame tag for non-inertial integrations.
-#[derive(Debug, Clone, Copy, PartialEq)]
+//
+// Manual `PartialEq` (and the matching `Debug`/`Copy`/`Clone` impls
+// below) instead of `#[derive(...)]`: the derive macro would add an
+// incidental `F: PartialEq` (and `F: Debug`/`F: Copy`/`F: Clone`)
+// bound on every Frame phantom, even though the underlying
+// `Position<F>` / `Velocity<F>` (`Qty3`) types implement those traits
+// unconditionally on `F: Frame`. That hidden bound then propagates
+// through every typed-frame consumer that derives `PartialEq` (e.g.
+// `KinematicNodeState`), forcing zero-sized phantom markers to also
+// derive `PartialEq` for no semantic reason. Manual impls keep the
+// trait bounds matching what the underlying components actually need.
 pub struct TranslationalStateTyped<F: Frame = RootInertial> {
     /// Position in frame `F`.
     pub position: Position<F>,
     /// Velocity in frame `F`.
     pub velocity: Velocity<F>,
+}
+
+impl<F: Frame> core::fmt::Debug for TranslationalStateTyped<F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TranslationalStateTyped")
+            .field("position", &self.position)
+            .field("velocity", &self.velocity)
+            .finish()
+    }
+}
+
+impl<F: Frame> Clone for TranslationalStateTyped<F> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<F: Frame> Copy for TranslationalStateTyped<F> {}
+
+impl<F: Frame> PartialEq for TranslationalStateTyped<F> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.position == other.position && self.velocity == other.velocity
+    }
 }
 
 impl<F: Frame> Default for TranslationalStateTyped<F> {
