@@ -108,9 +108,18 @@ pub struct EphemerisR(pub astrodyn::Ephemeris);
 ///
 /// This resource is not inserted automatically by [`AstrodynPlugin`]. Applications
 /// that use staging must insert `MassTreeR` before sending
-/// [`components::AttachEvent`] or
-/// [`components::DetachEvent`]. If the resource is absent, staging
-/// events are silently drained.
+/// [`components::AttachEvent`] or [`components::DetachEvent`]. The
+/// `staging_system` panics if it observes a pending `AttachEvent` /
+/// `DetachEvent` while `MassTreeR` is missing — without the arena the
+/// event would be silently dropped and the targeted body would
+/// propagate unattached, which is the "wrong physics that still
+/// runs" failure the Fail Loudly rule (see `CLAUDE.md`) forbids.
+/// The diagnostic message names two valid fixes: insert
+/// `MassTreeR(MassTree::new())` directly, or use
+/// [`astrodyn::SimulationBuilder::register_in_mass_tree`] +
+/// [`crate::SimulationBuilderBevyExt::populate_app`] which
+/// pre-allocates the arena and a `MassBodyId` for each registered
+/// body.
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub astrodyn::MassTree);
 
