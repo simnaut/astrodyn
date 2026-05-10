@@ -5,12 +5,12 @@ mod common;
 use astrodyn::GravitySourceEntry;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
-    GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,
+    GeoIndexType, GravityControl, GravityControls, MetAtmosphere, RotationModel, SixDofState,
 };
 use astrodyn_bevy::{
     AtmosphereModelR, DragConfigC, DynamicsConfigC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, PlanetFixedRotationC, RotationalStateC, SourceInertialPositionC,
-    TranslationalStateC,
+    MassPropertiesC, PlanetFixedRotationC, RotationModelC, RotationalStateC,
+    SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DMat3;
@@ -20,7 +20,7 @@ use common::*;
 // ── Scenario B: Exponential atmosphere + drag, 6-DOF ──
 
 #[test]
-fn tier3_bevy_drag_atmosphere_sixdof() {
+fn bevy_parity_drag_atmosphere_sixdof() {
     println!("Scenario B: Exponential atmosphere + drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -36,16 +36,14 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    app.insert_resource(AtmosphereModelR {
-        config: AtmosphereConfig {
-            model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
-            planet_omega: 0.0,
-        },
-        planet_entity: None,
-    });
-
+    // Identity `PlanetFixedRotationC` + `RotationModelC::None` reproduce
+    // the previous `planet_entity = None` spherical-fallback semantics:
+    // the atmosphere kernel multiplies position by the inertial→pfix
+    // matrix and `IDENTITY * position == position`. `RotationModel::None`
+    // is required because `planet_fixed_rotation_system` defaults to
+    // `EarthRNP` when no `RotationModelC` is present, which would
+    // overwrite the identity matrix with the live Earth rotation each
+    // tick and diverge from the runner side.
     let planet = app
         .world_mut()
         .spawn((
@@ -53,8 +51,22 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::<astrodyn::Earth>::default(),
+            PlanetFixedRotationC::<astrodyn::Earth>(astrodyn::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
+            RotationModelC(RotationModel::None),
         ))
         .id();
+
+    app.insert_resource(AtmosphereModelR::new(
+        AtmosphereConfig {
+            model: AtmosphereModel::Exponential(exp_atmos),
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            planet_omega: 0.0,
+        },
+        planet,
+    ));
 
     let vehicle = app
         .world_mut()
@@ -78,12 +90,18 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
+    // Mirror the Bevy side's identity `PlanetFixedRotationC` by giving the
+    // runner-side Earth source an identity `t_inertial_pfix` and pointing
+    // `atmosphere_planet_source` at it. Without this the runner's
+    // atmosphere kernel takes the no-rotation early return while the
+    // Bevy side multiplies position by `IDENTITY` — bit-different even
+    // though the math is mathematically equal — and bit-identity fails.
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
     let mut earth_entry = GravitySourceEntry::new(
         earth_source(),
         astrodyn::Position::<astrodyn::RootInertial>::zero(),
-        None,
+        Some(DMat3::IDENTITY),
     );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
@@ -93,6 +111,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
         r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
         planet_omega: 0.0,
     });
+    sim.atmosphere_planet_source = Some(earth_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.drag = Some(drag_config);
@@ -112,7 +131,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
 // ── Scenario K: Constant-density drag (Phase 4a parity) ──
 
 #[test]
-fn tier3_bevy_constant_density_drag_sixdof() {
+fn bevy_parity_drag_constant_density_drag_sixdof() {
     println!("Scenario K: Constant-density drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -128,16 +147,14 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    app.insert_resource(AtmosphereModelR {
-        config: AtmosphereConfig {
-            model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
-            planet_omega: 0.0,
-        },
-        planet_entity: None,
-    });
-
+    // Identity `PlanetFixedRotationC` + `RotationModelC::None` reproduce
+    // the previous `planet_entity = None` spherical-fallback semantics
+    // for the constant-density-drag scenario; see the matching comment
+    // in `tier3_bevy_drag_atmosphere_sixdof` for the rotation-default
+    // rationale. (Constant density doesn't read the kernel's atmospheric
+    // density so the rotation matrix is moot for the result, but the
+    // setup mirrors the runner-side configuration so the test stays a
+    // bit-identity check rather than a value-identity check.)
     let planet = app
         .world_mut()
         .spawn((
@@ -145,8 +162,22 @@ fn tier3_bevy_constant_density_drag_sixdof() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::<astrodyn::Earth>::default(),
+            PlanetFixedRotationC::<astrodyn::Earth>(astrodyn::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
+            RotationModelC(RotationModel::None),
         ))
         .id();
+
+    app.insert_resource(AtmosphereModelR::new(
+        AtmosphereConfig {
+            model: AtmosphereModel::Exponential(exp_atmos),
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            planet_omega: 0.0,
+        },
+        planet,
+    ));
 
     let vehicle = app
         .world_mut()
@@ -204,7 +235,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
 // ── Scenario L: MET atmosphere + drag (Phase 4a parity) ──
 
 #[test]
-fn tier3_bevy_met_atmosphere_drag_sixdof() {
+fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     println!("Scenario L: MET atmosphere + drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -238,15 +269,15 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
         ))
         .id();
 
-    app.insert_resource(AtmosphereModelR {
-        config: AtmosphereConfig {
+    app.insert_resource(AtmosphereModelR::new(
+        AtmosphereConfig {
             model: AtmosphereModel::Met(met),
             r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
             r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
-        planet_entity: Some(planet),
-    });
+        planet,
+    ));
 
     let vehicle = app
         .world_mut()
@@ -313,7 +344,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
 // ── MET atmosphere drag parity (run5a) ──
 
 #[test]
-fn tier3_bevy_met_run5a() {
+fn bevy_parity_drag_met_run5a() {
     println!("MET run5a parity: minimum solar");
     let met = MetAtmosphere {
         f10: 70.0,
@@ -337,15 +368,15 @@ fn tier3_bevy_met_run5a() {
         ))
         .id();
 
-    app.insert_resource(AtmosphereModelR {
-        config: AtmosphereConfig {
+    app.insert_resource(AtmosphereModelR::new(
+        AtmosphereConfig {
             model: AtmosphereModel::Met(met),
             r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
             r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
-        planet_entity: Some(planet),
-    });
+        planet,
+    ));
 
     let vehicle = app
         .world_mut()
@@ -419,7 +450,7 @@ fn tier3_bevy_met_run5a() {
 // ── Drag run6b parity (MET atmosphere + drag) ──
 
 #[test]
-fn tier3_bevy_drag_run6b() {
+fn bevy_parity_drag_run6b() {
     println!("Drag run6b parity: MET atmosphere + drag");
     let met = MetAtmosphere {
         f10: 128.8,
@@ -448,15 +479,15 @@ fn tier3_bevy_drag_run6b() {
         ))
         .id();
 
-    app.insert_resource(AtmosphereModelR {
-        config: AtmosphereConfig {
+    app.insert_resource(AtmosphereModelR::new(
+        AtmosphereConfig {
             model: AtmosphereModel::Met(met),
             r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
             r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
-        planet_entity: Some(planet),
-    });
+        planet,
+    ));
 
     let vehicle = app
         .world_mut()

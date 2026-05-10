@@ -19,14 +19,12 @@ use astrodyn_dynamics::{
     init_from_mean_anomaly, init_from_orbital_elements, init_from_time_periapsis,
     TranslationalState,
 };
-
-/// Earth gravitational parameter (m^3/s^2), from JEOD `earth_GGM05C.cc`.
-/// Sourced from `astrodyn_planet::presets::EARTH.mu`.
-const EARTH_MU: f64 = astrodyn_planet::presets::EARTH.mu;
+use astrodyn_quantities::body_constants::EARTH_MU;
 
 /// Load the ISS inertial reference state (position + velocity in ECI).
 fn load_iss_reference() -> TranslationalState {
-    let ref_state = astrodyn_verif_jeod::reference_state::load_reference_state("ISS", "inertial");
+    let ref_state =
+        astrodyn_verif_jeod_fixtures::reference_state::load_reference_state("ISS", "inertial");
     TranslationalState {
         position: ref_state.position,
         velocity: ref_state.velocity,
@@ -84,7 +82,7 @@ fn print_comparison(
 
 #[test]
 fn iss_set01_time_periapsis() {
-    let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set01",
     );
@@ -137,7 +135,7 @@ fn iss_set01_time_periapsis() {
 
 #[test]
 fn iss_set02_mean_anomaly() {
-    let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set02",
     );
@@ -186,7 +184,7 @@ fn iss_set02_mean_anomaly() {
 
 #[test]
 fn iss_set10_true_anomaly() {
-    let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set10",
     );
@@ -237,7 +235,7 @@ fn iss_set10_true_anomaly() {
 #[test]
 fn iss_element_sets_cross_consistent() {
     // set01: time_periapsis -> mean anomaly -> Cartesian (via the ported helper).
-    let init01 = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init01 = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set01",
     );
@@ -252,7 +250,7 @@ fn iss_element_sets_cross_consistent() {
     );
 
     // set02: mean anomaly (directly) -> Cartesian
-    let init02 = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init02 = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set02",
     );
@@ -267,7 +265,7 @@ fn iss_element_sets_cross_consistent() {
     );
 
     // set10: true anomaly (directly) -> Cartesian
-    let init10 = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+    let init10 = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
         "ISS",
         "trans_Orbit_inertial_body_set10",
     );

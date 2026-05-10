@@ -18,7 +18,7 @@ use common::*;
 // ── Scenario S: Earth lighting consistency ──
 
 #[test]
-fn tier3_sim_earth_lighting_consistency() {
+fn bevy_parity_lighting_earth_lighting_consistency() {
     use astrodyn::compute_earth_lighting;
     println!("Scenario S: Earth lighting consistency");
 
@@ -168,7 +168,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t01() {
+fn bevy_parity_lighting_earth_lighting_t01() {
     run_earth_lighting_parity(
         "t01_sunlit",
         DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -178,7 +178,7 @@ fn tier3_bevy_earth_lighting_t01() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t02() {
+fn bevy_parity_lighting_earth_lighting_t02() {
     run_earth_lighting_parity(
         "t02_shadow",
         DVec3::new(-6_778_137.0, 0.0, 0.0),
@@ -188,7 +188,7 @@ fn tier3_bevy_earth_lighting_t02() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t03() {
+fn bevy_parity_lighting_earth_lighting_t03() {
     run_earth_lighting_parity(
         "t03_terminator",
         DVec3::new(0.0, 6_778_137.0, 0.0),
@@ -198,7 +198,7 @@ fn tier3_bevy_earth_lighting_t03() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t04() {
+fn bevy_parity_lighting_earth_lighting_t04() {
     run_earth_lighting_parity(
         "t04_moon_inline",
         DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -208,7 +208,7 @@ fn tier3_bevy_earth_lighting_t04() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t05() {
+fn bevy_parity_lighting_earth_lighting_t05() {
     run_earth_lighting_parity(
         "t05_geo_sunlit",
         DVec3::new(42_164_000.0, 0.0, 0.0),
@@ -218,7 +218,7 @@ fn tier3_bevy_earth_lighting_t05() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t06() {
+fn bevy_parity_lighting_earth_lighting_t06() {
     run_earth_lighting_parity(
         "t06_polar",
         DVec3::new(0.0, 0.0, 6_778_137.0),
@@ -228,7 +228,7 @@ fn tier3_bevy_earth_lighting_t06() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t07() {
+fn bevy_parity_lighting_earth_lighting_t07() {
     run_earth_lighting_parity(
         "t07_offset_sun_moon",
         DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -238,7 +238,7 @@ fn tier3_bevy_earth_lighting_t07() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t08() {
+fn bevy_parity_lighting_earth_lighting_t08() {
     run_earth_lighting_parity(
         "t08_deep_shadow",
         DVec3::new(-1e7, 0.0, 0.0),
@@ -248,7 +248,7 @@ fn tier3_bevy_earth_lighting_t08() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t09() {
+fn bevy_parity_lighting_earth_lighting_t09() {
     run_earth_lighting_parity(
         "t09_moon_near_veh_dir",
         DVec3::new(6_778_137.0, 1e5, 0.0),
@@ -258,7 +258,7 @@ fn tier3_bevy_earth_lighting_t09() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_t10() {
+fn bevy_parity_lighting_earth_lighting_t10() {
     run_earth_lighting_parity(
         "t10_coplanar_45deg",
         DVec3::new(4_793_000.0, 4_793_000.0, 0.0),
@@ -268,7 +268,7 @@ fn tier3_bevy_earth_lighting_t10() {
 }
 
 #[test]
-fn tier3_bevy_earth_lighting_pipeline() {
+fn bevy_parity_lighting_earth_lighting_pipeline() {
     let earth_r = astrodyn::EARTH.shadow_radius;
     let moon_r = 1_737_400.0;
     let sun_r = 6.96e8;
@@ -408,7 +408,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
 // `EarthLightingState`.
 
 #[test]
-fn tier3_bevy_earth_lighting_non_root_integ_source() {
+fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
     let earth_r = astrodyn::EARTH.shadow_radius;
     let moon_r = 1_737_400.0;
     let sun_r = 6.96e8;

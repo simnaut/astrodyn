@@ -293,7 +293,7 @@ pub fn relative_a_rot_no_trans() -> VerificationCase {
 /// 3-DOF LVLH-relative: lateral offset.
 pub fn lvlhrel_test0() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_lvlhrel_test0",
+        name: "bevy_parity_lvlh_relative_lvlhrel_test0",
         scenario: build_lvlhrel_test0,
         reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),
@@ -306,7 +306,7 @@ pub fn lvlhrel_test0() -> VerificationCase {
 /// 3-DOF LVLH-relative: coplanar along-track separation.
 pub fn lvlhrel_test1() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_lvlhrel_test1",
+        name: "bevy_parity_lvlh_relative_lvlhrel_test1",
         scenario: build_lvlhrel_test1,
         reference: CsvReference::TimesOnly("relative_ab_rot_ab_trans_relative.csv"),
         duration: full_csv_duration(),

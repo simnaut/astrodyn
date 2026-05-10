@@ -28,3 +28,6 @@ path = "examples/kepler_orbit.rs"
 [[example]]
 name = "typed_mission"
 path = "examples/typed_mission.rs"
+
+[lints]
+workspace = true

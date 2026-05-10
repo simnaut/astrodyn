@@ -1,11 +1,10 @@
 //! Glue: per-step recompute of derived mass quantities.
 //!
 //! Recomputes `inverse_mass` / `inverse_inertia` for every entity
-//! whose [`MassPropertiesC`](crate::components::MassPropertiesC) is
-//! marked `dirty`. Runs between [`AstrodynSet::TimeUpdate`](crate::AstrodynSet::TimeUpdate)
-//! and [`AstrodynSet::EphemerisUpdate`](crate::AstrodynSet::EphemerisUpdate)
-//! so gravity, force collection, and integration see current mass
-//! properties.
+//! whose [`crate::components::MassPropertiesC`] is marked `dirty`.
+//! Runs between [`crate::AstrodynSet::TimeUpdate`] and
+//! [`crate::AstrodynSet::EphemerisUpdate`] so gravity, force
+//! collection, and integration see current mass properties.
 
 use bevy::prelude::*;
 

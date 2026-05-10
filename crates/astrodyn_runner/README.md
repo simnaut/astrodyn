@@ -27,11 +27,29 @@ graph — both depend on `astrodyn` and the wider `astrodyn_*` family;
 neither depends on the other. Mission code targeting the production
 Bevy runtime depends on `astrodyn_bevy`, never on `astrodyn_runner`.
 
-## Features
+## Quick start
 
-- `verification` (default) — pulls in `astrodyn_verif_jeod` and exposes the
-  `run_verification::*` Tier-3 case machinery. `--no-default-features`
-  drops the JEOD-source-backed fixtures and gives a smaller runner.
+```toml
+[dependencies]
+astrodyn = "0.1"
+astrodyn_runner = "0.1"
+```
+
+```rust,no_run
+use astrodyn_runner::SimulationBuilderExt;
+use astrodyn::recipes::Mission;
+
+let mut sim = Mission::iss_leo().into_builder().build().unwrap();
+sim.step_n(10);
+let body = sim.body(0);
+println!("altitude: {:.0} m", body.trans.position.raw_si().length() - 6_378_137.0);
+```
+
+`Mission::iss_leo()` is one of the canned scenarios in
+`astrodyn::recipes::scenarios`; see that module for the full list.
+For Tier 3 verification scaffolding (Trick CSV diff, JEOD-source-backed
+initial conditions), reach for `astrodyn_verif_jeod` in addition to this
+crate.
 
 ## See also
 
@@ -39,4 +57,4 @@ Bevy runtime depends on `astrodyn_bevy`, never on `astrodyn_runner`.
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture, Tier
   conventions, regen workflow.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_runner/>
+  <https://docs.rs/astrodyn_runner>

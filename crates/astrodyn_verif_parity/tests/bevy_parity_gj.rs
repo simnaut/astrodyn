@@ -45,26 +45,26 @@ use bevy::prelude::*;
 
 /// Mirrors `tier3_simulation_gj_order8` — GJ order 8, dt=1 s, tsf=1.0.
 #[test]
-fn tier3_bevy_parity_gj_order8() {
+fn bevy_parity_gj_order8() {
     sim_gj::gj_order8().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// Mirrors `tier3_simulation_gj_order4` — GJ order 4, dt=1 s, tsf=1.0.
 #[test]
-fn tier3_bevy_parity_gj_order4() {
+fn bevy_parity_gj_order4() {
     sim_gj::gj_order4().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// Mirrors `tier3_simulation_gj_order12` — GJ order 12, dt=1 s, tsf=1.0.
 #[test]
-fn tier3_bevy_parity_gj_order12() {
+fn bevy_parity_gj_order12() {
     sim_gj::gj_order12().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// Mirrors `tier3_simulation_gj_dt10` — GJ order 8, sim_dt=1 s, tsf=10.
 /// Exercises `time_scale_factor` through both pipelines.
 #[test]
-fn tier3_bevy_parity_gj_dt10() {
+fn bevy_parity_gj_dt10() {
     sim_gj::gj_dt10().run_and_assert_parity::<astrodyn::Earth>();
 }
 
@@ -199,7 +199,7 @@ fn run_gj_bootstrap_parity(
 /// GJ with default config (initial=4, final=12, ndoubling=4).
 /// Exercises full bootstrap subcycling through both pipelines.
 #[test]
-fn tier3_bevy_parity_gj_bootstrap_default() {
+fn bevy_parity_gj_bootstrap_default() {
     run_gj_bootstrap_parity(
         "GJ default (ndoubling=4), dt=1s",
         GaussJacksonConfig::default(),
@@ -211,7 +211,7 @@ fn tier3_bevy_parity_gj_bootstrap_default() {
 
 /// GJ with standard config (initial=8, final=12, ndoubling=2).
 #[test]
-fn tier3_bevy_parity_gj_bootstrap_standard() {
+fn bevy_parity_gj_bootstrap_standard() {
     run_gj_bootstrap_parity(
         "GJ standard (ndoubling=2), dt=10s",
         GaussJacksonConfig::standard(),
@@ -224,7 +224,7 @@ fn tier3_bevy_parity_gj_bootstrap_standard() {
 /// Bootstrap + time_scale_factor: default config with tsf=2.0.
 /// Exercises both subcycling and time scaling through both pipelines.
 #[test]
-fn tier3_bevy_parity_gj_bootstrap_tsf() {
+fn bevy_parity_gj_bootstrap_tsf() {
     run_gj_bootstrap_parity(
         "GJ default (ndoubling=4), dt=0.5s, tsf=2.0",
         GaussJacksonConfig::default(),

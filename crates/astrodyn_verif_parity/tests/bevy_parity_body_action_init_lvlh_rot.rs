@@ -115,7 +115,7 @@ fn read_rot(app: &App, vehicle: Entity) -> RotationalState {
 }
 
 #[test]
-fn bevy_parity_init_lvlh_rot_writes_rotational_state_in_body_frame() {
+fn bevy_parity_body_action_init_lvlh_rot_init_lvlh_rot_writes_rotational_state_in_body_frame() {
     let (mut app, vehicle) = build_app();
 
     let (ref_pos, ref_vel) = reference_orbit();
@@ -182,7 +182,7 @@ fn bevy_parity_init_lvlh_rot_writes_rotational_state_in_body_frame() {
 }
 
 #[test]
-fn bevy_parity_init_lvlh_rot_lvlh_rate_frame_dispatches() {
+fn bevy_parity_body_action_init_lvlh_rot_init_lvlh_rot_lvlh_rate_frame_dispatches() {
     // Same as the body-frame test, but with the user supplying the
     // angular-velocity input in the LVLH frame instead of the body
     // frame. This exercises the `rate_in_parent` branch of the kernel

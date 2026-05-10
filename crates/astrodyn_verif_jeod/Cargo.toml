@@ -19,6 +19,7 @@ exclude = [
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
 glam = { workspace = true }
 log = { workspace = true }
 regex = "1"
@@ -32,3 +33,6 @@ path = "examples/earth_moon.rs"
 [[example]]
 name = "mars_orbit"
 path = "examples/mars_orbit.rs"
+
+[lints]
+workspace = true

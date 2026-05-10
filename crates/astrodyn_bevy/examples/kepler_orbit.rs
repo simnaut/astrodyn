@@ -15,7 +15,7 @@
 
 use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{GravityControl, GravityControls, TranslationalState};
+use astrodyn::{GravityControl, GravityControls};
 use astrodyn_bevy::{
     AstrodynPlugin, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
@@ -115,8 +115,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // Pull the orbital-elements preset (`OrbitalElements` carries plain
     // `f64` SI fields — JEOD-faithful but not yet `uom`-typed) and
     // initialize a typed `TranslationalState` via the typed orbit-init
-    // helper. Phase 9 will introduce a `commands.spawn_scenario(s)`
-    // extension that hides this conversion.
+    // helper. The typed output is `<RootInertial>`; relabel to
+    // `<PlanetInertial<Earth>>` for the Bevy component (the numerics
+    // are bit-identical for the root-integrated body's planet).
+    // Phase 9 will introduce a `commands.spawn_scenario(s)` extension
+    // that hides this conversion.
     let oe = orbital_elements::iss();
     let trans_typed = init_from_orbital_elements_typed(
         Length::new::<meter>(oe.semi_major_axis),
@@ -127,11 +130,8 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         Angle::new::<radian>(oe.true_anom),
         constants::mu_ggm05c(),
     );
-    // allowed: typed↔raw kernel boundary (#397)
-    let trans: TranslationalState = TranslationalState {
-        position: trans_typed.position.raw_si(),
-        velocity: trans_typed.velocity.raw_si(),
-    };
+    let trans_planet = trans_typed.relabel_to::<astrodyn::PlanetInertial<astrodyn::Earth>>();
+    let initial_radius_m: f64 = trans_planet.position.length().value;
 
     let mass_kg = vehicle::iss_mass().get::<kilogram>();
     let controls = GravityControls {
@@ -140,7 +140,10 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     commands.spawn((
         Name::new("Satellite"),
-        TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+        TranslationalStateC::<astrodyn::Earth>::point_mass(
+            trans_planet.position,
+            trans_planet.velocity,
+        ),
         // JEOD_INV: TS.01 — `<SelfRef>` is the storage-side wildcard for the spawned vehicle's MassPropertiesC.
         MassPropertiesC::from(astrodyn::MassPropertiesTyped::<astrodyn::SelfRef>::new(
             astrodyn::Mass::new::<astrodyn::kilogram>(mass_kg),
@@ -156,7 +159,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     println!("==============================");
     println!(
         "Initial altitude: {:.1} km",
-        (trans.position.length() - r_eq_earth_m()) / 1000.0
+        (initial_radius_m - r_eq_earth_m()) / 1000.0
     );
 }
 

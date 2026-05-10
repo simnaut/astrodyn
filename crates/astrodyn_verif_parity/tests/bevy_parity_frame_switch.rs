@@ -73,7 +73,7 @@ fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
 }
 
 #[test]
-fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
+fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
     // ── Bevy ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -283,7 +283,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
 }
 
 #[test]
-fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
+fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     // Cover the `OnDeparture` predicate in the shared generic helper.
     // The `OnApproach` test above triggers a
     // switch when the body comes within `SWITCH_RADIUS` of the Moon;

@@ -420,17 +420,22 @@ impl VehicleBuilder<Ready> {
     /// new mission code can prefer `SourceHandle::central()` /
     /// `SourceHandle::index(n)` for self-documenting intent.
     ///
-    /// **Non-root caveat (issue #263).** Setting this to a non-root
-    /// source means the integrated translational state is
-    /// integ-frame-relative rather than root-inertial, but downstream
-    /// Bevy storage (`TranslationalStateC<RootInertial>`) is still
-    /// tagged `RootInertial` — issue #263 Section A.1. Derived-state
-    /// consumers that read the state as absolute root-inertial
-    /// (geodetic vs. another planet, solar-beta, SRP relative to a Sun
-    /// position not in the integ frame) will silently produce wrong
-    /// answers. Until #263 closes, mission code should either avoid
-    /// non-root integration or restrict derived states to ones
-    /// evaluated in the same source's frame.
+    /// When set to a non-root source, the body's translational state
+    /// lives in that source's planet-inertial frame rather than the
+    /// root inertial frame. The Bevy adapter expresses this
+    /// structurally: `TranslationalStateC<P>` carries the
+    /// `PlanetInertial<P>` phantom, and the caller pins `P` to the
+    /// integration source's planet via the `spawn_bevy::<P>(...)`
+    /// turbofish; the runner threads the same planet identity through
+    /// its per-body integration-frame plumbing. Shift-site consumers
+    /// that require root-inertial coordinates — gravity, SRP, solar
+    /// beta, earth lighting, relativistic corrections — lift the
+    /// integ-origin offset at the call site through
+    /// `FrameOrigin::shift_position` (`docs/JEOD_invariants.md` row
+    /// `RF.10`); non-shift consumers (atmosphere, drag, LVLH,
+    /// geodetic, orbital elements) stay in `PlanetInertial<P>`
+    /// throughout. Mismatching `P` against the integration source's
+    /// planet is a compile error, not a runtime convention.
     pub fn integ_source(mut self, source: impl Into<SourceHandle>) -> Self {
         self.integ_source = Some(source.into().into_raw());
         self

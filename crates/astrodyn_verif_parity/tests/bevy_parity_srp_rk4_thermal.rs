@@ -7,16 +7,16 @@ use astrodyn_verif_jeod::run_verification::sim_srp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_srp_derivative_first_order() {
+fn bevy_parity_srp_rk4_thermal_srp_derivative_first_order() {
     sim_srp::srp_derivative_first_order().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_srp_derivative_rk4() {
+fn bevy_parity_srp_rk4_thermal_srp_derivative_rk4() {
     sim_srp::srp_derivative_rk4().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
+fn bevy_parity_srp_rk4_thermal_srp_derivative_rk4_with_rotated_struct_frame() {
     sim_srp::srp_derivative_rk4_rotated_struct().run_and_assert_parity::<astrodyn::Earth>();
 }

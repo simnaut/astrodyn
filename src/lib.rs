@@ -47,6 +47,34 @@
 //!
 //! See [`PipelineStage`] and [`PIPELINE_ORDER`] for the canonical stage
 //! execution order that any adapter must respect.
+//!
+//! ## Quick start
+//!
+//! Compose a vehicle through the typestate [`VehicleBuilder`] using only
+//! gateway re-exports — mission code never reaches into the physics
+//! crates directly:
+//!
+//! ```
+//! use astrodyn::{
+//!     recipes::{earth, orbital_elements, vehicle},
+//!     F64Ext, GravityControl, VehicleBuilder,
+//! };
+//!
+//! let mu = earth::point_mass().source.mu.m3_per_s2();
+//! let cfg = VehicleBuilder::new()
+//!     .from_orbital_elements(orbital_elements::iss(), mu)
+//!     .three_dof_point_mass(vehicle::iss_mass())
+//!     .rk4()
+//!     .gravity(GravityControl::new_spherical(0_usize, false))
+//!     .build();
+//! # let _ = cfg;
+//! ```
+//!
+//! `cfg` (a [`VehicleConfig`]) is then handed to either
+//! `astrodyn_bevy::VehicleConfigBevyExt::spawn_bevy` or
+//! `astrodyn_runner::Simulation::add_vehicle` — both consumers share the
+//! same configuration shape so a mission can swap between them without
+//! reauthoring its setup code.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -72,6 +100,14 @@ pub mod source_frames;
 pub mod source_handle;
 pub mod source_state;
 pub mod sources;
+// Internal bridge between typed `*Typed<F>` shapes and the underlying raw
+// `DVec3`/`DQuat`/`DMat3` shapes that the kernel functions still consume.
+// Adapters (`astrodyn_bevy`, `astrodyn_runner`, the verif crates) need the
+// symbols `pub` so they can translate at the kernel boundary, but mission
+// code shouldn't see them — the type-system promise is that mission code
+// never reaches raw `DVec3`/`DQuat`. Hidden from rustdoc to keep that
+// promise visible on docs.rs while preserving the adapter call sites.
+#[doc(hidden)] // allowed: structural adapter boundary — see preceding rationale block
 pub mod typed_bridge;
 pub mod validation;
 pub mod vehicle_builder;

@@ -46,4 +46,4 @@ than IERS 2010, to keep cross-validation faithful to JEOD source.
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_planet/>
+  <https://docs.rs/astrodyn_planet>

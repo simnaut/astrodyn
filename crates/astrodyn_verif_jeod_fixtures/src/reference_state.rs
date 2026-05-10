@@ -18,7 +18,8 @@
 //! invoked exclusively by the regen binary; runtime test paths never
 //! call it.
 
-use astrodyn::{Position, RootInertial, Vec3Ext, Velocity};
+use astrodyn_quantities::ext::Vec3Ext;
+use astrodyn_quantities::{Position, RootInertial, Velocity};
 use glam::DVec3;
 use regex::Regex;
 

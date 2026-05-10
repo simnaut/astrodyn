@@ -9,21 +9,21 @@ use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_dyncomp_run6a_const_density_drag() {
+fn bevy_parity_dyncomp_run6a_const_density_drag() {
     sim_dyncomp::run6a_const_density_drag().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_dyncomp_run6b_drag() {
+fn bevy_parity_dyncomp_run6b_drag() {
     sim_dyncomp::run6b_drag().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_dyncomp_run6b_drag_aero_traj() {
+fn bevy_parity_dyncomp_run6b_drag_aero_traj() {
     sim_dyncomp::run6b_drag_aero_traj().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_dyncomp_run6b_drag_rotated_struct() {
+fn bevy_parity_dyncomp_run6b_drag_rotated_struct() {
     sim_dyncomp::run6b_drag_rotated_struct().run_and_assert_parity::<astrodyn::Earth>();
 }
