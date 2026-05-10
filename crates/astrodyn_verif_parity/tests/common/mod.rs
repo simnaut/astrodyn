@@ -18,8 +18,10 @@
 use std::time::Duration;
 
 use astrodyn::{
-    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
-    MassProperties, RotationalState, SixDofState, TranslationalState,
+    AngularVelocity, BodyAttitude, BodyFrame, Ephemeris, EphemerisBody, GravityControl,
+    GravityControls, GravityModel, GravitySource, InertiaTensor, MassPropertiesTyped, Position,
+    RootInertial, RotationalStateTyped, SelfRef, SixDofState, StructuralFrame, TranslationalState,
+    TranslationalStateTyped, Velocity,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -28,6 +30,8 @@ use astrodyn_bevy::{
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc` via presets.
 pub const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
@@ -38,35 +42,36 @@ pub const NUM_STEPS: usize = 100;
 
 // ── Shared initial conditions ──
 
-pub fn iss_trans() -> TranslationalState {
-    TranslationalState {
-        position: DVec3::new(6_778_137.0, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 7668.56, 0.0),
+pub fn iss_trans() -> TranslationalStateTyped<RootInertial> {
+    TranslationalStateTyped::<RootInertial> {
+        position: Position::<RootInertial>::from_raw_si(DVec3::new(6_778_137.0, 0.0, 0.0)),
+        velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7668.56, 0.0)),
     }
 }
 
-pub fn tumble_rot() -> RotationalState {
+pub fn tumble_rot() -> RotationalStateTyped<SelfRef> {
     // Deliberately non-trivial tumble (axis ≠ basis, ω with mixed
     // signs) so attitude propagation exercises off-diagonal RNP terms.
-    // Pre-#172 H1 the quaternion was deliberately *not* unit-norm to
-    // exercise the integrator's renormalize-after-step path; the
-    // migration to typed `RotationalStateC` (which carries a
-    // `NormalizedQuat` witness) requires a normalized input at the
-    // ECS surface. The integrator's renormalize behavior is still
-    // tested by `rotational::tests::*` in astrodyn_dynamics.
+    // The quaternion is normalized at construction because
+    // `RotationalStateC` (and its `BodyAttitude` witness) require a
+    // unit-norm quaternion at the ECS surface. The integrator's own
+    // renormalize-after-step path is still exercised by the
+    // `rotational::tests::*` in astrodyn_dynamics.
     let mut q = astrodyn::JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
     q.normalize();
-    RotationalState {
-        quaternion: q,
-        ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
-    }
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(q),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::new(0.001, -0.0005, 0.001)),
+    )
 }
 
-pub fn iss_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        400_000.0,
-        DMat3::from_diagonal(DVec3::new(1.02e8, 0.91e8, 1.64e8)),
-        DVec3::ZERO,
+pub fn iss_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(400_000.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::new(1.02e8, 0.91e8, 1.64e8),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
@@ -218,9 +223,9 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
 
 pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
     VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+        trans: iss_trans(),
+        rot: Some(tumble_rot()),
+        mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },

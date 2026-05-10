@@ -71,9 +71,9 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -182,9 +182,9 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -282,9 +282,9 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -381,9 +381,9 @@ fn bevy_parity_drag_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -492,9 +492,9 @@ fn bevy_parity_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
