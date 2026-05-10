@@ -32,12 +32,12 @@ use bevy::prelude::*;
 // `MassPropertiesTyped::<SelfRef>::with_inertia(...)`) and lifts to the
 // Component via the typed-side `From<RotationalStateTyped<SelfRef>>` /
 // `From<MassPropertiesTyped<SelfRef>>` impls (still present below).
-// The lone exception is `TranslationalStateC::<P>::from_untyped(state)`,
-// which remains as a named opt-in because the relabel from the gateway's
-// `TranslationalStateTyped<RootInertial>` to the Component's
-// `TranslationalStateTyped<PlanetInertial<P>>` storage requires the
-// caller to assert `P` — there is no information-preserving typed-side
-// `From` impl that can do that without a witness.
+// `TranslationalStateC::<P>::from_untyped(state)` likewise remains as a
+// named typed↔raw kernel-boundary helper, but mission code that already
+// has typed inputs should reach for `point_mass(pos, vel)` or the
+// `From<TranslationalStateTyped<PlanetInertial<P>>>` impl below — both
+// take typed planet-inertial inputs and never cross the typed/raw
+// boundary, which is what mission and parity-test code wants.
 
 /// Translational state (position, velocity) for the body being
 /// integrated. Wraps a typed
@@ -115,6 +115,14 @@ impl<P: Planet> TranslationalStateC<P> {
     /// the matching `From<TranslationalState>` impl was removed in
     /// #397, so callers must opt in by this named method rather than
     /// `.into()`.
+    ///
+    /// **Prefer the typed entry points** for mission and parity-test
+    /// code that already has typed inputs:
+    /// [`Self::point_mass`] for `(Position<PlanetInertial<P>>,
+    /// Velocity<PlanetInertial<P>>)` pairs, or the
+    /// `From<TranslationalStateTyped<PlanetInertial<P>>>` impl for an
+    /// already-bundled typed state. Both keep the typed/raw boundary
+    /// invisible at the call site.
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
         // allowed: typed↔raw kernel boundary
@@ -122,6 +130,28 @@ impl<P: Planet> TranslationalStateC<P> {
             position: Position::<PlanetInertial<P>>::from_raw_si(state.position),
             velocity: Velocity::<PlanetInertial<P>>::from_raw_si(state.velocity),
         })
+    }
+
+    /// Construct from typed planet-inertial position and velocity.
+    ///
+    /// The frame phantoms on the inputs assert that the values are
+    /// expressed in `P`'s planet-inertial frame; the witness for `P`
+    /// is the caller's compile-time choice plus the matching phantoms
+    /// on `position` / `velocity`. No untyped escape hatch crosses
+    /// the signature, so mission and parity-test code that already
+    /// has typed building blocks (e.g. from
+    /// [`init_from_orbital_elements_typed`](astrodyn::init_from_orbital_elements_typed),
+    /// the
+    /// [`Vec3Ext::m_at`](astrodyn::Vec3Ext::m_at) /
+    /// [`Vec3Ext::m_per_s_at`](astrodyn::Vec3Ext::m_per_s_at) facade,
+    /// or recipe presets) reaches for this entry point instead of
+    /// the typed↔raw [`Self::from_untyped`] helper.
+    #[inline]
+    pub fn point_mass(
+        position: Position<PlanetInertial<P>>,
+        velocity: Velocity<PlanetInertial<P>>,
+    ) -> Self {
+        Self(TranslationalStateTyped::<PlanetInertial<P>> { position, velocity })
     }
 
     /// Witness-gated constructor: wrap an already-typed
@@ -161,6 +191,19 @@ impl<P: Planet> From<TranslationalStateTyped<RootInertial>> for TranslationalSta
     #[inline]
     fn from(state: TranslationalStateTyped<RootInertial>) -> Self {
         Self(state.relabel_to::<PlanetInertial<P>>())
+    }
+}
+
+impl<P: Planet> From<TranslationalStateTyped<PlanetInertial<P>>> for TranslationalStateC<P> {
+    /// Wrap an already-typed `<PlanetInertial<P>>` translational state
+    /// directly. The inner phantom matches the storage phantom — pure
+    /// no-op wrap (no relabel, no arithmetic). This is the production
+    /// path for callers whose typed-helper output is already tagged
+    /// with the matching planet phantom (e.g. typed parity-test
+    /// `common::*` helpers).
+    #[inline]
+    fn from(state: TranslationalStateTyped<PlanetInertial<P>>) -> Self {
+        Self(state)
     }
 }
 

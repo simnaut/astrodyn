@@ -311,10 +311,7 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                      range ({sources_len} sources)"
                 )
             });
-            app.insert_resource(AtmosphereModelR {
-                config,
-                planet_entity: Some(planet_entity),
-            });
+            app.insert_resource(AtmosphereModelR::new(config, planet_entity));
         }
 
         // ── Mass tree pre-allocation ──
