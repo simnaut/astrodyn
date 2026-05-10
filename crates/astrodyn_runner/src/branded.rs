@@ -16,7 +16,7 @@
 //! use astrodyn_runner::Simulation;
 //! use astrodyn::{default_leap_second_table, F64Ext, SimulationTime};
 //! use astrodyn::recipes::{earth, orbital_elements, vehicle};
-//! use astrodyn::{GravityControl, VehicleBuilder};
+//! use astrodyn::{GravityControl, GravityRole, VehicleBuilder};
 //!
 //! let time = SimulationTime::at_j2000(default_leap_second_table());
 //! let final_pos_x = Simulation::run(time, 60.0, |mut sim| {
@@ -280,7 +280,7 @@ impl Simulation {
     /// use astrodyn_runner::Simulation;
     /// use astrodyn::{default_leap_second_table, F64Ext, SimulationTime};
     /// use astrodyn::recipes::{earth, orbital_elements, vehicle};
-    /// use astrodyn::{GravityControl, VehicleBuilder};
+    /// use astrodyn::{GravityControl, GravityRole, VehicleBuilder};
     ///
     /// let time = SimulationTime::at_j2000(default_leap_second_table());
     /// let r = Simulation::run(time, 60.0, |mut sim| {
