@@ -230,6 +230,52 @@ impl Frame for IntegrationFrame {
     const NAME: &'static str = "IntegrationFrame";
 }
 
+/// Mass-tree wildcard inertial-flavor frame for kinematic-propagation
+/// scratch state.
+///
+/// The kinematic-propagation kernel (`propagate_state_via_storage`)
+/// walks a heterogeneous mass tree where different nodes may live in
+/// different integration frames — a parent body in [`RootInertial`],
+/// a child in `PlanetInertial<Earth>`, a sibling somewhere else. The
+/// per-edge `KinematicEdge.t_parent_child` matrix already captures
+/// the cross-frame transition, so per-node translational scratch state
+/// has no single concrete frame it can be tagged with.
+///
+/// `MassNode` is the inertial-flavor sibling of [`SelfRef`] /
+/// [`SelfPlanet`] for that boundary: storage callers
+/// (`Simulation::propagate_kinematic_state` in `astrodyn_runner` and
+/// `propagate_state_from_root_system` in `astrodyn_bevy`) lift their
+/// concrete-frame typed state into `<MassNode>` at the kernel-walk
+/// boundary via [`Qty3::relabel_to`](crate::qty3::Qty3::relabel_to)
+/// and re-pin to a concrete frame on writeback. Inside the walk every
+/// node carries the same `<MassNode>` tag, so the kernel composes
+/// states across heterogeneous nodes without needing a per-node frame
+/// generic that the type system cannot satisfy.
+///
+/// The convention is the same as [`SelfRef`] / [`SelfPlanet`] — the
+/// wildcard is **a runtime-resolved storage-boundary tag, not a
+/// physical frame**. Mixing a `Position<MassNode>` with a
+/// `Position<RootInertial>` is a compile error by design; the only
+/// way to bridge is the explicit `relabel_to` at the boundary, which
+/// the storage caller is responsible for routing through the
+/// per-body integration-origin shift first when its body lives in a
+/// non-root integration frame (RF.10 shift discipline).
+// JEOD_INV: TS.01 — `MassNode` is the kinematic-propagation
+// storage-boundary wildcard; the per-node trans is mid-walk scratch
+// for a heterogeneous mass tree (parent in `RootInertial`, child in
+// `PlanetInertial<P>`, …) whose per-edge rotation already carries
+// the cross-frame transition. System code paths and APIs use
+// concrete `<F: Frame>` parameters; `MassNode` appears only at the
+// `KinematicNodeState.trans` storage boundary and the matching
+// storage-caller lift sites. See the lint at
+// `tests/self_ref_self_planet_discipline.rs`.
+#[derive(Debug, Clone, Copy)]
+pub struct MassNode;
+impl FrameSealed for MassNode {}
+impl Frame for MassNode {
+    const NAME: &'static str = "MassNode";
+}
+
 // NOTE on `NAME`: each frame's `NAME` const identifies the *frame kind*
 // (e.g. "BodyFrame") rather than the embedded planet/vehicle tag. This is
 // a `const &'static str`, so we can't splice `V::NAME` into it at compile

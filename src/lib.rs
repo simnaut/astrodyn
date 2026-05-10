@@ -286,8 +286,8 @@ pub use astrodyn_quantities::diagnostics::CompatibleVehiclePair;
 pub use astrodyn_quantities::dims::GravParam;
 pub use astrodyn_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use astrodyn_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
-    PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, MassNode, Moon, Ned, Planet,
+    PlanetFixed, PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
