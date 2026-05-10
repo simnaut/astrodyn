@@ -81,6 +81,63 @@ impl<P: Planet> PlanetBundle<P> {
             },
         )
     }
+
+    /// Bundle with only the components needed for point-mass gravity:
+    /// [`Name`], [`GravitySourceC`], [`SourceInertialPositionC`], and
+    /// [`TranslationalStateC<P>`].
+    ///
+    /// Omits the rotation/shape/RNP components that the full
+    /// [`Self::point_mass`] / [`Self::from_config`] bundles insert
+    /// ([`PlanetFixedRotationC`], [`PlanetOmegaC`],
+    /// [`PlanetAngularVelocityC`], [`RotationModelC`], [`PlanetC`]). Those
+    /// extra components are what activate the planet-fixed-rotation,
+    /// atmosphere, and geodetic systems each step; tests and missions that
+    /// model point-mass gravity only must not insert them or the schedule
+    /// will run physics they aren't configured for.
+    ///
+    /// Use [`Self::point_mass`] for a planet that participates in rotation
+    /// or geodetic computation.
+    ///
+    /// # Example
+    /// ```
+    /// use bevy::prelude::*;
+    /// use astrodyn_bevy::{
+    ///     GravitySourceC, PlanetBundle, SourceInertialPositionC, TranslationalStateC,
+    /// };
+    /// use astrodyn::EARTH;
+    ///
+    /// let mut world = World::new();
+    /// let earth = world
+    ///     .spawn(PlanetBundle::<astrodyn::Earth>::point_mass_only(
+    ///         "Earth",
+    ///         astrodyn::GravitySource {
+    ///             mu: EARTH.shape.mu,
+    ///             model: astrodyn::GravityModel::PointMass,
+    ///         },
+    ///     ))
+    ///     .id();
+    /// let e = world.entity(earth);
+    /// assert!(e.contains::<Name>());
+    /// assert!(e.contains::<GravitySourceC>());
+    /// assert!(e.contains::<SourceInertialPositionC>());
+    /// assert!(e.contains::<TranslationalStateC<astrodyn::Earth>>());
+    /// ```
+    pub fn point_mass_only(
+        name: impl Into<Name>,
+        source: GravitySource,
+    ) -> (
+        Name,
+        GravitySourceC,
+        SourceInertialPositionC,
+        TranslationalStateC<P>,
+    ) {
+        (
+            name.into(),
+            GravitySourceC(source),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::<P>::default(),
+        )
+    }
 }
 
 /// Bundle for spawning the Sun entity.
