@@ -6,12 +6,17 @@
 //! 100 steps and exits after ~1 orbit.
 //!
 //! Phase 6 of #101: building blocks for the Earth source and the
-//! initial state come from
-//! [`recipes`](astrodyn::recipes) so this example shares its
-//! "Earth+ISS" composition with the standalone-runner examples and
-//! Tier 3 cases. Phase 9 will introduce a `commands.spawn_scenario(s)`
-//! extension that lets a Bevy app consume a full scenario in one
-//! line; until then, the Bevy spawning is still manual.
+//! initial state come from [`recipes`](astrodyn::recipes) so this
+//! example shares its "Earth+ISS" composition with the standalone-runner
+//! examples and Tier 3 cases. The Bevy spawning here is intentionally
+//! manual — it shows how the underlying components fit together. For
+//! whole-scenario composition (multiple sources, mass trees,
+//! ephemeris, atmosphere, polar motion) see
+//! [`SimulationBuilderBevyExt::populate_app`](astrodyn_bevy::SimulationBuilderBevyExt::populate_app)
+//! and `examples/multi_body_scenario.rs` — that's the canonical
+//! recipe-driven entry point. A future `commands.spawn_scenario(s)`
+//! extension on `&mut Commands` is a separate, system-friendly form
+//! that's distinct from the existing `&mut App` terminal.
 
 use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
@@ -100,9 +105,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // Earth gravity source. The Bevy adapter consumes only the
     // `GravitySource` (mu + model) from the recipe entry; the rest of
     // the standalone-runner `GravitySourceEntry` (rotation model,
-    // pfix transform, …) is wired by Bevy systems separately. Phase 9
-    // will add a `commands.spawn_scenario(s)` extension that hides
-    // this conversion.
+    // pfix transform, …) is wired by Bevy systems separately. For
+    // whole-scenario composition that hides this manual wiring, reach
+    // for `SimulationBuilderBevyExt::populate_app` (see
+    // `examples/multi_body_scenario.rs`); the manual setup below is
+    // kept here as the documentation of the underlying components.
     let earth_recipe = earth::point_mass();
     let earth = commands
         .spawn((
@@ -115,8 +122,10 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // Pull the orbital-elements preset (`OrbitalElements` carries plain
     // `f64` SI fields — JEOD-faithful but not yet `uom`-typed) and
     // initialize a typed `TranslationalState` via the typed orbit-init
-    // helper. Phase 9 will introduce a `commands.spawn_scenario(s)`
-    // extension that hides this conversion.
+    // helper. The recipe-driven path
+    // (`SimulationBuilderBevyExt::populate_app`) folds this conversion
+    // into the scenario factory; see `examples/multi_body_scenario.rs`
+    // for that flow.
     let oe = orbital_elements::iss();
     let trans_typed = init_from_orbital_elements_typed(
         Length::new::<meter>(oe.semi_major_axis),

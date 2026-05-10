@@ -29,5 +29,9 @@ path = "examples/kepler_orbit.rs"
 name = "typed_mission"
 path = "examples/typed_mission.rs"
 
+[[example]]
+name = "multi_body_scenario"
+path = "examples/multi_body_scenario.rs"
+
 [lints]
 workspace = true
