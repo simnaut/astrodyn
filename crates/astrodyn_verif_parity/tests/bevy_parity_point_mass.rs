@@ -532,6 +532,7 @@ fn tier3_sim_mars_rotation_dispatch() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -587,6 +588,7 @@ fn tier3_sim_multi_source_rotation() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -607,6 +609,7 @@ fn tier3_sim_multi_source_rotation() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
 

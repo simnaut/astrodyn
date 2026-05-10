@@ -70,6 +70,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

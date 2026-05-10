@@ -648,6 +648,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: true,
+                marker_only: false,
             },
         );
         // Add a non-central source whose inertial frame is offset
@@ -671,6 +672,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
 
@@ -949,6 +951,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
         sim.sun_source = Some(sun);

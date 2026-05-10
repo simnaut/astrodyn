@@ -112,6 +112,7 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 
@@ -169,6 +170,7 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
             tidal_config: None,
             planet_omega: if needs_pfix { OMEGA_EARTH } else { 0.0 },
             central: true,
+            marker_only: false,
         },
     );
     let sun = sb.add_source("Sun", third_body(mu_sun, sun_t0.raw_si()));

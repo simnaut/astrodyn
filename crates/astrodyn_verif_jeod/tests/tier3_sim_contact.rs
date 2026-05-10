@@ -148,6 +148,7 @@ fn add_empty_space_root(sim: &mut Simulation) {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 }
@@ -874,6 +875,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

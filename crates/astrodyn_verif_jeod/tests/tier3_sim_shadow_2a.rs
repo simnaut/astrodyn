@@ -85,6 +85,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -109,6 +110,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);

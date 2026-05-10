@@ -67,6 +67,7 @@ fn gj_energy_error(order: usize) -> f64 {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

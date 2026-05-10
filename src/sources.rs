@@ -42,6 +42,7 @@ use astrodyn_quantities::frame::RootInertial;
 ///     tidal_config: None,
 ///     planet_omega: 0.0,
 ///     central: true,
+///     marker_only: false,
 /// };
 /// let body_pos: Position<IntegrationFrame> = Position::zero();
 /// let _bug = body_pos - entry.position;   // frames mismatch
@@ -76,6 +77,32 @@ pub struct GravitySourceEntry {
     /// Set automatically by [`central_body`](Self::central_body) and
     /// [`central_body_sh`](Self::central_body_sh).
     pub central: bool,
+    /// When `true`, the Bevy adapter (`SimulationBuilderBevyExt::populate_app`)
+    /// spawns this source as a `SunMarker` / `MoonMarker`-only entity —
+    /// `Name` + marker + `TranslationalStateC<P>` — without
+    /// `GravitySourceC`, `SourceInertialPositionC`, or the source's
+    /// frame-tree entity. Used for sources that are referenced *only*
+    /// for SRP direction lookup or similar marker-mediated queries
+    /// (e.g. the SRP family's mu=0 Sun) and that no body's
+    /// `gravity_controls` ever consumes.
+    ///
+    /// On the runner side this flag is informational: the source is
+    /// still added to the source list (so `sun_source` /
+    /// `moon_source` index lookups work) and gravity computation
+    /// per-body still dispatches via the body's `gravity_controls`,
+    /// which doesn't reference marker-only sources by construction.
+    /// Mu-zero gives zero contribution either way; the runner does
+    /// no extra work for marker-only sources beyond the per-source
+    /// list entry.
+    ///
+    /// **Bit-identity consequence.** With `marker_only = true`, the
+    /// Bevy adapter's gravity / frame-sync systems iterate one fewer
+    /// `GravitySourceC` entity, matching the hand-rolled
+    /// `bevy_parity_srp.rs` Sun-as-marker spawning convention. The
+    /// runner-vs-bevy parity test stays bit-identical because both
+    /// sides see the same effective gravity contribution (zero) and
+    /// the same SRP direction (resolved via the marker query).
+    pub marker_only: bool,
 }
 
 impl GravitySourceEntry {
@@ -98,6 +125,7 @@ impl GravitySourceEntry {
             delta_c20: 0.0,
             tidal_config: None,
             central: false,
+            marker_only: false,
         }
     }
 
@@ -124,6 +152,7 @@ impl GravitySourceEntry {
             delta_c20: 0.0,
             tidal_config: None,
             central: true,
+            marker_only: false,
         }
     }
 
@@ -150,6 +179,7 @@ impl GravitySourceEntry {
             delta_c20: 0.0,
             tidal_config: None,
             central: true,
+            marker_only: false,
         }
     }
 
@@ -171,6 +201,7 @@ impl GravitySourceEntry {
             delta_c20: 0.0,
             tidal_config: None,
             central: false,
+            marker_only: false,
         }
     }
 

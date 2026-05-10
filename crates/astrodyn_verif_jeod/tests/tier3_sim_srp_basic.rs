@@ -139,6 +139,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     sim.sun_source = Some(sun);

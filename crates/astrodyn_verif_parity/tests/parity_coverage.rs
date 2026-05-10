@@ -235,15 +235,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "tide_verif",
-        "recipe exists (sim_tide_verif::run01) but uses \
-         `set_tidal_body_position`, which is default-panic on \
-         `AppSimContext`; bridging needs `populate_app` to expose \
-         tidal-body entities so the parity trait can route the \
-         per-step tidal update through the same `SimContext` surface \
-         it uses for source positions (#395 follow-up).",
-    ),
-    (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",

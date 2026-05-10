@@ -190,6 +190,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: true,
+                marker_only: false,
             },
         );
         // Source 1: 1e9 m offset in +X. Marked non-central so the body's
@@ -210,6 +211,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
         // Sun used for solar beta. Placed far in +X so the sun direction
@@ -233,6 +235,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
         sim.sun_source = Some(sun_src);

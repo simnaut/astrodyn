@@ -48,6 +48,7 @@ fn pipeline_earth_lighting_smoke() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -72,6 +73,7 @@ fn pipeline_earth_lighting_smoke() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
@@ -97,6 +99,7 @@ fn pipeline_earth_lighting_smoke() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     sim.set_source_ephemeris(moon, EphemerisBody::Moon, EphemerisBody::Earth);

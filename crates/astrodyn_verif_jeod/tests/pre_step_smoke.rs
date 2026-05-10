@@ -102,6 +102,7 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     sb.add_source(
@@ -119,6 +120,7 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
 

@@ -1,36 +1,20 @@
-//! `VerificationCase` constructor for the SIM_verif_attach_detach
-//! RUN_simple_attach_detach scenario, attach-only window.
+//! `VerificationCase` constructor for the SIM_simple_attach_detach
+//! trajectory parity family (#395 sub-task A).
 //!
-//! Three free-flying 6-DOF bodies (no gravity, no force) are propagated
-//! through `Simulation::step()`; at `t = ATTACH_TIME` the recipe fires
-//! `attach(veh1 → veh2)` via the [`SimContext::attach`] surface,
-//! mirrored by `AttachEvent` on the Bevy side. The runner-vs-JEOD
-//! cross-validation lives in `tier3_sim_attach_detach_trajectory.rs`;
-//! this recipe drives the runner-vs-Bevy parity surface.
+//! Three free-flying 6-DOF rigid bodies (no force / no torque). The
+//! `pre_step` factory schedules a runtime attach of veh1 → veh2 at
+//! `ATTACH_TIME = 10 s` and the matching `mark_kinematic_only` one
+//! tick later, then stops strictly before `DETACH_TIME = 20 s` (the
+//! parity comparison's #308 fence — see the hand-rolled
+//! `bevy_parity_attach_detach_trajectory.rs` for the dual-write
+//! reasoning).
 //!
-//! ## What is and isn't covered
-//!
-//! Mirrors the coverage of the hand-rolled
-//! `bevy_parity_attach_detach_trajectory_simple` test it replaces:
-//! propagates from `t = 0` through the attach window and stops *before*
-//! the detach event at `t = 20 s`. The post-detach window is excluded
-//! because of issue #308 (`composite_mass_system` reverts
-//! `MassPropertiesC` for detached entities before the detach handler
-//! reads it). Once #308 lands the recipe can extend through to
-//! `t = 30 s` by adding a `detach` call to the `pre_step` closure;
-//! until then `KNOWN_PARITY_GAPS` continues to track the post-detach
-//! gap separately.
-//!
-//! ## CSV reference
-//!
-//! Routes through [`CsvReference::TimesOnly`] reading the existing
-//! `kinematic_propagation_simple_kinematic_propagation_state.csv` for
-//! cadence (records every 0.1 s). Initial conditions are hardcoded
-//! from JEOD `Modified_data/veh{1,2,3}.py`; the parity trait reads
-//! only `record.time` from the CSV.
+//! Mirrors the hand-rolled
+//! `bevy_parity_attach_detach_trajectory.rs::bevy_parity_attach_detach_trajectory_simple`
+//! exactly.
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, SimContext, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, GravityControls, IntegratorType, JeodQuat, MassProperties,
@@ -40,22 +24,14 @@ use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
 use uom::si::time::second;
 
-/// Integrator timestep matching JEOD's RUN_simple_attach_detach
-/// (`SET_test/RUN_simple_attach_detach/input.py`).
-const DT: f64 = 0.1;
-
-/// `BodyAttachAligned veh1.attach_to_2` time
-/// (`SET_test/RUN_simple_attach_detach/input.py:24`).
+const ATTACH_DT: f64 = 0.1;
 const ATTACH_TIME: f64 = 10.0;
-
-/// `BodyDetach veh1.detach_from_2` time. The hand-rolled parity test
-/// stops strictly before this (see "What is and isn't covered" above);
-/// the recipe currently mirrors that scope so detach is excluded from
-/// `pre_step`. The constant is kept here so the duration cap stays
-/// expressed in source-file terms.
-const DETACH_TIME: f64 = 20.0;
-
-// ── Initial conditions, all from JEOD Modified_data files. ──
+/// Number of `ATTACH_DT`-sized ticks. Equals `(DETACH_TIME / DT) - 1`
+/// per the pre-#395 hand-rolled test, so the loop's last step lands
+/// at `t = DETACH_TIME - DT` (= 19.9 s) and never reaches
+/// `t == DETACH_TIME` — the dual-write fence #308 the hand-rolled
+/// test documents.
+const ATTACH_NUM_STEPS: usize = (20.0 / 0.1) as usize - 1;
 
 fn veh1_mass() -> MassProperties {
     MassProperties::with_inertia(
@@ -125,22 +101,24 @@ fn veh3_rot() -> RotationalState {
     }
 }
 
-/// JEOD's `BodyAttachAligned veh1.attach_to_2` link geometry.
-fn link_offset_and_rotation() -> (DVec3, DMat3) {
-    (DVec3::new(-10.0, 0.0, 0.0), DMat3::IDENTITY)
+/// JEOD's `BodyAttachAligned veh1.attach_to_2`: child struct origin
+/// at (-10, 0, 0) in parent struct frame, identity link rotation.
+fn link_offset() -> DVec3 {
+    DVec3::new(-10.0, 0.0, 0.0)
 }
 
-fn body_index_veh1() -> usize {
-    0
-}
-fn body_index_veh2() -> usize {
-    1
+fn link_t_parent_child() -> DMat3 {
+    DMat3::IDENTITY
 }
 
-fn build_attach_detach(_init: &InitialConditions) -> SimulationBuilder {
+/// Build a 3-body free-flying scenario with all three bodies
+/// registered in the mass tree but unattached. The `pre_step` factory
+/// schedules veh1.attach_to_2 + mark_kinematic_only at the right
+/// records.
+fn build_attach_detach_trajectory(_init: &InitialConditions) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
-    let mut b = SimulationBuilder::new(time, DT);
-    b.add_body(VehicleConfig {
+    let mut sb = SimulationBuilder::new(time, ATTACH_DT);
+    let v1 = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&veh1_trans()),
         rot: Some(super::typed_helpers::rot_typed(&veh1_rot())),
         mass: Some(super::typed_helpers::mass_typed(&veh1_mass())),
@@ -148,7 +126,7 @@ fn build_attach_detach(_init: &InitialConditions) -> SimulationBuilder {
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    b.add_body(VehicleConfig {
+    let v2 = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&veh2_trans()),
         rot: Some(super::typed_helpers::rot_typed(&veh2_rot())),
         mass: Some(super::typed_helpers::mass_typed(&veh2_mass())),
@@ -156,7 +134,7 @@ fn build_attach_detach(_init: &InitialConditions) -> SimulationBuilder {
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    b.add_body(VehicleConfig {
+    let v3 = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&veh3_trans()),
         rot: Some(super::typed_helpers::rot_typed(&veh3_rot())),
         mass: Some(super::typed_helpers::mass_typed(&veh3_mass())),
@@ -164,66 +142,50 @@ fn build_attach_detach(_init: &InitialConditions) -> SimulationBuilder {
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    b.register_in_mass_tree(0, "veh1");
-    b.register_in_mass_tree(1, "veh2");
-    b.register_in_mass_tree(2, "veh3");
-    b
+    sb.register_in_mass_tree(v1, "veh1");
+    sb.register_in_mass_tree(v2, "veh2");
+    sb.register_in_mass_tree(v3, "veh3");
+    sb
 }
 
-/// pre_step: fire `attach(veh1 → veh2)` once when the upcoming step
-/// crosses [`ATTACH_TIME`].
-///
-/// The closure captures a `fired` flag so the attach runs exactly
-/// once. The `time > ATTACH_TIME` test fires on the first record whose
-/// step lands strictly past `ATTACH_TIME`, mirroring the hand-rolled
-/// test's "fire after the step that lands at `t = ATTACH_TIME`"
-/// timing — this is the JEOD-faithful `trick.add_read(t, ...)`
-/// schedule (the integrator runs from `t-DT → t` with the bodies
-/// still separate, then the read job fires at the start of the next
-/// dispatch cycle for time `t + DT`).
+/// `pre_step` factory: fires `attach(child=v1=0, parent=v2=1, ...)`
+/// at the record advancing to `t = ATTACH_TIME` and
+/// `mark_kinematic_only(0)` one record later. The duration field on
+/// the `VerificationCase` clamps the propagation strictly before
+/// `t = DETACH_TIME` so the comparison stops before the dual-write
+/// fence the hand-rolled test documents.
 fn attach_detach_pre_step(_init: &InitialConditions) -> PreStepClosure {
-    let mut fired = false;
-    Box::new(move |sim: &mut dyn SimContext, time: f64| {
-        if !fired && time > ATTACH_TIME {
-            let (offset, t_pc) = link_offset_and_rotation();
-            sim.attach(body_index_veh1(), body_index_veh2(), offset, t_pc);
-            sim.mark_kinematic_only(body_index_veh1());
-            fired = true;
+    Box::new(move |sim, time_s: f64| {
+        let half_dt = 0.5 * ATTACH_DT;
+        if (time_s - ATTACH_TIME).abs() < half_dt {
+            sim.attach(0, 1, link_offset(), link_t_parent_child());
+        } else if (time_s - (ATTACH_TIME + ATTACH_DT)).abs() < half_dt {
+            sim.mark_kinematic_only(0);
         }
     })
 }
 
-/// SIM_verif_attach_detach RUN_simple_attach_detach attach-window
-/// parity recipe.
-pub fn attach_detach_trajectory() -> VerificationCase {
+/// SIM_simple_attach_detach 3-body trajectory parity scenario.
+/// Mirrors the hand-rolled `bevy_parity_attach_detach_trajectory.rs`
+/// test exactly. Stops strictly before `DETACH_TIME = 20 s` per the
+/// hand-rolled #308 fence.
+pub fn simple() -> VerificationCase {
     VerificationCase {
         name: "tier3_bevy_attach_detach_trajectory_simple",
-        scenario: build_attach_detach,
-        // TimesOnly: parity reads cadence only; the initial conditions
-        // are hardcoded above and the per-record state comparison
-        // happens body-by-body between the two runtimes.
-        reference: CsvReference::TimesOnly(
-            "kinematic_propagation_simple_kinematic_propagation_state.csv",
-        ),
-        // Stop strictly before the detach event — mirrors the
-        // hand-rolled test scope (see file-level docstring "What is
-        // and isn't covered").
-        duration: Time::new::<second>(DETACH_TIME - DT),
-        tolerances: zero_tolerances(),
+        scenario: build_attach_detach_trajectory,
+        reference: CsvReference::SyntheticTimes {
+            dt: ATTACH_DT,
+            num_steps: ATTACH_NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            position_m: [0.0; 3],
+            velocity_m_s: [0.0; 3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
         extras: None,
         pre_step: Some(attach_detach_pre_step),
-    }
-}
-
-fn zero_tolerances() -> Tolerances {
-    // Parity tests don't compare against JEOD; tolerances aren't
-    // exercised. All-zero opts out of every metric group via the
-    // documented "all-zero skips" rule in `Tolerances`.
-    Tolerances {
-        position_m: [0.0; 3],
-        velocity_m_s: [0.0; 3],
-        quat_angle_rad: 0.0,
-        ang_vel_rad_s: [0.0; 3],
-        extras: &[],
     }
 }

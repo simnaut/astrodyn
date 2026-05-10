@@ -38,8 +38,6 @@
 //! within the same tolerance. Issue #389 closes the gap by making the
 //! `bevy_parity_*` test set a superset of every Tier 3 topic.
 
-pub mod app_sim_context;
-
 use std::time::Duration;
 
 use astrodyn_bevy::{RotationalStateC, SimulationBuilderBevyExt, TranslationalStateC};
@@ -50,7 +48,8 @@ use astrodyn_verif_jeod::verification::VerificationCase;
 use bevy::prelude::*;
 use uom::si::time::second;
 
-pub use app_sim_context::AppSimContext;
+mod bevy_context;
+pub use bevy_context::BevySimContext;
 
 /// Trait that turns any [`VerificationCase`] into a runner-vs-bevy
 /// bit-identical state parity assertion.
@@ -80,19 +79,29 @@ pub trait VerificationCaseParityExt {
 
 impl VerificationCaseParityExt for VerificationCase {
     fn run_and_assert_parity<P: astrodyn::Planet>(&self) {
-        // 1. Load the reference CSV exactly once. Only timestamps and
-        //    the t=0 row matter for parity — JEOD-logged state never
-        //    enters the comparison (that's the runner-vs-JEOD job in
-        //    `run_and_assert`).
-        let ref_path = tier3_csv::test_data_path(self.reference.file_name());
-        assert!(
-            ref_path.exists(),
-            "JEOD reference CSV not found at {} for `{}`. Generate with: \
-             docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-             -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-            ref_path.display(),
-            self.name,
-        );
+        // 1. Load the reference cadence exactly once. Only timestamps
+        //    and the t=0 row matter for parity — JEOD-logged state
+        //    never enters the comparison (that's the runner-vs-JEOD
+        //    job in `run_and_assert`).
+        //    `CsvReference::SyntheticTimes` short-circuits the disk
+        //    lookup and generates the cadence in memory; every other
+        //    variant pairs with a committed reference under
+        //    `test_data/`.
+        let ref_path = match self.reference.file_name() {
+            Some(name) => {
+                let p = tier3_csv::test_data_path(name);
+                assert!(
+                    p.exists(),
+                    "JEOD reference CSV not found at {} for `{}`. Generate with: \
+                     docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
+                     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+                    p.display(),
+                    self.name,
+                );
+                p
+            }
+            None => std::path::PathBuf::new(),
+        };
         let ref_states = load_reference_states(&self.reference, &ref_path);
         assert!(
             !ref_states.is_empty(),
@@ -120,26 +129,30 @@ impl VerificationCaseParityExt for VerificationCase {
         let handles = (self.scenario)(&init)
             .populate_app::<P>(&mut app)
             .unwrap_or_else(|e| panic!("`{}`: bevy populate_app failed: {e:?}", self.name));
+        // Run Startup so frame-tree registration systems
+        // (`register_source_frames_system`, etc.) attach
+        // `FrameEntityC` / `PfixFrameEntityC` on the source entities
+        // before any `pre_step` hook tries to mutate them. Without this
+        // the very first `BevySimContext::set_source_position` panics
+        // on the missing `FrameEntityC` lookup, since `MinimalPlugins`
+        // never auto-runs `Startup` and the parity loop drives
+        // `FixedUpdate` directly.
+        app.world_mut().run_schedule(Startup);
 
-        // Run Bevy's `Startup` schedule once so registration systems
-        // (`register_source_frames_system`, `register_body_frames_system`,
-        // `register_pfix_frames_system`) attach `FrameEntityC` to
-        // every source / body before any `pre_step` invocation. The
-        // first `FixedUpdate` would otherwise be the first time these
-        // run, but a `pre_step` hook that mutates a source via
-        // `AppSimContext::set_source_position` reaches through
-        // `SourceMutator`, which queries `FrameEntityC` and panics if
-        // it is missing.
-        app.world_mut().run_schedule(bevy::prelude::Startup);
-
-        // Per-step pre_step hook: built once from the t=0 conditions so
-        // the closure can capture run-once state (DE421, J2000 JD,
-        // source indices). The runner half feeds the closure a `&mut
-        // Simulation`; the bevy half feeds it a `&mut AppSimContext`.
-        // Both adapters drive the same `SimContext` trait surface, so
-        // the closure body is unaware of which runtime it's mutating.
-        let mut runner_pre_step = self.pre_step.map(|f| f(&init));
-        let mut bevy_pre_step = self.pre_step.map(|f| f(&init));
+        // 2b. If the case carries a pre-step factory, invoke it now so
+        //     the resulting closure can capture run-once state (a loaded
+        //     DE421 ephemeris, J2000 JD, source indices) the per-step
+        //     body would otherwise re-derive on every call. The factory
+        //     produces *two* closures from a shared captured environment
+        //     so that the runner-side state and the Bevy-side state see
+        //     bit-identical inputs at every record. The factory itself
+        //     runs twice (`fn(&InitialConditions) -> PreStepClosure` is
+        //     `Copy`) — captured state (e.g. an Ephemeris<'static> handle)
+        //     is reloaded for each side, which is fine: load is
+        //     deterministic and the per-step closure body sees the same
+        //     numeric inputs regardless.
+        let mut runner_pre_step = self.pre_step.map(|builder| builder(&init));
+        let mut bevy_pre_step = self.pre_step.map(|builder| builder(&init));
 
         // 3. Propagate in lockstep. Rather than mirror runner's
         //    `step_until` (which would require a separate Bevy-side
@@ -166,20 +179,25 @@ impl VerificationCaseParityExt for VerificationCase {
                 record.time,
                 current_time,
             );
-            // Run the pre-step hook on each side before propagation,
-            // mirroring `run_and_assert`'s `hook(&mut sim, record.time)`
-            // call. Both halves drive the same `SimContext` trait
-            // surface (`Simulation` for the runner, `AppSimContext` for
-            // bevy), so a closure that updates a Sun position via
-            // `set_source_position` does the same physical work on
-            // both adapters.
+            // Run the pre-step hook on both runtimes before propagation
+            // so each sees up-to-date inputs for this record. The runner
+            // side mirrors `VerificationCaseExt::run_and_assert`'s call
+            // shape; the Bevy side wraps `&mut World` in a
+            // [`BevySimContext`] so the same closure body can mutate
+            // either runtime through the [`SimContext`] surface.
             if let Some(hook) = runner_pre_step.as_mut() {
                 hook(&mut runner_sim, record.time);
             }
             if let Some(hook) = bevy_pre_step.as_mut() {
-                let mut ctx = AppSimContext::<P>::new(&mut app, &handles);
+                let world = app.world_mut();
+                let mut ctx = BevySimContext::<P>::new(
+                    world,
+                    &handles.source_entities,
+                    &handles.body_entities,
+                );
                 hook(&mut ctx, record.time);
             }
+
             // Advance runner.
             runner_sim
                 .step_n(dt_steps)

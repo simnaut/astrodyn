@@ -302,6 +302,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
     let sun_idx = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
@@ -400,6 +401,7 @@ fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
         tidal_config: None,
         planet_omega: 0.0,
         central: false,
+        marker_only: false,
     }
 }
 

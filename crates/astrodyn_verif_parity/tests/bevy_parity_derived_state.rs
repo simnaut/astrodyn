@@ -228,6 +228,7 @@ fn tier3_bevy_geodetic_derived_state() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -510,6 +511,7 @@ fn tier3_bevy_polar_geodetic() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -902,6 +904,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
 

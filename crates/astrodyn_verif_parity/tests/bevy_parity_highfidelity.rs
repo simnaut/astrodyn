@@ -84,6 +84,7 @@ fn tier3_bevy_sh4x4_rnp() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -190,6 +191,7 @@ fn tier3_bevy_tidal_sh4x4() {
             tidal_config: Some(tidal_config),
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
 
