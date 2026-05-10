@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers.
 //! Tier 3-style cross-validation for the dynamic body-action lifecycle
 //! API (#199). Mirrors JEOD's `SIM_removable_body_action` `RUN_1` and
 //! `mass.py` add → remove → re-add idiom in the Bevy adapter, then
@@ -61,8 +62,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use astrodyn::{
-    BodyAction, DynamicsConfig, GravityControl, GravityControls, MassProperties, RotationalState,
-    TranslationalState,
+    BodyAction, DynamicsConfig, GravityControl, GravityControls, GravityGradient, MassProperties,
+    RotationalState, TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, BodyActionEvent, GravityControlsC, MassPropertiesC, RotationalStateC,
@@ -161,19 +162,23 @@ fn build_app() -> (App, Entity) {
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(1.0)),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
+                    &(RotationalState::default()),
+                ),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(1.0)),
+                ),
+            ),
             astrodyn_bevy::DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -440,7 +445,8 @@ fn bevy_parity_body_action_lifecycle_parity_body_action_init_lifecycle() {
 #[test]
 fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history() {
     use astrodyn::{
-        Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+        Abm4State, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+        IntegratorType,
     };
     use astrodyn_bevy::{
         Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
@@ -478,19 +484,23 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(400_000.0)),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
+                    &(RotationalState::default()),
+                ),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(400_000.0)),
+                ),
+            ),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -599,7 +609,8 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
 #[test]
 fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history() {
     use astrodyn::{
-        Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+        Abm4State, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+        IntegratorType,
     };
     use astrodyn_bevy::{
         Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
@@ -638,19 +649,23 @@ fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history()
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(400_000.0)),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
+                    &(RotationalState::default()),
+                ),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(400_000.0)),
+                ),
+            ),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -802,19 +817,23 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(M0)),
-            )),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
+                    &(RotationalState::default()),
+                ),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(M0)),
+                ),
+            ),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -854,7 +873,9 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
         .entity_mut(vehicle)
         .get_mut::<MassPropertiesC>()
         .expect("mass props present") = MassPropertiesC::from(
-        astrodyn::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL))),
+        astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+            &(MassProperties::new(SENTINEL)),
+        ),
     );
 
     // First runs `message_update_system` (the buffer swap). FixedUpdate
@@ -878,7 +899,9 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
         .entity_mut(vehicle)
         .get_mut::<MassPropertiesC>()
         .expect("mass props present") = MassPropertiesC::from(
-        astrodyn::typed_bridge::mass_raw_to_self_ref(&(MassProperties::new(SENTINEL2))),
+        astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+            &(MassProperties::new(SENTINEL2)),
+        ),
     );
 
     app.world_mut().run_schedule(First);

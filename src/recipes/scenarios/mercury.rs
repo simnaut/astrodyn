@@ -6,7 +6,7 @@
 //! assert_eq!(sb.bodies.len(), 1);
 //! ```
 
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use glam::DVec3;
 
 use crate::recipes::{epoch, sun};
@@ -38,7 +38,7 @@ pub fn mercury_relativistic() -> SimulationBuilder {
         velocity: DVec3::new(0.0, 58_980.0, 0.0).m_per_s_at::<RootInertial>(),
     };
 
-    let mut ctrl = GravityControl::new_spherical(sun_idx, false);
+    let mut ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     ctrl.relativistic = true;
 
     let vehicle = VehicleBuilder::new()

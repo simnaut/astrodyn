@@ -60,7 +60,7 @@ fn setup(mut commands: Commands) {
         .from_orbital_elements(orbital_elements::iss(), mu)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
         .build();
 
     cfg.spawn_bevy::<Earth>(&mut commands, &[earth_entity]);

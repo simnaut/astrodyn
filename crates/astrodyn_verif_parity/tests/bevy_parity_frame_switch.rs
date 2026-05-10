@@ -17,9 +17,10 @@
 use std::time::Duration;
 
 use astrodyn::{
-    DynamicsConfig, FrameSwitchConfig, GravityControl, GravityControls, GravitySourceEntry,
-    JeodQuat, MassProperties, RotationalState, SwitchSense, TranslationalState, VehicleConfig,
-    EARTH, MOON,
+    AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, FrameSwitchConfig, GravityControl,
+    GravityControls, GravityGradient, GravitySourceEntry, InertiaTensor, JeodQuat,
+    MassPropertiesTyped, Position, RotationalStateTyped, SelfRef, StructuralFrame, SwitchSense,
+    TranslationalState, VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
@@ -30,6 +31,8 @@ use astrodyn_bevy::{
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
 use glam::DVec3;
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 const DT: f64 = 60.0;
 const NUM_STEPS: usize = 80;
@@ -46,18 +49,20 @@ fn initial_trans() -> TranslationalState {
     }
 }
 
-fn initial_rot() -> RotationalState {
-    RotationalState {
-        quaternion: JeodQuat::identity(),
-        ang_vel_body: DVec3::ZERO,
-    }
+fn initial_rot() -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(JeodQuat::identity()),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+    )
 }
 
-fn vehicle_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        1_000.0,
-        glam::DMat3::from_diagonal(DVec3::new(100.0, 100.0, 100.0)),
-        DVec3::ZERO,
+fn vehicle_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(1_000.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(glam::DMat3::from_diagonal(
+            DVec3::new(100.0, 100.0, 100.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
@@ -104,23 +109,22 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         .spawn((
             Name::new("EarthToMoon"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(vehicle_mass()),
-            )),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches.clone()),
         ))
@@ -223,18 +227,17 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
 
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(initial_rot()),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(vehicle_mass()),
-        )),
+        rot: Some(initial_rot()),
+        mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,
@@ -327,23 +330,22 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         .spawn((
             Name::new("EarthDeparture"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(vehicle_mass()),
-            )),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches),
         ))
@@ -395,18 +397,17 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     );
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(initial_rot()),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(vehicle_mass()),
-        )),
+        rot: Some(initial_rot()),
+        mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,

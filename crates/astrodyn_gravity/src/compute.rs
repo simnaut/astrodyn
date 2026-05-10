@@ -110,25 +110,32 @@ pub fn gravitation(
             }
         }
         GravityModel::SphericalHarmonics(_) => {
-            // Allocate a temporary scratch buffer. Callers in the RK4 inner
-            // loop should use gravitation_with_scratch() to avoid per-call
-            // allocation.
-            let mut scratch =
-                crate::spherical_harmonics_calc_nonspherical::GottliebScratch::new(degree.max(2));
-            gravitation_with_scratch(
-                source,
-                position,
-                t_parent_this,
-                degree,
-                order,
-                perturbing_only,
-                compute_gradient,
-                gradient_degree,
-                gradient_order,
-                &mut scratch,
-                delta_c20,
-                has_delta_coeffs,
-            )
+            // Reuse a thread-local scratch buffer across calls. Allocating
+            // a fresh `GottliebScratch::new(degree)` here was ~79 % of
+            // self-time on the Earth-Moon profile (LP150Q 60×60, RK4 4×
+            // per step × 3 sources × 100k steps ≈ 1.2 M allocations).
+            // The buffer grows monotonically: a request for a higher
+            // degree than previously seen reallocates once and the
+            // larger buffer covers all subsequent lower-degree calls.
+            // Bit-identical to the per-call `::new` path because the
+            // kernel overwrites the scratch on entry — no leftover
+            // state ever participates in the math.
+            crate::spherical_harmonics_calc_nonspherical::with_scratch(degree, |scratch| {
+                gravitation_with_scratch(
+                    source,
+                    position,
+                    t_parent_this,
+                    degree,
+                    order,
+                    perturbing_only,
+                    compute_gradient,
+                    gradient_degree,
+                    gradient_order,
+                    scratch,
+                    delta_c20,
+                    has_delta_coeffs,
+                )
+            })
         }
     }
 }

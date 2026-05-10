@@ -4,7 +4,8 @@ mod common;
 
 use astrodyn::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState, MOON,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+    TranslationalState, MOON,
 };
 use astrodyn_bevy::{
     DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityControlsC, IntegSourceC,
@@ -89,7 +90,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -140,7 +141,10 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             velocity: DVec3::new(0.0, 7668.56, 0.0),
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {
@@ -297,10 +301,10 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -347,9 +351,12 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: iss_trans(),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {
@@ -484,7 +491,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -549,7 +556,10 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             velocity: lifted_vel,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {

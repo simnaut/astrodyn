@@ -14,8 +14,8 @@
 //! higher order due to larger bootstrap transients.
 
 use astrodyn::{
-    GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    IntegratorType, SimulationTime, TranslationalState,
+    GaussJacksonConfig, GravityControl, GravityControls, GravityGradient, GravityModel,
+    GravitySource, IntegratorType, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
@@ -81,7 +81,7 @@ fn gj_energy_error(order: usize) -> f64 {
         }),
         integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(order)),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

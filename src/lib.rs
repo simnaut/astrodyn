@@ -57,7 +57,7 @@
 //! ```
 //! use astrodyn::{
 //!     recipes::{earth, orbital_elements, vehicle},
-//!     F64Ext, GravityControl, VehicleBuilder,
+//!     F64Ext, GravityControl, GravityGradient, VehicleBuilder,
 //! };
 //!
 //! let mu = earth::point_mass().source.mu.m3_per_s2();
@@ -65,7 +65,7 @@
 //!     .from_orbital_elements(orbital_elements::iss(), mu)
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
-//!     .gravity(GravityControl::new_spherical(0_usize, false))
+//!     .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
 //!     .build();
 //! # let _ = cfg;
 //! ```
@@ -241,7 +241,9 @@ pub use astrodyn_gravity::tides::{
 // astrodyn_gravity: test fixtures (e.g. `fixtures::load_ggm05c()`)
 // consumed by integration tests that need a representative gravity model.
 pub use astrodyn_gravity::fixtures as gravity_fixtures;
-pub use astrodyn_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
+pub use astrodyn_gravity::{
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+};
 
 // astrodyn_atmosphere: state output and model types
 pub use astrodyn_atmosphere::exponential::ExponentialAtmosphere;

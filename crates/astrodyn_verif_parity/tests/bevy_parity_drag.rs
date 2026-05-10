@@ -5,7 +5,8 @@ mod common;
 use astrodyn::GravitySourceEntry;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
-    GeoIndexType, GravityControl, GravityControls, MetAtmosphere, RotationModel, SixDofState,
+    GeoIndexType, GravityControl, GravityControls, GravityGradient, MetAtmosphere, RotationModel,
+    SixDofState,
 };
 use astrodyn_bevy::{
     AtmosphereModelR, DragConfigC, DynamicsConfigC, GravityControlsC, GravitySourceC,
@@ -71,16 +72,16 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -182,16 +183,16 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -282,16 +283,16 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -381,16 +382,16 @@ fn bevy_parity_drag_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             DragConfigC::from_untyped(&DragConfig {
                 cd: 2.2,
@@ -492,16 +493,16 @@ fn bevy_parity_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))

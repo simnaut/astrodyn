@@ -8,7 +8,7 @@ use astrodyn::Vec3Ext;
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -149,7 +149,7 @@ fn tier3_simulation_mars_dawn() {
         }),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(mars, 110, 110, false),
+                GravityControl::new_nonspherical(mars, 110, 110, GravityGradient::Skip),
                 GravityControl::new_third_body(sun),
             ],
         },

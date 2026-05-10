@@ -13,9 +13,9 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, EulerSequence, GeodeticConfig, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties,
-    RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
-    VehicleConfig, EARTH,
+    GravityControls, GravityGradient, GravityModel, GravitySource, GravitySourceEntry, JeodQuat,
+    MassProperties, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
+    TranslationalState, VehicleConfig, EARTH,
 };
 use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
@@ -89,7 +89,7 @@ fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             orbital_elements_source: Some(earth),
@@ -144,7 +144,7 @@ fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             lvlh: true,
@@ -246,7 +246,7 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
@@ -410,7 +410,7 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
             &(iss_euler_mass_properties()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             euler_sequence: Some(EulerSequence::XYZ),
@@ -453,7 +453,7 @@ fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
             &(iss_euler_mass_properties()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             euler_sequence: Some(EulerSequence::XYZ),

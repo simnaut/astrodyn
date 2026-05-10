@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers.
 //! Bevy parity test for `BodyAction::InitLvlhRot` (port of JEOD's
 //! `DynBodyInitLvlhRotState`).
 //!
@@ -22,9 +23,7 @@ mod common;
 use std::time::Duration;
 
 use astrodyn::{init_rot_from_lvlh, LvlhAngularVelocityFrame as KernelLvlhFrame};
-use astrodyn::{
-    BodyAction, DynamicsConfig, JeodQuat, LvlhAngularVelocityFrame, MassProperties, RotationalState,
-};
+use astrodyn::{BodyAction, DynamicsConfig, JeodQuat, LvlhAngularVelocityFrame, RotationalState};
 use astrodyn_bevy::{
     AstrodynPlugin, BodyActionEvent, GravitySourceC, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
@@ -81,11 +80,9 @@ fn build_app() -> (App, Entity) {
             TranslationalStateC::<astrodyn::Earth>::default(),
             // Placeholder rotational state we expect the action to
             // overwrite on `update`.
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(1_000.0)),
+            RotationalStateC::from(astrodyn::RotationalStateTyped::<astrodyn::SelfRef>::default()),
+            MassPropertiesC::from(astrodyn::MassPropertiesTyped::<astrodyn::SelfRef>::new(
+                uom::si::f64::Mass::new::<uom::si::mass::kilogram>(1_000.0),
             )),
             astrodyn_bevy::DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: false,

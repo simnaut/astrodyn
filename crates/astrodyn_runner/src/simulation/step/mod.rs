@@ -36,6 +36,8 @@ mod ephemeris;
 mod integrate;
 mod interactions;
 mod kinematic;
+#[cfg(feature = "phase_timing")]
+pub mod timings;
 
 impl Simulation {
     /// Advance the simulation by one timestep.
@@ -100,15 +102,33 @@ impl Simulation {
         self.has_stepped = true;
 
         // ── 1. Time update ──
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.time.advance(dt);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.time_advance += _t0.elapsed();
+        }
 
         // ── 2. Ephemeris update — planet-fixed rotations + frame tree sync ──
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.update_ephemeris()?;
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.ephemeris += _t0.elapsed();
+        }
         // ── 3. Mass update — recompute inverse_mass/inverse_inertia ──
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         for body in &mut self.bodies {
             if let Some(ref mut mass) = body.mass {
                 mass.recompute_derived();
             }
+        }
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.mass_recompute += _t0.elapsed();
         }
 
         // Precompute frame origins from the tree for all body integration
@@ -125,11 +145,17 @@ impl Simulation {
         // distinct integration frames when parent and child integrate in
         // different sources, e.g. parent in root + child in
         // `PlanetInertial<Earth>`).
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         let body_integ_origins: Vec<IntegOrigin> = self
             .bodies
             .iter()
             .map(|b| self.frame_origin_typed(b.integ_frame_id))
             .collect();
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.integ_origins_pre += _t0.elapsed();
+        }
 
         // ── 3a. Frame-attached body propagation (parent frame → body), pre-integration ──
         // Mirrors the kinematic-mass walk's pre-integration sweep.
@@ -151,6 +177,8 @@ impl Simulation {
         // `frame_attach.is_some()` via the `kinematic_only`-style
         // gate added in `integrate.rs`); this pass is what supplies
         // the "kinematic" state in their stead.
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.propagate_frame_attached_state(&body_integ_origins);
 
         // ── 3b. Kinematic state propagation (root → leaves), pre-integration ──
@@ -172,13 +200,35 @@ impl Simulation {
         // before composing through the kernel and back to integration
         // frame on writeback (RF.10 shift site).
         self.propagate_kinematic_state(&body_integ_origins);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.kinematic_pre += _t0.elapsed();
+        }
 
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.update_environment(&body_integ_origins);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.environment += _t0.elapsed();
+        }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         let (sun_pos, moon_pos) = self.compute_interactions(dt, &body_integ_origins);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.interactions += _t0.elapsed();
+        }
 
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.run_integration(dt, &body_integ_origins)?;
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.integration += _t0.elapsed();
+        }
 
         // Recompute the per-body integ origins after stage 8b's frame
         // switch evaluation: a body that just switched integration
@@ -188,11 +238,17 @@ impl Simulation {
         // storage. Bodies that did not switch have unchanged frame ids
         // and the recomputed offsets are bit-identical, so the cost is
         // a frame-tree relative-state evaluation per body.
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         let body_integ_origins_post: Vec<IntegOrigin> = self
             .bodies
             .iter()
             .map(|b| self.frame_origin_typed(b.integ_frame_id))
             .collect();
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.integ_origins_post += _t0.elapsed();
+        }
 
         // ── 8c. Frame-attached body propagation, post-integration ──
         // Symmetric to 3a: stage 8b's frame switch can rewrite frame
@@ -210,6 +266,8 @@ impl Simulation {
         // pre-integration ordering, applied to the post-integration
         // sweep. Inverting these two calls reproduces the same class
         // of bug as the pre-integration ordering twin.
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.propagate_frame_attached_state(&body_integ_origins_post);
 
         // ── 8d. Kinematic state propagation (root → leaves), post-integration ──
@@ -225,6 +283,10 @@ impl Simulation {
         // parent state composed with the link, not the freshly-
         // integrated one.
         self.propagate_kinematic_state(&body_integ_origins_post);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.kinematic_post += _t0.elapsed();
+        }
 
         // ── 9. Derived states ──
         // Pass the post-integration integ origins: stage 8b's frame switch
@@ -235,7 +297,13 @@ impl Simulation {
         // pre-step snapshot. Bodies that did not switch have unchanged
         // frame ids and the recomputed offsets are bit-identical, so
         // there is no observable difference for them.
+        #[cfg(feature = "phase_timing")]
+        let _t0 = std::time::Instant::now();
         self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins_post);
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.derived += _t0.elapsed();
+        }
 
         // Advance any free-flying detached subtrees ballistically. This
         // matches JEOD's behavior for tree roots whose grav_interaction
@@ -245,7 +313,18 @@ impl Simulation {
         // stays consistent with the integrated bodies under time reversal
         // / scaling (matches `integ_dt` used elsewhere in this step).
         if !self.detached_subtrees.is_empty() {
+            #[cfg(feature = "phase_timing")]
+            let _t0 = std::time::Instant::now();
             self.step_detached_subtrees(dt * self.time.time_scale_factor);
+            #[cfg(feature = "phase_timing")]
+            {
+                self.phase_timings.detached_subtrees += _t0.elapsed();
+            }
+        }
+
+        #[cfg(feature = "phase_timing")]
+        {
+            self.phase_timings.steps += 1;
         }
 
         Ok(())

@@ -31,6 +31,9 @@ mod validate;
 pub use astrodyn::{DetachedSubtreeState, GroundFacet, SphericalTerrain, Terrain};
 pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, VehicleOutput};
 
+#[cfg(feature = "phase_timing")]
+pub use step::timings::PhaseTimings;
+
 use std::collections::HashMap;
 
 use glam::DMat3;
@@ -271,6 +274,12 @@ pub struct Simulation {
     /// when the elapsed time since `simtime_at_refresh` reaches the
     /// configured cadence.
     pub(crate) earth_rnp_cache: Option<EarthRnpCache>,
+    /// Per-phase wall-clock timings accumulated across every
+    /// [`Simulation::step`] call. Compiled in only under the
+    /// `phase_timing` cargo feature. Read via
+    /// [`Simulation::phase_timings`] / [`Simulation::phase_timings_summary`].
+    #[cfg(feature = "phase_timing")]
+    pub(crate) phase_timings: crate::simulation::step::timings::PhaseTimings,
 }
 
 impl Simulation {
@@ -307,7 +316,39 @@ impl Simulation {
             has_stepped: false,
             earth_rnp_refresh_cadence_s: 0.0,
             earth_rnp_cache: None,
+            #[cfg(feature = "phase_timing")]
+            phase_timings: crate::simulation::step::timings::PhaseTimings::default(),
         }
+    }
+
+    /// Borrow the accumulated per-phase wall-clock timings.
+    ///
+    /// Available only when the `phase_timing` cargo feature is enabled —
+    /// the feature gates both the storage on [`Simulation`] and the
+    /// `Instant::now()` calls inside `step_internal`. Use
+    /// [`Self::phase_timings_summary`] for a formatted summary.
+    #[cfg(feature = "phase_timing")]
+    pub fn phase_timings(&self) -> &crate::simulation::step::timings::PhaseTimings {
+        &self.phase_timings
+    }
+
+    /// Reset all per-phase timing accumulators to zero.
+    ///
+    /// Useful for warmup-then-measure patterns: step `N` warmup
+    /// iterations, call `reset_phase_timings()`, step `M` measurement
+    /// iterations, then read [`Self::phase_timings`].
+    #[cfg(feature = "phase_timing")]
+    pub fn reset_phase_timings(&mut self) {
+        self.phase_timings = crate::simulation::step::timings::PhaseTimings::default();
+    }
+
+    /// Render a multi-line summary of accumulated per-phase wall-clock
+    /// timings. Each line shows `phase: total (% of total) — per-step
+    /// avg`. Available only when the `phase_timing` cargo feature is
+    /// enabled.
+    #[cfg(feature = "phase_timing")]
+    pub fn phase_timings_summary(&self) -> String {
+        self.phase_timings.summary()
     }
 
     /// Set the Earth RNP rotation-matrix refresh cadence, in simulated

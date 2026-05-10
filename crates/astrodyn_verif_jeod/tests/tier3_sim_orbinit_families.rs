@@ -13,7 +13,7 @@
 use astrodyn::recipes::helpers::energy_conservation::specific_orbital_energy;
 use astrodyn::recipes::helpers::state_helpers::state_from_elements;
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -54,7 +54,7 @@ fn build_sim(trans: TranslationalState, dt: f64) -> Simulation {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

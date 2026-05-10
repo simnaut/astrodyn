@@ -12,8 +12,10 @@
 use std::time::Duration;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
-    JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
+    AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, GravityControl, GravityControls,
+    GravityGradient, GravityModel, GravitySource, InertiaTensor, IntegratorType, JeodQuat,
+    MassPropertiesTyped, Position, RotationalStateTyped, SelfRef, SixDofState, StructuralFrame,
+    TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC,
@@ -21,6 +23,8 @@ use astrodyn_bevy::{
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 const DT: f64 = 10.0;
@@ -35,19 +39,21 @@ fn initial_trans() -> TranslationalState {
 }
 
 /// Non-trivial initial rotational state with tumble.
-fn initial_rot() -> RotationalState {
-    RotationalState {
-        quaternion: JeodQuat::identity(),
-        ang_vel_body: DVec3::new(0.001, 0.0, 0.001),
-    }
+fn initial_rot() -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(JeodQuat::identity()),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::new(0.001, 0.0, 0.001)),
+    )
 }
 
 /// ISS-like mass properties with realistic diagonal inertia.
-fn mass_props() -> MassProperties {
-    MassProperties::with_inertia(
-        400_000.0,
-        DMat3::from_diagonal(DVec3::new(1.02e8, 0.91e8, 1.64e8)),
-        DVec3::ZERO,
+fn mass_props() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(400_000.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::new(1.02e8, 0.91e8, 1.64e8),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
@@ -81,7 +87,7 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Spawn vehicle entity with all required components for 6-DOF integration.
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, false)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -89,12 +95,8 @@ fn build_app() -> (App, Entity, Entity) {
         .spawn((
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(mass_props()),
-            )),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -147,14 +149,10 @@ fn run_simulation_steps() -> SixDofState {
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(initial_rot()),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props()),
-        )),
+        rot: Some(initial_rot()),
+        mass: Some(mass_props()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -250,7 +248,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         .id();
 
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, false)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -258,12 +256,8 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         .spawn((
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(mass_props()),
-            )),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -293,15 +287,11 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(initial_rot()),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(mass_props()),
-        )),
+        rot: Some(initial_rot()),
+        mass: Some(mass_props()),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

@@ -30,9 +30,9 @@
 
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
-    default_leap_second_table, GaussJacksonConfig, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, IntegratorType, Position, RootInertial, SimulationBuilder,
-    SimulationTime, TranslationalState, VehicleConfig,
+    default_leap_second_table, GaussJacksonConfig, GravityControl, GravityControls,
+    GravityGradient, GravityModel, GravitySource, GravitySourceEntry, IntegratorType, Position,
+    RootInertial, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
 use uom::si::f64::Time;
 use uom::si::time::second;
@@ -88,7 +88,10 @@ fn build_gj_scenario(
         trans: super::typed_helpers::trans_typed(&gj_initial_state()),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
