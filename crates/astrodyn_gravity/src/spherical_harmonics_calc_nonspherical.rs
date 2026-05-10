@@ -17,6 +17,41 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 /// sqrt(f64::MIN_POSITIVE) — underflow guard matching JEOD's SQRT_DBL_MIN.
 const SQRT_DBL_MIN: f64 = 1.4916681462400413e-154;
 
+thread_local! {
+    /// Per-thread cached [`GottliebScratch`] so `gravitation`-style
+    /// callers can reuse one buffer across calls without plumbing it
+    /// through a long signature chain. Grows monotonically: a request
+    /// for a degree higher than the cached buffer reallocates once and
+    /// the larger buffer covers all subsequent calls (including
+    /// lower-degree ones — the kernel only writes to the prefix it
+    /// needs). Bit-identical to per-call `::new` because the kernel
+    /// overwrites the scratch on entry.
+    static GOTTLIEB_SCRATCH: std::cell::RefCell<GottliebScratch> =
+        std::cell::RefCell::new(GottliebScratch::new(2));
+}
+
+/// Borrow a thread-local [`GottliebScratch`] grown to at least
+/// `degree`, then run `f` with a `&mut GottliebScratch` argument.
+///
+/// Use this from any per-call gravity wrapper that would otherwise
+/// allocate a fresh scratch — most importantly the [`crate::compute::gravitation`]
+/// wrapper invoked from `GravityControl::evaluate_inner` in the RK4
+/// inner loop.
+pub fn with_scratch<R>(degree: usize, f: impl FnOnce(&mut GottliebScratch) -> R) -> R {
+    GOTTLIEB_SCRATCH.with(|cell| {
+        let mut scratch = cell.borrow_mut();
+        // Grow on demand. `degree.max(2)` mirrors the prior wrapper's
+        // floor, ensuring the scratch always satisfies the kernel's
+        // `degree >= 2` precondition when `degree == 0` callers
+        // accidentally enter this path.
+        let needed = degree.max(2);
+        if scratch.degree < needed {
+            *scratch = GottliebScratch::new(needed);
+        }
+        f(&mut scratch)
+    })
+}
+
 /// Pre-allocated scratch buffers for `calc_nonspherical`.
 ///
 /// Avoids per-call heap allocations in the RK4 inner loop. Create once
@@ -53,6 +88,11 @@ impl GottliebScratch {
             pnm_offsets,
             degree,
         }
+    }
+
+    /// Maximum degree this scratch buffer can serve.
+    pub fn max_degree(&self) -> usize {
+        self.degree
     }
 
     #[inline]
