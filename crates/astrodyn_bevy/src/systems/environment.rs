@@ -162,19 +162,18 @@ pub fn atmosphere_update_system<P: Planet>(
     };
 
     // JEOD_INV: AT.03 — planet-fixed position required for geodetic altitude
-    let t_inertial_pfix = if let Some(entity) = model.planet_entity {
-        let Ok(r) = planet_query.get(entity) else {
-            panic!(
-                "AtmosphereModelR.planet_entity is set ({entity:?}) but entity has no \
-                 PlanetFixedRotationC. In JEOD, the planet-fixed frame is always \
-                 available for atmosphere computation. Add PlanetFixedRotationC to \
-                 the planet entity or set planet_entity to None for spherical fallback."
-            );
-        };
-        Some(*r.0.matrix_ref())
-    } else {
-        None
+    let entity = model.planet_entity;
+    let Ok(r) = planet_query.get(entity) else {
+        panic!(
+            "AtmosphereModelR.planet_entity ({entity:?}) has no PlanetFixedRotationC. \
+             In JEOD, the planet-fixed frame is always available for atmosphere \
+             computation. Add PlanetFixedRotationC to the planet entity (use an \
+             identity FrameTransform when no real rotation is desired — the geodetic \
+             conversion is bit-identical to the previous `planet_entity = None` \
+             spherical fallback)."
+        );
     };
+    let t_inertial_pfix = *r.0.matrix_ref();
 
     let tai_tjt = sim_time.as_ref().map(|t| t.tai_tjt);
     // MET atmosphere requires time for seasonal variation. Check
@@ -216,7 +215,7 @@ pub fn atmosphere_update_system<P: Planet>(
     astrodyn::run_atmosphere_stage::<P, _, _, _>(
         body_iter,
         &model.config,
-        t_inertial_pfix.as_ref(),
+        Some(&t_inertial_pfix),
         tai_tjt,
     );
 }
