@@ -71,6 +71,14 @@ pub mod simulation_builder;
 pub mod source_frames;
 pub mod source_state;
 pub mod sources;
+// Internal bridge between typed `*Typed<F>` shapes and the underlying raw
+// `DVec3`/`DQuat`/`DMat3` shapes that the kernel functions still consume.
+// Adapters (`astrodyn_bevy`, `astrodyn_runner`, the verif crates) need the
+// symbols `pub` so they can translate at the kernel boundary, but mission
+// code shouldn't see them — the type-system promise is that mission code
+// never reaches raw `DVec3`/`DQuat`. Hidden from rustdoc to keep that
+// promise visible on docs.rs while preserving the adapter call sites.
+#[doc(hidden)] // allowed: structural adapter boundary — see preceding rationale block
 pub mod typed_bridge;
 pub mod validation;
 pub mod vehicle_builder;
