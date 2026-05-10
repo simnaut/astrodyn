@@ -113,7 +113,7 @@ fn read_composite(app: &App, entity: Entity) -> MassProperties {
 // ── Parity scenarios ──
 
 #[test]
-fn bevy_parity_mass_single_attach_composite() {
+fn bevy_parity_mass_attach_detach_mass_single_attach_composite() {
     // Mirror of `tier3_mass_single_attach_composite`.
     let parent_core = MassProperties::new(1000.0);
     let child_core = MassProperties::new(500.0);
@@ -156,7 +156,7 @@ fn bevy_parity_mass_single_attach_composite() {
 }
 
 #[test]
-fn bevy_parity_mass_symmetric_children_zero_com_shift() {
+fn bevy_parity_mass_attach_detach_mass_symmetric_children_zero_com_shift() {
     // Mirror of `tier3_mass_symmetric_children_zero_com_shift`.
     let parent_core = MassProperties::new(200.0);
     let child = MassProperties::new(50.0);
@@ -195,7 +195,7 @@ fn bevy_parity_mass_symmetric_children_zero_com_shift() {
 }
 
 #[test]
-fn bevy_parity_mass_parallel_axis_theorem() {
+fn bevy_parity_mass_attach_detach_mass_parallel_axis_theorem() {
     // Mirror of `tier3_mass_parallel_axis_theorem` (solid sphere
     // attached at offset, parent + child both with explicit
     // inertias).
@@ -230,7 +230,7 @@ fn bevy_parity_mass_parallel_axis_theorem() {
 }
 
 #[test]
-fn bevy_parity_mass_many_children_composite() {
+fn bevy_parity_mass_attach_detach_mass_many_children_composite() {
     // Mirror of `tier3_mass_many_children_composite`: 10 children at
     // helical offsets.
     let parent_mass = 500.0;
@@ -263,7 +263,7 @@ fn bevy_parity_mass_many_children_composite() {
 }
 
 #[test]
-fn bevy_parity_mass_inertia_tensor_symmetry() {
+fn bevy_parity_mass_attach_detach_mass_inertia_tensor_symmetry() {
     // Mirror of `tier3_mass_inertia_tensor_symmetry`: asymmetric
     // offsets + non-trivial rotations.
     let parent_core = MassProperties::with_inertia(
@@ -326,7 +326,7 @@ fn bevy_parity_mass_inertia_tensor_symmetry() {
 }
 
 #[test]
-fn bevy_parity_mass_detach_recovers_original() {
+fn bevy_parity_mass_attach_detach_mass_detach_recovers_original() {
     // Mirror of `tier3_mass_detach_recovers_original`. ECS detach is
     // expressed by removing the `MassChildOf` component (the
     // ECS-native equivalent of arena `MassTree::detach`).
@@ -406,7 +406,7 @@ fn bevy_parity_mass_detach_recovers_original() {
 /// "core" recovered on detach is heavier, and the post-detach
 /// composite no longer matches the original core.
 #[test]
-fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
+fn bevy_parity_mass_attach_detach_bevy_staging_system_does_not_corrupt_composite_core_cache() {
     use astrodyn::MassBodyId;
     use astrodyn_bevy::{DetachEvent, MassTreeR};
 

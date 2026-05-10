@@ -6,6 +6,6 @@ use astrodyn_verif_jeod::run_verification::sim_polar_motion;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_polar_motion_run2p() {
+fn bevy_parity_polar_motion_run2p() {
     sim_polar_motion::run2p_polar_motion().run_and_assert_parity::<astrodyn::Earth>();
 }

@@ -104,7 +104,7 @@ fn bevy_pfix_node_ang_vel(app: &App, planet: Entity) -> DVec3 {
 }
 
 #[test]
-fn tier3_bevy_planet_ang_vel_earth_rnp() {
+fn bevy_parity_planet_ang_vel_earth_rnp() {
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
     step_bevy_once(&mut app);
 
@@ -135,7 +135,7 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
 }
 
 #[test]
-fn tier3_bevy_planet_ang_vel_mars_iau() {
+fn bevy_parity_planet_ang_vel_mars_iau() {
     let (mut app, planet) = build_planet_app("Mars", &MARS);
     step_bevy_once(&mut app);
 
@@ -162,7 +162,7 @@ fn tier3_bevy_planet_ang_vel_mars_iau() {
 }
 
 #[test]
-fn tier3_bevy_planet_ang_vel_moon_iau() {
+fn bevy_parity_planet_ang_vel_moon_iau() {
     let (mut app, planet) = build_planet_app("Moon", &MOON);
     step_bevy_once(&mut app);
 
@@ -189,7 +189,7 @@ fn tier3_bevy_planet_ang_vel_moon_iau() {
 }
 
 #[test]
-fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
+fn bevy_parity_planet_ang_vel_rotation_none_leaves_default() {
     // RotationModel::None: ang_vel must remain at default zero.
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -244,10 +244,10 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
 ///
 /// The orphan pfix frame entity must also be *reused* on the next
 /// toggle back to a rotating model — see
-/// `tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity`
+/// `bevy_parity_planet_ang_vel_rotation_none_toggle_does_not_leak_pfix_frame_entity`
 /// below for the entity-count fence.
 #[test]
-fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
+fn bevy_parity_planet_ang_vel_rotation_none_toggle_removes_pfix_component() {
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
     // Step once with the default `EarthRNP` model so registration runs
     // and `PfixFrameEntityC` is inserted.
@@ -296,7 +296,7 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
 /// entity on every retoggle — leaking one orphan ECS entity per
 /// cycle.
 #[test]
-fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
+fn bevy_parity_planet_ang_vel_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
     use astrodyn_bevy::{PfixFrameEntityC, PlanetFixedFrameMarker};
 
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
@@ -376,7 +376,7 @@ fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
 }
 
 #[test]
-fn tier3_bevy_planet_ang_vel_moon_de421() {
+fn bevy_parity_planet_ang_vel_moon_de421() {
     // MoonDE421 is the only RotationModel branch whose Bevy ↔ runner
     // end-to-end path was previously uncovered. Mirror the MoonIAU
     // test, additionally inserting `EphemerisR` with the BPC

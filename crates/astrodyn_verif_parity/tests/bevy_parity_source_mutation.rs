@@ -55,7 +55,7 @@ fn assert_dvec3_bits_eq(label: &str, a: DVec3, b: DVec3) {
 }
 
 #[test]
-fn tier3_bevy_source_mutator_set_state_matches_runner() {
+fn bevy_parity_source_mutation_source_mutator_set_state_matches_runner() {
     // Two Earth-orbiting reference frames with the Moon as a third-body
     // source. Mutate the Moon's state via SourceMutator (Bevy) and
     // Simulation::set_source_state (astrodyn_runner), then confirm the
@@ -170,7 +170,7 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
 
 #[test]
 #[should_panic(expected = "carries CentralSourceMarker")]
-fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
+fn bevy_parity_source_mutation_source_mutator_central_marker_panics_on_set_position() {
     // Mission code attaches `CentralSourceMarker` to the gravity-source
     // entity it treats as the pinned origin. `SourceMutator::set_source_position`
     // must panic on that entity, mirroring `astrodyn_runner::Simulation`'s
@@ -200,7 +200,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
 
 #[test]
 #[should_panic(expected = "carries CentralSourceMarker")]
-fn tier3_bevy_source_mutator_central_marker_panics_on_set_state() {
+fn bevy_parity_source_mutation_source_mutator_central_marker_panics_on_set_state() {
     // Same as the position case above, but for `set_source_state`.
     // Both setters must reject central-body mutation.
     let mut app = build_app();

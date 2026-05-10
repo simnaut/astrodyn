@@ -619,7 +619,7 @@ fn build_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
 /// Mirrors `bevy_parity_srp::tier3_bevy_full_stack_sixdof`.
 pub fn full_stack_sixdof() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_full_stack_sixdof",
+        name: "bevy_parity_srp_full_stack_sixdof",
         scenario: build_full_stack_sixdof,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -678,7 +678,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
 /// Mirrors `bevy_parity_srp::tier3_bevy_flat_plate_srp_with_shadow`.
 pub fn flat_plate_with_shadow() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_flat_plate_srp_with_shadow",
+        name: "bevy_parity_srp_flat_plate_srp_with_shadow",
         scenario: build_flat_plate_with_shadow,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -724,7 +724,7 @@ fn build_shadow_2a_cooling(_init: &InitialConditions) -> SimulationBuilder {
 /// `bevy_parity_srp::tier3_bevy_shadow_2a_annular`.
 pub fn shadow_2a_annular() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_shadow_2a_annular",
+        name: "bevy_parity_shadow_2a_annular",
         scenario: build_shadow_2a_annular,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -742,7 +742,7 @@ pub fn shadow_2a_annular() -> VerificationCase {
 /// `bevy_parity_srp::tier3_bevy_shadow_2a_cooling`.
 pub fn shadow_2a_cooling() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_shadow_2a_cooling",
+        name: "bevy_parity_shadow_2a_cooling",
         scenario: build_shadow_2a_cooling,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -780,7 +780,7 @@ fn build_srp_basic_varied_cr(_init: &InitialConditions) -> SimulationBuilder {
 /// Mirrors `bevy_parity_srp::tier3_bevy_srp_basic_default`.
 pub fn srp_basic_default() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_basic_default",
+        name: "bevy_parity_srp_basic_default",
         scenario: build_srp_basic_default,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -797,7 +797,7 @@ pub fn srp_basic_default() -> VerificationCase {
 /// Mirrors `bevy_parity_srp::tier3_bevy_srp_basic_varied_cr`.
 pub fn srp_basic_varied_cr() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_basic_varied_cr",
+        name: "bevy_parity_srp_basic_varied_cr",
         scenario: build_srp_basic_varied_cr,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -835,7 +835,7 @@ fn build_srp_derivative_rk4(_init: &InitialConditions) -> SimulationBuilder {
 /// `bevy_parity_srp::tier3_bevy_srp_derivative_first_order`.
 pub fn srp_derivative_first_order() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_first_order",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_first_order",
         scenario: build_srp_derivative_first_order,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -852,7 +852,7 @@ pub fn srp_derivative_first_order() -> VerificationCase {
 /// `bevy_parity_srp::tier3_bevy_srp_derivative_rk4`.
 pub fn srp_derivative_rk4() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_rk4",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_rk4",
         scenario: build_srp_derivative_rk4,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,
@@ -910,7 +910,7 @@ fn build_srp_derivative_rk4_rotated_struct(_init: &InitialConditions) -> Simulat
 /// `bevy_parity_srp::tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame`.
 pub fn srp_derivative_rk4_rotated_struct() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_rk4_with_rotated_struct_frame",
         scenario: build_srp_derivative_rk4_rotated_struct,
         reference: CsvReference::SyntheticTimes {
             dt: PARITY_DT,

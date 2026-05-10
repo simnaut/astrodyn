@@ -5,16 +5,16 @@ use astrodyn_verif_jeod::run_verification::sim_derived_state;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_lvlh_inc() {
+fn bevy_parity_lvlh_inc() {
     sim_derived_state::lvlh_inc().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_lvlh_ecc() {
+fn bevy_parity_lvlh_ecc() {
     sim_derived_state::lvlh_ecc().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_lvlh_equ() {
+fn bevy_parity_lvlh_equ() {
     sim_derived_state::lvlh_equ().run_and_assert_parity::<astrodyn::Earth>();
 }

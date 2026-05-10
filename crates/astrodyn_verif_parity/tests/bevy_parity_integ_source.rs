@@ -110,7 +110,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 }
 
 #[test]
-fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
+fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
     // ── Bevy ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -253,7 +253,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
 }
 
 #[test]
-fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
+fn bevy_parity_integ_source_moving_moon_matches_simulation() {
     // PR #260 round-3 N3 fixup: cover the moving-integ-frame path.
     // The lunar-orbit test above keeps Moon velocity at zero, so the
     // per-stage `integ_origin + integ_origin_vel * stage_dt` and source
@@ -385,7 +385,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
 }
 
 #[test]
-fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
+fn bevy_parity_integ_source_root_matches_legacy_no_op() {
     // Sanity: with `IntegSourceC` absent (the legacy default), behavior
     // is unchanged — bodies integrate in root, integ_origin = 0, and
     // results match the existing `bevy_parity_point_mass` semantics.
@@ -520,7 +520,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
 /// values). The result: bug-shape and fix-shape `h_hat · sun_hat`
 /// differ by orders of magnitude above f64 round-off.
 #[test]
-fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
+fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
     // Sun off the +X axis (~1 AU in X, ~0.7 AU in Z) so `sun_hat`
     // depends on the X *and* Z components of `r` — making the bug
     // and fix shapes geometrically distinct.
@@ -727,7 +727,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 /// `tests/bevy_parity_srp.rs`, which attaches `ShadowBodyC` to
 /// Earth.
 #[test]
-fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
+fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
     // Sun off the +X axis (~1 AU in X, ~0.7 AU in Z) so flux
     // direction depends on `sun_to_vehicle`'s X *and* Z components,
     // amplifying the bug-vs-fix difference.
