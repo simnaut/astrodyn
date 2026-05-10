@@ -1,0 +1,19 @@
+[package]
+name = "astrodyn_verif_jeod_fixtures"
+description = "Pure parsers and fixture loaders for JEOD reference data — no astrodyn pipeline dependency"
+keywords = ["verification", "fixtures", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+glam = { workspace = true }
+log = { workspace = true }
+regex = "1"
+thiserror = { workspace = true }
+uom = { workspace = true }

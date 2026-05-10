@@ -53,6 +53,7 @@ members = [
     "crates/astrodyn_bevy",
     "crates/astrodyn_runner",
     "crates/astrodyn_verif_jeod",
+    "crates/astrodyn_verif_jeod_fixtures",
     "crates/astrodyn_verif_parity",
     "xtask",
 ]

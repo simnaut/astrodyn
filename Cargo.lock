@@ -222,7 +222,7 @@ name = "astrodyn_atmosphere"
 version = "0.1.0"
 dependencies = [
  "astrodyn_quantities",
- "astrodyn_verif_jeod",
+ "astrodyn_verif_jeod_fixtures",
  "glam 0.30.10",
  "uom",
 ]
@@ -245,11 +245,9 @@ name = "astrodyn_dynamics"
 version = "0.1.0"
 dependencies = [
  "astrodyn_frames",
- "astrodyn_gravity",
  "astrodyn_math",
- "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_verif_jeod",
+ "astrodyn_verif_jeod_fixtures",
  "glam 0.30.10",
  "proptest",
  "sha2",
@@ -273,7 +271,6 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_time",
- "astrodyn_verif_jeod",
  "glam 0.30.10",
  "proptest",
 ]
@@ -303,10 +300,9 @@ dependencies = [
  "astrodyn_ephemeris",
  "astrodyn_gravity",
  "astrodyn_math",
- "astrodyn_planet",
  "astrodyn_quantities",
  "astrodyn_time",
- "astrodyn_verif_jeod",
+ "astrodyn_verif_jeod_fixtures",
  "glam 0.30.10",
  "proptest",
  "uom",
@@ -316,10 +312,8 @@ dependencies = [
 name = "astrodyn_math"
 version = "0.1.0"
 dependencies = [
- "astrodyn_ephemeris",
- "astrodyn_planet",
  "astrodyn_quantities",
- "astrodyn_verif_jeod",
+ "astrodyn_verif_jeod_fixtures",
  "glam 0.30.10",
  "proptest",
  "thiserror 2.0.18",
@@ -373,6 +367,19 @@ version = "0.1.0"
 dependencies = [
  "astrodyn",
  "astrodyn_runner",
+ "astrodyn_verif_jeod_fixtures",
+ "glam 0.30.10",
+ "log",
+ "regex",
+ "thiserror 2.0.18",
+ "uom",
+]
+
+[[package]]
+name = "astrodyn_verif_jeod_fixtures"
+version = "0.1.0"
+dependencies = [
+ "astrodyn_quantities",
  "glam 0.30.10",
  "log",
  "regex",

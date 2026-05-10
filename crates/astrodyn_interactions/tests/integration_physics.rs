@@ -20,11 +20,14 @@ use astrodyn_quantities::ext::Vec3Ext;
 use glam::{DMat3, DVec3};
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
-const MU_EARTH: f64 = astrodyn_planet::presets::EARTH.mu;
+/// Mirrors `astrodyn_planet::presets::EARTH.mu`.
+const MU_EARTH: f64 = 398_600.441_50e9;
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-const R_EARTH: f64 = astrodyn_planet::presets::EARTH.r_eq;
+/// Mirrors `astrodyn_planet::presets::EARTH.r_eq`.
+const R_EARTH: f64 = 1000.0 * 6378.137;
 /// Earth polar radius (m) — JEOD `earth.cc` via presets.
-const R_EARTH_POL: f64 = astrodyn_planet::presets::EARTH.r_pol;
+/// Mirrors `astrodyn_planet::presets::EARTH.r_pol`.
+const R_EARTH_POL: f64 = R_EARTH * (1.0 - 1.0 / 298.257_223_563);
 
 /// MET-internal GMST formula (from JEOD atmos_MET_TME.cc, Jacchia's Almanac polynomial).
 ///
