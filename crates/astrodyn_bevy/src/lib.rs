@@ -83,13 +83,39 @@ pub struct PolarMotionR {
 
 /// Bevy resource wrapping [`AtmosphereConfig`] with an entity reference for
 /// the planet whose rotation matrix is used for geodetic conversion.
+///
+/// The resource is constructible only via [`AtmosphereModelR::new`]: the
+/// planet entity is non-`Option` because the atmosphere stage always reads
+/// it (the `PlanetFixedRotationC` lookup is the only path used by every
+/// supported model — the previously-allowed `None` "spherical fallback"
+/// was indistinguishable from an identity rotation, so callers that want
+/// it install `PlanetFixedRotationC` initialised to identity on the planet
+/// entity instead). `#[non_exhaustive]` keeps the type closed against
+/// downstream field-literal construction so future additions are
+/// source-compatible.
 #[derive(Resource, Debug, Clone)]
+#[non_exhaustive]
 pub struct AtmosphereModelR {
     /// ECS-agnostic atmosphere configuration (model, radii, wind).
     pub config: AtmosphereConfig,
-    /// Entity of the planet whose `PlanetFixedRotationC` is used.
-    /// `None` means no rotation (position assumed planet-fixed).
-    pub planet_entity: Option<Entity>,
+    /// Entity of the planet whose `PlanetFixedRotationC` is queried each
+    /// tick to rotate body position into planet-fixed coordinates before
+    /// geodetic conversion.
+    pub planet_entity: Entity,
+}
+
+impl AtmosphereModelR {
+    /// Construct an atmosphere model resource for the given planet entity.
+    ///
+    /// The planet entity must carry [`PlanetFixedRotationC`] by the time
+    /// the atmosphere system runs; the system panics loudly with a
+    /// configuration diagnostic otherwise.
+    pub fn new(config: AtmosphereConfig, planet_entity: Entity) -> Self {
+        Self {
+            config,
+            planet_entity,
+        }
+    }
 }
 
 /// Bevy resource wrapping [`astrodyn::Ephemeris`] for DE4xx ephemeris access.
