@@ -25,9 +25,10 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams,
-    FlatPlateState, FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationModel, ShadowBody, SimulationBuilder,
-    SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState, VehicleConfig, EARTH,
+    FlatPlateState, FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravityRole,
+    GravitySource, GravitySourceEntry, MassProperties, RotationModel, ShadowBody,
+    SimulationBuilder, SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState,
+    VehicleConfig, EARTH,
 };
 use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
@@ -252,7 +253,7 @@ fn build_srp(
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
@@ -544,12 +545,17 @@ fn parity_zero_tolerances() -> Tolerances {
 /// spherical-Earth gravity controls and the gravity-gradient toggle
 /// passed in by the caller.
 fn parity_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
+    let role = if gradient {
+        GravityRole::ThirdBody
+    } else {
+        GravityRole::Central
+    };
     VehicleConfig {
         trans: super::typed_helpers::trans_typed(&parity_iss_trans()),
         rot: Some(super::typed_helpers::rot_typed(&parity_tumble_rot())),
         mass: Some(super::typed_helpers::mass_typed(&parity_iss_mass())),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
+            controls: vec![GravityControl::new_spherical(earth_idx, role)],
         },
         compute_gravity_gradient: gradient,
         ..Default::default()
@@ -652,7 +658,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0, false)],
+            controls: vec![GravityControl::new_spherical(0, GravityRole::Central)],
         },
         ..Default::default()
     };

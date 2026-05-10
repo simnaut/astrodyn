@@ -12,7 +12,7 @@
 use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -82,7 +82,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
                 velocity: init.velocity,
             }),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             },
             ..Default::default()
         });

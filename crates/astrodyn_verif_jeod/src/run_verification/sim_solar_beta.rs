@@ -31,7 +31,7 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, Ephemeris, EphemerisBody, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, RotationModel,
+    GravityControls, GravityModel, GravityRole, GravitySource, GravitySourceEntry, RotationModel,
     SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
 use glam::DVec3;
@@ -137,7 +137,7 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -277,7 +277,7 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -362,7 +362,12 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_nonspherical(earth, 8, 8, false)],
+            controls: vec![GravityControl::new_nonspherical(
+                earth,
+                8,
+                8,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             solar_beta: true,

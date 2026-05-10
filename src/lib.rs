@@ -203,7 +203,9 @@ pub use astrodyn_gravity::tides::{
 // astrodyn_gravity: test fixtures (e.g. `fixtures::load_ggm05c()`)
 // consumed by integration tests that need a representative gravity model.
 pub use astrodyn_gravity::fixtures as gravity_fixtures;
-pub use astrodyn_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
+pub use astrodyn_gravity::{
+    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+};
 
 // astrodyn_atmosphere: state output and model types
 pub use astrodyn_atmosphere::exponential::ExponentialAtmosphere;

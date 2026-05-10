@@ -5,7 +5,7 @@ mod common;
 use astrodyn::GravitySourceEntry;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
-    GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,
+    GeoIndexType, GravityControl, GravityControls, GravityRole, MetAtmosphere, SixDofState,
 };
 use astrodyn_bevy::{
     AtmosphereModelR, DragConfigC, DynamicsConfigC, GravityControlsC, GravitySourceC,
@@ -68,7 +68,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -160,7 +160,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -260,7 +260,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -359,7 +359,7 @@ fn tier3_bevy_met_run5a() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             DragConfigC::from_untyped(&DragConfig {
                 cd: 2.2,
@@ -470,7 +470,7 @@ fn tier3_bevy_drag_run6b() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))

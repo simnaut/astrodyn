@@ -20,7 +20,7 @@
 //!     .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
-//!     .gravity(GravityControl::new_spherical(0_usize, false))
+//!     .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
 //!     .build();
 //! assert!(cfg.mass.is_some());
 //! ```
@@ -54,11 +54,11 @@ pub use crate::frame_param::{FrameOrigin, RelativeFrameState};
 // only on `astrodyn` + `bevy`).
 pub use astrodyn::{
     Array3Ext, BodyAction, BodyFrame, ClosureJointKinematicsSpec, Earth, Ecef, F64Ext, Frame,
-    FrameTransform, GravityControl, JeodQuat, JointKinematicsModel, JointKinematicsSpec, Lvlh,
-    Mars, Moon, MultiDofJointKinematicsSpec, Ned, OrbitalElementSet, Planet, PlanetFixed, Qty3,
-    RootInertial, SelfPlanet, SelfRef, SingleDofKinematics, SinusoidalJointKinematicsSpec,
-    StructuralFrame, Sun, Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL,
-    MAX_MULTI_DOF_AXES,
+    FrameTransform, GravityControl, GravityRole, JeodQuat, JointKinematicsModel,
+    JointKinematicsSpec, Lvlh, Mars, Moon, MultiDofJointKinematicsSpec, Ned, OrbitalElementSet,
+    Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef, SingleDofKinematics,
+    SinusoidalJointKinematicsSpec, StructuralFrame, Sun, Vec3Ext, Vehicle, VehicleBuilder,
+    VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use astrodyn_bevy::prelude::*;` brings them into

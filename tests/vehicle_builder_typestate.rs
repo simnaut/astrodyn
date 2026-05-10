@@ -20,7 +20,7 @@ use astrodyn::{
 };
 use astrodyn_dynamics::state::TranslationalStateTyped;
 use astrodyn_dynamics::{MassProperties, RotationalState};
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityRole};
 use astrodyn_interactions::DragConfig;
 use astrodyn_math::{JeodQuat, OrbitalElements};
 use astrodyn_quantities::ext::F64Ext;
@@ -68,7 +68,7 @@ fn six_dof_rkf45_with_options() {
         .with_translational(iss_trans())
         .sixdof(rot, mass)
         .rkf45()
-        .gravity(GravityControl::new_spherical(0, false))
+        .gravity(GravityControl::new_spherical(0, GravityRole::Central))
         .drag(drag)
         .build();
     assert_eq!(cfg.integrator, IntegratorType::Rkf45);

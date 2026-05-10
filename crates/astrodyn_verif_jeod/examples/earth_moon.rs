@@ -20,7 +20,7 @@
 
 use astrodyn::recipes::{self, epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
-use astrodyn::{EphemerisBody, GravityControl, SimulationBuilder, TranslationalState};
+use astrodyn::{EphemerisBody, GravityControl, GravityRole, SimulationBuilder, TranslationalState};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::DVec3;
 
@@ -97,7 +97,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(&trans))
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
-        .gravity(GravityControl::new_nonspherical(moon, 60, 60, false))
+        .gravity(GravityControl::new_nonspherical(
+            moon,
+            60,
+            60,
+            GravityRole::Central,
+        ))
         .gravity(GravityControl::new_third_body(earth))
         .gravity(GravityControl::new_third_body(sun_idx))
         .cannonball_srp(SRP_CX_AREA, SRP_ALBEDO, SRP_DIFFUSE)

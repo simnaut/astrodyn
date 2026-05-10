@@ -6,8 +6,8 @@ mod common;
 
 use astrodyn::{DerivedStateConfig, GeodeticConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    PlanetShape, SixDofState, TranslationalState,
+    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravityRole,
+    GravitySource, PlanetShape, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
     DynamicsConfigC, EulerAnglesC, EulerAnglesConfigC, GeodeticConfigC, GeodeticStateC,
@@ -66,7 +66,7 @@ fn tier3_bevy_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -202,7 +202,7 @@ fn tier3_bevy_geodetic_derived_state() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -235,7 +235,10 @@ fn tier3_bevy_geodetic_derived_state() {
     let body = VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
@@ -332,7 +335,7 @@ fn tier3_bevy_eccentric_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -386,7 +389,10 @@ fn tier3_bevy_eccentric_derived_states() {
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             orbital_elements_source: Some(earth_idx),
@@ -485,7 +491,7 @@ fn tier3_bevy_polar_geodetic() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -518,7 +524,10 @@ fn tier3_bevy_polar_geodetic() {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&polar_trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
@@ -609,7 +618,7 @@ fn tier3_bevy_equatorial_solar_beta() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             SolarBetaC::default(),
         ))
@@ -648,7 +657,10 @@ fn tier3_bevy_equatorial_solar_beta() {
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -703,7 +715,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             EulerAnglesConfigC { sequence },
         ))
@@ -719,7 +731,10 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             euler_sequence: Some(sequence),
@@ -784,7 +799,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             LvlhFrameC::default(),
         ))
@@ -798,7 +813,10 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             lvlh: true,
@@ -880,7 +898,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -911,7 +929,10 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
@@ -967,7 +988,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -987,7 +1008,10 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             orbital_elements_source: Some(earth_idx),
@@ -1089,7 +1113,7 @@ fn tier3_bevy_orbelem() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -1109,7 +1133,10 @@ fn tier3_bevy_orbelem() {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&ecc_trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             orbital_elements_source: Some(earth_idx),
@@ -1159,7 +1186,7 @@ fn tier3_bevy_solar_beta() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             SolarBetaC::default(),
         ))
@@ -1185,7 +1212,10 @@ fn tier3_bevy_solar_beta() {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&inc_trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         derived: DerivedStateConfig {
             solar_beta: true,

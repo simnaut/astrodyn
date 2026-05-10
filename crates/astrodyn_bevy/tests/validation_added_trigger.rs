@@ -52,7 +52,7 @@ fn build_app() -> (App, Entity) {
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
@@ -95,7 +95,12 @@ fn validation_fires_for_body_added_after_startup() {
         // Request degree=4 against a point-mass source. `check_validity`
         // panics with "Non-spherical gravity (spherical=false) is only
         // supported for SphericalHarmonics gravity models."
-        .gravity(GravityControl::new_nonspherical(0_usize, 4, 4, false))
+        .gravity(GravityControl::new_nonspherical(
+            0_usize,
+            4,
+            4,
+            GravityRole::Central,
+        ))
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());

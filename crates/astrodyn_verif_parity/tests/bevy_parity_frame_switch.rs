@@ -17,9 +17,9 @@
 use std::time::Duration;
 
 use astrodyn::{
-    DynamicsConfig, FrameSwitchConfig, GravityControl, GravityControls, GravitySourceEntry,
-    JeodQuat, MassProperties, RotationalState, SwitchSense, TranslationalState, VehicleConfig,
-    EARTH, MOON,
+    DynamicsConfig, FrameSwitchConfig, GravityControl, GravityControls, GravityRole,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SwitchSense, TranslationalState,
+    VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
@@ -116,11 +116,14 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityRole::Central),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityRole::Central);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches.clone()),
         ))
@@ -230,11 +233,14 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
             &(vehicle_mass()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityRole::Central),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityRole::Central);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,
@@ -339,11 +345,14 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityRole::Central),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityRole::Central);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches),
         ))
@@ -402,11 +411,14 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
             &(vehicle_mass()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityRole::Central),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityRole::Central);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,

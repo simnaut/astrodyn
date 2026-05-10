@@ -9,8 +9,8 @@
 //! threads `PRRT_kwDORtae6c5_J-qF` / `PRRT_kwDORtae6c5_J-qI`.
 
 use astrodyn::{
-    Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
-    MassProperties, MassTree, TranslationalState,
+    Abm4State, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+    IntegratorType, MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
     Abm4StateC, AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GravityControlsC,
@@ -101,7 +101,7 @@ fn build_two_body_app(
                 &(MassProperties::new(1000.0)),
             )),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -118,7 +118,7 @@ fn build_two_body_app(
                 &(MassProperties::new(500.0)),
             )),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -266,7 +266,7 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
                     &(MassProperties::new(mass)),
                 )),
                 GravityControlsC(GravityControls {
-                    controls: vec![GravityControl::new_spherical(planet, false)],
+                    controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
                 }),
                 IntegratorTypeC(IntegratorType::Abm4),
                 Abm4StateC(Abm4State::new()),

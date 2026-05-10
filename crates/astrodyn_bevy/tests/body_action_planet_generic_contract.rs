@@ -21,8 +21,8 @@
 use std::time::Duration;
 
 use astrodyn::{
-    BodyAction, GravityControl, JeodQuat, MassProperties, RootInertial, RotationalState,
-    TranslationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, MARS,
+    BodyAction, GravityControl, GravityRole, JeodQuat, MassProperties, RootInertial,
+    RotationalState, TranslationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, MARS,
 };
 use astrodyn_bevy::{
     register_planet_systems, AstrodynPlugin, BodyActionCommandsExt, BodyActionEvent,
@@ -87,7 +87,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
 
     let vehicle_id = {
@@ -147,7 +147,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
 
     let vehicle = {
@@ -288,7 +288,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
     let cfg_earth = VehicleBuilder::new()
         .with_translational(TranslationalStateTyped::<RootInertial> {
@@ -297,7 +297,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
 
     let mars_body = {
@@ -435,7 +435,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
     let cfg_earth = VehicleBuilder::new()
         .with_translational(TranslationalStateTyped::<RootInertial> {
@@ -444,7 +444,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
 
     let mars_body = {
@@ -598,7 +598,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
     let earth_body = {
         let world = app.world_mut();
@@ -661,7 +661,7 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
         })
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
         .build();
     let earth_body = {
         let world = app.world_mut();

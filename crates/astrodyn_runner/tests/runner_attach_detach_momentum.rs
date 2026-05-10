@@ -39,7 +39,7 @@ use astrodyn::JeodQuat;
 use astrodyn::{combine_states_at_attach, AttachCombineInputs};
 use astrodyn::{
     AngularVelocity, BodyAttitude, BodyFrame, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, InertiaTensor, IntegratorType,
+    GravityRole, GravitySource, GravitySourceEntry, InertiaTensor, IntegratorType,
     MassProperties as SimMassProperties, MassPropertiesTyped, Position, RootInertial,
     RotationalState, RotationalStateTyped, SelfRef, SimulationTime, StructuralFrame,
     TranslationalState, TranslationalStateTyped, Vec3Ext, VehicleConfig, Velocity,
@@ -128,7 +128,10 @@ fn build_pair(
         mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -138,7 +141,10 @@ fn build_pair(
         mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -645,7 +651,10 @@ fn runner_attach_handles_interior_kinematic_parent() {
         mass: Some(mass_typed(&(a_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -655,7 +664,10 @@ fn runner_attach_handles_interior_kinematic_parent() {
         mass: Some(mass_typed(&(b_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -665,7 +677,10 @@ fn runner_attach_handles_interior_kinematic_parent() {
         mass: Some(mass_typed(&(c_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -872,7 +887,7 @@ fn runner_detach_lifts_through_integ_origin() {
         mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         integ_source: Some(earth),
         ..Default::default()
@@ -883,7 +898,7 @@ fn runner_detach_lifts_through_integ_origin() {
         mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         integ_source: Some(earth),
         ..Default::default()
@@ -1038,7 +1053,10 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(_inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                _inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -1048,7 +1066,10 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(_inertial, false)],
+            controls: vec![GravityControl::new_spherical(
+                _inertial,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });

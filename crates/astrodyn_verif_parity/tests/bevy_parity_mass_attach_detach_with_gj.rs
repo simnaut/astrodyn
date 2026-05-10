@@ -13,7 +13,7 @@
 
 use astrodyn::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, IntegratorType, MassProperties, MassTree, TranslationalState,
+    GravityRole, GravitySource, IntegratorType, MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GaussJacksonStateC,
@@ -94,7 +94,7 @@ fn build_two_body_app(
                 &(MassProperties::new(1000.0)),
             )),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -111,7 +111,7 @@ fn build_two_body_app(
                 &(MassProperties::new(500.0)),
             )),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -251,7 +251,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
                     &(MassProperties::new(mass)),
                 )),
                 GravityControlsC(GravityControls {
-                    controls: vec![GravityControl::new_spherical(planet, false)],
+                    controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
                 }),
                 IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
                 GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),

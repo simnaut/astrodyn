@@ -16,8 +16,8 @@
 use astrodyn::JeodQuat;
 use astrodyn::{FrameSwitchConfig, GravitySourceEntry, SwitchSense, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
-    SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
@@ -167,7 +167,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         gravity_controls: GravityControls {
             controls: vec![
                 // Earth is the central body for Earth-centered integration.
-                GravityControl::new_spherical(earth, false),
+                GravityControl::new_spherical(earth, GravityRole::Central),
                 // Sun and Moon are third-body (differential acceleration).
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),

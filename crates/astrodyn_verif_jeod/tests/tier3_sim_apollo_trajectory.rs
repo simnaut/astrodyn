@@ -68,7 +68,7 @@
 use astrodyn::GeoIndexType;
 use astrodyn::JeodQuat;
 use astrodyn::{
-    AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
+    AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel, GravityRole,
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, EARTH,
 };
@@ -447,7 +447,12 @@ fn build_apollo_sim() -> (Simulation, usize, BodyIds) {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(earth, GRAV_DEGREE, GRAV_ORDER, false),
+                GravityControl::new_nonspherical(
+                    earth,
+                    GRAV_DEGREE,
+                    GRAV_ORDER,
+                    GravityRole::Central,
+                ),
                 GravityControl::new_third_body(moon),
                 GravityControl::new_third_body(sun),
             ],

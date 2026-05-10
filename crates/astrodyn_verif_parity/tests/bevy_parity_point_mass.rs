@@ -5,8 +5,8 @@
 mod common;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+    JeodQuat, RotationalState, SixDofState, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -52,7 +52,7 @@ fn tier3_bevy_point_mass_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
         ))
         .id();
@@ -96,7 +96,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
         ))
         .id();
@@ -109,7 +109,10 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });
@@ -181,7 +184,7 @@ fn tier3_bevy_run2_6dof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
         ))
         .id();
@@ -248,7 +251,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(*trans),
                 DynamicsConfigC::default(),
                 GravityControlsC(GravityControls {
-                    controls: vec![GravityControl::new_spherical(planet, false)],
+                    controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
                 }),
             ))
             .id();
@@ -260,7 +263,10 @@ fn tier3_bevy_orbinit_cross_consistency() {
             // allowed: typed↔raw kernel-boundary lift (see #397).
             trans: astrodyn::typed_bridge::trans_raw_to_root(trans),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth_idx, false)],
+                controls: vec![GravityControl::new_spherical(
+                    earth_idx,
+                    GravityRole::Central,
+                )],
             },
             ..Default::default()
         });
@@ -337,7 +343,7 @@ fn tier3_sim_time_reversal_round_trip() {
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -396,7 +402,7 @@ fn tier3_sim_relative_state_consistency() {
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -413,7 +419,7 @@ fn tier3_sim_relative_state_consistency() {
         )),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -542,7 +548,7 @@ fn tier3_sim_mars_rotation_dispatch() {
             velocity: DVec3::new(0.0, 3.5e3, 0.0),
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(mars, false)],
+            controls: vec![GravityControl::new_spherical(mars, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -616,7 +622,7 @@ fn tier3_sim_multi_source_rotation() {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -698,7 +704,10 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, true)],
+                controls: vec![GravityControl::new_spherical(
+                    planet,
+                    GravityRole::ThirdBody,
+                )],
             }),
         ))
         .id();
@@ -713,7 +722,10 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
         rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, true)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::ThirdBody,
+            )],
         },
         ..Default::default()
     });

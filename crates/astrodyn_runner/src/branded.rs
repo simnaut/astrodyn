@@ -27,7 +27,7 @@
 //!         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!         .three_dof_point_mass(vehicle::iss_mass())
 //!         .rk4()
-//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
+//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityRole::Central))
 //!         .build();
 //!     let sat = sim.add_body(cfg);
 //!     sim.body(sat).trans.position.raw_si().x
@@ -292,7 +292,7 @@ impl Simulation {
     ///         )
     ///         .three_dof_point_mass(vehicle::iss_mass())
     ///         .rk4()
-    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
+    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityRole::Central))
     ///         .build();
     ///     let sat = sim.add_body(cfg);
     ///     sim.body(sat).trans.position.raw_si().length()

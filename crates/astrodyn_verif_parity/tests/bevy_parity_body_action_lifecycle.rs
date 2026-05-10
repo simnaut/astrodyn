@@ -61,8 +61,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use astrodyn::{
-    BodyAction, DynamicsConfig, GravityControl, GravityControls, MassProperties, RotationalState,
-    TranslationalState,
+    BodyAction, DynamicsConfig, GravityControl, GravityControls, GravityRole, MassProperties,
+    RotationalState, TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, BodyActionEvent, GravityControlsC, MassPropertiesC, RotationalStateC,
@@ -173,7 +173,7 @@ fn build_app() -> (App, Entity) {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
         ))
         .id();
@@ -440,7 +440,8 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
 #[test]
 fn bevy_parity_body_action_init_trans_resets_abm4_history() {
     use astrodyn::{
-        Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+        Abm4State, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+        IntegratorType,
     };
     use astrodyn_bevy::{
         Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
@@ -490,7 +491,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -599,7 +600,8 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
 #[test]
 fn bevy_parity_body_action_init_mass_resets_abm4_history() {
     use astrodyn::{
-        Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+        Abm4State, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+        IntegratorType,
     };
     use astrodyn_bevy::{
         Abm4StateC, AstrodynPlugin, DynamicsConfigC, GravitySourceC, IntegratorTypeC,
@@ -650,7 +652,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -814,7 +816,7 @@ fn bevy_parity_body_action_startup_message_applies_exactly_once() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
         ))
         .id();

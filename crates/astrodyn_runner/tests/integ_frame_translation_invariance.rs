@@ -39,7 +39,7 @@ use glam::DVec3;
 
 use astrodyn::ExponentialAtmosphere;
 use astrodyn::{
-    AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
+    AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel, GravityRole,
     GravitySource, GravitySourceEntry, RootInertial, RotationModel, SimulationBuilder,
     SimulationTime, TranslationalState, Vec3Ext, VehicleConfig, EARTH,
 };
@@ -167,7 +167,10 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
         rot: None,
         mass: None,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(gravity_source_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                gravity_source_idx,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     };

@@ -146,8 +146,8 @@ mod tests {
     use astrodyn::JeodQuat;
     use astrodyn::{
         default_leap_second_table, DerivedStateConfig, FrameSwitchConfig, GravityControl,
-        GravityControls, GravityModel, GravitySource, GravitySourceEntry, Position, RotationModel,
-        SimulationTime, SwitchSense, VehicleConfig, Velocity,
+        GravityControls, GravityModel, GravityRole, GravitySource, GravitySourceEntry, Position,
+        RotationModel, SimulationTime, SwitchSense, VehicleConfig, Velocity,
     };
     use glam::DVec3;
 
@@ -279,8 +279,8 @@ mod tests {
             // values (mu=0 on both).
             gravity_controls: GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(origin_src, false),
-                    GravityControl::new_spherical(far_src, true),
+                    GravityControl::new_spherical(origin_src, GravityRole::Central),
+                    GravityControl::new_spherical(far_src, GravityRole::ThirdBody),
                 ],
             },
             integ_source: None,

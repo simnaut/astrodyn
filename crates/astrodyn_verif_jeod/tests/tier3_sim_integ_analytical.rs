@@ -10,7 +10,7 @@
 //! for position and velocity error over a one-orbit propagation interval.
 
 use astrodyn::{
-    GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
+    GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
     IntegratorType, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -85,7 +85,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
         }),
         integrator,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });

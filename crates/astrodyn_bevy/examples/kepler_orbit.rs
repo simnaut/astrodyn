@@ -15,7 +15,7 @@
 
 use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{GravityControl, GravityControls, TranslationalState};
+use astrodyn::{GravityControl, GravityControls, GravityRole, TranslationalState};
 use astrodyn_bevy::{
     AstrodynPlugin, AstrodynSet, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, MassPropertiesC, SourceInertialPositionC, TotalForceC,
@@ -135,7 +135,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     let mass_kg = vehicle::iss_mass().get::<kilogram>();
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(earth, false)],
+        controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
     };
 
     commands.spawn((

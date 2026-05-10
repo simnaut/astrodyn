@@ -583,8 +583,9 @@ mod tests {
     use std::time::Duration;
 
     use astrodyn::{
-        GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, Position,
-        RootInertial, SimulationTime, TranslationalState, VehicleConfig, Velocity,
+        GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+        GravitySourceEntry, Position, RootInertial, SimulationTime, TranslationalState,
+        VehicleConfig, Velocity,
     };
     use astrodyn_runner::SimulationBuilderExt;
     use bevy::prelude::*;
@@ -625,7 +626,10 @@ mod tests {
             // allowed: typed↔raw kernel boundary (#397)
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth_idx, false)],
+                controls: vec![GravityControl::new_spherical(
+                    earth_idx,
+                    GravityRole::Central,
+                )],
             },
             ..Default::default()
         });
@@ -744,7 +748,10 @@ mod tests {
             // allowed: typed↔raw kernel boundary (#397)
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth_idx, false)],
+                controls: vec![GravityControl::new_spherical(
+                    earth_idx,
+                    GravityRole::Central,
+                )],
             },
             ..Default::default()
         });

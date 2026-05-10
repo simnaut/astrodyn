@@ -5,8 +5,8 @@
 //! for time-scheduled force injection. All parameters loaded from JEOD sources.
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
-    RotationalState, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
@@ -114,7 +114,7 @@ fn setup_run9(
         )),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         ..Default::default()
     });

@@ -6,7 +6,7 @@
 //! assert_eq!(sb.bodies.len(), 1);
 //! ```
 
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityRole};
 
 use crate::recipes::{constants, earth, epoch, orbital_elements, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -29,7 +29,10 @@ pub fn geo() -> SimulationBuilder {
         .from_orbital_elements(orbital_elements::geostationary(), constants::mu_ggm05c())
         .three_dof_point_mass(vehicle::unit_sphere_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(earth_idx, false))
+        .gravity(GravityControl::new_spherical(
+            earth_idx,
+            GravityRole::Central,
+        ))
         .build();
     sb.add_body(vehicle);
     sb

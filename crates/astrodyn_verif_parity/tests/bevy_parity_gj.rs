@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use astrodyn::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, IntegratorType, TranslationalState,
+    GravityRole, GravitySource, IntegratorType, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -158,7 +158,7 @@ fn run_gj_bootstrap_parity(
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
@@ -185,7 +185,10 @@ fn run_gj_bootstrap_parity(
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityRole::Central,
+            )],
         },
         ..Default::default()
     });

@@ -28,7 +28,7 @@
 mod common;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, MassProperties, RotationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityRole, MassProperties, RotationalState,
     TranslationalState,
 };
 use astrodyn_bevy::{
@@ -78,7 +78,7 @@ fn bevy_parity_frame_attach_gravity_sees_propagated_state() {
                 // Re-use the central Earth source spawned above. The
                 // helper hands back its Entity; we rebuild the
                 // controls here so the test owns its own setup.
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
             GravityAccelerationC::default(),
         ))

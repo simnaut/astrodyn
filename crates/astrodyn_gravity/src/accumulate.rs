@@ -435,7 +435,7 @@ pub fn run_gravity_stage<'a, S, K, Store, BodyIter, FS, FR>(
 mod tests {
     use super::*;
     use crate::gravity_source::{GravityModel, GravitySource};
-    use crate::{GravityControl, GravityControls};
+    use crate::{GravityControl, GravityControls, GravityRole};
 
     /// Helper: create a point-mass gravity source with the given mu.
     fn point_mass_source(mu: f64) -> GravitySource {
@@ -716,10 +716,12 @@ mod tests {
     /// Verify `battin_method` defaults to false in all constructors.
     #[test]
     fn battin_method_defaults_false() {
-        let spherical: GravityControl<usize> = GravityControl::new_spherical(0, false);
+        let spherical: GravityControl<usize> =
+            GravityControl::new_spherical(0, GravityRole::Central);
         assert!(!spherical.battin_method);
 
-        let nonspherical: GravityControl<usize> = GravityControl::new_nonspherical(0, 4, 4, false);
+        let nonspherical: GravityControl<usize> =
+            GravityControl::new_nonspherical(0, 4, 4, GravityRole::Central);
         assert!(!nonspherical.battin_method);
 
         let third_body: GravityControl<usize> = GravityControl::new_third_body(0);
@@ -747,7 +749,7 @@ mod tests {
         };
 
         let controls = GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false)],
+            controls: vec![GravityControl::new_spherical(0_usize, GravityRole::Central)],
         };
         let resolve_source = |_: usize| {
             Some(ResolvedSource {
@@ -805,7 +807,7 @@ mod tests {
         let source = point_mass_source(mu);
         let source_pos = DVec3::ZERO;
         let controls = GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false)],
+            controls: vec![GravityControl::new_spherical(0_usize, GravityRole::Central)],
         };
 
         let body_a_pos = Position::<IntegrationFrame>::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
@@ -906,7 +908,7 @@ mod tests {
         let body_vel = DVec3::new(0.0, 7500.0, 0.0);
         let integ_origin = IntegOrigin::zero();
         let controls = GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false)],
+            controls: vec![GravityControl::new_spherical(0_usize, GravityRole::Central)],
         };
         let resolve_source = |_: usize| {
             Some(ResolvedSource {

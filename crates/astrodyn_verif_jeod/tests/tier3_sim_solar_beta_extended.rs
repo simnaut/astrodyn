@@ -23,7 +23,7 @@
 use astrodyn::Vec3Ext;
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn_runner::{RotationModel, Simulation};
@@ -95,7 +95,7 @@ fn build_solar_beta_sim(
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&body_state),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
         },
         derived: DerivedStateConfig {
             solar_beta: true,

@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use astrodyn::{
     DerivedStateConfig, DynamicsConfig, FlatPlate, FlatPlateParams, FlatPlateState,
-    FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
+    FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SixDofState, SrpModel,
     TranslationalState, Vec3Ext, VehicleConfig, EARTH, MOON,
 };
@@ -167,11 +167,11 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, false);
+                        let mut c = GravityControl::new_spherical(_earth, GravityRole::Central);
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, false),
+                    GravityControl::new_spherical(moon, GravityRole::Central),
                 ],
             }),
             IntegSourceC(Some(moon)),
@@ -231,11 +231,11 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    let mut c = GravityControl::new_spherical(0_usize, GravityRole::Central);
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, false),
+                GravityControl::new_spherical(moon_idx, GravityRole::Central),
             ],
         },
         integ_source: Some(moon_idx),
@@ -303,11 +303,11 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, false);
+                        let mut c = GravityControl::new_spherical(_earth, GravityRole::Central);
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, false),
+                    GravityControl::new_spherical(moon, GravityRole::Central),
                 ],
             }),
             IntegSourceC(Some(moon)),
@@ -363,11 +363,11 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    let mut c = GravityControl::new_spherical(0_usize, GravityRole::Central);
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, false),
+                GravityControl::new_spherical(moon_idx, GravityRole::Central),
             ],
         },
         integ_source: Some(moon_idx),
@@ -436,7 +436,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
             }),
         ))
         .id();
@@ -478,7 +478,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false)],
+            controls: vec![GravityControl::new_spherical(0_usize, GravityRole::Central)],
         },
         ..Default::default()
     });
@@ -602,11 +602,11 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, false);
+                        let mut c = GravityControl::new_spherical(_earth, GravityRole::Central);
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, false),
+                    GravityControl::new_spherical(moon, GravityRole::Central),
                 ],
             }),
             IntegSourceC(Some(moon)),
@@ -666,11 +666,11 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    let mut c = GravityControl::new_spherical(0_usize, GravityRole::Central);
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, false),
+                GravityControl::new_spherical(moon_idx, GravityRole::Central),
             ],
         },
         integ_source: Some(moon_idx),
@@ -817,11 +817,11 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, false);
+                        let mut c = GravityControl::new_spherical(_earth, GravityRole::Central);
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, false),
+                    GravityControl::new_spherical(moon, GravityRole::Central),
                 ],
             }),
             IntegSourceC(Some(moon)),
@@ -906,11 +906,11 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    let mut c = GravityControl::new_spherical(0_usize, GravityRole::Central);
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, false),
+                GravityControl::new_spherical(moon_idx, GravityRole::Central),
             ],
         },
         integ_source: Some(moon_idx),
