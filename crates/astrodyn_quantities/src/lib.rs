@@ -167,6 +167,7 @@ mod sealed;
 
 pub mod aliases;
 pub mod body_attitude;
+pub mod body_constants;
 pub mod diagnostics;
 pub mod dims;
 pub mod ext;

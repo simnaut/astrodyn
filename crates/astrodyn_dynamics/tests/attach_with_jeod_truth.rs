@@ -17,7 +17,7 @@
 use astrodyn_dynamics::{combine_states_at_attach, AttachCombineInputs, MassProperties};
 use astrodyn_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
 use astrodyn_math::JeodQuat;
-use astrodyn_verif_jeod::apollo_truth::{
+use astrodyn_verif_jeod_fixtures::apollo_truth::{
     load_apollo_attach_truth, nearest_truth_at, ApolloTruthRow, VehState,
 };
 
