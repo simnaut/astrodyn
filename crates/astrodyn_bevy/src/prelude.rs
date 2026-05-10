@@ -26,7 +26,7 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
+    Abm4StateC, AerodynamicForceC, AstrodynAppExt, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
     BodyActionCommandsExt, BodyActionEvent, BodyActionsR, BodyFrameMarker, ClosureJointKinematicsC,
     DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC,
     FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC,
