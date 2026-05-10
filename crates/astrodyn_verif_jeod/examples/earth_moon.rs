@@ -147,5 +147,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let final_body = sim.body(0);
     let final_alt = (final_body.trans.position.raw_si().length() - R_MOON) / 1000.0;
     println!("Final altitude: {final_alt:.1} km after {elapsed_days:.2} days");
+
+    #[cfg(feature = "phase_timing")]
+    {
+        println!();
+        print!("{}", sim.phase_timings_summary());
+    }
+
     Ok(())
 }

@@ -54,3 +54,6 @@ pub use simulation::{
     ContactPairConfig, DetachedSubtreeState, FrameAttachState, GroundContactPairConfig,
     GroundFacet, Simulation, SphericalTerrain, Terrain, VehicleOutput,
 };
+
+#[cfg(feature = "phase_timing")]
+pub use simulation::PhaseTimings;
