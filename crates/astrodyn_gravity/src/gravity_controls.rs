@@ -80,9 +80,14 @@ impl<SourceId> GravityControl<SourceId> {
     ///
     /// Uses only µ/r² acceleration. Any spherical harmonics data on the source
     /// is ignored. For gravity with J2+ harmonics, use [`new_nonspherical`](Self::new_nonspherical).
-    pub fn new_spherical(source_name: SourceId, gradient: bool) -> Self {
+    ///
+    /// `source_name` accepts `impl Into<SourceId>` so the gateway-level
+    /// typed source-table wrapper (`SourceHandle`) flows in alongside
+    /// bare `usize`, Bevy `Entity`, or `String` callsites without
+    /// per-callsite plumbing — the conversion lives at this seam.
+    pub fn new_spherical(source_name: impl Into<SourceId>, gradient: bool) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient,
             spherical: true,
             degree: 0,
@@ -101,14 +106,16 @@ impl<SourceId> GravityControl<SourceId> {
     /// Evaluates the source's spherical harmonics coefficients up to the given
     /// `degree` and `order`. The source must have a `SphericalHarmonics` model
     /// and the gravity source entry must provide a planet-fixed rotation matrix.
+    ///
+    /// See [`Self::new_spherical`] for the `impl Into<SourceId>` rationale.
     pub fn new_nonspherical(
-        source_name: SourceId,
+        source_name: impl Into<SourceId>,
         degree: usize,
         order: usize,
         gradient: bool,
     ) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient,
             spherical: false,
             degree,
@@ -127,9 +134,11 @@ impl<SourceId> GravityControl<SourceId> {
     /// Third-body sources use differential acceleration: the acceleration of
     /// the vehicle toward this source minus the acceleration of the integration
     /// frame origin toward this source.
-    pub fn new_third_body(source_name: SourceId) -> Self {
+    ///
+    /// See [`Self::new_spherical`] for the `impl Into<SourceId>` rationale.
+    pub fn new_third_body(source_name: impl Into<SourceId>) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient: false,
             spherical: true,
             degree: 0,
@@ -542,10 +551,12 @@ pub struct GravityControlTyped<SourceId = String> {
 }
 
 impl<SourceId> GravityControlTyped<SourceId> {
-    /// Spherical (point-mass) typed control.
-    pub fn new_spherical(source_name: SourceId, gradient: bool) -> Self {
+    /// Spherical (point-mass) typed control. See
+    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// rationale.
+    pub fn new_spherical(source_name: impl Into<SourceId>, gradient: bool) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient,
             spherical: true,
             degree: HarmonicDegree::default(),
@@ -559,15 +570,17 @@ impl<SourceId> GravityControlTyped<SourceId> {
         }
     }
 
-    /// Non-spherical (spherical-harmonics) typed control.
+    /// Non-spherical (spherical-harmonics) typed control. See
+    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// rationale.
     pub fn new_nonspherical(
-        source_name: SourceId,
+        source_name: impl Into<SourceId>,
         degree: HarmonicDegree,
         order: HarmonicDegree,
         gradient: bool,
     ) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient,
             spherical: false,
             degree,
@@ -581,10 +594,12 @@ impl<SourceId> GravityControlTyped<SourceId> {
         }
     }
 
-    /// Third-body (point-mass + differential) typed control.
-    pub fn new_third_body(source_name: SourceId) -> Self {
+    /// Third-body (point-mass + differential) typed control. See
+    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// rationale.
+    pub fn new_third_body(source_name: impl Into<SourceId>) -> Self {
         Self {
-            source_name,
+            source_name: source_name.into(),
             gradient: false,
             spherical: true,
             degree: HarmonicDegree::default(),
@@ -699,7 +714,7 @@ mod tests {
     /// is the mapped value and every other field is bit-identical.
     #[test]
     fn retag_source_preserves_all_fields() {
-        let mut original = GravityControl::<usize>::new_nonspherical(7, 8, 4, true);
+        let mut original = GravityControl::<usize>::new_nonspherical(7_usize, 8, 4, true);
         original.perturbing_only = true;
         original.gradient_degree = 6;
         original.gradient_order = 3;
@@ -727,7 +742,7 @@ mod tests {
     #[test]
     fn effective_orders_spherical_returns_zeros() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize>::new_spherical(0, false);
+        let ctrl = GravityControl::<usize>::new_spherical(0_usize, false);
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
 
@@ -743,7 +758,7 @@ mod tests {
             spherical: false,
             degree: 8,
             order: 8,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
@@ -757,7 +772,7 @@ mod tests {
             spherical: false,
             degree: 100,
             order: 100,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert_eq!(ctrl.effective_orders(&src), (8, 8, 0, 0));
     }
@@ -770,7 +785,7 @@ mod tests {
             spherical: false,
             degree: 4,
             order: 8,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert_eq!(ctrl.effective_orders(&src), (4, 4, 0, 0));
     }
@@ -788,7 +803,7 @@ mod tests {
             gradient: true,
             gradient_degree: 1, // → collapses to 0
             gradient_order: 5,  // > gradient_degree, > order → clamped
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         // After clamping: degree=8, order=4 (≤ src.order=6), gradient_degree=0, gradient_order=0.
         assert_eq!(ctrl.effective_orders(&src), (8, 4, 0, 0));
@@ -808,7 +823,7 @@ mod tests {
             gradient: true,
             gradient_degree: 100, // wildly out of range
             gradient_order: 100,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         let rot = DMat3::IDENTITY;
@@ -827,7 +842,7 @@ mod tests {
             spherical: false,
             degree: 100,
             order: 100,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         let rot = DMat3::IDENTITY;
@@ -847,7 +862,7 @@ mod tests {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
@@ -867,13 +882,13 @@ mod tests {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         let against_pm = GravityControl::<usize> {
             spherical: false,
             degree: 8,
             order: 8,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert!(degree_one.is_nonspherical()); // config says yes
         assert!(!degree_one.requires_planet_fixed_rotation(&sh)); // runtime says no
@@ -884,7 +899,7 @@ mod tests {
             spherical: false,
             degree: 4,
             order: 4,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         assert!(real_sh.requires_planet_fixed_rotation(&sh));
     }
@@ -901,7 +916,7 @@ mod tests {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0, false)
+            ..GravityControl::new_spherical(0_usize, false)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         // No rotation matrix supplied; would have panicked previously.

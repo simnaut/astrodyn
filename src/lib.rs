@@ -69,6 +69,7 @@ pub mod recipes;
 pub mod rotation_model;
 pub mod simulation_builder;
 pub mod source_frames;
+pub mod source_handle;
 pub mod source_state;
 pub mod sources;
 pub mod typed_bridge;
@@ -128,6 +129,7 @@ pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
 pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
 pub use source_frames::SourceFrameIds;
+pub use source_handle::SourceHandle;
 pub use source_state::{
     set_source_position, set_source_state, source_frame_id, source_pfix_rotation, source_position,
 };

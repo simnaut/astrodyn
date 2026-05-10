@@ -66,6 +66,7 @@ use astrodyn_quantities::frame::SelfRef;
 
 use crate::interactions::FlatPlateState;
 use crate::planet_config::PlanetConfig;
+use crate::source_handle::SourceHandle;
 use crate::vehicle_config::{
     DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
     SrpModel, VehicleConfig,
@@ -360,17 +361,26 @@ impl VehicleBuilder<Ready> {
 
     /// Set the shadow-casting body for SRP eclipse computation. Uses
     /// [`PlanetConfig::shadow_radius`] for consistent radius.
-    pub fn shadow(mut self, source_idx: usize, planet: &PlanetConfig) -> Self {
+    ///
+    /// `source` is `impl Into<SourceHandle>` — bare `usize` callsites
+    /// continue to work via the `From<usize> for SourceHandle` blanket;
+    /// new mission code can prefer `SourceHandle::central()` /
+    /// `SourceHandle::index(n)` for self-documenting intent.
+    pub fn shadow(mut self, source: impl Into<SourceHandle>, planet: &PlanetConfig) -> Self {
         self.shadow_body = Some(ShadowBody {
-            source_idx,
+            source_idx: source.into().into_raw(),
             radius: planet.shadow_radius,
         });
         self
     }
 
-    /// Set the shadow-casting body with explicit radius.
-    pub fn shadow_with_radius(mut self, source_idx: usize, radius: f64) -> Self {
-        self.shadow_body = Some(ShadowBody { source_idx, radius });
+    /// Set the shadow-casting body with explicit radius. See
+    /// [`Self::shadow`] for the `impl Into<SourceHandle>` rationale.
+    pub fn shadow_with_radius(mut self, source: impl Into<SourceHandle>, radius: f64) -> Self {
+        self.shadow_body = Some(ShadowBody {
+            source_idx: source.into().into_raw(),
+            radius,
+        });
         self
     }
 
@@ -402,8 +412,13 @@ impl VehicleBuilder<Ready> {
     // ── Frame switching ──
 
     /// Set the initial integration source (default: simulation root /
-    /// central body). `source_idx` is the index returned by
-    /// `SimulationBuilder::add_source()`.
+    /// central body). `source` identifies the gravity-source-table
+    /// entry returned by `SimulationBuilder::add_source()`.
+    ///
+    /// `source` is `impl Into<SourceHandle>` — bare `usize` callsites
+    /// continue to work via the `From<usize> for SourceHandle` blanket;
+    /// new mission code can prefer `SourceHandle::central()` /
+    /// `SourceHandle::index(n)` for self-documenting intent.
     ///
     /// **Non-root caveat (issue #263).** Setting this to a non-root
     /// source means the integrated translational state is
@@ -416,12 +431,16 @@ impl VehicleBuilder<Ready> {
     /// answers. Until #263 closes, mission code should either avoid
     /// non-root integration or restrict derived states to ones
     /// evaluated in the same source's frame.
-    pub fn integ_source(mut self, source_idx: usize) -> Self {
-        self.integ_source = Some(source_idx);
+    pub fn integ_source(mut self, source: impl Into<SourceHandle>) -> Self {
+        self.integ_source = Some(source.into().into_raw());
         self
     }
 
-    /// Set distance-based frame switch triggers.
+    /// Set distance-based frame switch triggers. Each
+    /// [`FrameSwitchConfig`]'s `target_source` is a `usize` source-table
+    /// index at this storage boundary; mission code can construct it
+    /// via `SourceHandle::index(n).into()` to keep the typed-handle
+    /// vocabulary consistent across the builder surface.
     pub fn frame_switches(mut self, switches: Vec<FrameSwitchConfig>) -> Self {
         self.frame_switches = switches;
         self
@@ -430,8 +449,9 @@ impl VehicleBuilder<Ready> {
     // ── Derived states ──
 
     /// Compute orbital elements relative to the given gravity source.
-    pub fn orbital_elements(mut self, source_idx: usize) -> Self {
-        self.derived.orbital_elements_source = Some(source_idx);
+    /// See [`Self::shadow`] for the `impl Into<SourceHandle>` rationale.
+    pub fn orbital_elements(mut self, source: impl Into<SourceHandle>) -> Self {
+        self.derived.orbital_elements_source = Some(source.into().into_raw());
         self
     }
 
@@ -448,9 +468,10 @@ impl VehicleBuilder<Ready> {
     }
 
     /// Compute geodetic state. Uses [`PlanetConfig`] for consistent radii.
-    pub fn geodetic(mut self, source_idx: usize, planet: &PlanetConfig) -> Self {
+    /// See [`Self::shadow`] for the `impl Into<SourceHandle>` rationale.
+    pub fn geodetic(mut self, source: impl Into<SourceHandle>, planet: &PlanetConfig) -> Self {
         self.derived.geodetic = Some(GeodeticConfig {
-            source_idx,
+            source_idx: source.into().into_raw(),
             r_eq: planet.shape.r_eq,
             r_pol: planet.shape.r_pol,
         });
@@ -603,5 +624,58 @@ mod tests {
         assert!(cfg.drag.is_some());
         assert!(cfg.derived.lvlh);
         assert!(cfg.derived.solar_beta);
+    }
+
+    /// Builder methods that name a gravity source — `integ_source`,
+    /// `geodetic`, `orbital_elements`, `shadow` — accept both
+    /// `SourceHandle::central()` / `SourceHandle::index(n)` and bare
+    /// `usize` indices in the same chain. Both shapes resolve to
+    /// identical underlying state because `SourceHandle` is a thin
+    /// newtype around the source-table index.
+    #[test]
+    fn builder_accepts_source_handle_and_bare_usize_interchangeably() {
+        let typed = VehicleBuilder::new()
+            .with_translational(iss_trans())
+            .three_dof_point_mass(420_000.0.kg())
+            .rk4()
+            .integ_source(SourceHandle::central())
+            .orbital_elements(SourceHandle::central())
+            .shadow(SourceHandle::index(2), &crate::EARTH)
+            .geodetic(SourceHandle::central(), &crate::EARTH)
+            .build();
+        let untyped = VehicleBuilder::new()
+            .with_translational(iss_trans())
+            .three_dof_point_mass(420_000.0.kg())
+            .rk4()
+            .integ_source(0_usize)
+            .orbital_elements(0_usize)
+            .shadow(2_usize, &crate::EARTH)
+            .geodetic(0_usize, &crate::EARTH)
+            .build();
+
+        assert_eq!(typed.integ_source, untyped.integ_source);
+        assert_eq!(typed.integ_source, Some(0));
+        assert_eq!(
+            typed.derived.orbital_elements_source,
+            untyped.derived.orbital_elements_source
+        );
+        assert_eq!(typed.derived.orbital_elements_source, Some(0));
+        assert_eq!(
+            typed.shadow_body.expect("shadow set above").source_idx,
+            untyped.shadow_body.expect("shadow set above").source_idx
+        );
+        assert_eq!(typed.shadow_body.expect("shadow set above").source_idx, 2);
+        assert_eq!(
+            typed
+                .derived
+                .geodetic
+                .expect("geodetic set above")
+                .source_idx,
+            untyped
+                .derived
+                .geodetic
+                .expect("geodetic set above")
+                .source_idx
+        );
     }
 }
