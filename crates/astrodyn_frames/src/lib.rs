@@ -30,6 +30,27 @@
 //!   the Mars and Moon target bodies used by JEOD verification sims.
 //!
 //! JEOD source: `models/utils/ref_frames/` and `models/environment/RNP/`.
+//!
+//! ## Example
+//!
+//! Build a minimal frame tree with one root inertial frame and a
+//! planet-fixed child, then look up a frame's state:
+//!
+//! ```
+//! use astrodyn_frames::{FrameTree, RefFrameKind, RefFrameState};
+//!
+//! let mut tree = FrameTree::new();
+//! let root = tree.add_root("J2000".to_string(), RefFrameKind::Inertial);
+//! let _ecef = tree.add_child(
+//!     root,
+//!     "ECEF".to_string(),
+//!     RefFrameKind::PlanetFixed,
+//!     RefFrameState::default(),
+//! );
+//!
+//! // Both frames live in the arena.
+//! assert_eq!(tree.len(), 2);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

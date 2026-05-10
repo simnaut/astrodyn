@@ -47,6 +47,34 @@
 //!
 //! See [`PipelineStage`] and [`PIPELINE_ORDER`] for the canonical stage
 //! execution order that any adapter must respect.
+//!
+//! ## Quick start
+//!
+//! Compose a vehicle through the typestate [`VehicleBuilder`] using only
+//! gateway re-exports — mission code never reaches into the physics
+//! crates directly:
+//!
+//! ```
+//! use astrodyn::{
+//!     recipes::{earth, orbital_elements, vehicle},
+//!     F64Ext, GravityControl, VehicleBuilder,
+//! };
+//!
+//! let mu = earth::point_mass().source.mu.m3_per_s2();
+//! let cfg = VehicleBuilder::new()
+//!     .from_orbital_elements(orbital_elements::iss(), mu)
+//!     .three_dof_point_mass(vehicle::iss_mass())
+//!     .rk4()
+//!     .gravity(GravityControl::new_spherical(0_usize, false))
+//!     .build();
+//! # let _ = cfg;
+//! ```
+//!
+//! `cfg` (a [`VehicleConfig`]) is then handed to either
+//! `astrodyn_bevy::VehicleConfigBevyExt::spawn_bevy` or
+//! `astrodyn_runner::Simulation::add_vehicle` — both consumers share the
+//! same configuration shape so a mission can swap between them without
+//! reauthoring its setup code.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

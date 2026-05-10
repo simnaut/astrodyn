@@ -27,3 +27,6 @@ astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", versi
 # that need a phantom vehicle tag (Vehicle is sealed in production).
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 proptest = "1"
+
+[lints]
+workspace = true

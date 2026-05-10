@@ -32,3 +32,6 @@ astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 anise = "0.9"
 glam = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

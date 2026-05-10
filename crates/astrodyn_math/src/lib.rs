@@ -49,6 +49,28 @@
 //! `matrix3x3_product_transpose_transpose`).
 //!
 //! Pure Rust, zero Bevy dependency.
+//!
+//! ## Example
+//!
+//! Build a JEOD-convention left-transformation quaternion from an
+//! eigen-rotation (angle + axis) and verify the round-trip
+//! `q.conjugate(q.transform(v)) == v`:
+//!
+//! ```
+//! use astrodyn_math::JeodQuat;
+//! use glam::DVec3;
+//!
+//! // Arbitrary rotation: 0.7 rad about the (1, 1, 1)/√3 axis.
+//! let axis = DVec3::new(1.0, 1.0, 1.0).normalize();
+//! let q = JeodQuat::left_quat_from_eigen_rotation(0.7, axis);
+//!
+//! // Transform-then-inverse-transform recovers the original vector
+//! // (i.e. q.conjugate() reverses q).
+//! let v = DVec3::new(3.0, -2.0, 5.0);
+//! let v_rotated = q.left_quat_transform(v);
+//! let v_back = q.conjugate().left_quat_transform(v_rotated);
+//! assert!((v_back - v).length() < 1e-12);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

@@ -25,3 +25,6 @@ astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", feat
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
 sha2 = "0.10"
 proptest = "1"
+
+[lints]
+workspace = true

@@ -33,3 +33,6 @@ path = "examples/earth_moon.rs"
 [[example]]
 name = "mars_orbit"
 path = "examples/mars_orbit.rs"
+
+[lints]
+workspace = true

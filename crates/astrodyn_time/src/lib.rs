@@ -31,6 +31,22 @@
 //! JEOD source: `models/environment/time/` (and the
 //! `models/environment/time/data/` subdirectory for `Leap_Second.dat`). Pure
 //! Rust, zero Bevy dependency.
+//!
+//! ## Example
+//!
+//! Build a calendar date and round-trip it through the truncated Julian
+//! representation that the per-scale converters consume internally:
+//!
+//! ```
+//! use astrodyn_time::time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate};
+//!
+//! let cal = CalendarDate::new(2025, 1, 1, 0, 0, 0.0);
+//! let tjt = calendar_to_tjt(&cal);
+//! let back = tjt_to_calendar(tjt);
+//! assert_eq!(back.year, cal.year);
+//! assert_eq!(back.month, cal.month);
+//! assert_eq!(back.day, cal.day);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

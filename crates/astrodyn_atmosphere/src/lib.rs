@@ -47,6 +47,22 @@
 //! convention is documented in
 //! `models/environment/atmosphere/base_atmos/include/wind_velocity.hh`
 //! ("the inertial frame of the planet causing the wind velocity").
+//!
+//! ## Example
+//!
+//! Default exponential atmosphere with Earth sea-level reference values:
+//!
+//! ```
+//! use astrodyn_atmosphere::exponential::ExponentialAtmosphere;
+//!
+//! let atmos = ExponentialAtmosphere::default();
+//! let sea_level = atmos.density(0.0);
+//! assert!((sea_level.density - 1.225).abs() < 1e-9);
+//!
+//! // Density falls off exponentially with altitude.
+//! let one_scale_height = atmos.density(8_500.0);
+//! assert!(one_scale_height.density < sea_level.density);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

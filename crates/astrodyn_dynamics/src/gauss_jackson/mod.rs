@@ -733,7 +733,7 @@ impl GaussJacksonState {
     /// Test for convergence.
     ///
     /// JEOD: `test_for_convergence(state, hist_data)`.
-    /// Compares state.position against pos_hist[target_idx], then updates pos_hist.
+    /// Compares `state.position` against `pos_hist[target_idx]`, then updates `pos_hist`.
     fn test_for_convergence(&mut self, new_pos: DVec3, target_idx: usize) -> bool {
         let old_pos = self.pos_hist.get_dvec3(target_idx);
         let mut passed = true;

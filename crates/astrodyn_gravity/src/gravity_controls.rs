@@ -424,7 +424,7 @@ impl<SourceId> GravityControl<SourceId> {
         )
     }
 
-    /// Shared dispatch for [`evaluate`] and [`evaluate_accel_only`].
+    /// Shared dispatch for [`Self::evaluate`] and [`Self::evaluate_accel_only`].
     ///
     /// All four spherical-harmonic ordinals (`degree`, `order`,
     /// `gradient_degree`, `gradient_order`) are clamped to the source's

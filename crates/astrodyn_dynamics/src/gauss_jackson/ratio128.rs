@@ -281,7 +281,7 @@ impl Div<Ratio128> for i32 {
     }
 }
 
-/// Copy of the `std::copy` pattern: convert Vec<Ratio128> → slice of f64.
+/// Copy of the `std::copy` pattern: convert `Vec<Ratio128>` → slice of `f64`.
 impl Ratio128 {
     /// Convert a slice of Ratio128 to f64 values.
     pub fn slice_to_f64(src: &[Self], dst: &mut [f64]) {

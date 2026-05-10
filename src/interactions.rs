@@ -705,7 +705,8 @@ pub fn evaluate_ground_contact_pair(
 ///
 /// The material is unchanged. This yields a facet whose `position` / `start` /
 /// `end` values are expressed in the inertial frame so that
-/// [`compute_contact_force`] can operate on two inertial-aligned facets.
+/// [`astrodyn_interactions::compute_contact_force`] can operate on two
+/// inertial-aligned facets.
 fn rotate_facet(facet: &ContactFacet, t_inertial_from_struct: &DMat3) -> ContactFacet {
     use astrodyn_interactions::ContactShape;
     let shape = match facet.shape {
