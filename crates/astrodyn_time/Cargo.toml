@@ -16,3 +16,6 @@ all-features = true
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 log = { workspace = true }
 uom = { workspace = true }
+
+[lints]
+workspace = true

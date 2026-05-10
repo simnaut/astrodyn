@@ -19,3 +19,6 @@ uom = { workspace = true }
 
 [dev-dependencies]
 astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
+
+[lints]
+workspace = true

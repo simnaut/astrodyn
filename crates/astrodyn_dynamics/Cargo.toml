@@ -27,3 +27,6 @@ astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
 astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
 sha2 = "0.10"
 proptest = "1"
+
+[lints]
+workspace = true

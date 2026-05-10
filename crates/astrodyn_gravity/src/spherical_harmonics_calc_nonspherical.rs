@@ -26,9 +26,9 @@ pub struct GottliebScratch {
     sin_mlambda: Vec<f64>,
     c_tilde: Vec<f64>,
     s_tilde: Vec<f64>,
-    /// Pnm[ii] has ii+3 elements; stored as a flat Vec with offsets.
+    /// `Pnm[ii]` has `ii+3` elements; stored as a flat Vec with offsets.
     pnm_flat: Vec<f64>,
-    /// pnm_offsets[ii] = start index of row ii in pnm_flat.
+    /// `pnm_offsets[ii]` = start index of row `ii` in `pnm_flat`.
     pnm_offsets: Vec<usize>,
     degree: usize,
 }

@@ -268,7 +268,7 @@ After the type-system refactor (#101), there are two layers to choose between:
 
 See the [Type-System wiki page](https://github.com/simnaut/astrodyn/wiki/Type-System) for the contributor primer (phantom-tag pattern,
 adding a new frame/scale/quantity, reading compiler errors, escape hatches)
-and `examples/typed_mission.rs` for the canonical worked example.
+and `crates/astrodyn_bevy/examples/typed_mission.rs` for the canonical worked example.
 
 ### Inertial-frame phantoms (#255 / RF.10)
 
@@ -670,7 +670,7 @@ language pointing to the missing `FrameTransform<Ecef, RootInertial>` step, not 
 PhantomData type-mismatch wall.
 
 **Reference**:
-- Canonical worked example: `examples/typed_mission.rs`.
+- Canonical worked example: `crates/astrodyn_bevy/examples/typed_mission.rs`.
 - Contributor primer (phantom tags, adding new dimensions, escape hatches):
   [Type-System wiki page](https://github.com/simnaut/astrodyn/wiki/Type-System).
 - Architecture and phase history:

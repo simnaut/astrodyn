@@ -29,3 +29,6 @@ astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
 # that need a phantom vehicle tag (Vehicle is sealed in production).
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 proptest = "1"
+
+[lints]
+workspace = true

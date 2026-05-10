@@ -25,6 +25,27 @@
 //! interplanetary trajectories) and for radiation-pressure / shadow geometry
 //! in `astrodyn_interactions`. JEOD source: `models/environment/ephemerides/`.
 //! Pure Rust, zero Bevy dependency.
+//!
+//! ## Example
+//!
+//! Load DE421 from the bundled bytes, then query the Sun's position
+//! relative to the solar-system barycenter at J2000.0 (TDB Julian Day
+//! `2_451_545.0`):
+//!
+//! ```
+//! use astrodyn_ephemeris::{data::DE421_BSP, Ephemeris, EphemerisBody};
+//!
+//! let eph = Ephemeris::from_bsp_bytes(DE421_BSP).unwrap();
+//! let (pos, _vel) = eph
+//!     .get_state_typed(
+//!         EphemerisBody::Sun,
+//!         EphemerisBody::SolarSystemBarycenter,
+//!         2_451_545.0,
+//!     )
+//!     .unwrap();
+//! // The Sun is close to the barycenter (~1 solar radius offset).
+//! assert!(pos.raw_si().length() < 2.0e9);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
