@@ -34,6 +34,24 @@
 //! the C++ array headers into `Vec<Vec<f64>>` C and S coefficient tables.
 //! Coefficients are normalized as in JEOD; the recursion expects normalized
 //! input. Pure Rust, zero Bevy dependency.
+//!
+//! ## Example
+//!
+//! Point-mass gravity at the equator of a body with Earth's `mu` should
+//! point inward (toward the body's centre):
+//!
+//! ```
+//! use astrodyn_gravity::calc_spherical;
+//! use glam::DVec3;
+//!
+//! let mu = 3.986_004_415e14; // Earth GGM05C, m^3/s^2
+//! let r = DVec3::new(6_778_137.0, 0.0, 0.0); // 400 km altitude on +X axis
+//!
+//! let g = calc_spherical(mu, r);
+//! // Acceleration points back toward the origin (-X) at ~8.7 m/s^2.
+//! assert!(g.grav_accel.x < 0.0);
+//! assert!((g.grav_accel.length() - mu / r.length().powi(2)).abs() < 1e-6);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

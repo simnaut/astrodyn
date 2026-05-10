@@ -20,6 +20,8 @@
 //! - `RelativeTranslation<Reference>` — `assert_reference::<R>()`
 //! - `LvlhRelativeState<Chief>` — `assert_chief::<C>()`
 
+#![allow(missing_docs)] // `define_vehicle!` emits structs without docs.
+
 use astrodyn::{
     compute_lvlh_relative_state, compute_relative_state, define_vehicle, FlatPlate, FrameTransform,
     LvlhRelativeState, RelativeState, RelativeTranslation, RotationalState, StructuralFrame,

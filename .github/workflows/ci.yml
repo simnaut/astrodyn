@@ -51,8 +51,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build workspace docs (no deps, deny warnings)
-        run: cargo doc --workspace --no-deps --quiet
+      - name: Build workspace docs (public + private, deny warnings)
+        # `--document-private-items` surfaces broken intra-doc links and
+        # invalid HTML tags inside private items (`fn`, `struct`, fields).
+        # The workspace's [workspace.lints.rustdoc] table already denies
+        # these; running the strict-warnings build keeps drift from landing.
+        run: cargo doc --workspace --no-deps --document-private-items --quiet
         env:
           RUSTDOCFLAGS: -D warnings
       - name: Run workspace doctests

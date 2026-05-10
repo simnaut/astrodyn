@@ -19,3 +19,6 @@ bevy = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,4 +1,5 @@
-//! Bevy-side [`SimContext`] adapter that lets a [`PreStepClosure`] mutate
+//! Bevy-side [`SimContext`] adapter that lets a
+//! [`astrodyn_verif_jeod::verification::PreStepClosure`] mutate
 //! a Bevy [`App`]'s world in lockstep with the runner-side
 //! `astrodyn_runner::Simulation`.
 //!
@@ -12,24 +13,27 @@
 //! lint at `tests/self_ref_self_planet_discipline.rs`.
 //!
 //! The parity trait drives both runtimes from the same scenario factory
-//! and the same [`PreStepClosure`]; on each per-tick iteration the
-//! closure is invoked twice — once with `&mut Simulation`, once with a
-//! freshly-constructed [`BevySimContext`] borrowing the app's world.
+//! and the same [`astrodyn_verif_jeod::verification::PreStepClosure`];
+//! on each per-tick iteration the closure is invoked twice — once with
+//! `&mut Simulation`, once with a freshly-constructed
+//! [`BevySimContext`] borrowing the app's world.
 //!
 //! ## Scope
 //!
-//! - **Source-state injection** ([`set_source_position`],
-//!   [`set_source_state`], [`set_tidal_body_position`]) — direct
-//!   `World::get_mut` writes mirroring `astrodyn_bevy::SourceMutator`.
-//! - **Mass-tree mid-flight attach/detach** ([`attach`], [`detach`])
-//!   — write `AttachEvent<SelfRef, SelfRef>` / `DetachEvent` onto the
+//! - **Source-state injection** ([`SimContext::set_source_position`],
+//!   [`SimContext::set_source_state`],
+//!   [`SimContext::set_tidal_body_position`]) — direct `World::get_mut`
+//!   writes mirroring `astrodyn_bevy::SourceMutator`.
+//! - **Mass-tree mid-flight attach/detach** ([`SimContext::attach`],
+//!   [`SimContext::detach`]) — write
+//!   `AttachEvent<SelfRef, SelfRef>` / `DetachEvent` onto the
 //!   message bus. The next `app.world_mut().run_schedule(FixedUpdate)`
 //!   drains the queue at the top of `staging_system`, before
 //!   integration runs that tick — so both runtimes feed the same
 //!   pre-attach state into the same `combine_states_at_attach` kernel
 //!   and the same integrator-reset path. Bit-identity holds.
-//! - **Kinematic-only gating** ([`mark_kinematic_only`]) — insert
-//!   `KinematicChildC` directly on the child entity. The runner sets
+//! - **Kinematic-only gating** ([`SimContext::mark_kinematic_only`]) —
+//!   insert `KinematicChildC` directly on the child entity. The runner sets
 //!   `bodies[idx].kinematic_only = true` synchronously; on the Bevy
 //!   side `wrench_aggregation_system` would also install
 //!   `KinematicChildC` once it observes the new mass-tree topology,

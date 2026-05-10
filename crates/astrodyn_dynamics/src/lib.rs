@@ -36,6 +36,24 @@
 //! `models/dynamics/body_action/`, and `models/utils/integration/`. Pure
 //! Rust, zero Bevy dependency — orchestration lives in `astrodyn` and ECS
 //! wiring lives in the `astrodyn_bevy` root crate.
+//!
+//! ## Example
+//!
+//! Compute the parallel-axis (Steiner) inertia contribution of a 10 kg
+//! point mass offset 2 m along +X from the reference point. The
+//! resulting matrix has `0` on the (0,0) diagonal (no inertia about the
+//! axis through the offset) and `mass * r^2 = 40` on the perpendicular
+//! diagonal entries:
+//!
+//! ```
+//! use astrodyn_dynamics::point_mass_inertia;
+//! use glam::DVec3;
+//!
+//! let i = point_mass_inertia(10.0, DVec3::new(2.0, 0.0, 0.0));
+//! assert!(i.x_axis.x.abs() < 1e-12);
+//! assert!((i.y_axis.y - 40.0).abs() < 1e-12);
+//! assert!((i.z_axis.z - 40.0).abs() < 1e-12);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

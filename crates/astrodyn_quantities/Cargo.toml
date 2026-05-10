@@ -26,3 +26,6 @@ proptest = "1"
 # can write frame-composition tests without needing to implement sealed
 # marker traits. Never enabled in production builds.
 test-utils = []
+
+[lints]
+workspace = true

@@ -10,6 +10,48 @@ crates into pipeline stages and re-exports their types so a downstream
 crate only needs `astrodyn` to access the entire physics surface.
 Pure Rust, zero Bevy dependency.
 
+**Status:** pre-1.0. Tier 3 cross-validated against JEOD Trick simulations
+(see the [Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration)).
+API may change before 1.0.
+
+## Quick start
+
+Most users want one of the consumer crates rather than this orchestration
+layer directly:
+
+- `astrodyn_bevy` for the Bevy-ECS production runtime,
+- `astrodyn_runner` for plain-Rust batch propagation and Tier 3 tests.
+
+If you are building a custom adapter on top of the pipeline, depend on
+`astrodyn` directly:
+
+```toml
+[dependencies]
+astrodyn = "0.1"
+```
+
+```rust,no_run
+use astrodyn::{
+    recipes::{earth, orbital_elements, vehicle},
+    F64Ext, GravityControl, VehicleBuilder,
+};
+
+let mu = earth::point_mass().source.mu.m3_per_s2();
+let cfg = VehicleBuilder::new()
+    .from_orbital_elements(orbital_elements::iss(), mu)
+    .three_dof_point_mass(vehicle::iss_mass())
+    .rk4()
+    .gravity(GravityControl::new_spherical(0_usize, false))
+    .build();
+// `cfg` is a `VehicleConfig` ready to hand to either
+// `astrodyn_bevy::spawn_bevy::<Earth>(...)` or
+// `astrodyn_runner::Simulation::add_vehicle(...)`.
+# let _ = cfg;
+```
+
+The typestate `VehicleBuilder` rejects misuse at compile time
+(no integrator chosen, no state set, mismatched coordinate frames).
+
 ## Layered architecture
 
 ```
@@ -52,7 +94,7 @@ for the layered-architecture rules.
 
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture.
-- [`examples/typed_mission.rs`](https://github.com/simnaut/astrodyn/blob/main/examples/typed_mission.rs) —
-  canonical worked example.
+- [`crates/astrodyn_bevy/examples/typed_mission.rs`](https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_bevy/examples/typed_mission.rs)
+  — canonical worked example.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn/>
+  <https://docs.rs/astrodyn>

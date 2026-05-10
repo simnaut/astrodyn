@@ -46,4 +46,4 @@ for the layered architecture.
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture and
   conventions.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_ephemeris/>
+  <https://docs.rs/astrodyn_ephemeris>
