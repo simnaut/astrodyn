@@ -54,7 +54,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -94,7 +94,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
                 earth_idx,
@@ -171,7 +171,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -211,7 +211,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     );
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
                 earth_idx,
@@ -248,7 +248,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
@@ -271,7 +271,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,

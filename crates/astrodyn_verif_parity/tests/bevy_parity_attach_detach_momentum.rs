@@ -76,8 +76,12 @@ fn build_two_body_world(
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(parent_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -87,8 +91,12 @@ fn build_two_body_world(
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(child_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(child_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -1262,8 +1270,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
             IntegSourceC(Some(source_a)),
         ))
@@ -1274,8 +1286,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             IntegSourceC(Some(source_b)),
         ))
@@ -1618,8 +1634,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
             IntegSourceC(Some(source_a)),
         ))
@@ -1630,8 +1650,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             IntegSourceC(Some(source_b)),
         ))
@@ -1853,8 +1877,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
             IntegSourceC(Some(source)),
         ))
@@ -1872,8 +1900,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
                 position: child_root_relative_pos,
                 velocity: DVec3::new(0.0, 7600.0, 0.0),
             }),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             IntegSourceC(None),
         ))
@@ -2042,7 +2074,9 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans),
             RotationalStateC::default(),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(body_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(body_mass)),
+            ),
             MassBodyIdC(id_body),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
@@ -2426,8 +2460,8 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&parent_trans),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(parent_rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
@@ -2439,8 +2473,8 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&child_trans),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(child_rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(child_rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
@@ -2764,8 +2798,12 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(parent_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
             IntegSourceC(Some(source_a)),
         ))
@@ -2776,8 +2814,12 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(child_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(child_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             IntegSourceC(Some(source_b)),
         ))
@@ -2868,8 +2910,8 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     );
     let parent_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&parent_trans),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(parent_rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(parent_rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
@@ -2882,8 +2924,8 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&child_trans),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(child_rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(child_rot))),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
@@ -3044,8 +3086,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
             IntegSourceC(Some(source)),
         ))
@@ -3059,8 +3105,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             IntegSourceC(None),
         ))
@@ -3167,8 +3217,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() 
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3178,8 +3232,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() 
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3268,8 +3326,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_pani
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3279,8 +3341,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_pani
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3395,8 +3461,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_p
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3406,8 +3476,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_p
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3513,7 +3587,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_no_frame_entity_succ
         .world_mut()
         .spawn((
             Name::new("Parent"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3521,7 +3597,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_no_frame_entity_succ
         .world_mut()
         .spawn((
             Name::new("Child"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3621,8 +3699,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3632,8 +3714,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3728,8 +3814,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_ent
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3739,8 +3829,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_ent
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3832,7 +3926,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
         .world_mut()
         .spawn((
             Name::new("Parent"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3844,8 +3940,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -3930,8 +4030,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translati
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -3941,8 +4045,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translati
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();
@@ -4038,7 +4146,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
         .world_mut()
         .spawn((
             Name::new("Parent"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -4075,8 +4185,12 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(initial_rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            RotationalStateC::from(
+                astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(&(initial_rot)),
+            ),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
             FrameEntityC(child_frame_entity),
         ))
@@ -4152,7 +4266,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_succeeds_without_jeo
         .world_mut()
         .spawn((
             Name::new("Parent"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(parent_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
+            ),
             MassBodyIdC(id_a),
         ))
         .id();
@@ -4160,7 +4276,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_succeeds_without_jeo
         .world_mut()
         .spawn((
             Name::new("Child"),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(child_mass))),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
+            ),
             MassBodyIdC(id_b),
         ))
         .id();

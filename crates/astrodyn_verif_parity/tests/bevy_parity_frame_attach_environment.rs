@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers.
 //! Schedule-order regression: a frame-attached body's
 //! `AstrodynSet::Environment` consumers (gravity, atmosphere) must observe
 //! the post-`propagate_frame_attached_state_system` body state, not a
@@ -28,14 +29,16 @@
 mod common;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityGradient, MassProperties,
-    RotationalState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityGradient, MassPropertiesTyped,
+    RotationalStateTyped, SelfRef, TranslationalState,
 };
 use astrodyn_bevy::{
     DynamicsConfigC, FrameAttachEvent, GravityAccelerationC, GravityControlsC, MassPropertiesC,
     RootFrameEntityR, RotationalStateC, TranslationalStateC,
 };
 use bevy::prelude::*;
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 use common::*;
 
@@ -63,12 +66,10 @@ fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_sta
         .spawn((
             Name::new("frame_attached_body"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(RotationalState::default()),
-            )),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(1_000.0)),
-            )),
+            RotationalStateC::from(RotationalStateTyped::<SelfRef>::default()),
+            MassPropertiesC::from(MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(
+                1_000.0,
+            ))),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -88,7 +89,7 @@ fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_sta
     // and stationary, so the captured offset *is* the body's
     // root-inertial position after `propagate_frame_attached_state_system`.
     let parent_frame = **app.world().resource::<RootFrameEntityR>();
-    let attach_offset = iss_trans().position;
+    let attach_offset = iss_trans().position.raw_si();
 
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()

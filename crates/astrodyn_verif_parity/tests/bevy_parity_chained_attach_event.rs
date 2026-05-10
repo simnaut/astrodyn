@@ -66,10 +66,10 @@
 //! point.
 
 use astrodyn::IntegratorType;
-use astrodyn::MassProperties;
 use astrodyn::{
-    DynamicsConfig, GravityControls, JeodQuat, MassTree, RotationalState, SimulationTime,
-    TranslationalState, VehicleConfig,
+    AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, GravityControls, InertiaTensor,
+    JeodQuat, MassPropertiesTyped, MassTree, Position, RotationalStateTyped, SelfRef,
+    SimulationTime, StructuralFrame, TranslationalState, VehicleConfig,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC,
@@ -80,6 +80,8 @@ use astrodyn_runner::Simulation;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 use std::time::Duration;
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 const DT: f64 = 0.1;
 /// First attach: v1 → v2 (root subject — bit-equivalent to plain attach).
@@ -91,27 +93,33 @@ const RECHAIN_V1_V3_TIME: f64 = 2.0;
 // ── Initial conditions, all from JEOD Modified_data files (matches
 //    `tier3_sim_complex_attach_detach.rs::veh*_initial_*`). ──
 
-fn veh1_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        1.0,
-        DMat3::from_diagonal(DVec3::splat(10.0)),
-        DVec3::new(5.0, 0.0, 0.0),
+fn veh1_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(1.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::splat(10.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::new(5.0, 0.0, 0.0)),
     )
 }
 
-fn veh2_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        2.0,
-        DMat3::from_diagonal(DVec3::splat(20.0)),
-        DVec3::new(5.0, 0.0, 0.0),
+fn veh2_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(2.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::splat(20.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::new(5.0, 0.0, 0.0)),
     )
 }
 
-fn veh3_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        3.0,
-        DMat3::from_diagonal(DVec3::splat(30.0)),
-        DVec3::new(5.0, 0.0, 0.0),
+fn veh3_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(3.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::splat(30.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::new(5.0, 0.0, 0.0)),
     )
 }
 
@@ -122,11 +130,11 @@ fn veh1_trans() -> TranslationalState {
     }
 }
 
-fn veh1_rot() -> RotationalState {
-    RotationalState {
-        quaternion: JeodQuat::from_array([1.0, 0.0, 0.0, 0.0]),
-        ang_vel_body: DVec3::ZERO,
-    }
+fn veh1_rot() -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(JeodQuat::from_array([1.0, 0.0, 0.0, 0.0])),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+    )
 }
 
 fn veh2_trans() -> TranslationalState {
@@ -136,12 +144,12 @@ fn veh2_trans() -> TranslationalState {
     }
 }
 
-fn veh2_rot() -> RotationalState {
+fn veh2_rot() -> RotationalStateTyped<SelfRef> {
     let q = JeodQuat::left_quat_from_eigen_rotation(-2.0, DVec3::Z);
-    RotationalState {
-        quaternion: q,
-        ang_vel_body: DVec3::new(0.0, 0.0, 0.2),
-    }
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(q),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::new(0.0, 0.0, 0.2)),
+    )
 }
 
 fn veh3_trans() -> TranslationalState {
@@ -151,12 +159,12 @@ fn veh3_trans() -> TranslationalState {
     }
 }
 
-fn veh3_rot() -> RotationalState {
+fn veh3_rot() -> RotationalStateTyped<SelfRef> {
     let q = JeodQuat::left_quat_from_eigen_rotation(-15.8, DVec3::Z);
-    RotationalState {
-        quaternion: q,
-        ang_vel_body: DVec3::new(0.0, 0.0, 1.0),
-    }
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(q),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::new(0.0, 0.0, 1.0)),
+    )
 }
 
 /// JEOD `BodyAttachAligned` v1.attach_to_2: composes to identity
@@ -213,24 +221,24 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
     let mut sim = Simulation::new(time, DT);
     let v1 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh1_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh1_rot()))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
+        rot: Some(veh1_rot()),
+        mass: Some(veh1_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v2 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh2_rot()))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
+        rot: Some(veh2_rot()),
+        mass: Some(veh2_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
     let v3 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(veh3_rot()))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
+        rot: Some(veh3_rot()),
+        mass: Some(veh3_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
@@ -256,9 +264,9 @@ fn build_bevy_app() -> (
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
-    let id_v1 = tree.add_body("veh1".into(), veh1_mass());
-    let id_v2 = tree.add_body("veh2".into(), veh2_mass());
-    let id_v3 = tree.add_body("veh3".into(), veh3_mass());
+    let id_v1 = tree.add_body("veh1".into(), veh1_mass().to_untyped());
+    let id_v2 = tree.add_body("veh2".into(), veh2_mass().to_untyped());
+    let id_v3 = tree.add_body("veh3".into(), veh3_mass().to_untyped());
     app.insert_resource(MassTreeR(tree));
 
     let v1 = spawn_body(
@@ -293,18 +301,18 @@ fn spawn_body(
     app: &mut App,
     name: &str,
     id: astrodyn::MassBodyId,
-    mass: MassProperties,
+    mass: MassPropertiesTyped<SelfRef>,
     trans: TranslationalState,
-    rot: RotationalState,
+    rot: RotationalStateTyped<SelfRef>,
 ) -> Entity {
     app.world_mut()
         .spawn((
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
+            MassPropertiesC::from(mass),
             MassBodyIdC(id),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
+            RotationalStateC::from(rot),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),

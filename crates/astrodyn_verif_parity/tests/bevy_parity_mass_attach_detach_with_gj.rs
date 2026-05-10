@@ -90,9 +90,11 @@ fn build_two_body_app(
             Name::new("VehicleA"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_a),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(1000.0)),
-            )),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(1000.0)),
+                ),
+            ),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
@@ -107,9 +109,11 @@ fn build_two_body_app(
             Name::new("VehicleB"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_b),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(MassProperties::new(500.0)),
-            )),
+            MassPropertiesC::from(
+                astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                    &(MassProperties::new(500.0)),
+                ),
+            ),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
@@ -247,9 +251,11 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
                 Name::new(name.to_string()),
                 DynamicsConfigC::default(),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                    &(MassProperties::new(mass)),
-                )),
+                MassPropertiesC::from(
+                    astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                        &(MassProperties::new(mass)),
+                    ),
+                ),
                 GravityControlsC(GravityControls {
                     controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
                 }),

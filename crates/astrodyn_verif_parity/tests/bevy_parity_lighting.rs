@@ -301,7 +301,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
@@ -351,7 +351,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     sim.moon_source = Some(moon_idx);
 
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
+        trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,

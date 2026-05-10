@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers.
 //! Bevy ECS frame-attach parity for bodies whose `IntegSourceC` is a
 //! non-root planet (lunar-orbit integ frame). Pins the
 //! root→integ-frame lower the per-step propagation system applies
@@ -43,8 +44,8 @@
 //! integ_source it is load-bearing.
 
 use astrodyn::{
-    DynamicsConfig, GravityControls, MassProperties, RotationalState, TranslationalState, EARTH,
-    MOON,
+    BodyFrame, DynamicsConfig, GravityControls, InertiaTensor, MassPropertiesTyped, Position,
+    RotationalStateTyped, SelfRef, StructuralFrame, TranslationalState, EARTH, MOON,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, FrameAttachEvent, FrameAttachedC, FrameDerivativesC,
@@ -54,6 +55,8 @@ use astrodyn_bevy::{
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 use std::time::Duration;
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 const DT: f64 = 60.0;
 const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
@@ -62,11 +65,13 @@ const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
 /// regression is unambiguous in the failure messages.
 const ATTACH_OFFSET: DVec3 = DVec3::new(7.0e6, 0.0, 0.0);
 
-fn body_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        1_000.0,
-        DMat3::from_diagonal(DVec3::new(100.0, 100.0, 100.0)),
-        DVec3::ZERO,
+fn body_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(1_000.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::new(100.0, 100.0, 100.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
@@ -85,8 +90,8 @@ fn initial_trans() -> TranslationalState {
     }
 }
 
-fn initial_rot() -> RotationalState {
-    RotationalState::default()
+fn initial_rot() -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::default()
 }
 
 /// Frame-attach a body whose `IntegSourceC` points at a non-root
@@ -114,11 +119,9 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
         .spawn((
             Name::new("Lunar"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(body_mass()))),
+            MassPropertiesC::from(body_mass()),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
+            RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
             IntegSourceC(Some(moon)),

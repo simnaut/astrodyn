@@ -5,7 +5,7 @@ mod common;
 
 use astrodyn::{
     DynamicsConfig, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
-    JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
+    JeodQuat, SixDofState, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -42,9 +42,9 @@ fn bevy_parity_gravity_torque_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -95,15 +95,23 @@ fn bevy_parity_gravity_torque_sixdof() {
 fn bevy_parity_gravity_torque_external_torque_per_body() {
     println!("Scenario G: External torque via per-body functions");
 
-    let mass_props = MassProperties::with_inertia(
-        400_000.0,
-        DMat3::from_cols(
-            DVec3::new(1.02e8, -6.96e6, -5.48e6),
-            DVec3::new(-6.96e6, 0.91e8, 5.90e5),
-            DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+    let mass_props = astrodyn::MassPropertiesTyped::<astrodyn::SelfRef>::with_inertia(
+        uom::si::f64::Mass::new::<uom::si::mass::kilogram>(400_000.0),
+        astrodyn::InertiaTensor::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_dmat3_unchecked(
+            DMat3::from_cols(
+                DVec3::new(1.02e8, -6.96e6, -5.48e6),
+                DVec3::new(-6.96e6, 0.91e8, 5.90e5),
+                DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+            ),
         ),
-        DVec3::new(-3.0, -1.5, 4.0),
+        astrodyn::Position::<astrodyn::StructuralFrame<astrodyn::SelfRef>>::from_raw_si(
+            DVec3::new(-3.0, -1.5, 4.0),
+        ),
     );
+    // Cached untyped form for kernel calls below (`accumulate_gravity`,
+    // `collect_and_resolve_forces`, `integrate_body` all consume raw
+    // `MassProperties`).
+    let mass_props_raw = mass_props.to_untyped();
 
     let config = DynamicsConfig {
         translational_dynamics: true,
@@ -127,8 +135,8 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
     let num_steps = 100;
 
     // Path A
-    let mut trans_a = iss_trans();
-    let mut rot_a = tumble_rot();
+    let mut trans_a = iss_trans().to_untyped();
+    let mut rot_a = tumble_rot().to_untyped();
     for step in 0..num_steps {
         let torque = if (10..20).contains(&step) {
             external_torque
@@ -150,14 +158,14 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
             None,
             Some(&rot_a),
             DMat3::IDENTITY,
-            Some(&mass_props),
+            Some(&mass_props_raw),
             grav.grav_accel,
         );
         astrodyn::integrate_body(
             &config,
             &mut trans_a,
             Some(&mut rot_a),
-            Some(&mass_props),
+            Some(&mass_props_raw),
             |pos, _vel, _time_frac| {
                 astrodyn::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
                     Some(astrodyn::ResolvedSource {
@@ -191,9 +199,9 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(tumble_rot()))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
+        trans: iss_trans(),
+        rot: Some(tumble_rot()),
+        mass: Some(mass_props),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
@@ -232,7 +240,11 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
 
 // ── Gravity torque parity (elliptical + with rate) ──
 
-fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: RotationalState) {
+fn run_gravity_torque_parity(
+    label: &str,
+    trans: TranslationalState,
+    rot: astrodyn::RotationalStateTyped<astrodyn::SelfRef>,
+) {
     // ── Bevy ──
     let mut app = new_bevy_app(DT);
     let planet = spawn_earth_source(&mut app);
@@ -241,8 +253,8 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
         .world_mut()
         .spawn((
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            RotationalStateC::from(rot),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -265,8 +277,8 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+        rot: Some(rot),
+        mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
@@ -298,10 +310,12 @@ fn bevy_parity_gravity_torque_run10c_gravity_torque_elliptical() {
         // test boundary: typed `RotationalStateC` requires unit-norm.
         let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
         q.normalize();
-        RotationalState {
-            quaternion: q,
-            ang_vel_body: DVec3::ZERO,
-        }
+        astrodyn::RotationalStateTyped::<astrodyn::SelfRef>::new(
+            astrodyn::BodyAttitude::<astrodyn::SelfRef>::from_jeod_quat(q),
+            astrodyn::AngularVelocity::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
+                DVec3::ZERO,
+            ),
+        )
     };
     run_gravity_torque_parity("run10c_grav_torque_ecc", ecc_trans, rot);
 }
@@ -340,18 +354,20 @@ fn run_external_parity(
         // Normalize at boundary; see comment above on tumble quat.
         let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
         q.normalize();
-        RotationalState {
-            quaternion: q,
-            ang_vel_body: init_ang_vel,
-        }
+        astrodyn::RotationalStateTyped::<astrodyn::SelfRef>::new(
+            astrodyn::BodyAttitude::<astrodyn::SelfRef>::from_jeod_quat(q),
+            astrodyn::AngularVelocity::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
+                init_ang_vel,
+            ),
+        )
     };
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+            TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+            RotationalStateC::from(rot),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -368,9 +384,9 @@ fn run_external_parity(
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(dt);
     sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(iss_mass()))),
+        trans: iss_trans(),
+        rot: Some(rot),
+        mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,

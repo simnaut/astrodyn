@@ -46,8 +46,9 @@
 //! seed-time lift at lines 282-307 and writeback lower at 399-407).
 
 use astrodyn::{
-    DynamicsConfig, GravityControls, JeodQuat, MassProperties, MassTree, RotationalState,
-    StageAttachInputs, TranslationalState, EARTH, MOON,
+    AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, GravityControls, InertiaTensor,
+    JeodQuat, MassPropertiesTyped, MassTree, Position, RotationalStateTyped, SelfRef,
+    StageAttachInputs, StructuralFrame, TranslationalState, EARTH, MOON,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
@@ -56,6 +57,8 @@ use astrodyn_bevy::{
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 const DT: f64 = 60.0;
 const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
@@ -67,19 +70,23 @@ const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
 /// position. Both are orders of magnitude above tolerances.
 const MOON_VELOCITY: DVec3 = DVec3::new(0.0, 1_000.0, 0.0);
 
-fn parent_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        1_000.0,
-        DMat3::from_diagonal(DVec3::new(100.0, 100.0, 100.0)),
-        DVec3::ZERO,
+fn parent_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(1_000.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::new(100.0, 100.0, 100.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
-fn child_mass() -> MassProperties {
-    MassProperties::with_inertia(
-        500.0,
-        DMat3::from_diagonal(DVec3::new(50.0, 50.0, 50.0)),
-        DVec3::ZERO,
+fn child_mass() -> MassPropertiesTyped<SelfRef> {
+    MassPropertiesTyped::<SelfRef>::with_inertia(
+        Mass::new::<kilogram>(500.0),
+        InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(DMat3::from_diagonal(
+            DVec3::new(50.0, 50.0, 50.0),
+        )),
+        Position::<StructuralFrame<SelfRef>>::zero(),
     )
 }
 
@@ -108,11 +115,11 @@ fn child_initial_trans() -> TranslationalState {
     }
 }
 
-fn initial_rot() -> RotationalState {
-    RotationalState {
-        quaternion: JeodQuat::identity(),
-        ang_vel_body: DVec3::ZERO,
-    }
+fn initial_rot() -> RotationalStateTyped<SelfRef> {
+    RotationalStateTyped::<SelfRef>::new(
+        BodyAttitude::<SelfRef>::from_jeod_quat(JeodQuat::identity()),
+        AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+    )
 }
 
 fn six_dof_config() -> DynamicsConfig {
@@ -145,8 +152,8 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
         .id();
 
     let mut tree = MassTree::new();
-    let id_parent = tree.add_body("Parent".into(), parent_mass());
-    let id_child = tree.add_body("Child".into(), child_mass());
+    let id_parent = tree.add_body("Parent".into(), parent_mass().to_untyped());
+    let id_child = tree.add_body("Child".into(), child_mass().to_untyped());
     app.insert_resource(MassTreeR(tree));
 
     let parent_entity = app
@@ -154,14 +161,10 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(parent_mass()),
-            )),
+            MassPropertiesC::from(parent_mass()),
             MassBodyIdC(id_parent),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
+            RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
             IntegSourceC(Some(moon)),
@@ -172,14 +175,10 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC(six_dof_config()),
-            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
-                &(child_mass()),
-            )),
+            MassPropertiesC::from(child_mass()),
             MassBodyIdC(id_child),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_initial_trans()),
-            RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
-                &(initial_rot()),
-            )),
+            RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
             IntegSourceC(Some(moon)),
@@ -247,7 +246,7 @@ fn bevy_parity_attach_non_root_integ_source_lift_and_lower() {
         .composite_properties;
 
     let q = JeodQuat::identity();
-    let parent_mass_props = parent_mass();
+    let parent_mass_props = parent_mass().to_untyped();
     let expected = astrodyn::stage_attach_combine(StageAttachInputs {
         parent_position: parent_pre_pos_integ + MOON_OFFSET,
         parent_velocity: parent_pre_vel_integ + MOON_VELOCITY,
@@ -260,7 +259,7 @@ fn bevy_parity_attach_non_root_integ_source_lift_and_lower() {
         child_velocity: child_pre_vel_integ + MOON_VELOCITY,
         child_quaternion: q,
         child_ang_vel_body: DVec3::ZERO,
-        child_mass: child_mass(),
+        child_mass: child_mass().to_untyped(),
         combined_mass,
     });
 
@@ -386,7 +385,7 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
         .composite_properties;
 
     let q = JeodQuat::identity();
-    let parent_mass_props = parent_mass();
+    let parent_mass_props = parent_mass().to_untyped();
     let expected = astrodyn::stage_attach_combine(StageAttachInputs {
         parent_position: parent_initial_trans().position + MOON_OFFSET,
         parent_velocity: parent_initial_trans().velocity + MOON_VELOCITY,
@@ -399,7 +398,7 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
         child_velocity: child_initial_trans().velocity + MOON_VELOCITY,
         child_quaternion: q,
         child_ang_vel_body: DVec3::ZERO,
-        child_mass: child_mass(),
+        child_mass: child_mass().to_untyped(),
         combined_mass,
     });
 
