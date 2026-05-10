@@ -15,8 +15,8 @@
 
 use astrodyn::recipes::{epoch, moon, vehicle};
 use astrodyn::{
-    EphemerisBody, GravityControl, JeodQuat, RootInertial, RotationalState, SimulationBuilder,
-    TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH, SUN,
+    EphemerisBody, GravityControl, GravityGradient, JeodQuat, RootInertial, RotationalState,
+    SimulationBuilder, TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH, SUN,
 };
 use glam::DVec3;
 
@@ -152,7 +152,12 @@ pub fn cc8_builder() -> SimulationBuilder {
         .with_translational(trans)
         .sixdof(rot, vehicle::nesc_apollo_lm())
         .rk4()
-        .gravity(GravityControl::new_nonspherical(moon_idx, 8, 8, false))
+        .gravity(GravityControl::new_nonspherical(
+            moon_idx,
+            8,
+            8,
+            GravityGradient::Skip,
+        ))
         .gravity(GravityControl::new_third_body(earth_idx))
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();
