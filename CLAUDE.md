@@ -46,6 +46,14 @@ cargo xtask regenerate-tier3
 alias was retired in #239. `$TRICK_HOME` is required only by the
 Docker reference-CSV regen flow.
 
+The parallel **NESC GN&C Lunar Check Cases** verification track lives in
+`crates/astrodyn_verif_nesc/`. Its regen binary is `extract_nesc`
+(`crates/astrodyn_verif_nesc/src/bin/extract_nesc.rs`); it accepts
+`$NESC_HOME` or `--nesc-home <PATH>` and writes parsed CSVs into
+`crates/astrodyn_verif_nesc/test_data/`. See
+`crates/astrodyn_verif_nesc/README.md` for the workflow, the canonical
+release pin, and the DE440 ephemeris asset that CC8 depends on.
+
 ## Three-Layer Architecture (non-negotiable)
 
 All physics lives in **`astrodyn_*`** crates (pure Rust, zero Bevy dependency).

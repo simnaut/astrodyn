@@ -175,6 +175,55 @@ impl SimulationBuilder {
         self
     }
 
+    /// Add a third-body perturbation source whose inertial position is
+    /// updated each step from the simulation's ephemeris.
+    ///
+    /// Convenience over the two-step
+    /// [`add_source`](Self::add_source) +
+    /// [`set_source_ephemeris`](Self::set_source_ephemeris) flow:
+    /// constructs a point-mass third-body
+    /// [`GravitySourceEntry`](crate::sources::GravitySourceEntry) at the
+    /// origin and immediately wires its `(target, observer)` ephemeris
+    /// pair.
+    ///
+    /// `target` is the perturber (Earth, Sun, …); `observer` is the
+    /// integration-frame origin body (typically the central planet —
+    /// e.g., Moon for a lunar-orbit scenario, Earth for a LEO scenario).
+    ///
+    /// The seed position is zero — the per-step ephemeris stage
+    /// rewrites it before any gravity evaluation, so the literal value
+    /// is immaterial. Mission code that wants a non-ephemeris-driven
+    /// third body should call [`add_source`](Self::add_source) directly.
+    ///
+    /// Returns the source's index in [`Self::sources`].
+    ///
+    /// ```ignore
+    /// use astrodyn::recipes::moon;
+    /// use astrodyn::{EphemerisBody, EARTH, SimulationBuilder, SimulationTime};
+    /// use astrodyn::default_leap_second_table;
+    ///
+    /// let time = SimulationTime::at_j2000(default_leap_second_table());
+    /// let mut sb = SimulationBuilder::new(time, 1.0);
+    /// let _moon_idx = sb.add_source("Moon", moon::grail150_with_libration());
+    /// let _earth_idx = sb.add_third_body_with_ephemeris(
+    ///     "Earth", &EARTH, EphemerisBody::Earth, EphemerisBody::Moon);
+    /// ```
+    pub fn add_third_body_with_ephemeris(
+        &mut self,
+        name: impl Into<String>,
+        planet: &crate::PlanetConfig,
+        target: EphemerisBody,
+        observer: EphemerisBody,
+    ) -> usize {
+        let entry = crate::sources::GravitySourceEntry::third_body(
+            planet,
+            astrodyn_quantities::aliases::Position::<astrodyn_quantities::frame::RootInertial>::zero(),
+        );
+        let idx = self.add_source(name, entry);
+        self.set_source_ephemeris(idx, target, observer);
+        idx
+    }
+
     /// Add a vehicle. Returns its index.
     pub fn add_body(&mut self, config: VehicleConfig) -> usize {
         let idx = self.bodies.len();

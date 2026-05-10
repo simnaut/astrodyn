@@ -103,6 +103,57 @@ pub fn apollo_lm_mass() -> Mass {
     14_700.0.kg()
 }
 
+/// NESC Apollo body model: 6-DoF [`MassProperties`] for the
+/// "Apollo Model" published in the NASA NESC GN&C Lunar Check Cases.
+///
+/// Source:
+/// <https://nescacademy.nasa.gov/flightsim/2023/bodies#apollo-model>.
+///
+/// - Mass: 16 642.0 kg (distinct from [`apollo_lm_mass`], which is the
+///   14.7 t LM lunar-descent configuration).
+/// - Inertia tensor (kg·m², body frame about the CoM):
+///   - Diagonal: Ixx = 36 502.7, Iyy = 38 372.4, Izz = 36 514.9.
+///   - Off-diagonal: Ixy = −27.1, Iyz = 1 152.4, Izx = 233.2.
+/// - Center-of-mass offset (m, body frame): (4.7, 0.01, −0.0075).
+///
+/// The NESC document notes that the body-fixed coordinate frame
+/// "coincides with the orbit-defined (vo) system at the start of the
+/// scenario." That is **descriptive**: the published initial quaternion
+/// already encodes the body-from-inertial rotation at t=0 — the recipe
+/// returns identity `t_struct_body` (the structural-to-body transform),
+/// so mission code does not need to apply an additional rotation.
+///
+/// Used by `astrodyn_verif_nesc::cc8` and any future NESC GN&C check
+/// case that names this body model.
+///
+/// ```
+/// use astrodyn::recipes::vehicle;
+/// use uom::si::mass::kilogram;
+/// let mp = vehicle::nesc_apollo_lm();
+/// assert_eq!(mp.mass, 16_642.0);
+/// assert!((mp.inertia.x_axis.x - 36_502.7).abs() < 1e-6);
+/// assert!((mp.position.x - 4.7).abs() < 1e-12);
+/// ```
+pub fn nesc_apollo_lm() -> MassProperties {
+    let mass_kg = 16_642.0_f64;
+    let ixx = 36_502.7;
+    let iyy = 38_372.4;
+    let izz = 36_514.9;
+    let ixy = -27.1;
+    let iyz = 1_152.4;
+    let izx = 233.2;
+    // Symmetric 3×3 inertia tensor. glam::DMat3::from_cols takes columns;
+    // the (i,j) entry of the inertia tensor (and its symmetric pair) is
+    // the same regardless of column-vs-row layout, so this is unambiguous.
+    let inertia = glam::DMat3::from_cols(
+        glam::DVec3::new(ixx, ixy, izx),
+        glam::DVec3::new(ixy, iyy, iyz),
+        glam::DVec3::new(izx, iyz, izz),
+    );
+    let com = glam::DVec3::new(4.7, 0.01, -0.0075);
+    MassProperties::with_inertia(mass_kg, inertia, com)
+}
+
 /// 6-DoF rigid sphere mass properties: total mass `mass`, uniform
 /// inertia `I = (2/5) m r²` along all body axes, CoM at structural
 /// origin. Inputs are typed so call sites stay unit-safe ergonomically:

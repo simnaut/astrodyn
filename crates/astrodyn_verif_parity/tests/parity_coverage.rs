@@ -1,7 +1,8 @@
 //! Coverage CI guard for issue #389 — keeps the bevy parity test set a
 //! superset of every Tier 3 topic.
 //!
-//! Walks `crates/astrodyn_verif_jeod/tests/tier3_*.rs` and
+//! Walks `crates/astrodyn_verif_jeod/tests/tier3_*.rs`,
+//! `crates/astrodyn_verif_nesc/tests/tier3_*.rs`, and
 //! `crates/astrodyn_verif_parity/tests/bevy_parity_*.rs`, strips the
 //! family prefixes (`tier3_`, optional `sim_`, `bevy_parity_`), and
 //! asserts:
@@ -266,14 +267,26 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
 #[test]
 fn parity_topics_are_a_superset_of_tier3_topics() {
     let workspace_root = workspace_root();
-    let tier3_topics = collect_topics(
+    // Tier 3 tests live in two crates today: astrodyn_verif_jeod (JEOD/Trick
+    // cross-validation) and astrodyn_verif_nesc (NESC GN&C check cases).
+    // Both directories follow the same `tier3_*.rs` naming and feed into
+    // the same parity-coverage assertion.
+    let tier3_topics_jeod = collect_topics(
         &workspace_root.join("crates/astrodyn_verif_jeod/tests"),
         "tier3_",
     );
+    let tier3_topics_nesc = collect_topics(
+        &workspace_root.join("crates/astrodyn_verif_nesc/tests"),
+        "tier3_",
+    );
+    let tier3_topics: BTreeSet<String> = tier3_topics_jeod
+        .union(&tier3_topics_nesc)
+        .cloned()
+        .collect();
     assert!(
         !tier3_topics.is_empty(),
-        "no tier3 tests discovered in crates/astrodyn_verif_jeod/tests/ — coverage \
-         test cannot run"
+        "no tier3 tests discovered in either crates/astrodyn_verif_jeod/tests/ \
+         or crates/astrodyn_verif_nesc/tests/ — coverage test cannot run"
     );
 
     let parity_topics = collect_topics(

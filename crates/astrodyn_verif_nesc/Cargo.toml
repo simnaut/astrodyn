@@ -1,0 +1,23 @@
+[package]
+name = "astrodyn_verif_nesc"
+description = "NESC GN&C Lunar Check Cases cross-validation track — Tier 3 trajectory tests against the published NESC reference data"
+keywords = ["verification", "validation", "aerospace", "simulation", "nesc"]
+categories = ["science", "aerospace", "simulation"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+exclude = [
+    "test_data/*.csv",
+]
+
+[dependencies]
+astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
+glam = { workspace = true }
+
+[lints]
+workspace = true
