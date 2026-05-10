@@ -22,11 +22,11 @@ use astrodyn_verif_jeod::run_verification::sim_srp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_full_stack_sixdof() {
+fn bevy_parity_srp_full_stack_sixdof() {
     sim_srp::full_stack_sixdof().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_flat_plate_srp_with_shadow() {
+fn bevy_parity_srp_flat_plate_srp_with_shadow() {
     sim_srp::flat_plate_with_shadow().run_and_assert_parity::<astrodyn::Earth>();
 }

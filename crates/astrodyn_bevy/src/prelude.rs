@@ -26,7 +26,7 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
+    Abm4StateC, AerodynamicForceC, AstrodynAppExt, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
     BodyActionCommandsExt, BodyActionEvent, BodyActionsR, BodyFrameMarker, ClosureJointKinematicsC,
     DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC,
     FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC,
@@ -56,9 +56,9 @@ pub use astrodyn::{
     Array3Ext, BodyAction, BodyFrame, ClosureJointKinematicsSpec, Earth, Ecef, F64Ext, Frame,
     FrameTransform, GravityControl, GravityRole, JeodQuat, JointKinematicsModel,
     JointKinematicsSpec, Lvlh, Mars, Moon, MultiDofJointKinematicsSpec, Ned, OrbitalElementSet,
-    Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef, SingleDofKinematics,
-    SinusoidalJointKinematicsSpec, StructuralFrame, Sun, Vec3Ext, Vehicle, VehicleBuilder,
-    VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
+    Planet, PlanetFixed, PlanetInertial, Qty3, RootInertial, SelfPlanet, SelfRef,
+    SingleDofKinematics, SinusoidalJointKinematicsSpec, SourceHandle, StructuralFrame, Sun,
+    Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use astrodyn_bevy::prelude::*;` brings them into

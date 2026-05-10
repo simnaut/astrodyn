@@ -1,19 +1,50 @@
-//! `SimulationBuilder → Bevy App` bridge.
+//! `SimulationBuilder → Bevy App` bridge — the canonical mission entry
+//! point for whole-scenario composition.
 //!
-//! [`SimulationBuilderBevyExt::populate_app`] is the Bevy-side terminal for
-//! [`astrodyn::SimulationBuilder`], parallel to the runner's
-//! `astrodyn_runner::SimulationBuilderExt::build` (`astrodyn_runner` is not
-//! a dependency of `astrodyn_bevy`, so the link cannot be resolved by
-//! rustdoc — both terminals are documented at their respective crate
-//! sites). It materializes a declarative scenario into a populated Bevy
-//! [`App`] — resources for time, ephemeris, atmosphere, and polar motion;
-//! entities for every gravity source and vehicle; and a fully-wired mass
-//! tree when the scenario registers one.
+//! [`SimulationBuilderBevyExt::populate_app`] consumes a fully-composed
+//! [`astrodyn::SimulationBuilder`] (sources, bodies, mass tree, ephemeris,
+//! atmosphere, polar motion, integrator state) and materializes it into a
+//! populated Bevy [`App`] in one call: resources for time, ephemeris,
+//! atmosphere, and polar motion; entities for every gravity source and
+//! vehicle; a fully-wired mass tree when the scenario registers one;
+//! integrator state auto-initialized per body; and the [`AstrodynPlugin`]
+//! installed if the caller hadn't already added it. This is the path
+//! mission code should reach for when expressing a multi-body scenario.
 //!
-//! This unblocks issue #389: every Tier 3 `astrodyn_verif_jeod::VerificationCase`
-//! can be run through *both* the runner and a Bevy `App` from the same
-//! scenario factory, so the parity test becomes a one-liner via
-//! `astrodyn_verif_parity::VerificationCaseParityExt`.
+//! ```ignore
+//! use astrodyn::recipes::scenarios;
+//! use astrodyn_bevy::SimulationBuilderBevyExt;
+//! use bevy::prelude::*;
+//!
+//! let mut app = App::new();
+//! app.add_plugins(MinimalPlugins);
+//!
+//! let handles = scenarios::iss_leo::iss_leo()
+//!     .populate_app::<astrodyn::Earth>(&mut app)
+//!     .expect("populate_app");
+//! // `handles.source_entities[i]` / `handles.body_entities[i]` are the
+//! // Bevy entities for the i-th source / body in the recipe.
+//! ```
+//!
+//! For multi-source scenarios — Earth-central with Moon + Sun
+//! perturbations, Sun + planets for SRP / shadow geometry, mass-tree
+//! attachments for stage separation — the same one-call shape applies;
+//! the recipe layer composes the building blocks and `populate_app`
+//! materializes the result. See `examples/multi_body_scenario.rs` for an
+//! Apollo trans-lunar (Earth + Moon + Sun) end-to-end run, and
+//! `examples/typed_mission.rs` for the complementary single-vehicle
+//! flow that uses [`crate::VehicleConfigBevyExt::spawn_bevy`] directly
+//! when scenario composition isn't needed.
+//!
+//! Symmetric to `astrodyn_runner::SimulationBuilderExt::build` (not a
+//! dependency of `astrodyn_bevy`, so the link is not resolvable from
+//! here), `populate_app` is the Bevy-side terminal of the
+//! `SimulationBuilder` shape: every consumer of the same scenario
+//! factory — runner, Bevy adapter, Tier 3 cross-validation,
+//! `astrodyn_verif_parity::VerificationCaseParityExt` — invokes its
+//! own terminal on the same builder Vec, which is what makes the
+//! transitivity argument (`runner ↔ JEOD` + `runner ↔ bevy` ⇒
+//! `bevy ↔ JEOD`) hold.
 //!
 //! ## Field-by-field mirror of `Simulation::from_builder`
 //!
@@ -86,24 +117,51 @@ pub struct ScenarioHandles {
     pub body_entities: Vec<Entity>,
 }
 
-/// Bevy-side terminal for [`astrodyn::SimulationBuilder`], parallel to
-/// `astrodyn_runner::SimulationBuilderExt::build` (the runner crate is
-/// not a dependency of `astrodyn_bevy`, so the link cannot be resolved
-/// by rustdoc).
+/// Canonical mission entry point: turn a fully-composed
+/// [`astrodyn::SimulationBuilder`] into a populated Bevy [`App`] in one
+/// call.
+///
+/// The recipe-driven shape is the recommended use site — mission code
+/// composes a scenario via the [`recipes`](astrodyn::recipes) catalog
+/// (or by hand), then materializes it in a single line:
+///
+/// ```ignore
+/// use astrodyn::recipes::scenarios;
+/// use astrodyn_bevy::SimulationBuilderBevyExt;
+///
+/// let handles = scenarios::iss_leo::iss_leo()
+///     .populate_app::<astrodyn::Earth>(&mut app)
+///     .expect("populate_app");
+/// ```
+///
+/// Multi-source scenarios (Earth + Moon + Sun perturbations, mass-tree
+/// stage separations, atmosphere + polar motion + ephemeris) compose the
+/// same way — the recipe layer assembles the building blocks, the
+/// terminal `populate_app` writes the resulting world. The
+/// per-vehicle [`crate::VehicleConfigBevyExt::spawn_bevy`] flow remains
+/// available for cases where the caller is composing one vehicle at a
+/// time without going through a `SimulationBuilder`; see
+/// `examples/typed_mission.rs` for that complementary pattern.
 ///
 /// `<P: Planet>` selects the planet whose
-/// [`PlanetInertial`](astrodyn::PlanetInertial) frame **every** body in the
-/// scenario integrates in. Multi-planet scenarios that integrate in two
-/// distinct planet-inertial frames (`apollo*`, `earth_moon`, `mars_orbit`,
-/// `mercury`, `planetary`) don't fit this generic — they're tracked as
-/// `KNOWN_PARITY_GAPS` entries until a non-generic dispatch lands. See
-/// the module-level "Single-planet limitation" docstring for the full
-/// constraint.
+/// [`PlanetInertial`](astrodyn::PlanetInertial) frame **every** body in
+/// the scenario integrates in. Today's bridge is single-planet by
+/// construction: scenarios that need two distinct planet-inertial
+/// integration frames within one run (`apollo*` Earth ⇄ Moon transfer,
+/// `earth_moon` dual-body, `mars_orbit`, `mercury`, `planetary`) don't
+/// fit this generic and are tracked as `KNOWN_PARITY_GAPS` entries
+/// until a non-generic dispatch lands. Mission code that targets one
+/// of those scenarios must keep `<P>` consistent across the whole
+/// scenario or wait for the multi-planet dispatch.
 ///
 /// # Returns
 ///
 /// On success, [`ScenarioHandles`] keyed parallel to the builder's
-/// `sources` / `bodies` vecs. The `Result` carries the same
+/// `sources` / `bodies` vecs — `source_entities[i]` is the entity for
+/// the `i`-th source, `body_entities[i]` for the `i`-th vehicle. Use
+/// these to read state out of the world after stepping (e.g.
+/// `world.get::<TranslationalStateC<P>>(handles.body_entities[0])`).
+/// The `Result` carries the same
 /// [`Vec<ValidationError>`](astrodyn::ValidationError) shape
 /// `Simulation::from_builder` uses, reserved for a future Bevy-native
 /// validator (see the trait method's `# Validation` section for what
@@ -118,12 +176,28 @@ pub struct ScenarioHandles {
 pub trait SimulationBuilderBevyExt: Sized {
     /// Materialize this builder into the given Bevy [`App`] under planet `P`.
     ///
-    /// Mirrors every field of [`SimulationBuilder`] into the `App` world
-    /// (resources for time / ephemeris / polar motion / atmosphere,
-    /// entities for sources and vehicles, mass-tree pre-allocation +
-    /// `MassChildOf` edges, integrator-state auto-init). Callers can
-    /// immediately step the app via `Time::<Fixed>::advance_by` +
-    /// `run_schedule(FixedUpdate)`.
+    /// This is the canonical "scenario in one call" entry point for the
+    /// Bevy adapter. Mirrors every field of [`SimulationBuilder`] into
+    /// the `App` world (resources for time / ephemeris / polar motion /
+    /// atmosphere, entities for sources and vehicles, mass-tree
+    /// pre-allocation + `MassChildOf` edges, integrator-state auto-init)
+    /// and returns [`ScenarioHandles`] keyed parallel to the builder's
+    /// vectors. Callers can immediately step the app via
+    /// `Time::<Fixed>::advance_by` + `run_schedule(FixedUpdate)`.
+    ///
+    /// ```ignore
+    /// use astrodyn::recipes::scenarios;
+    /// use astrodyn_bevy::SimulationBuilderBevyExt;
+    /// use bevy::prelude::*;
+    ///
+    /// let mut app = App::new();
+    /// app.add_plugins(MinimalPlugins);
+    /// let handles = scenarios::iss_leo::iss_leo()
+    ///     .populate_app::<astrodyn::Earth>(&mut app)
+    ///     .expect("populate_app");
+    /// assert_eq!(handles.source_entities.len(), 1);
+    /// assert_eq!(handles.body_entities.len(), 1);
+    /// ```
     ///
     /// # Validation
     ///
@@ -237,10 +311,7 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                      range ({sources_len} sources)"
                 )
             });
-            app.insert_resource(AtmosphereModelR {
-                config,
-                planet_entity: Some(planet_entity),
-            });
+            app.insert_resource(AtmosphereModelR::new(config, planet_entity));
         }
 
         // ── Mass tree pre-allocation ──

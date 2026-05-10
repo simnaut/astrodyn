@@ -32,18 +32,18 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 
 /// 6-DOF: distinct quaternions and translational states for both bodies.
 #[test]
-fn tier3_bevy_relative_ab_rot_ab_trans() {
+fn bevy_parity_relative_ab_rot_ab_trans() {
     sim_relative::relative_ab_rot_ab_trans().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// 6-DOF: identity rotation, distinct translational states.
 #[test]
-fn tier3_bevy_relative_no_rot_ab_trans() {
+fn bevy_parity_relative_no_rot_ab_trans() {
     sim_relative::relative_no_rot_ab_trans().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// 6-DOF: identity translational state, distinct rotations.
 #[test]
-fn tier3_bevy_relative_a_rot_no_trans() {
+fn bevy_parity_relative_a_rot_no_trans() {
     sim_relative::relative_a_rot_no_trans().run_and_assert_parity::<astrodyn::Earth>();
 }

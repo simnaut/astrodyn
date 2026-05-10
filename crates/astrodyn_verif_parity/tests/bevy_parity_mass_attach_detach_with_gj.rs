@@ -146,7 +146,7 @@ fn read_gj_topology_dirty(world: &World, entity: Entity) -> bool {
 ///   4. Step once more without panicking — proving the IG.37 assertion
 ///      in `GaussJacksonState::integrate` does not fire.
 #[test]
-fn bevy_parity_mass_attach_with_gj_resets_integrator() {
+fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_integrator() {
     let sim_dt = 1.0_f64;
     let (mut app, body_a, body_b, id_a, id_b) = build_two_body_app(sim_dt);
 
@@ -210,7 +210,7 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
 /// to `middle` and the new attachee). Mirrors PR #282 review thread
 /// `PRRT_kwDORtae6c5_J-qF` (attach branch).
 #[test]
-fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
+fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancestor_chain() {
     let sim_dt = 1.0_f64;
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -331,7 +331,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
 
 /// Mirror of the attach test for `DetachEvent`.
 #[test]
-fn bevy_parity_mass_detach_with_gj_resets_integrator() {
+fn bevy_parity_mass_attach_detach_with_gj_mass_detach_with_gj_resets_integrator() {
     let sim_dt = 1.0_f64;
     let (mut app, body_a, body_b, id_a, id_b) = build_two_body_app(sim_dt);
 

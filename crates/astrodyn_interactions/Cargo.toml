@@ -23,8 +23,10 @@ uom = { workspace = true }
 astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
 astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_planet = { path = "../astrodyn_planet", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
-astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
+astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
 astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 proptest = "1"
+
+[lints]
+workspace = true

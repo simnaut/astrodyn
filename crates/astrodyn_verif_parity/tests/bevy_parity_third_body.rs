@@ -23,7 +23,7 @@ use common::*;
 // ── Solar beta with DE421 ephemeris ──
 
 #[test]
-fn tier3_bevy_solar_beta_equ() {
+fn bevy_parity_third_body_solar_beta_equ() {
     println!("Solar beta: equatorial orbit with DE421 ephemeris");
     let initial_sun_pos = sun_initial_pos();
 
@@ -114,7 +114,7 @@ fn tier3_bevy_solar_beta_equ() {
 }
 
 #[test]
-fn tier3_bevy_solar_beta_obliquity() {
+fn bevy_parity_third_body_solar_beta_obliquity() {
     println!("Solar beta: obliquity-inclined orbit with DE421 ephemeris");
     let initial_sun_pos = sun_initial_pos();
 
@@ -410,31 +410,31 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
 }
 
 #[test]
-fn tier3_bevy_run3b_3rd_body_sun() {
+fn bevy_parity_third_body_run3b_3rd_body_sun() {
     println!("Dyncomp run3b: ISS + Sun 3rd body, 3-DOF");
     run_3rd_body_parity("run3b", iss_trans(), false, false);
 }
 
 #[test]
-fn tier3_bevy_run4_3rd_body_sun_moon() {
+fn bevy_parity_third_body_run4_3rd_body_sun_moon() {
     println!("Dyncomp run4: ISS + Sun + Moon 3rd body, 3-DOF");
     run_3rd_body_parity("run4", iss_trans(), true, false);
 }
 
 #[test]
-fn tier3_bevy_run7a_3rd_body_sixdof() {
+fn bevy_parity_third_body_run7a_3rd_body_sixdof() {
     println!("Dyncomp run7a: ISS + Sun 3rd body, 6-DOF");
     run_3rd_body_parity("run7a", iss_trans(), false, true);
 }
 
 #[test]
-fn tier3_bevy_run7b_3rd_body_sun_moon_sixdof() {
+fn bevy_parity_third_body_run7b_3rd_body_sun_moon_sixdof() {
     println!("Dyncomp run7b: ISS + Sun + Moon 3rd body, 6-DOF");
     run_3rd_body_parity("run7b", iss_trans(), true, true);
 }
 
 #[test]
-fn tier3_bevy_run7c_3rd_body_inclined() {
+fn bevy_parity_third_body_run7c_3rd_body_inclined() {
     println!("Dyncomp run7c: inclined orbit + Sun 3rd body, 3-DOF");
     let inclined = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -444,7 +444,7 @@ fn tier3_bevy_run7c_3rd_body_inclined() {
 }
 
 #[test]
-fn tier3_bevy_run7d_3rd_body_polar() {
+fn bevy_parity_third_body_run7d_3rd_body_polar() {
     println!("Dyncomp run7d: polar orbit + Sun + Moon 3rd body, 3-DOF");
     let polar = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -456,7 +456,7 @@ fn tier3_bevy_run7d_3rd_body_polar() {
 // ── Mars dawn parity ──
 
 #[test]
-fn tier3_bevy_mars_dawn() {
+fn bevy_parity_third_body_mars_dawn() {
     println!("Mars dawn: Mars point-mass + MarsIAU rotation + Sun 3rd body");
 
     let mu_mars: f64 = 4.282_837_4e13;
@@ -599,7 +599,7 @@ fn tier3_bevy_mars_dawn() {
 // ── Mercury relativistic ──
 
 #[test]
-fn tier3_bevy_mercury_relativistic() {
+fn bevy_parity_third_body_mercury_relativistic() {
     println!("Mercury relativistic: Sun point-mass with PPN correction");
 
     let mu_sun = astrodyn::SUN.shape.mu;
@@ -686,7 +686,7 @@ fn tier3_bevy_mercury_relativistic() {
 /// `SourceInertialVelocityC` and ensures it is wired through both the
 /// `gravity_computation_system` and `integration_system`.
 #[test]
-fn tier3_bevy_relativistic_moving_source() {
+fn bevy_parity_third_body_relativistic_moving_source() {
     println!("Relativistic moving source: Sun with non-zero velocity");
 
     let mu_sun = astrodyn::SUN.shape.mu;
@@ -785,7 +785,7 @@ fn tier3_bevy_relativistic_moving_source() {
 // ── Earth-Moon Clementine ──
 
 #[test]
-fn tier3_bevy_earth_moon_clem() {
+fn bevy_parity_third_body_earth_moon_clem() {
     println!("Earth-Moon Clementine: Earth + Moon + Sun with cannonball SRP");
 
     let initial_sun_pos = sun_initial_pos();

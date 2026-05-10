@@ -20,7 +20,7 @@ use common::*;
 // ── Scenario D: Gravity gradient torque, 6-DOF ──
 
 #[test]
-fn tier3_bevy_gravity_torque_sixdof() {
+fn bevy_parity_gravity_torque_sixdof() {
     println!("Scenario D: Gravity gradient torque, 6-DOF");
 
     // ── Bevy ──
@@ -92,7 +92,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
 // ── Scenario G: External torque via per-body functions ──
 
 #[test]
-fn tier3_bevy_external_torque_per_body() {
+fn bevy_parity_gravity_torque_external_torque_per_body() {
     println!("Scenario G: External torque via per-body functions");
 
     let mass_props = MassProperties::with_inertia(
@@ -285,7 +285,7 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
 }
 
 #[test]
-fn tier3_bevy_run10c_gravity_torque_elliptical() {
+fn bevy_parity_gravity_torque_run10c_gravity_torque_elliptical() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -304,7 +304,7 @@ fn tier3_bevy_run10c_gravity_torque_elliptical() {
 }
 
 #[test]
-fn tier3_bevy_run10d_gravity_torque_elliptical_rate() {
+fn bevy_parity_gravity_torque_run10d_gravity_torque_elliptical_rate() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -415,7 +415,7 @@ fn run_external_parity(
 }
 
 #[test]
-fn tier3_bevy_run9a_torque() {
+fn bevy_parity_gravity_torque_run9a_torque() {
     run_external_parity("run9a_torque", DVec3::ZERO, |t, dt, _quat| {
         let torque = if in_torque_window(t, dt) {
             DVec3::new(10.0, 0.0, 0.0)
@@ -427,7 +427,7 @@ fn tier3_bevy_run9a_torque() {
 }
 
 #[test]
-fn tier3_bevy_run9c_force_torque() {
+fn bevy_parity_gravity_torque_run9c_force_torque() {
     run_external_parity("run9c_force_torque", DVec3::ZERO, |t, dt, quat| {
         if in_torque_window(t, dt) {
             let t_inertial_body = quat.left_quat_to_transformation();
@@ -441,7 +441,7 @@ fn tier3_bevy_run9c_force_torque() {
 }
 
 #[test]
-fn tier3_bevy_run9d_force_torque_rate() {
+fn bevy_parity_gravity_torque_run9d_force_torque_rate() {
     let init_ang_vel = DVec3::new(0.001, -0.0005, 0.001);
     run_external_parity("run9d_force_torque_rate", init_ang_vel, |t, dt, quat| {
         if in_torque_window(t, dt) {

@@ -557,12 +557,12 @@ mod tests {
         // Inputs come from the committed `test_data/body_init/iss.json`
         // fixture (regenerated via the `extract_body_init` binary), not
         // `$JEOD_HOME` at runtime.
-        let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(
+        let init = astrodyn_verif_jeod_fixtures::orbital_init::load_orbital_init(
             "ISS",
             "trans_Orbit_inertial_body_set01",
         );
         let expected =
-            astrodyn_verif_jeod::reference_state::load_reference_state("ISS", "inertial");
+            astrodyn_verif_jeod_fixtures::reference_state::load_reference_state("ISS", "inertial");
 
         // ISS set01 uses SmaEccIncAscnodeArgperTimeperi.
         let t_peri = init

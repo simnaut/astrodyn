@@ -26,6 +26,20 @@
 //! `astrodyn_gravity` when the gravity model needs the reference radius, and
 //! by `astrodyn_frames` for body-fixed rotation models. Pure Rust, zero Bevy
 //! dependency.
+//!
+//! ## Example
+//!
+//! ```
+//! use astrodyn_planet::{EARTH, MOON};
+//!
+//! // WGS84 equatorial radius, GGM05C gravitational parameter.
+//! assert!((EARTH.r_eq - 6_378_137.0).abs() < 1.0);
+//! assert!((EARTH.mu - 3.986_004_415e14).abs() < 1e6);
+//!
+//! // Moon is much smaller and lighter than Earth.
+//! assert!(MOON.r_eq < EARTH.r_eq);
+//! assert!(MOON.mu < EARTH.mu);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

@@ -21,7 +21,7 @@ use common::*;
 // ── Scenario F: Spherical harmonics 4x4 + RNP (requires JEOD_HOME) ──
 
 #[test]
-fn tier3_bevy_sh4x4_rnp() {
+fn bevy_parity_highfidelity_sh4x4_rnp() {
     println!("Scenario F: Spherical harmonics 4x4 + RNP");
 
     let sh_data = astrodyn::gravity_fixtures::load_ggm02c();
@@ -117,7 +117,7 @@ fn tier3_bevy_sh4x4_rnp() {
 // ── Scenario J: Solid body tides ──
 
 #[test]
-fn tier3_bevy_tidal_sh4x4() {
+fn bevy_parity_highfidelity_tidal_sh4x4() {
     println!("Scenario J: SH 4x4 + RNP + solid body tides");
 
     let sh_data = astrodyn::gravity_fixtures::load_ggm02c();
@@ -235,7 +235,7 @@ fn tier3_bevy_tidal_sh4x4() {
 // ── Polar motion parity ──
 
 #[test]
-fn tier3_bevy_run2p_polar_motion() {
+fn bevy_parity_highfidelity_run2p_polar_motion() {
     println!("Run2p polar motion parity");
     const ARCSEC_TO_RAD: f64 = std::f64::consts::PI / (180.0 * 3600.0);
     let xp = 0.06806 * ARCSEC_TO_RAD;
@@ -365,7 +365,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
 }
 
 #[test]
-fn tier3_bevy_gj_point_mass() {
+fn bevy_parity_highfidelity_gj_point_mass() {
     println!("Scenario I: GJ order 8, dt=10s, point-mass 3-DOF");
     run_gj_parity(
         "Bevy vs Sim (GJ order 8)",
@@ -376,7 +376,7 @@ fn tier3_bevy_gj_point_mass() {
 }
 
 #[test]
-fn tier3_bevy_gj_order4() {
+fn bevy_parity_highfidelity_gj_order4() {
     println!("Scenario I-b: GJ order 4, dt=10s, point-mass 3-DOF");
     run_gj_parity(
         "Bevy vs Sim (GJ order 4)",
@@ -387,7 +387,7 @@ fn tier3_bevy_gj_order4() {
 }
 
 #[test]
-fn tier3_bevy_gj_order12() {
+fn bevy_parity_highfidelity_gj_order12() {
     println!("Scenario I-c: GJ order 12, dt=10s, point-mass 3-DOF");
     run_gj_parity(
         "Bevy vs Sim (GJ order 12)",
@@ -398,7 +398,7 @@ fn tier3_bevy_gj_order12() {
 }
 
 #[test]
-fn tier3_bevy_gj_dt1() {
+fn bevy_parity_highfidelity_gj_dt1() {
     println!("Scenario I-d: GJ order 8, dt=1s, point-mass 3-DOF");
     run_gj_parity(
         "Bevy vs Sim (GJ order 8, dt=1s)",

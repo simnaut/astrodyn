@@ -22,3 +22,6 @@ path = "examples/batch_propagation.rs"
 [[example]]
 name = "leo_drag"
 path = "examples/leo_drag.rs"
+
+[lints]
+workspace = true

@@ -48,4 +48,4 @@ vehicle position. The orchestration that sums them into a body's
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_interactions/>
+  <https://docs.rs/astrodyn_interactions>

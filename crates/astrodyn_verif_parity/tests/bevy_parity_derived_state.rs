@@ -24,7 +24,7 @@ use common::*;
 // ── Scenario I: Derived states (orbital elements, Euler, LVLH, solar beta) ──
 
 #[test]
-fn tier3_bevy_derived_states() {
+fn bevy_parity_derived_states() {
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
     // ── Bevy App ──
@@ -168,7 +168,7 @@ fn tier3_bevy_derived_states() {
 // ── Scenario J: Geodetic derived state (requires RNP) ──
 
 #[test]
-fn tier3_bevy_geodetic_derived_state() {
+fn bevy_parity_derived_state_geodetic_derived_state() {
     println!("Scenario J: Geodetic derived state with RNP");
 
     let earth_shape = astrodyn::EARTH.shape;
@@ -286,7 +286,7 @@ fn tier3_bevy_geodetic_derived_state() {
 // ── Scenario M: Eccentric orbit with derived states ──
 
 #[test]
-fn tier3_bevy_eccentric_derived_states() {
+fn bevy_parity_derived_state_eccentric_derived_states() {
     println!("Scenario M: Eccentric orbit with derived states");
 
     let ecc_trans = TranslationalState {
@@ -443,7 +443,7 @@ fn tier3_bevy_eccentric_derived_states() {
 // ── Scenario N: Polar orbit with geodetic ──
 
 #[test]
-fn tier3_bevy_polar_geodetic() {
+fn bevy_parity_derived_state_polar_geodetic() {
     println!("Scenario N: Polar orbit with geodetic (spherical Earth)");
 
     let polar_trans = TranslationalState {
@@ -574,7 +574,7 @@ fn tier3_bevy_polar_geodetic() {
 // ── Scenario O: Equatorial orbit with solar beta ──
 
 #[test]
-fn tier3_bevy_equatorial_solar_beta() {
+fn bevy_parity_derived_state_equatorial_solar_beta() {
     println!("Scenario O: Equatorial orbit with solar beta");
 
     let sun_pos = DVec3::new(1.496e11, 0.0, 2.5e10);
@@ -765,12 +765,12 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
 }
 
 #[test]
-fn tier3_bevy_euler() {
+fn bevy_parity_derived_state_euler() {
     run_euler_parity("euler_inc", iss_trans(), EulerSequence::XYZ);
 }
 
 #[test]
-fn tier3_bevy_euler_ecc() {
+fn bevy_parity_derived_state_euler_ecc() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -779,7 +779,7 @@ fn tier3_bevy_euler_ecc() {
 }
 
 #[test]
-fn tier3_bevy_euler_equ() {
+fn bevy_parity_derived_state_euler_equ() {
     let equ_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -836,12 +836,12 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
 }
 
 #[test]
-fn tier3_bevy_lvlh() {
+fn bevy_parity_derived_state_lvlh() {
     run_lvlh_parity("lvlh_inc", iss_trans());
 }
 
 #[test]
-fn tier3_bevy_lvlh_ecc() {
+fn bevy_parity_derived_state_lvlh_ecc() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -850,7 +850,7 @@ fn tier3_bevy_lvlh_ecc() {
 }
 
 #[test]
-fn tier3_bevy_lvlh_equ() {
+fn bevy_parity_derived_state_lvlh_equ() {
     let equ_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -959,13 +959,13 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
 }
 
 #[test]
-fn tier3_bevy_ned_sph_inc() {
+fn bevy_parity_derived_state_ned_sph_inc() {
     let r_sph = astrodyn::EARTH.shape.r_eq;
     run_ned_parity("ned_sph_inc", iss_trans(), r_sph, r_sph);
 }
 
 #[test]
-fn tier3_bevy_ned_sph_polar() {
+fn bevy_parity_derived_state_ned_sph_polar() {
     let r_sph = astrodyn::EARTH.shape.r_eq;
     let polar_trans = TranslationalState {
         position: DVec3::new(astrodyn::EARTH.shape.r_eq + 400_000.0, 0.0, 0.0),
@@ -1032,7 +1032,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t01() {
+fn bevy_parity_derived_state_orbelem_t01() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -1041,7 +1041,7 @@ fn tier3_bevy_orbelem_t01() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t10() {
+fn bevy_parity_derived_state_orbelem_t10() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -1050,7 +1050,7 @@ fn tier3_bevy_orbelem_t10() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t20() {
+fn bevy_parity_derived_state_orbelem_t20() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 12_000.0, 0.0),
@@ -1059,7 +1059,7 @@ fn tier3_bevy_orbelem_t20() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t30() {
+fn bevy_parity_derived_state_orbelem_t30() {
     let v_esc = (2.0 * MU_EARTH / 6_778_137.0).sqrt();
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
@@ -1069,7 +1069,7 @@ fn tier3_bevy_orbelem_t30() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t40() {
+fn bevy_parity_derived_state_orbelem_t40() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, -7668.56, 0.0),
@@ -1078,7 +1078,7 @@ fn tier3_bevy_orbelem_t40() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t50() {
+fn bevy_parity_derived_state_orbelem_t50() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -1087,7 +1087,7 @@ fn tier3_bevy_orbelem_t50() {
 }
 
 #[test]
-fn tier3_bevy_orbelem_t55() {
+fn bevy_parity_derived_state_orbelem_t55() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 0.0, 7668.56),
@@ -1098,7 +1098,7 @@ fn tier3_bevy_orbelem_t55() {
 // ── Orbelem timeseries parity ──
 
 #[test]
-fn tier3_bevy_orbelem() {
+fn bevy_parity_derived_state_orbelem() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -1159,7 +1159,7 @@ fn tier3_bevy_orbelem() {
 // ── Solar beta parity ──
 
 #[test]
-fn tier3_bevy_solar_beta() {
+fn bevy_parity_derived_state_solar_beta() {
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
     let inc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),

@@ -15,9 +15,9 @@
 use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{F64Ext, GravityControl, GravityRole, VehicleBuilder};
+use astrodyn::{F64Ext, GravityControl, GravityRole, SourceHandle, VehicleBuilder};
 use astrodyn_bevy::{
-    AstrodynPlugin, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
+    AstrodynAppExt, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
     TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
 };
 use bevy::app::ScheduleRunnerPlugin;
@@ -62,8 +62,7 @@ fn main() {
     let max_steps = parse_steps_arg();
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
-        .insert_resource(Time::<Fixed>::from_seconds(10.0))
-        .add_plugins(AstrodynPlugin)
+        .add_astrodyn(10.0)
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, log_orbit.after(AstrodynSet::Integration))
         .insert_resource(StepCounter(0))
@@ -105,8 +104,15 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         .from_orbital_elements(orbital_elements::iss(), mu_typed)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        // Source index 0 in the per-config map → the Earth entity below.
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        // `SourceHandle::central()` is the typed wrapper around index 0
+        // of the per-config source slice — the Earth entity passed to
+        // `spawn_bevy(...)` below. Bare-`usize` callsites continue to
+        // work via `From<usize> for SourceHandle`; new mission code
+        // should prefer the named constructor for self-documenting intent.
+        .gravity(GravityControl::new_spherical(
+            SourceHandle::central(),
+            GravityRole::Central,
+        ))
         .build();
 
     let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);

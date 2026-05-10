@@ -56,4 +56,4 @@ Bevy dependency.
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_frames/>
+  <https://docs.rs/astrodyn_frames>

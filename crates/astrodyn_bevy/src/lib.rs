@@ -10,6 +10,7 @@
 // inside `crate::systems` and friends carries `<P: Planet>` parameters
 // and re-tags into `<SelfRef>`-marked storage at the write site only.
 
+pub mod app_ext;
 pub mod body_action;
 pub mod bundles;
 pub mod components;
@@ -26,6 +27,7 @@ pub mod systems;
 pub mod validation;
 pub mod wrench;
 
+pub use app_ext::AstrodynAppExt;
 pub use body_action::{
     add_body_action_via, body_action_intake_system, body_action_system,
     body_action_unregistered_planet_fence_system, BodyActionCommandsExt, BodyActionEvent,
@@ -83,13 +85,39 @@ pub struct PolarMotionR {
 
 /// Bevy resource wrapping [`AtmosphereConfig`] with an entity reference for
 /// the planet whose rotation matrix is used for geodetic conversion.
+///
+/// The resource is constructible only via [`AtmosphereModelR::new`]: the
+/// planet entity is non-`Option` because the atmosphere stage always reads
+/// it (the `PlanetFixedRotationC` lookup is the only path used by every
+/// supported model — the previously-allowed `None` "spherical fallback"
+/// was indistinguishable from an identity rotation, so callers that want
+/// it install `PlanetFixedRotationC` initialised to identity on the planet
+/// entity instead). `#[non_exhaustive]` keeps the type closed against
+/// downstream field-literal construction so future additions are
+/// source-compatible.
 #[derive(Resource, Debug, Clone)]
+#[non_exhaustive]
 pub struct AtmosphereModelR {
     /// ECS-agnostic atmosphere configuration (model, radii, wind).
     pub config: AtmosphereConfig,
-    /// Entity of the planet whose `PlanetFixedRotationC` is used.
-    /// `None` means no rotation (position assumed planet-fixed).
-    pub planet_entity: Option<Entity>,
+    /// Entity of the planet whose `PlanetFixedRotationC` is queried each
+    /// tick to rotate body position into planet-fixed coordinates before
+    /// geodetic conversion.
+    pub planet_entity: Entity,
+}
+
+impl AtmosphereModelR {
+    /// Construct an atmosphere model resource for the given planet entity.
+    ///
+    /// The planet entity must carry [`PlanetFixedRotationC`] by the time
+    /// the atmosphere system runs; the system panics loudly with a
+    /// configuration diagnostic otherwise.
+    pub fn new(config: AtmosphereConfig, planet_entity: Entity) -> Self {
+        Self {
+            config,
+            planet_entity,
+        }
+    }
 }
 
 /// Bevy resource wrapping [`astrodyn::Ephemeris`] for DE4xx ephemeris access.
@@ -108,9 +136,18 @@ pub struct EphemerisR(pub astrodyn::Ephemeris);
 ///
 /// This resource is not inserted automatically by [`AstrodynPlugin`]. Applications
 /// that use staging must insert `MassTreeR` before sending
-/// [`components::AttachEvent`] or
-/// [`components::DetachEvent`]. If the resource is absent, staging
-/// events are silently drained.
+/// [`components::AttachEvent`] or [`components::DetachEvent`]. The
+/// `staging_system` panics if it observes a pending `AttachEvent` /
+/// `DetachEvent` while `MassTreeR` is missing — without the arena the
+/// event would be silently dropped and the targeted body would
+/// propagate unattached, which is the "wrong physics that still
+/// runs" failure the Fail Loudly rule (see `CLAUDE.md`) forbids.
+/// The diagnostic message names two valid fixes: insert
+/// `MassTreeR(MassTree::new())` directly, or use
+/// [`astrodyn::SimulationBuilder::register_in_mass_tree`] +
+/// [`crate::SimulationBuilderBevyExt::populate_app`] which
+/// pre-allocates the arena and a `MassBodyId` for each registered
+/// body.
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub astrodyn::MassTree);
 
@@ -1015,11 +1052,32 @@ pub trait VehicleConfigBevyExt {
     /// retagging each `usize` source index to the matching ECS
     /// [`Entity`] from `source_entities`.
     ///
-    /// Not yet wired (callers must insert these manually): drag, SRP
-    /// (flat-plate / cannonball), shadow body, derived-state requests
-    /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
-    /// lighting). These are tracked for future expansion of
-    /// `spawn_bevy`.
+    /// Derived-state requests on
+    /// [`astrodyn::DerivedStateConfig`] are mirrored onto the spawned
+    /// entity as the matching `*C` + `*ConfigC` component pair when the
+    /// matching field is set on the builder:
+    ///
+    /// - `derived.orbital_elements_source` →
+    ///   [`components::OrbitalElementsC<P>`] +
+    ///   [`components::OrbitalElementsConfigC`]
+    /// - `derived.euler_sequence` → [`components::EulerAnglesC`] +
+    ///   [`components::EulerAnglesConfigC`]
+    /// - `derived.lvlh` → [`components::LvlhFrameC`] (no separate config
+    ///   component; presence alone enables computation)
+    /// - `derived.geodetic` → [`components::GeodeticStateC`] +
+    ///   [`components::GeodeticConfigC`]
+    /// - `derived.solar_beta` → [`components::SolarBetaC`] (no separate
+    ///   config component; presence alone enables computation, plus a
+    ///   precondition check at validation time that a
+    ///   [`components::SunMarker`] entity exists)
+    /// - `derived.earth_lighting` →
+    ///   [`components::EarthLightingStateC`] +
+    ///   [`components::EarthLightingConfigC`]
+    ///
+    /// `OrbitalElementsConfigC.gravity_source` and
+    /// `GeodeticConfigC.planet` are resolved through the same
+    /// `source_entities` table as `gravity_controls` / `integ_source` /
+    /// `frame_switches`.
     ///
     /// # Planet selection
     ///
@@ -1050,8 +1108,10 @@ pub trait VehicleConfigBevyExt {
     /// - any `GravityControl::source_name` in `gravity_controls.controls`
     /// - the `integ_source` value (when `Some`)
     /// - any `FrameSwitchConfig::target_source` in `frame_switches`
+    /// - `derived.orbital_elements_source` (when `Some`)
+    /// - `derived.geodetic.source_idx` (when `Some`)
     ///
-    /// All three panics share the same diagnostic shape, telling the
+    /// All five panics share the same diagnostic shape, telling the
     /// caller to spawn all gravity sources before invoking `spawn_bevy`.
     ///
     /// Returns the spawned vehicle entity ID.
@@ -1233,6 +1293,81 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
                 })
                 .collect();
             entity.insert(components::FrameSwitchesC(entity_switches));
+        }
+        // ── Derived states ──
+        //
+        // `VehicleConfig.derived` holds the per-state requests captured
+        // by `VehicleBuilder::orbital_elements` / `.euler_angles` /
+        // `.lvlh` / `.geodetic` / `.solar_beta` / `.earth_lighting`.
+        // For each set field, attach the matching `*C` (default-
+        // initialized — the per-step derived-state system overwrites it)
+        // plus the `*ConfigC` (which carries the source/planet entity
+        // reference or the Euler sequence). `lvlh` and `solar_beta`
+        // currently have no `*ConfigC` partner — their presence on the
+        // entity alone gates the system; `solar_beta` additionally
+        // requires a `SunMarker` entity to exist (validated at startup
+        // by `validate_jeod_invariants`, fail-loudly).
+        let astrodyn::DerivedStateConfig {
+            orbital_elements_source,
+            euler_sequence,
+            lvlh,
+            geodetic,
+            solar_beta,
+            earth_lighting,
+        } = self.derived;
+        if let Some(idx) = orbital_elements_source {
+            let src =
+                resolve_source_entity(source_entities, idx, "derived.orbital_elements_source");
+            entity.insert((
+                components::OrbitalElementsC::<P>::default(),
+                components::OrbitalElementsConfigC {
+                    gravity_source: src,
+                },
+            ));
+        }
+        if let Some(sequence) = euler_sequence {
+            entity.insert((
+                components::EulerAnglesC::default(),
+                components::EulerAnglesConfigC { sequence },
+            ));
+        }
+        if lvlh {
+            entity.insert(components::LvlhFrameC::default());
+        }
+        if let Some(geo) = geodetic {
+            // `GeodeticConfig.source_idx` indexes the gravity-source
+            // table; `GeodeticConfigC.planet` is the matching ECS
+            // `Entity`. The geodetic kernel reads `PlanetC` (radii) and
+            // `PlanetFixedRotationC` from that entity, so it must be a
+            // gravity source registered with planet-shape and rotation
+            // data — same precondition the runner asserts. The radii
+            // already inside `geo` (`r_eq`, `r_pol`) duplicate what the
+            // planet entity exposes through `PlanetC`; `geodetic_system`
+            // reads the entity's `PlanetC` rather than the config copy,
+            // so the duplication is harmless but the entity must carry
+            // them.
+            let src = resolve_source_entity(
+                source_entities,
+                geo.source_idx,
+                "derived.geodetic.source_idx",
+            );
+            entity.insert((
+                components::GeodeticStateC::default(),
+                components::GeodeticConfigC { planet: src },
+            ));
+        }
+        if solar_beta {
+            entity.insert(components::SolarBetaC::default());
+        }
+        if let Some(el) = earth_lighting {
+            entity.insert((
+                components::EarthLightingStateC::default(),
+                components::EarthLightingConfigC {
+                    earth_radius: el.earth_radius,
+                    moon_radius: el.moon_radius,
+                    sun_radius: el.sun_radius,
+                },
+            ));
         }
         entity.id()
     }

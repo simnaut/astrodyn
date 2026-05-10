@@ -40,10 +40,10 @@ impl CoefficientsPair {
     ///
     /// JEOD: `GaussJacksonCoefficientsPair::apply(nelem, ncoeff, acc_hist, state_sum)`.
     ///
-    /// Returns (vel_sum, pos_sum) where:
-    ///   vel_sum = Σ sa_coefs[i] * acc_hist[i]
-    ///   pos_sum = Σ gj_coefs[i] * acc_hist[i]
-    /// for i in 0..ncoeff.
+    /// Returns `(vel_sum, pos_sum)` where:
+    ///   `vel_sum = Σ sa_coefs[i] * acc_hist[i]`
+    ///   `pos_sum = Σ gj_coefs[i] * acc_hist[i]`
+    /// for `i` in `0..ncoeff`.
     pub fn apply(&self, acc_hist: &TwoDArray, ncoeff: usize) -> (DVec3, DVec3) {
         // JEOD: Initialize from first history point
         let acc_0 = acc_hist.get_dvec3(0);

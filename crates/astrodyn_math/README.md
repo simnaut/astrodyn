@@ -60,4 +60,4 @@ Bevy dependency. After Phase 2 (#104) of the type-system refactor,
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture and
   conventions.
 - Rendered rustdoc:
-  <https://simnaut.github.io/astrodyn_bevy/astrodyn_math/>
+  <https://docs.rs/astrodyn_math>
