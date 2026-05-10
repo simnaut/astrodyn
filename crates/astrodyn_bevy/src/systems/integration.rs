@@ -623,9 +623,39 @@ pub fn integration_system<P: Planet>(
                     let srp_force_inertial = t_inertial_struct.transpose() * srp_result.force;
                     final_srp_inertial_force = srp_force_inertial;
                     final_srp_torque = srp_result.torque;
+                    // Per-stage SRP force is always recomputed (the
+                    // `compute_flat_plate_srp_thermal` call above runs at
+                    // every RK4 stage with the intermediate orbital +
+                    // attitude state); only the temperature-derivative
+                    // feed differs by `thermal_order`. Energy
+                    // conservation in the thermal coupling requires that
+                    // the per-stage `temp_dots` consumed by
+                    // `integrate_body_coupled` reflect a flux state
+                    // consistent with the integrator's intended thermal
+                    // integration order, not just the most recently
+                    // computed flux. The runner side carries the
+                    // matching dispatch in
+                    // `crates/astrodyn_runner/src/simulation/step/integrate.rs`.
                     let temp_dots = match thermal_order {
-                        astrodyn::ThermalIntegrationOrder::DerivativeRk4 => srp_result.temp_dots,
+                        astrodyn::ThermalIntegrationOrder::DerivativeRk4 => {
+                            // True RK4 thermal: use this stage's freshly
+                            // computed `temp_dots` so the kernel's
+                            // `finalize_rk4_temperatures` averages four
+                            // distinct k-values (matches JEOD's
+                            // `ThermalIntegrationOrder::DerivativeRk4`).
+                            srp_result.temp_dots
+                        }
                         astrodyn::ThermalIntegrationOrder::DerivativeFirstOrder => {
+                            // Capture k1 at stage 1 (`time_frac == 0.0`)
+                            // and feed it back at stages 2-4 so the RK4
+                            // combine collapses to a forward-Euler step
+                            // over k1 — JEOD's ER7_Utils first-order
+                            // integrator behavior, while still
+                            // evaluating the orbital-state RK4 at full
+                            // 4th-order accuracy. Returning a stage-2-4
+                            // `srp_result.temp_dots` here would silently
+                            // upgrade the thermal integration order
+                            // (and break parity with `astrodyn_runner`).
                             if time_frac == 0.0 {
                                 k1_temp_dots = Some(srp_result.temp_dots.clone());
                                 srp_result.temp_dots
