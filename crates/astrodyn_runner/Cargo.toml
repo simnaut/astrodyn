@@ -15,6 +15,20 @@ glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
 
+[features]
+# Enable per-phase wall-clock instrumentation in `Simulation::step_internal`.
+# Off by default — adds `Instant::now()` deltas at the JEOD pipeline-stage
+# boundaries (~7 sites × ~50 ns/site = ~350 ns per step on x86_64 Linux).
+#
+# Safe with respect to bit-identity: the timing calls do not touch f64
+# state, so `bevy_parity_*` tests are unaffected when this feature is on.
+# But the default workspace build leaves it off so production binaries
+# pay zero overhead.
+#
+# Inspect timings via `Simulation::phase_timings()` and
+# `Simulation::phase_timings_summary()`.
+phase_timing = []
+
 [[example]]
 name = "batch_propagation"
 path = "examples/batch_propagation.rs"

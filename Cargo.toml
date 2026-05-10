@@ -140,3 +140,44 @@ opt-level = 3
 opt-level = 3
 [profile.test.package.astrodyn_interactions]
 opt-level = 3
+
+# Tuned release profile. The hot path is the per-step JEOD pipeline,
+# which crosses crate boundaries ~10× per step (runner → dynamics →
+# gravity → math) and runs 4× per step under RK4. Cross-crate inlining
+# of `accumulate_gravity` into the integration closure is the biggest
+# win, so `lto = "fat"` + `codegen-units = 1` rather than the stock
+# release defaults (`lto = false`, `codegen-units = 16`).
+#
+# `panic = "abort"` lets LLVM elide landing pads in tight loops.
+# `incremental = false` is required for cross-translation-unit opts
+# (incremental forces a per-CGU compilation barrier).
+#
+# Bit-identity with the `bevy_parity_*` suite (which asserts the
+# `astrodyn_runner` and `astrodyn_bevy` paths agree bit-for-bit per
+# step) is preserved because none of these flags re-order f64 ops.
+# `target-cpu=native` (FMA contraction) and Rayon-based parallelism
+# are intentionally NOT enabled here — they would change the order of
+# floating-point operations and break the bit-identity invariant.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+panic = "abort"
+incremental = false
+overflow-checks = false
+strip = "debuginfo"
+
+# Profile for symbolicated profiling (samply, perf, addr2line).
+# Inherits all release optimizations, keeps line tables for symbol
+# resolution. Use with: `cargo build --profile release-with-debug ...`.
+[profile.release-with-debug]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"
+split-debuginfo = "packed"
+
+# Bench profile. Inherits release so criterion/divan benches run with
+# the same optimizations as production.
+[profile.bench]
+inherits = "release"

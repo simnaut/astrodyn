@@ -26,6 +26,14 @@ regex = "1"
 thiserror = { workspace = true }
 uom = { workspace = true }
 
+[features]
+# Pass-through for `astrodyn_runner`'s per-phase wall-clock instrumentation.
+# Off by default. When on, the `earth_moon` example prints a per-phase
+# summary at the end of its run. Use it for performance investigation:
+# `cargo run --release --example earth_moon -p astrodyn_verif_jeod \
+#   --features phase_timing -- --steps 100000`.
+phase_timing = ["astrodyn_runner/phase_timing"]
+
 [[example]]
 name = "earth_moon"
 path = "examples/earth_moon.rs"
