@@ -76,13 +76,18 @@ pub trait SimContext {
         panic!("tidal bodies not supported by this SimContext implementation");
     }
 
-    /// Attach `child_idx` to `parent_idx` at runtime, with the given
-    /// structural offset and parent→child rotation. Mirrors
-    /// `astrodyn_runner::Simulation::attach`. Used by mid-flight
-    /// attach/detach scenarios that schedule topology changes via
-    /// `pre_step`.
+    /// Attach `child_idx` to `parent_idx` in the mass tree at `offset`
+    /// (child's structural origin in the parent's structural frame, m)
+    /// with `t_parent_child` (rotation from the parent's structural
+    /// frame into the child's structural frame). Mirrors the runner's
+    /// `Simulation::attach` runtime entry point — the implementation
+    /// must run JEOD's momentum-conservation combine kernel and reset
+    /// affected integrators so the post-attach state is bit-identical
+    /// across runtimes. Used by mid-flight attach/detach scenarios
+    /// that schedule topology changes via `pre_step`.
     ///
-    /// The default implementation panics so existing `SimContext`
+    /// The default implementation panics with an explicit
+    /// "attach not supported" message so existing `SimContext`
     /// implementors stay source-compatible. Adapters that own a
     /// mass-tree mutation surface (the runner's `Simulation`, the
     /// Bevy adapter's `AttachEvent` bus) override this.
@@ -94,29 +99,50 @@ pub trait SimContext {
         t_parent_child: DMat3,
     ) {
         let _ = (child_idx, parent_idx, offset, t_parent_child);
-        panic!("attach not supported by this SimContext implementation");
+        panic!(
+            "runtime attach not supported by this SimContext implementation; \
+             provide a SimContext impl that drives the adapter's mass-tree \
+             attach path (e.g. AttachEvent on the Bevy bus)"
+        );
     }
 
-    /// Detach `child_idx` from its current parent. Mirrors
-    /// `astrodyn_runner::Simulation::detach`.
+    /// Detach `child_idx` from its current parent in the mass tree.
+    /// Mirrors the runner's `Simulation::detach` runtime entry point —
+    /// the implementation must shift the parent's composite state by
+    /// the inertial-frame CoM-delta and reset affected integrators so
+    /// the post-detach state is bit-identical across runtimes.
     ///
-    /// Default implementation panics. Override in adapters that own a
-    /// mass-tree mutation surface.
+    /// The default implementation panics with an explicit
+    /// "detach not supported" message so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that own a
+    /// mass-tree mutation surface override this.
     fn detach(&mut self, child_idx: usize) {
         let _ = child_idx;
-        panic!("detach not supported by this SimContext implementation");
+        panic!(
+            "runtime detach not supported by this SimContext implementation; \
+             provide a SimContext impl that drives the adapter's mass-tree \
+             detach path (e.g. DetachEvent on the Bevy bus)"
+        );
     }
 
-    /// Mark `child_idx` as kinematic-only — its translational and
-    /// rotational state are derived from its parent each step instead
-    /// of integrated. Mirrors
-    /// `astrodyn_runner::Simulation::mark_kinematic_only`.
+    /// Mark `child_idx` as a kinematic-only (non-integrated) child of
+    /// its mass-tree parent. Mirrors the runner's
+    /// `Simulation::mark_kinematic_only` — the implementation must
+    /// gate the integrator on the carrier so its translational and
+    /// rotational state is derived from the parent each tick, not
+    /// integrated.
     ///
-    /// Default implementation panics. Override in adapters that own
-    /// the kinematic-child state machine.
+    /// The default implementation panics with an explicit
+    /// "mark_kinematic_only not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters
+    /// that own the kinematic-child state machine override this.
     fn mark_kinematic_only(&mut self, child_idx: usize) {
         let _ = child_idx;
-        panic!("mark_kinematic_only not supported by this SimContext implementation");
+        panic!(
+            "mark_kinematic_only not supported by this SimContext implementation; \
+             provide a SimContext impl that gates the adapter's integrator \
+             (e.g. inserts KinematicChildC on the Bevy entity)"
+        );
     }
 }
 
@@ -255,11 +281,44 @@ pub enum CsvReference {
     ///
     /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`]: https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_verif_parity/src/lib.rs
     TimesOnly(&'static str),
+    /// Synthetic time cadence — no CSV file on disk. Emits
+    /// `num_steps + 1` records at times `0, dt, 2·dt, …, num_steps·dt`.
+    /// Used by parity-only recipes that have no JEOD reference
+    /// trajectory but still need a checkpoint cadence to drive
+    /// [`astrodyn_verif_parity::VerificationCaseParityExt::run_and_assert_parity`].
+    ///
+    /// The runner-side
+    /// [`crate::run_verification::VerificationCaseExt::run_and_assert`]
+    /// also accepts this variant — it generates the same times in
+    /// memory and runs the propagation loop with `position` /
+    /// `velocity` left as `None` on every record (same shape as
+    /// [`Self::TimesOnly`]). Recipes that pair with this variant
+    /// must use all-zero tolerances so the runner-vs-JEOD comparison
+    /// opts out of every assertion (the documented "all-zero skips
+    /// the metric group" rule).
+    ///
+    /// This is the on-disk-CSV-free sibling of
+    /// [`Self::TimesOnly`]. Prefer it when the recipe doesn't pair
+    /// with a JEOD-generated trajectory at all (purely synthetic
+    /// scenarios — `bevy_parity_kinematic_propagation`,
+    /// `bevy_parity_attach_detach_trajectory`, the Bevy-mechanism
+    /// SRP family, etc.); it eliminates the
+    /// committed-but-otherwise-unused CSV fixture and the
+    /// `test_data_path` lookup that comes with it.
+    SyntheticTimes {
+        /// Step size between consecutive checkpoints, in seconds.
+        dt: f64,
+        /// Number of `dt`-sized intervals; the dispatch emits
+        /// `num_steps + 1` records (the t=0 row plus `num_steps`
+        /// stepped records).
+        num_steps: usize,
+    },
 }
 
 impl CsvReference {
-    /// Returns the underlying file name (relative to `test_data/`).
-    pub fn file_name(&self) -> &'static str {
+    /// Returns the underlying file name (relative to `test_data/`),
+    /// or `None` for the synthetic-cadence variant.
+    pub fn file_name(&self) -> Option<&'static str> {
         match self {
             CsvReference::Dyncomp3Dof(s)
             | CsvReference::Dyncomp6Dof(s)
@@ -278,7 +337,8 @@ impl CsvReference {
             | CsvReference::OrbInit(s)
             | CsvReference::Tide(s)
             | CsvReference::Relative(s)
-            | CsvReference::TimesOnly(s) => s,
+            | CsvReference::TimesOnly(s) => Some(s),
+            CsvReference::SyntheticTimes { .. } => None,
         }
     }
 }

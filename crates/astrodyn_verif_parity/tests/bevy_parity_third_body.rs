@@ -543,6 +543,7 @@ fn bevy_parity_third_body_mars_dawn() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     let sun_idx = sim.add_source(
@@ -739,6 +740,7 @@ fn bevy_parity_third_body_relativistic_moving_source() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

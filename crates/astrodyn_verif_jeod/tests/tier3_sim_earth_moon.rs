@@ -125,6 +125,7 @@ fn tier3_simulation_earth_moon_clem() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

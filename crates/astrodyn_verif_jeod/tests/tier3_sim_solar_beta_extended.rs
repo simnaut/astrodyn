@@ -68,6 +68,7 @@ fn build_solar_beta_sim(
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -86,6 +87,7 @@ fn build_solar_beta_sim(
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     sim.sun_source = Some(sun);

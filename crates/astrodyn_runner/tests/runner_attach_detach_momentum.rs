@@ -116,6 +116,7 @@ fn build_pair(
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -634,6 +635,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 
@@ -842,6 +844,7 @@ fn runner_detach_lifts_through_integ_origin() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     let earth = sb.add_source(
@@ -859,6 +862,7 @@ fn runner_detach_lifts_through_integ_origin() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
 
@@ -1025,6 +1029,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     let parent_idx = sb.add_body(VehicleConfig {

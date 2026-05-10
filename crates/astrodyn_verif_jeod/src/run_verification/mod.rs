@@ -30,6 +30,7 @@ pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_dyncomp;
 pub mod sim_gj;
+pub mod sim_kinematic_propagation;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
 pub mod sim_relative;
@@ -122,6 +123,7 @@ impl SimContext for Simulation {
         );
         cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
     }
+
     fn attach(
         &mut self,
         child_idx: usize,
@@ -131,9 +133,11 @@ impl SimContext for Simulation {
     ) {
         Simulation::attach(self, child_idx, parent_idx, offset, t_parent_child);
     }
+
     fn detach(&mut self, child_idx: usize) {
         Simulation::detach(self, child_idx);
     }
+
     fn mark_kinematic_only(&mut self, child_idx: usize) {
         Simulation::mark_kinematic_only(self, child_idx);
     }
@@ -186,22 +190,33 @@ impl VerificationCaseExt for VerificationCase {
     fn run_and_assert(&self) {
         // 1. Load the reference CSV exactly once — the t=0 row supplies
         //    the scenario's initial conditions, the rest drives the
-        //    per-step comparison loop.
-        let ref_path = tier3_csv::test_data_path(self.reference.file_name());
-        assert!(
-            ref_path.exists(),
-            "JEOD reference CSV not found at {}.\n\
-             Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-             -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-            ref_path.display()
-        );
+        //    per-step comparison loop. `CsvReference::SyntheticTimes`
+        //    skips the file lookup and generates a synthetic cadence
+        //    in memory; every other variant pairs with a committed
+        //    reference under `test_data/`.
+        let ref_path = match self.reference.file_name() {
+            Some(name) => {
+                let p = tier3_csv::test_data_path(name);
+                assert!(
+                    p.exists(),
+                    "JEOD reference CSV not found at {}.\n\
+                     Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
+                     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+                    p.display()
+                );
+                p
+            }
+            // SyntheticTimes: no on-disk file. Pass an unused
+            // sentinel path; `load_reference` ignores it for this
+            // variant.
+            None => std::path::PathBuf::new(),
+        };
         let (ref_states, typed_records) =
             load_reference(&self.reference, &ref_path, self.extras.as_ref());
         assert!(
             !ref_states.is_empty(),
-            "{}: reference CSV {} produced 0 records",
+            "{}: reference produced 0 records",
             self.name,
-            ref_path.display()
         );
         assert_eq!(
             ref_states.len(),
@@ -651,6 +666,30 @@ fn load_reference(
             // and the assertion is runner ↔ bevy bit-identity, not
             // tolerance-bounded against the JEOD-logged columns.
             let times = load_times_only(path);
+            let states = times
+                .iter()
+                .map(|&t| StateLog {
+                    time: t,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            (states, CsvRecords::Times(times))
+        }
+        CsvReference::SyntheticTimes { dt, num_steps } => {
+            // No CSV on disk — generate `num_steps + 1` evenly-spaced
+            // times in memory. The runner-side `run_and_assert` path
+            // is reachable for completeness (the dispatch table can
+            // not branch on variant kind elsewhere), but recipes
+            // pairing with this variant are typically parity-only and
+            // use all-zero tolerances so the runner-vs-JEOD
+            // assertion opts out of every metric group.
+            //
+            // `path` is unused for this variant — `load_reference`'s
+            // caller-side `path.exists()` fence checks that
+            // `file_name()` returns `Some(_)` first; for `None` the
+            // caller skips the file existence check entirely.
+            let _ = path;
+            let times: Vec<f64> = (0..=*num_steps).map(|i| (i as f64) * dt).collect();
             let states = times
                 .iter()
                 .map(|&t| StateLog {

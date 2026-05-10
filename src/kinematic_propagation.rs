@@ -1,3 +1,4 @@
+// JEOD_INV: TS.01 — `<MassNode>` is the kinematic-propagation mass-tree storage-boundary wildcard tagging `KinematicNodeState.trans`; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Kinematic state propagation: walks a [`MassStorage`] tree pre-order
 //! from each root and derives every kinematic child's instantaneous
 //! composite-body state from its parent's state composed with the
@@ -55,8 +56,10 @@ use astrodyn_dynamics::kinematic_propagation::{
 };
 use astrodyn_dynamics::mass_storage::MassStorage;
 use astrodyn_dynamics::rotational::RotationalState;
-use astrodyn_dynamics::state::TranslationalState;
+use astrodyn_dynamics::state::TranslationalStateTyped;
 use astrodyn_math::JeodQuat;
+use astrodyn_quantities::aliases::{Position, Velocity};
+use astrodyn_quantities::frame::MassNode;
 
 use glam::{DMat3, DVec3};
 
@@ -67,14 +70,34 @@ use glam::{DMat3, DVec3};
 /// translational state, struct→body rotation, composite CoM in this
 /// node's structural frame). Storage callers fill this in from
 /// whatever live shape their backend keeps.
+///
+/// # `<MassNode>` on `trans`
+///
+/// `trans` is tagged [`MassNode`] — the inertial-flavor sibling of
+/// `<SelfRef>` / `<SelfPlanet>`. The kinematic-propagation kernel
+/// walks a heterogeneous mass tree where different nodes may live in
+/// different integration frames (parent in `RootInertial`, child in
+/// `PlanetInertial<Earth>`, …); the per-edge
+/// [`KinematicEdge::t_parent_child`] matrix already carries the
+/// cross-frame transition, so per-node `trans` is mid-walk scratch
+/// with no single concrete frame. Storage callers
+/// (`Simulation::propagate_kinematic_state` in `astrodyn_runner` and
+/// `propagate_state_from_root_system` in `astrodyn_bevy`) lift their
+/// concrete-frame typed state into `<MassNode>` on entry to the walk
+/// via [`Qty3::relabel_to`](astrodyn_quantities::qty3::Qty3::relabel_to)
+/// (after first applying the per-body integ-origin shift to root
+/// inertial when relevant — RF.10 shift discipline) and re-pin to a
+/// concrete frame on writeback.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KinematicNodeState {
     /// Inertial → body rotational state (attitude quaternion +
     /// angular velocity in the node's body frame).
     pub rot: RotationalState,
     /// Inertial-frame translational state (composite-body position +
-    /// velocity).
-    pub trans: TranslationalState,
+    /// velocity), tagged with the [`MassNode`] mass-tree wildcard.
+    /// See the type-level docs above for why a wildcard is needed
+    /// here rather than a concrete frame phantom.
+    pub trans: TranslationalStateTyped<MassNode>,
     /// Structural → body rotation matrix. Identity when the node has
     /// no per-vehicle structural transform (single-body vehicles, the
     /// default).
@@ -89,7 +112,7 @@ impl Default for KinematicNodeState {
     fn default() -> Self {
         Self {
             rot: RotationalState::default(),
-            trans: TranslationalState::default(),
+            trans: TranslationalStateTyped::<MassNode>::default(),
             t_struct_body: DMat3::IDENTITY,
             composite_in_struct: DVec3::ZERO,
         }
@@ -265,11 +288,16 @@ fn walk<S: MassStorage>(
             )
         });
 
+        // Drop into raw `DVec3` at the kernel boundary — the
+        // kinematic kernel itself takes raw inputs, and the typed
+        // `<MassNode>` tag on `parent_state.trans` is the
+        // storage-boundary discipline (not arithmetic input). The
+        // re-wrap below pairs with this lower at the same boundary.
         let inputs = KinematicChildInputs {
             parent_t_inertial_body,
             parent_ang_vel_body: parent_state.rot.ang_vel_body,
-            parent_position_inertial: parent_state.trans.position,
-            parent_velocity_inertial: parent_state.trans.velocity,
+            parent_position_inertial: parent_state.trans.position.raw_si(),
+            parent_velocity_inertial: parent_state.trans.velocity.raw_si(),
             parent_t_struct_body: parent_state.t_struct_body,
             parent_composite_in_pstr: parent_state.composite_in_struct,
             t_parent_child: edge.t_parent_child,
@@ -283,9 +311,17 @@ fn walk<S: MassStorage>(
             quaternion: kernel_out.child_q_inertial_body,
             ang_vel_body: kernel_out.child_ang_vel_body,
         };
-        let derived_trans = TranslationalState {
-            position: kernel_out.child_position_inertial,
-            velocity: kernel_out.child_velocity_inertial,
+        // Re-wrap the kernel's raw outputs as `<MassNode>` typed —
+        // mirrors the typed-quantity `*_typed` sibling pattern but
+        // inlined here because the wrapping is a single struct (no
+        // separate kernel sibling needed). The `<MassNode>` mass-tree
+        // wildcard is the storage-boundary tag (TS.01); see
+        // `KinematicNodeState` docs.
+        let derived_trans = TranslationalStateTyped::<MassNode> {
+            // allowed: typed↔raw kernel boundary writeback (kinematic-propagation per-child output)
+            position: Position::<MassNode>::from_raw_si(kernel_out.child_position_inertial),
+            // allowed: typed↔raw kernel boundary writeback (kinematic-propagation per-child output)
+            velocity: Velocity::<MassNode>::from_raw_si(kernel_out.child_velocity_inertial),
         };
         // Carry the child's structural fields through unchanged — the
         // walk only writes the rotational / translational state.
@@ -373,9 +409,9 @@ mod tests {
             root,
             KinematicNodeState {
                 rot: RotationalState::default(),
-                trans: TranslationalState {
-                    position: root_pos,
-                    velocity: root_vel,
+                trans: TranslationalStateTyped::<MassNode> {
+                    position: Position::<MassNode>::from_raw_si(root_pos),
+                    velocity: Velocity::<MassNode>::from_raw_si(root_vel),
                 },
                 t_struct_body: DMat3::IDENTITY,
                 composite_in_struct: DVec3::ZERO,
@@ -388,14 +424,30 @@ mod tests {
         let out = propagate_state_via_storage(&tree, &nodes, &edges);
 
         // Root preserved verbatim.
-        assert_eq!(out[&root].trans.position, root_pos);
-        assert_eq!(out[&root].trans.velocity, root_vel);
+        assert_eq!(out[&root].trans.position.raw_si(), root_pos);
+        assert_eq!(out[&root].trans.velocity.raw_si(), root_vel);
         // mid and leaf inherit root's identity attitude and zero offset
         // ⇒ same position / velocity.
-        assert!(approx_eq_vec3(out[&mid].trans.position, root_pos, 1e-12));
-        assert!(approx_eq_vec3(out[&mid].trans.velocity, root_vel, 1e-12));
-        assert!(approx_eq_vec3(out[&leaf].trans.position, root_pos, 1e-12));
-        assert!(approx_eq_vec3(out[&leaf].trans.velocity, root_vel, 1e-12));
+        assert!(approx_eq_vec3(
+            out[&mid].trans.position.raw_si(),
+            root_pos,
+            1e-12
+        ));
+        assert!(approx_eq_vec3(
+            out[&mid].trans.velocity.raw_si(),
+            root_vel,
+            1e-12
+        ));
+        assert!(approx_eq_vec3(
+            out[&leaf].trans.position.raw_si(),
+            root_pos,
+            1e-12
+        ));
+        assert!(approx_eq_vec3(
+            out[&leaf].trans.velocity.raw_si(),
+            root_vel,
+            1e-12
+        ));
     }
 
     /// Three-body chain root → mid → leaf where every link is
@@ -439,9 +491,9 @@ mod tests {
         // Total leaf position = (1,0,0) + (cos30, -sin30, 0).
         let expected_leaf_pos = offset + t_pc.transpose() * offset;
         assert!(
-            approx_eq_vec3(out[&leaf].trans.position, expected_leaf_pos, 1e-12),
+            approx_eq_vec3(out[&leaf].trans.position.raw_si(), expected_leaf_pos, 1e-12),
             "leaf position: expected {expected_leaf_pos:?}, got {:?}",
-            out[&leaf].trans.position
+            out[&leaf].trans.position.raw_si()
         );
     }
 

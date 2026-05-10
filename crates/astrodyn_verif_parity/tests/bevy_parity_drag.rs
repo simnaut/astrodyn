@@ -284,6 +284,7 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
     sim.atmosphere = Some(AtmosphereConfig {
@@ -386,6 +387,7 @@ fn bevy_parity_drag_met_run5a() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
     sim.atmosphere = Some(AtmosphereConfig {
@@ -492,6 +494,7 @@ fn bevy_parity_drag_run6b() {
             tidal_config: None,
             planet_omega: astrodyn::planet_config::EARTH.omega,
             central: true,
+            marker_only: false,
         },
     );
     sim.atmosphere = Some(AtmosphereConfig {

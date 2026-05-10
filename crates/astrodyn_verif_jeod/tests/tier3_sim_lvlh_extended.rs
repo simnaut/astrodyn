@@ -46,6 +46,7 @@ fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simu
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
 

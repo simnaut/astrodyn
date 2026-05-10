@@ -70,6 +70,7 @@ fn add_earth_point_mass(sim: &mut Simulation) -> usize {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     )
 }
@@ -197,6 +198,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
     let moon = sim.add_source(
@@ -219,6 +221,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
             tidal_config: None,
             planet_omega: 0.0,
             central: false,
+            marker_only: false,
         },
     );
 

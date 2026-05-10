@@ -1146,16 +1146,17 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         }
         // ── Interactions ──
         //
-        // `VehicleConfig.drag / srp` are the runner-builder-side
-        // declarations of the body's interaction surface. The bridge
-        // mirrors them onto the matching Bevy components so a recipe
-        // that wires drag/SRP through `VehicleConfig` produces a Bevy
-        // entity bit-identical to the runner without the recipe author
-        // having to insert `DragConfigC` / `FlatPlateConfigC` /
-        // `CannonballSrpC` by hand. The body-side `ShadowBody` index is
-        // dropped here — the matching `ShadowBodyC` lives on the
-        // source entity and is inserted at `populate_app` time, where
-        // `source_entities[source_idx]` is reachable.
+        // `VehicleConfig.{drag, srp, shadow_body}` are the runner-
+        // builder-side declarations of the body's interaction surface.
+        // The bridge mirrors them onto matching Bevy components so a
+        // recipe that wires drag / SRP / shadow through `VehicleConfig`
+        // produces a Bevy entity bit-identical to the runner without
+        // the recipe author having to insert `DragConfigC` /
+        // `FlatPlateConfigC` / `CannonballSrpC` / `ShadowBodyC` by
+        // hand. Pre root-cause-fix, these inserts were missing here,
+        // so recipe-driven scenarios silently lost drag/SRP/shadow on
+        // the Bevy side; now the bridge keeps the runner and Bevy
+        // adapters in lock step.
         if let Some(drag) = self.drag {
             entity.insert(components::DragConfigC::from_untyped(&drag));
         }
@@ -1175,6 +1176,31 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
                     diffuse,
                 });
             }
+        }
+        // Shadow body — `VehicleConfig.shadow_body` references a
+        // gravity source by index that casts a conical shadow on the
+        // body for SRP eclipse computation. The runner-side SRP
+        // system reads this from the body; the Bevy adapter places a
+        // `ShadowBodyC` marker on the *source* entity itself and the
+        // shadow-detection system queries `(TranslationalStateC,
+        // ShadowBodyC)`. Translate by inserting the component on the
+        // resolved source entity. `populate_app` performs an
+        // idempotent re-walk of `shadow_body` markers (with a radius-
+        // mismatch fail-loud assertion across bodies that share a
+        // source); inserting here is safe under that re-walk and lets
+        // direct `spawn_bevy` callers (outside `populate_app`) get
+        // the marker too.
+        if let Some(sb) = self.shadow_body {
+            let src = resolve_source_entity(source_entities, sb.source_idx, "shadow_body");
+            // The body's `entity` borrow above must be released before
+            // taking a fresh borrow on the source. Stash the body
+            // entity id, drop the borrow, mutate source, then re-
+            // acquire the body entity for any downstream inserts.
+            let body_id = entity.id();
+            commands
+                .entity(src)
+                .insert(components::ShadowBodyC { radius: sb.radius });
+            entity = commands.entity(body_id);
         }
         // Non-root integration: translate the `usize` source index to
         // the matching ECS Entity so `register_body_frames_system` can

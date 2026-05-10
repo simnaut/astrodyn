@@ -1,4 +1,4 @@
-// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` / `<MassNode>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy system for kinematic state propagation root → leaves.
 //!
 //! For every kinematic child (an entity carrying [`KinematicChildC`]
@@ -183,10 +183,23 @@ pub fn propagate_state_from_root_system<P: Planet>(
         let read_q = state_qs.p0();
         for entity in view.iter_entities() {
             // allowed: typed↔raw kernel boundary
-            let (rot_untyped, trans_untyped) = match read_q.get(entity) {
+            // JEOD_INV: TS.01 — `<MassNode>` storage-boundary lift for
+            // kinematic-propagation scratch state. Per-entity
+            // `TranslationalStateC<P>` lives in `<PlanetInertial<P>>`;
+            // the kinematic-walk storage `KinematicNodeState.trans`
+            // takes the `<MassNode>` mass-tree wildcard so a chain
+            // composing nodes from heterogeneous integration frames
+            // (parent in `<RootInertial>`, child in
+            // `<PlanetInertial<P>>`, …) routes through one boundary
+            // type. Realistic Bevy configs integrate every body in
+            // its own planet inertial, so `<PlanetInertial<P>> →
+            // <MassNode>` is the only relabel needed here; the
+            // per-edge `t_parent_child` matrix carries any per-link
+            // frame transition the JEOD attach geometry encodes.
+            let (rot_untyped, trans_typed) = match read_q.get(entity) {
                 Ok((r, t)) => (
                     astrodyn::typed_bridge::rot_typed_to_raw(&r.0),
-                    astrodyn::typed_bridge::trans_typed_to_raw(&t.0),
+                    t.0.relabel_to::<astrodyn::MassNode>(),
                 ),
                 Err(_) => Default::default(),
             };
@@ -207,7 +220,7 @@ pub fn propagate_state_from_root_system<P: Planet>(
                 entity,
                 KinematicNodeState {
                     rot: rot_untyped,
-                    trans: trans_untyped,
+                    trans: trans_typed,
                     t_struct_body,
                     composite_in_struct,
                 },
@@ -285,23 +298,27 @@ pub fn propagate_state_from_root_system<P: Planet>(
         if kinematic_set.contains(entity) {
             if let Ok((mut rot_c, mut trans_c)) = writeback_q.get_mut(*entity) {
                 // allowed: kinematic-propagation kernel boundary —
-                // `state.rot` / `state.trans` arrive as raw
-                // `RotationalState` / `TranslationalState` from the
-                // kernel walk in `astrodyn::propagate_state_via_storage`,
-                // and re-wrapping them as `RotationalStateTyped<SelfRef>` /
-                // `TranslationalStateTyped<PlanetInertial<SelfPlanet>>`
-                // is the canonical re-entry into the typed surface
-                // (mirrors `wrench_aggregation_system`'s root-exit
-                // boundary writes through `from_raw_si`). The
-                // translational tag matches `TranslationalStateC`'s
-                // wildcard-`<PlanetInertial<SelfPlanet>>` storage post
-                // #263, not `<RootInertial>`: the body lives in its
-                // integration frame, and the `<RootInertial>` lift is
-                // applied at *shift sites* via `to_inertial(&origin)`
-                // — never silently here.
+                // `state.rot` arrives as raw `RotationalState` and
+                // `state.trans` as `TranslationalStateTyped<MassNode>`
+                // from the kernel walk in
+                // `astrodyn::propagate_state_via_storage`. Re-wrapping
+                // them as `RotationalStateTyped<SelfRef>` /
+                // `TranslationalStateTyped<PlanetInertial<P>>` is the
+                // canonical re-entry into the typed surface (mirrors
+                // `wrench_aggregation_system`'s root-exit boundary
+                // writes through `from_raw_si`). The translational tag
+                // matches `TranslationalStateC`'s
+                // `<PlanetInertial<P>>` storage, not `<RootInertial>`:
+                // the body lives in its integration frame, and the
+                // `<RootInertial>` lift is applied at *shift sites*
+                // via `to_inertial(&origin)` — never silently here.
+                // JEOD_INV: TS.01 — `<MassNode>` storage-boundary
+                // lower at the kinematic-propagation writeback
+                // boundary; the wildcard pins back to
+                // `<PlanetInertial<P>>` for per-entity storage.
                 // allowed: typed↔raw kernel-boundary writeback (#397)
                 rot_c.0 = astrodyn::typed_bridge::rot_raw_to_self_ref(&state.rot);
-                trans_c.0 = astrodyn::typed_bridge::trans_raw_to_planet::<P>(&state.trans);
+                trans_c.0 = state.trans.relabel_to::<astrodyn::PlanetInertial<P>>();
             }
         }
     }

@@ -1,7 +1,10 @@
-//! Bevy ↔ runner parity for SIM_dyncomp RUN_7A–RUN_7D (4×4 / 8×8
-//! spherical-harmonic Earth + DE421 Sun/Moon third-body, ± MET drag).
-//! All four variants share `run7_pre_step` — closed by #395 once the
-//! Bevy `AppSimContext::set_source_position` bridge landed.
+//! Bevy ↔ runner parity for SIM_dyncomp RUN_7a–d (spherical-harmonics
+//! gravity + 3rd-body ephemeris updates, plus drag for c/d variants),
+//! via the `VerificationCaseParityExt` trait.
+//!
+//! Unblocked by issue #395's `BevySimContext`: each recipe's `pre_step`
+//! drives `set_source_position` for Sun + Moon at each CSV record on
+//! both runtimes; bit-identity follows from identical numeric inputs.
 
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_parity::VerificationCaseParityExt;

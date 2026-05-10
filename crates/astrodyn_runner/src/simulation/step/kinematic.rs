@@ -1,4 +1,4 @@
-// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
+// JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` / `<MassNode>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Kinematic state propagation (root → leaves) for
 //! [`super::super::Simulation`].
 //!
@@ -52,13 +52,10 @@
 
 use std::collections::HashMap;
 
-use astrodyn::typed_bridge::{
-    rot_raw_to_self_ref, rot_typed_to_raw, trans_raw_to_typed, trans_typed_to_raw,
-};
+use astrodyn::typed_bridge::{rot_raw_to_self_ref, rot_typed_to_raw};
 use astrodyn::{
     propagate_state_via_storage, IntegOrigin, IntegrationFrame, KinematicEdge, KinematicNodeState,
-    MassBodyId, MassStorage, RootInertial, RotationalState, TranslationalState,
-    TranslationalStateTyped,
+    MassBodyId, MassNode, MassStorage, RootInertial, RotationalState, TranslationalStateTyped,
 };
 
 use super::super::Simulation;
@@ -268,10 +265,17 @@ impl Simulation {
                 // keeps a cross-source chain (e.g. parent in root,
                 // child in `PlanetInertial<Earth>`) from silently
                 // mixing coordinates. RF.10 shift site.
+                //
+                // After the integ-origin shift the value lives in
+                // `<RootInertial>`; relabel into `<MassNode>` for the
+                // kinematic-walk storage boundary (TS.01 mass-tree
+                // wildcard — see [`KinematicNodeState`] docs).
                 let body = &self.bodies[body_idx];
                 let rot = body.rot.as_ref().map(rot_typed_to_raw).unwrap_or_default();
                 let trans_inertial = body.trans.to_inertial(&body_integ_origins[body_idx]);
-                (rot, trans_typed_to_raw(&trans_inertial))
+                // JEOD_INV: TS.01 — `<MassNode>` storage-boundary lift
+                // for kinematic-propagation scratch state.
+                (rot, trans_inertial.relabel_to::<MassNode>())
             } else {
                 // Tree-only nodes (the common case for assemblies like
                 // Apollo's launch stack, where only the integrated root
@@ -280,7 +284,10 @@ impl Simulation {
                 // through the parent. They are *output-only* nodes —
                 // we propagate to them but don't write back anywhere
                 // since no SimBody owns their state.
-                (RotationalState::default(), TranslationalState::default())
+                (
+                    RotationalState::default(),
+                    TranslationalStateTyped::<MassNode>::default(),
+                )
             };
 
             nodes.insert(
@@ -348,18 +355,21 @@ impl Simulation {
             if !self.bodies[body_idx].kinematic_only {
                 continue;
             }
-            // The kernel produced root-inertial composite-body state;
+            // The kernel produced root-inertial composite-body state
+            // tagged with the `<MassNode>` mass-tree wildcard (TS.01);
             // the typed storage at `body.trans` is
-            // `TranslationalStateTyped<IntegrationFrame>`, so lower
-            // back through this body's `IntegOrigin`. Symmetric
-            // partner of the seed-time `to_inertial` lift above —
-            // skipping this would write a root-inertial value into
-            // integration-frame storage and silently corrupt every
-            // downstream consumer of `body.trans` for any body whose
-            // integration frame is not root. RF.10 shift site.
-            // allowed: typed↔raw kernel-boundary lift — kinematic-propagation
-            // kernel returns raw root-inertial `TranslationalState`.
-            let trans_inertial = trans_raw_to_typed::<RootInertial>(&state.trans);
+            // `TranslationalStateTyped<IntegrationFrame>`. Re-pin the
+            // wildcard to `<RootInertial>` (the concrete frame the
+            // walk's input was relabeled from on seed) and lower
+            // through this body's `IntegOrigin`. Symmetric partner of
+            // the seed-time `to_inertial` lift above — skipping this
+            // would write a root-inertial value into integration-frame
+            // storage and silently corrupt every downstream consumer
+            // of `body.trans` for any body whose integration frame is
+            // not root. RF.10 shift site.
+            // JEOD_INV: TS.01 — `<MassNode>` storage-boundary lower at
+            // the kinematic-propagation writeback boundary.
+            let trans_inertial = state.trans.relabel_to::<RootInertial>();
             self.bodies[body_idx].trans =
                 TranslationalStateTyped::<IntegrationFrame>::from_inertial(
                     trans_inertial,
@@ -648,6 +658,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: true,
+                marker_only: false,
             },
         );
         // Add a non-central source whose inertial frame is offset
@@ -671,6 +682,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
 
@@ -949,6 +961,7 @@ mod tests {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: false,
+                marker_only: false,
             },
         );
         sim.sun_source = Some(sun);

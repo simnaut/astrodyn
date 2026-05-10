@@ -50,6 +50,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
             tidal_config: None,
             planet_omega: 0.0,
             central: true,
+            marker_only: false,
         },
     );
     sb.add_body(VehicleConfig {

@@ -235,15 +235,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "tide_verif",
-        "recipe exists (sim_tide_verif::run01) but uses \
-         `set_tidal_body_position`, which is default-panic on \
-         `AppSimContext`; bridging needs `populate_app` to expose \
-         tidal-body entities so the parity trait can route the \
-         per-step tidal update through the same `SimContext` surface \
-         it uses for source positions (#395 follow-up).",
-    ),
-    (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",
@@ -262,15 +253,14 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     //    but several rely on `pre_step` for ephemeris updates and the
     //    wrapper hasn't been added yet. Tracked individually so each
     //    can be dropped from the gap list as its wrapper lands.
-    (
-        "dyncomp_run6",
-        "recipes exist (sim_dyncomp::run6a_const_density_drag, run6b_drag, \
-         run6b_drag_rotated_struct, run6b_drag_aero_traj) — wrapper not yet \
-         added (#389 follow-up)",
-    ),
+    //
     // dyncomp_run2 covered by `bevy_parity_dyncomp_run2_3dof.rs` (the
     // pilot wrapper); the prefix-match in `is_covered_by_parity` lets
     // it satisfy this entry implicitly, so it is not listed here.
+    //
+    // dyncomp_run6 covered by `bevy_parity_dyncomp_run6.rs` — drag
+    // family (run6a_const_density_drag, run6b_drag,
+    // run6b_drag_rotated_struct, run6b_drag_aero_traj).
 ];
 
 #[test]

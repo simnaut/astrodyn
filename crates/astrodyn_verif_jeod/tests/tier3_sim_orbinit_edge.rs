@@ -72,6 +72,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
                 tidal_config: None,
                 planet_omega: 0.0,
                 central: true,
+                marker_only: false,
             },
         );
 

@@ -330,6 +330,7 @@ impl Simulation {
 ///         tidal_config: None,
 ///         planet_omega: 0.0,
 ///         central: true,
+///         marker_only: false,
 ///     }
 /// }
 ///
@@ -385,6 +386,7 @@ mod tests {
                     tidal_config: None,
                     planet_omega: 0.0,
                     central: true,
+                    marker_only: false,
                 };
                 let idx = sim.add_source("Earth", entry);
                 assert_eq!(idx.into_raw(), 0);
