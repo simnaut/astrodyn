@@ -102,8 +102,42 @@ jobs:
             echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
             exit 1
           fi
-      - name: Run tests (skip Tier 3 trajectory validation)
-        run: cargo nextest run --workspace -E 'not test(tier3_)'
+      # Heavy bevy_parity_* trajectory tests run the same 8h–23-day
+      # propagations as their tier3_ siblings (twice, for runner-vs-bevy
+      # bit-identity), so they dominate this job's wall time. They run
+      # in the dedicated `test-parity-trajectory` job below; the cheap
+      # mechanism-only parity tests (mass attach/detach, kinematic
+      # propagation, body action lifecycle, …) stay here.
+      - name: Run tests (skip Tier 3 + heavy parity trajectory tests)
+        run: |
+          cargo nextest run --workspace \
+            -E 'not test(tier3_) and not test(/^bevy_parity_(dyncomp_run(2|4|5a|7)|solar_beta|srp_1st_order|tide_verif)/)'
+
+  test-parity-trajectory:
+    name: Test (parity trajectory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        # Heavy parity tests propagate from committed JEOD fixtures
+        # (same regen path as tier3_), so $JEOD_HOME must be unset
+        # exactly like the other test jobs.
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
+      # The 13 bevy_parity_* trajectory tests run the same 8h–23-day
+      # propagations as their tier3_ siblings, twice (runner + bevy)
+      # to assert per-checkpoint bit-identity. Keep this filter in sync
+      # with the inverse exclusion in the `test` job above.
+      - name: Run heavy parity trajectory tests
+        run: |
+          cargo nextest run --workspace \
+            -E 'test(/^bevy_parity_(dyncomp_run(2|4|5a|7)|solar_beta|srp_1st_order|tide_verif)/)'
 
   test-tier3:
     name: Test (Tier 3 fast)
