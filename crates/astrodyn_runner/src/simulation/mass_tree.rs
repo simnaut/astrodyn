@@ -1741,8 +1741,8 @@ mod tests {
     use crate::Simulation;
     use astrodyn::{
         Abm4State, GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls,
-        GravityModel, GravitySource, GravitySourceEntry, IntegratorType, MassProperties,
-        RootInertial, SimulationTime, TranslationalState, VehicleConfig,
+        GravityGradient, GravityModel, GravitySource, GravitySourceEntry, IntegratorType,
+        MassProperties, RootInertial, SimulationTime, TranslationalState, VehicleConfig,
     };
 
     /// JEOD's `dyn_body_attach.cc::reset_integrators()` precedent: after an
@@ -1800,7 +1800,7 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         };
@@ -1904,7 +1904,7 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         };
@@ -1982,7 +1982,7 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         };
@@ -2073,7 +2073,7 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         };
@@ -2153,7 +2153,7 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         };
@@ -2287,7 +2287,7 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         });
@@ -2474,7 +2474,7 @@ mod tests {
             integrator: IntegratorType::Rk4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         });
@@ -2805,7 +2805,7 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         });
@@ -2893,7 +2893,7 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
             ..Default::default()
         });

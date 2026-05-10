@@ -9,8 +9,8 @@
 //! threads `PRRT_kwDORtae6c5_J-qF` / `PRRT_kwDORtae6c5_J-qI`.
 
 use astrodyn::{
-    Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
-    MassProperties, MassTree, TranslationalState,
+    Abm4State, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+    IntegratorType, MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
     Abm4StateC, AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GravityControlsC,
@@ -103,7 +103,7 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -122,7 +122,7 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -260,25 +260,26 @@ fn bevy_parity_mass_attach_detach_with_abm4_mass_attach_resets_full_ancestor_cha
         velocity: DVec3::new(0.0, 8000.0, 0.0),
     };
 
-    let mk_body =
-        |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
-            app.world_mut()
-                .spawn((
-                    Name::new(name.to_string()),
-                    DynamicsConfigC::default(),
-                    TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                    MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_typed::<
-                        astrodyn::SelfRef,
-                    >(&(MassProperties::new(mass)))),
-                    GravityControlsC(GravityControls {
-                        controls: vec![GravityControl::new_spherical(planet, false)],
-                    }),
-                    IntegratorTypeC(IntegratorType::Abm4),
-                    Abm4StateC(Abm4State::new()),
-                    MassBodyIdC(id),
-                ))
-                .id()
-        };
+    let mk_body = |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
+        app.world_mut()
+            .spawn((
+                Name::new(name.to_string()),
+                DynamicsConfigC::default(),
+                TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+                MassPropertiesC::from(
+                    astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                        &(MassProperties::new(mass)),
+                    ),
+                ),
+                GravityControlsC(GravityControls {
+                    controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                }),
+                IntegratorTypeC(IntegratorType::Abm4),
+                Abm4StateC(Abm4State::new()),
+                MassBodyIdC(id),
+            ))
+            .id()
+    };
     let e_top = mk_body(&mut app, id_top, 1000.0, "Top");
     let e_middle = mk_body(&mut app, id_middle, 500.0, "Middle");
     let e_leaf = mk_body(&mut app, id_leaf, 100.0, "Leaf");

@@ -17,8 +17,8 @@ use astrodyn::recipes::helpers::energy_conservation::{
 };
 use astrodyn::recipes::helpers::integrator_agreement::integrator_divergence;
 use astrodyn::{
-    GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    IntegratorType, SimulationTime, TranslationalState,
+    GaussJacksonConfig, GravityControl, GravityControls, GravityGradient, GravityModel,
+    GravitySource, IntegratorType, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
@@ -81,7 +81,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
         }),
         integrator,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

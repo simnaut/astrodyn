@@ -4,8 +4,8 @@
 mod common;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+    JeodQuat, SixDofState, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -51,7 +51,10 @@ fn bevy_parity_gravity_torque_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, true)],
+                controls: vec![GravityControl::new_spherical(
+                    planet,
+                    GravityGradient::Compute,
+                )],
             }),
             GravityTorqueC::default(),
         ))
@@ -121,7 +124,10 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
         model: GravityModel::PointMass,
     };
     let controls: GravityControls<usize> = GravityControls {
-        controls: vec![GravityControl::new_spherical(0_usize, false)],
+        controls: vec![GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        )],
     };
 
     let external_torque = DVec3::new(10.0, 0.0, 0.0);
@@ -197,7 +203,10 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
         rot: Some(tumble_rot()),
         mass: Some(mass_props),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -252,7 +261,10 @@ fn run_gravity_torque_parity(
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, true)],
+                controls: vec![GravityControl::new_spherical(
+                    planet,
+                    GravityGradient::Compute,
+                )],
             }),
             GravityTorqueC::default(),
         ))
@@ -268,7 +280,10 @@ fn run_gravity_torque_parity(
         rot: Some(rot),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, true)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Compute,
+            )],
         },
         compute_gravity_gradient: true,
         ..Default::default()
@@ -359,7 +374,7 @@ fn run_external_parity(
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             ExternalForceC::default(),
             ExternalTorqueC::default(),
@@ -373,7 +388,10 @@ fn run_external_parity(
         rot: Some(rot),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });

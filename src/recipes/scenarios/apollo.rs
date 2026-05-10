@@ -9,7 +9,7 @@
 //! assert_eq!(apollo::MOON_IDX, 1);
 //! ```
 
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::DVec3;
 
@@ -81,7 +81,10 @@ pub fn apollo_translunar() -> SimulationBuilder {
         .with_translational(csm_state)
         .three_dof_point_mass(vehicle::apollo_csm_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(earth_idx, false))
+        .gravity(GravityControl::new_spherical(
+            earth_idx,
+            GravityGradient::Skip,
+        ))
         .gravity(GravityControl::new_third_body(moon_idx))
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();

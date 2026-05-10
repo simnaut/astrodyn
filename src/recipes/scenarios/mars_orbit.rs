@@ -6,7 +6,7 @@
 //! assert_eq!(sb.sources.len(), 2);
 //! ```
 
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::DVec3;
 
@@ -56,7 +56,10 @@ pub fn mars_orbit() -> SimulationBuilder {
         .with_translational(trans)
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(mars_idx, false))
+        .gravity(GravityControl::new_spherical(
+            mars_idx,
+            GravityGradient::Skip,
+        ))
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();
     sb.add_body(vehicle);

@@ -4,8 +4,8 @@
 mod common;
 
 use astrodyn::{
-    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
+    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -61,7 +61,12 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_nonspherical(planet, 4, 4, false)],
+                controls: vec![GravityControl::new_nonspherical(
+                    planet,
+                    4,
+                    4,
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -91,7 +96,12 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
+            controls: vec![GravityControl::new_nonspherical(
+                earth_idx,
+                4,
+                4,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -168,7 +178,12 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_nonspherical(planet, 4, 4, false)],
+                controls: vec![GravityControl::new_nonspherical(
+                    planet,
+                    4,
+                    4,
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -198,7 +213,12 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
+            controls: vec![GravityControl::new_nonspherical(
+                earth_idx,
+                4,
+                4,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -231,7 +251,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -253,7 +273,10 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -297,7 +320,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(gj_trans),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
@@ -325,7 +348,10 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         trans: astrodyn::typed_bridge::trans_raw_to_root(&gj_trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            controls: vec![GravityControl::new_spherical(
+                earth_idx,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });

@@ -27,8 +27,8 @@
 //!    walk; `step_detached_system` owns its propagation.
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
-    MassTree, RotationalState, StageAttachInputs, TranslationalState,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, JeodQuat,
+    MassProperties, MassTree, RotationalState, StageAttachInputs, TranslationalState,
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
@@ -2079,7 +2079,7 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
             ),
             MassBodyIdC(id_body),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -2464,7 +2464,10 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
-            controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
+            controls: vec![RunnerGravityControl::new_spherical(
+                inertial,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -2474,7 +2477,10 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
-            controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
+            controls: vec![RunnerGravityControl::new_spherical(
+                inertial,
+                GravityGradient::Skip,
+            )],
         },
         ..Default::default()
     });
@@ -2908,7 +2914,10 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
-            controls: vec![RunnerGravityControl::new_spherical(runner_source_a, false)],
+            controls: vec![RunnerGravityControl::new_spherical(
+                runner_source_a,
+                GravityGradient::Skip,
+            )],
         },
         integ_source: Some(runner_source_a),
         ..Default::default()
@@ -2919,7 +2928,10 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         mass: Some(astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass))),
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
-            controls: vec![RunnerGravityControl::new_spherical(runner_source_b, false)],
+            controls: vec![RunnerGravityControl::new_spherical(
+                runner_source_b,
+                GravityGradient::Skip,
+            )],
         },
         integ_source: Some(runner_source_b),
         ..Default::default()

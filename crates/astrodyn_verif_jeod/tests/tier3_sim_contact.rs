@@ -32,8 +32,8 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    evaluate_contact_pair, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    MassProperties, RotationalState, SimulationTime, TranslationalState,
+    evaluate_contact_pair, GravityControl, GravityControls, GravityGradient, GravityModel,
+    GravitySource, JeodQuat, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{ContactFacet, ContactMaterial};
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -883,7 +883,10 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
     let earth_radius = astrodyn::EARTH.shape.r_eq;
 
     let earth_grav = GravityControls {
-        controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        controls: vec![GravityControl::new_spherical(
+            earth_idx,
+            GravityGradient::Skip,
+        )],
     };
 
     // veh1 — line cylinder along structural x-axis.

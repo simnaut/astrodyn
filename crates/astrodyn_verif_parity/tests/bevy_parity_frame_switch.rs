@@ -18,9 +18,9 @@ use std::time::Duration;
 
 use astrodyn::{
     AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, FrameSwitchConfig, GravityControl,
-    GravityControls, GravitySourceEntry, InertiaTensor, JeodQuat, MassPropertiesTyped, Position,
-    RotationalStateTyped, SelfRef, StructuralFrame, SwitchSense, TranslationalState, VehicleConfig,
-    EARTH, MOON,
+    GravityControls, GravityGradient, GravitySourceEntry, InertiaTensor, JeodQuat,
+    MassPropertiesTyped, Position, RotationalStateTyped, SelfRef, StructuralFrame, SwitchSense,
+    TranslationalState, VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
@@ -117,11 +117,14 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches.clone()),
         ))
@@ -227,11 +230,14 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,
@@ -332,11 +338,14 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, false), {
-                    let mut c = GravityControl::new_spherical(moon, false);
-                    c.differential = true;
-                    c
-                }],
+                controls: vec![
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    {
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        c.differential = true;
+                        c
+                    },
+                ],
             }),
             FrameSwitchesC(switches),
         ))
@@ -391,11 +400,14 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         rot: Some(initial_rot()),
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0_usize, false), {
-                let mut c = GravityControl::new_spherical(moon_idx, false);
-                c.differential = true;
-                c
-            }],
+            controls: vec![
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                {
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    c.differential = true;
+                    c
+                },
+            ],
         },
         frame_switches: vec![FrameSwitchConfig {
             target_source: moon_idx,

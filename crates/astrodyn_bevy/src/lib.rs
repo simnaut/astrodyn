@@ -1018,7 +1018,7 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
 /// use bevy::prelude::*;
 /// use astrodyn_bevy::{PlanetBundle, VehicleConfigBevyExt};
 /// use astrodyn::recipes::{constants, orbital_elements, vehicle};
-/// use astrodyn::{GravityControl, VehicleBuilder, EARTH};
+/// use astrodyn::{GravityControl, GravityGradient, VehicleBuilder, EARTH};
 ///
 /// let mut app = App::new();
 /// app.add_systems(Startup, |mut commands: Commands| {
@@ -1027,7 +1027,7 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
 ///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 ///         .three_dof_point_mass(vehicle::iss_mass())
 ///         .rk4()
-///         .gravity(GravityControl::new_spherical(0_usize, false))
+///         .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
 ///         .build();
 ///     cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
 /// });

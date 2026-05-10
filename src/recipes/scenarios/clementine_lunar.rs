@@ -7,7 +7,7 @@
 //! assert_eq!(sb.sources.len(), 3);
 //! ```
 
-use astrodyn_gravity::GravityControl;
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::DVec3;
 
@@ -72,7 +72,10 @@ pub fn clementine_lunar() -> SimulationBuilder {
         .with_translational(trans)
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(moon_idx, false))
+        .gravity(GravityControl::new_spherical(
+            moon_idx,
+            GravityGradient::Skip,
+        ))
         .gravity(GravityControl::new_third_body(earth_idx))
         .gravity(GravityControl::new_third_body(sun_idx))
         .cannonball_srp(5.0, 0.4, 0.4)

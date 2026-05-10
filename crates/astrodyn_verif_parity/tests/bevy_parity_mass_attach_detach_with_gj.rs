@@ -12,8 +12,8 @@
 //! prove the same JEOD invariant on both consumers of `astrodyn`.
 
 use astrodyn::{
-    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, IntegratorType, MassProperties, MassTree, TranslationalState,
+    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, IntegratorType, MassProperties, MassTree, TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GaussJacksonStateC,
@@ -96,7 +96,7 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -115,7 +115,7 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -245,25 +245,26 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
         velocity: DVec3::new(0.0, 8000.0, 0.0),
     };
     let gj_cfg = GaussJacksonConfig::with_order(8);
-    let mk_body =
-        |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
-            app.world_mut()
-                .spawn((
-                    Name::new(name.to_string()),
-                    DynamicsConfigC::default(),
-                    TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                    MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_typed::<
-                        astrodyn::SelfRef,
-                    >(&(MassProperties::new(mass)))),
-                    GravityControlsC(GravityControls {
-                        controls: vec![GravityControl::new_spherical(planet, false)],
-                    }),
-                    IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
-                    GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
-                    MassBodyIdC(id),
-                ))
-                .id()
-        };
+    let mk_body = |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
+        app.world_mut()
+            .spawn((
+                Name::new(name.to_string()),
+                DynamicsConfigC::default(),
+                TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+                MassPropertiesC::from(
+                    astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
+                        &(MassProperties::new(mass)),
+                    ),
+                ),
+                GravityControlsC(GravityControls {
+                    controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                }),
+                IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
+                GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
+                MassBodyIdC(id),
+            ))
+            .id()
+    };
     let e_top = mk_body(&mut app, id_top, 1000.0, "Top");
     let e_middle = mk_body(&mut app, id_middle, 500.0, "Middle");
     let e_leaf = mk_body(&mut app, id_leaf, 100.0, "Leaf");

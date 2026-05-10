@@ -19,9 +19,9 @@ use std::time::Duration;
 
 use astrodyn::{
     AngularVelocity, BodyAttitude, BodyFrame, Ephemeris, EphemerisBody, GravityControl,
-    GravityControls, GravityModel, GravitySource, InertiaTensor, MassPropertiesTyped, Position,
-    RootInertial, RotationalStateTyped, SelfRef, SixDofState, StructuralFrame, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    GravityControls, GravityGradient, GravityModel, GravitySource, InertiaTensor,
+    MassPropertiesTyped, Position, RootInertial, RotationalStateTyped, SelfRef, SixDofState,
+    StructuralFrame, TranslationalState, TranslationalStateTyped, Velocity,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -222,12 +222,17 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
 }
 
 pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
+    let gradient_mode = if gradient {
+        GravityGradient::Compute
+    } else {
+        GravityGradient::Skip
+    };
     VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
+            controls: vec![GravityControl::new_spherical(earth_idx, gradient_mode)],
         },
         compute_gravity_gradient: gradient,
         ..Default::default()

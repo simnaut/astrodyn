@@ -13,8 +13,9 @@ use std::time::Duration;
 
 use astrodyn::{
     AngularVelocity, BodyAttitude, BodyFrame, DynamicsConfig, GravityControl, GravityControls,
-    GravityModel, GravitySource, InertiaTensor, IntegratorType, JeodQuat, MassPropertiesTyped,
-    Position, RotationalStateTyped, SelfRef, SixDofState, StructuralFrame, TranslationalState,
+    GravityGradient, GravityModel, GravitySource, InertiaTensor, IntegratorType, JeodQuat,
+    MassPropertiesTyped, Position, RotationalStateTyped, SelfRef, SixDofState, StructuralFrame,
+    TranslationalState,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC,
@@ -86,7 +87,7 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Spawn vehicle entity with all required components for 6-DOF integration.
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, false)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -151,7 +152,7 @@ fn run_simulation_steps() -> SixDofState {
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -247,7 +248,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         .id();
 
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, false)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -290,7 +291,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         mass: Some(mass_props()),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

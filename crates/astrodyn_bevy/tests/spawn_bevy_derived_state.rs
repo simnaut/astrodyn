@@ -29,8 +29,8 @@
 use std::time::Duration;
 
 use astrodyn::{
-    EulerSequence, F64Ext, GravityControl, JeodQuat, MassProperties, RootInertial, RotationalState,
-    TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH, MOON, SUN,
+    EulerSequence, F64Ext, GravityControl, GravityGradient, JeodQuat, MassProperties, RootInertial,
+    RotationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH, MOON, SUN,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, EarthLightingConfigC, EarthLightingStateC, EulerAnglesC, EulerAnglesConfigC,
@@ -109,7 +109,10 @@ fn spawn_bevy_wires_orbital_elements() {
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .orbital_elements(0)
         .build();
 
@@ -164,7 +167,10 @@ fn spawn_bevy_wires_euler_angles() {
         .with_translational(iss_trans())
         .sixdof(iss_rot(), iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .euler_angles(EulerSequence::ZYX)
         .build();
 
@@ -214,7 +220,10 @@ fn spawn_bevy_wires_lvlh() {
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .lvlh()
         .build();
 
@@ -254,7 +263,10 @@ fn spawn_bevy_wires_geodetic() {
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .geodetic(0, &EARTH)
         .build();
 
@@ -315,7 +327,10 @@ fn spawn_bevy_wires_solar_beta() {
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .solar_beta()
         .build();
 
@@ -369,7 +384,10 @@ fn spawn_bevy_wires_earth_lighting() {
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .earth_lighting(&EARTH, &MOON, &SUN)
         .build();
 

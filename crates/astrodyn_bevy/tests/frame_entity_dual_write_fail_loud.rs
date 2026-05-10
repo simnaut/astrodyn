@@ -20,8 +20,8 @@
 use std::time::Duration;
 
 use astrodyn::{
-    GravityControl, JeodQuat, MassProperties, RootInertial, RotationModel, RotationalState,
-    TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH,
+    GravityControl, GravityGradient, JeodQuat, MassProperties, RootInertial, RotationModel,
+    RotationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, FrameEntityC, FrameRotC, FrameTransC, PfixFrameEntityC, PlanetBundle,
@@ -86,7 +86,10 @@ fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, false))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .build();
 
     let body = {
