@@ -7,11 +7,11 @@ use astrodyn_verif_jeod::run_verification::sim_srp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_srp_basic_default() {
+fn bevy_parity_srp_basic_default() {
     sim_srp::srp_basic_default().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_srp_basic_varied_cr() {
+fn bevy_parity_srp_basic_varied_cr() {
     sim_srp::srp_basic_varied_cr().run_and_assert_parity::<astrodyn::Earth>();
 }

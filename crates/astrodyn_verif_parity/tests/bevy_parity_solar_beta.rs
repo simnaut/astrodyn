@@ -7,16 +7,16 @@ use astrodyn_verif_jeod::run_verification::sim_solar_beta;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_solar_beta_run2() {
+fn bevy_parity_solar_beta_run2() {
     sim_solar_beta::solar_beta_run2().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_solar_beta_equ() {
+fn bevy_parity_solar_beta_equ() {
     sim_solar_beta::solar_beta_equ().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_solar_beta_obliquity() {
+fn bevy_parity_solar_beta_obliquity() {
     sim_solar_beta::solar_beta_obliquity().run_and_assert_parity::<astrodyn::Earth>();
 }

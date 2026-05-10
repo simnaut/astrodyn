@@ -8,6 +8,6 @@ use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_dyncomp_run5a_met() {
+fn bevy_parity_met_dyncomp_run5a_met() {
     sim_dyncomp::run5a_met().run_and_assert_parity::<astrodyn::Earth>();
 }

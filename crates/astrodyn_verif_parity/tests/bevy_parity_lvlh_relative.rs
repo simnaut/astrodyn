@@ -21,12 +21,12 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 
 /// 3-DOF LVLH-relative: lateral offset.
 #[test]
-fn tier3_bevy_lvlhrel_test0() {
+fn bevy_parity_lvlh_relative_lvlhrel_test0() {
     sim_relative::lvlhrel_test0().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 /// 3-DOF LVLH-relative: coplanar along-track separation.
 #[test]
-fn tier3_bevy_lvlhrel_test1() {
+fn bevy_parity_lvlh_relative_lvlhrel_test1() {
     sim_relative::lvlhrel_test1().run_and_assert_parity::<astrodyn::Earth>();
 }

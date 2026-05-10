@@ -50,7 +50,7 @@ use common::*;
 /// origin and produce garbage; post-fix it agrees with the analytical
 /// value to numerical roundoff.
 #[test]
-fn bevy_parity_frame_attach_gravity_sees_propagated_state() {
+fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_state() {
     let mut app = new_bevy_app(DT);
 
     let earth = spawn_earth_source(&mut app);

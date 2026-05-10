@@ -218,7 +218,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 /// → `integrate_body` with the same `astrodyn_*` functions underneath. Any
 /// difference — even a single ULP — means the Bevy wiring is wrong.
 #[test]
-fn tier3_bevy_matches_simulation_bit_identical() {
+fn bevy_parity_matches_simulation_bit_identical() {
     let (mut app, _planet, vehicle) = build_app();
 
     let bevy_state = run_bevy_steps(&mut app, vehicle);
@@ -229,7 +229,7 @@ fn tier3_bevy_matches_simulation_bit_identical() {
 
 /// Same as above but with RKF45 integrator — verifies IntegratorTypeC dispatch.
 #[test]
-fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
+fn bevy_parity_rkf45_matches_simulation_bit_identical() {
     // Build Bevy app with RKF45
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);

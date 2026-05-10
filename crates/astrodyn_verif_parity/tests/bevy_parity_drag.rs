@@ -20,7 +20,7 @@ use common::*;
 // ── Scenario B: Exponential atmosphere + drag, 6-DOF ──
 
 #[test]
-fn tier3_bevy_drag_atmosphere_sixdof() {
+fn bevy_parity_drag_atmosphere_sixdof() {
     println!("Scenario B: Exponential atmosphere + drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -112,7 +112,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
 // ── Scenario K: Constant-density drag (Phase 4a parity) ──
 
 #[test]
-fn tier3_bevy_constant_density_drag_sixdof() {
+fn bevy_parity_drag_constant_density_drag_sixdof() {
     println!("Scenario K: Constant-density drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -204,7 +204,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
 // ── Scenario L: MET atmosphere + drag (Phase 4a parity) ──
 
 #[test]
-fn tier3_bevy_met_atmosphere_drag_sixdof() {
+fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     println!("Scenario L: MET atmosphere + drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -312,7 +312,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
 // ── MET atmosphere drag parity (run5a) ──
 
 #[test]
-fn tier3_bevy_met_run5a() {
+fn bevy_parity_drag_met_run5a() {
     println!("MET run5a parity: minimum solar");
     let met = MetAtmosphere {
         f10: 70.0,
@@ -417,7 +417,7 @@ fn tier3_bevy_met_run5a() {
 // ── Drag run6b parity (MET atmosphere + drag) ──
 
 #[test]
-fn tier3_bevy_drag_run6b() {
+fn bevy_parity_drag_run6b() {
     println!("Drag run6b parity: MET atmosphere + drag");
     let met = MetAtmosphere {
         f10: 128.8,

@@ -21,7 +21,7 @@ use common::*;
 // ── Scenario A: Point-mass 6-DOF ──
 
 #[test]
-fn tier3_bevy_point_mass_sixdof() {
+fn bevy_parity_point_mass_sixdof() {
     println!("Scenario A: Point-mass gravity, 6-DOF");
 
     // ── Bevy ──
@@ -121,12 +121,12 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
 }
 
 #[test]
-fn tier3_bevy_planetary_leo_inc() {
+fn bevy_parity_point_mass_planetary_leo_inc() {
     run_planetary_parity("planetary_leo_inc", iss_trans());
 }
 
 #[test]
-fn tier3_bevy_planetary_leo_polar() {
+fn bevy_parity_point_mass_planetary_leo_polar() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 0.0, 7668.56),
@@ -135,7 +135,7 @@ fn tier3_bevy_planetary_leo_polar() {
 }
 
 #[test]
-fn tier3_bevy_planetary_leo_ecc() {
+fn bevy_parity_point_mass_planetary_leo_ecc() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -144,7 +144,7 @@ fn tier3_bevy_planetary_leo_ecc() {
 }
 
 #[test]
-fn tier3_bevy_planetary_leo_equ() {
+fn bevy_parity_point_mass_planetary_leo_equ() {
     let trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -153,7 +153,7 @@ fn tier3_bevy_planetary_leo_equ() {
 }
 
 #[test]
-fn tier3_bevy_planetary_geo() {
+fn bevy_parity_point_mass_planetary_geo() {
     let trans = TranslationalState {
         position: DVec3::new(42_164_000.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 3074.66, 0.0),
@@ -164,7 +164,7 @@ fn tier3_bevy_planetary_geo() {
 // ── Run2 6-DOF parity ──
 
 #[test]
-fn tier3_bevy_run2_6dof() {
+fn bevy_parity_point_mass_run2_6dof() {
     println!("Run2 6-DOF parity: point-mass gravity with rotation");
     let mut app = new_bevy_app(DT);
     let planet = spawn_earth_source(&mut app);
@@ -206,7 +206,7 @@ fn tier3_bevy_run2_6dof() {
 // ── Orbinit cross-consistency parity ──
 
 #[test]
-fn tier3_bevy_orbinit_cross_consistency() {
+fn bevy_parity_point_mass_orbinit_cross_consistency() {
     println!("Orbinit cross-consistency parity");
     let orbits = [
         (
@@ -278,7 +278,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
 // ── Timescale parity ──
 
 #[test]
-fn tier3_bevy_timescale_tdb() {
+fn bevy_parity_point_mass_timescale_tdb() {
     println!("Timescale TDB parity: Bevy vs Simulation");
     let dt = 60.0;
     let n_steps = 120; // 2 hours
@@ -318,7 +318,7 @@ fn tier3_bevy_timescale_tdb() {
 // ── Scenario P: Time reversal round-trip ──
 
 #[test]
-fn tier3_sim_time_reversal_round_trip() {
+fn bevy_parity_point_mass_time_reversal_round_trip() {
     println!("Scenario P: Time reversal round-trip");
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
@@ -374,7 +374,7 @@ fn tier3_sim_time_reversal_round_trip() {
 // ── Scenario Q: Relative state computation ──
 
 #[test]
-fn tier3_sim_relative_state_consistency() {
+fn bevy_parity_point_mass_relative_state_consistency() {
     use astrodyn::compute_relative_state;
     println!("Scenario Q: Relative state consistency");
 
@@ -478,7 +478,7 @@ fn tier3_sim_relative_state_consistency() {
 // ── Scenario R: LVLH-relative state ──
 
 #[test]
-fn tier3_sim_lvlh_relative_consistency() {
+fn bevy_parity_point_mass_lvlh_relative_consistency() {
     use astrodyn::{compute_body_lvlh_frame, compute_lvlh_relative_state};
     println!("Scenario R: LVLH-relative state consistency");
 
@@ -511,7 +511,7 @@ fn tier3_sim_lvlh_relative_consistency() {
 // ── Scenario T: Mars IAU rotation dispatch ──
 
 #[test]
-fn tier3_sim_mars_rotation_dispatch() {
+fn bevy_parity_point_mass_mars_rotation_dispatch() {
     println!("Scenario T: Mars IAU rotation dispatch");
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
@@ -567,7 +567,7 @@ fn tier3_sim_mars_rotation_dispatch() {
 // ── Scenario U: Multi-source rotation (Earth + Mars) ──
 
 #[test]
-fn tier3_sim_multi_source_rotation() {
+fn bevy_parity_point_mass_multi_source_rotation() {
     println!("Scenario U: Multi-source rotation dispatch");
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
@@ -637,7 +637,7 @@ fn tier3_sim_multi_source_rotation() {
 // ── Scenario V: Relativistic gravity correction ──
 
 #[test]
-fn tier3_sim_relativistic_gravity_consistency() {
+fn bevy_parity_point_mass_relativistic_gravity_consistency() {
     use astrodyn::relativistic::compute_relativistic_correction;
     println!("Scenario V: Relativistic gravity correction");
 
@@ -726,7 +726,7 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
 }
 
 #[test]
-fn tier3_bevy_run5b_atmosphere_mean() {
+fn bevy_parity_point_mass_run5b_atmosphere_mean() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
@@ -735,7 +735,7 @@ fn tier3_bevy_run5b_atmosphere_mean() {
 }
 
 #[test]
-fn tier3_bevy_run5c_atmosphere_max() {
+fn bevy_parity_point_mass_run5c_atmosphere_max() {
     let ecc_trans = TranslationalState {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),

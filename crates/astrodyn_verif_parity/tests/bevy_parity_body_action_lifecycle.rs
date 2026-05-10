@@ -212,7 +212,7 @@ fn read_trans(app: &App, vehicle: Entity) -> TranslationalState {
 }
 
 #[test]
-fn tier3_bevy_parity_body_action_init_lifecycle() {
+fn bevy_parity_body_action_lifecycle_parity_body_action_init_lifecycle() {
     let (mut app, vehicle) = build_app();
 
     // ── Step 0: queue the JEOD `mass.py` add → remove → re-add ──
@@ -438,7 +438,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
 ///    still set when `integrate` is called, so a missing reset hook
 ///    would surface as a fail-loud panic instead of silent corruption.
 #[test]
-fn bevy_parity_body_action_init_trans_resets_abm4_history() {
+fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history() {
     use astrodyn::{
         Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     };
@@ -597,7 +597,7 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
 ///    still set when `integrate` is called, so a missing reset hook
 ///    would surface as a fail-loud panic instead of silent corruption.
 #[test]
-fn bevy_parity_body_action_init_mass_resets_abm4_history() {
+fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history() {
     use astrodyn::{
         Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     };
@@ -765,7 +765,7 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
 ///    mass must remain S2; the action was drained on tick 1 and must
 ///    not re-fire.
 #[test]
-fn bevy_parity_body_action_startup_message_applies_exactly_once() {
+fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly_once() {
     use astrodyn::{GravityModel, GravitySource};
     use astrodyn_bevy::{DynamicsConfigC, GravitySourceC};
 

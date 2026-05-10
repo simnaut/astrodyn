@@ -574,7 +574,7 @@ fn build_parity_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilde
 /// Full-stack parity: drag + 1 SRP plate + gravity-torque, ISS 6-DOF.
 pub fn full_stack_sixdof() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_full_stack_sixdof",
+        name: "bevy_parity_srp_full_stack_sixdof",
         scenario: build_parity_full_stack_sixdof,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -621,7 +621,7 @@ fn build_parity_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationB
 /// 6-plate flat-plate SRP with Earth shadow (3-DOF).
 pub fn flat_plate_with_shadow() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_flat_plate_srp_with_shadow",
+        name: "bevy_parity_srp_flat_plate_srp_with_shadow",
         scenario: build_parity_flat_plate_with_shadow,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -679,7 +679,7 @@ fn build_shadow_2a_annular(_init: &InitialConditions) -> SimulationBuilder {
 /// Shadow 2a annular flavor — 6-DOF, ε=0.5 single plate, Earth shadow.
 pub fn shadow_2a_annular() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_shadow_2a_annular",
+        name: "bevy_parity_shadow_2a_annular",
         scenario: build_shadow_2a_annular,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -701,7 +701,7 @@ fn build_shadow_2a_cooling(_init: &InitialConditions) -> SimulationBuilder {
 /// Shadow 2a cooling flavor — 6-DOF, ε=0.9 single plate, Earth shadow.
 pub fn shadow_2a_cooling() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_shadow_2a_cooling",
+        name: "bevy_parity_shadow_2a_cooling",
         scenario: build_shadow_2a_cooling,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -723,7 +723,7 @@ fn build_srp_basic_default(_init: &InitialConditions) -> SimulationBuilder {
 /// SRP basic default — 6-DOF, single plate (albedo=0.3, diffuse=0.3).
 pub fn srp_basic_default() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_basic_default",
+        name: "bevy_parity_srp_basic_default",
         scenario: build_srp_basic_default,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -745,7 +745,7 @@ fn build_srp_basic_varied_cr(_init: &InitialConditions) -> SimulationBuilder {
 /// SRP basic varied-Cr — 6-DOF, single plate (albedo=0.8, diffuse=0.1).
 pub fn srp_basic_varied_cr() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_basic_varied_cr",
+        name: "bevy_parity_srp_basic_varied_cr",
         scenario: build_srp_basic_varied_cr,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -767,7 +767,7 @@ fn build_srp_derivative_first_order(_init: &InitialConditions) -> SimulationBuil
 /// Derivative-class SRP, first-order thermal integration.
 pub fn srp_derivative_first_order() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_first_order",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_first_order",
         scenario: build_srp_derivative_first_order,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -789,7 +789,7 @@ fn build_srp_derivative_rk4(_init: &InitialConditions) -> SimulationBuilder {
 /// Derivative-class SRP, RK4 thermal integration.
 pub fn srp_derivative_rk4() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_rk4",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_rk4",
         scenario: build_srp_derivative_rk4,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),
@@ -844,7 +844,7 @@ fn build_srp_derivative_rk4_rotated_struct(_init: &InitialConditions) -> Simulat
 /// coupled RK4 stage closure.
 pub fn srp_derivative_rk4_rotated_struct() -> VerificationCase {
     VerificationCase {
-        name: "tier3_bevy_srp_derivative_rk4_rotated_struct",
+        name: "bevy_parity_srp_rk4_thermal_srp_derivative_rk4_with_rotated_struct_frame",
         scenario: build_srp_derivative_rk4_rotated_struct,
         reference: CsvReference::TimesOnly(PARITY_TIMES_CSV),
         duration: Time::new::<second>(0.0),

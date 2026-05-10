@@ -7,11 +7,11 @@ use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_dyncomp_run3a_sh4x4() {
+fn bevy_parity_dyncomp_run3a_sh4x4() {
     sim_dyncomp::run3a_sh4x4().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]
-fn tier3_bevy_dyncomp_run3b_sh8x8() {
+fn bevy_parity_dyncomp_run3b_sh8x8() {
     sim_dyncomp::run3b_sh8x8().run_and_assert_parity::<astrodyn::Earth>();
 }

@@ -18,3 +18,22 @@ relates to `astrodyn_verif_jeod`'s Tier 3 cross-validation tests, see the
 [Strategy](https://github.com/simnaut/astrodyn/wiki/Strategy) and
 [Dependency-Graph](https://github.com/simnaut/astrodyn/wiki/Dependency-Graph)
 wiki pages.
+
+## Test naming convention
+
+Every `#[test] fn` in `tests/bevy_parity*.rs` shares a common prefix with
+its containing file's stem. Concretely, a test in
+`tests/bevy_parity_dyncomp_run3.rs` starts with `bevy_parity_dyncomp_run3`,
+so a nextest filter expression `test(bevy_parity_dyncomp_run3)` selects
+every test in that file. The invariant:
+
+> *the `#[test] fn` name starts with the same stem as its containing
+> file/binary*, so `test(<stem>)` always selects what a reader expects.
+
+When adding a new parity wrapper, name the file
+`bevy_parity_<topic>.rs` and prefix every test fn with
+`bevy_parity_<topic>`. The `parity_coverage` meta-test
+(`tests/parity_coverage.rs`) extracts topics from file stems, so it
+will recognize the new wrapper as long as the file is named
+correctly — but the function-name prefix is what makes
+`test(bevy_parity_<topic>)` filter expressions work.

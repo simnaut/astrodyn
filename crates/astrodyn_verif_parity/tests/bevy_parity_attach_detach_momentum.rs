@@ -149,7 +149,7 @@ fn read_mass(world: &World, entity: Entity) -> f64 {
 /// parent's post-attach `TranslationalStateC` / `RotationalStateC`
 /// match the kernel's output byte-for-byte.
 #[test]
-fn bevy_attach_conserves_linear_and_angular_momentum() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_conserves_linear_and_angular_momentum() {
     let parent_mass = MassProperties::with_inertia(
         1000.0,
         DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
@@ -285,7 +285,7 @@ fn bevy_attach_conserves_linear_and_angular_momentum() {
 /// `combine_states_at_attach` should leave a "soft" merge (no relative
 /// motion) untouched: parent state preserved, no spurious spin.
 #[test]
-fn bevy_attach_no_relative_motion_preserves_parent_state() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_no_relative_motion_preserves_parent_state() {
     let parent_mass = MassProperties::with_inertia(
         100.0,
         DMat3::from_diagonal(DVec3::new(50.0, 50.0, 50.0)),
@@ -357,7 +357,7 @@ fn bevy_attach_no_relative_motion_preserves_parent_state() {
 /// real derivation, the captured state would diverge from the
 /// expected and this test would fail.
 #[test]
-fn bevy_detach_captures_subtree_state() {
+fn bevy_parity_attach_detach_momentum_bevy_detach_captures_subtree_state() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
 
@@ -459,7 +459,7 @@ fn bevy_detach_captures_subtree_state() {
 /// `propagate_forward` walk is actually being applied — not just
 /// "happens to be zero in the soft case".
 #[test]
-fn bevy_detach_derives_child_state_via_rigid_body_composition() {
+fn bevy_parity_attach_detach_momentum_bevy_detach_derives_child_state_via_rigid_body_composition() {
     let parent_mass = MassProperties::with_inertia(
         1000.0,
         DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
@@ -589,7 +589,7 @@ fn bevy_detach_derives_child_state_via_rigid_body_composition() {
 /// against the parent's composite-body state at the detach instant
 /// — which is what the live detach handler must derive.
 #[test]
-fn bevy_detached_subtree_propagates_ballistically() {
+fn bevy_parity_attach_detach_momentum_bevy_detached_subtree_propagates_ballistically() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     // Both bodies share orbital velocity + zero spin. After attach +
@@ -684,7 +684,7 @@ fn bevy_detached_subtree_propagates_ballistically() {
 /// `propagate_forward` — and the re-attach handler then consumes
 /// that captured ballistic state.
 #[test]
-fn bevy_re_attach_consumes_detached_state() {
+fn bevy_parity_attach_detach_momentum_bevy_re_attach_consumes_detached_state() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     // Shared rigid-body state so soft-merge invariant lets us
@@ -756,7 +756,7 @@ fn bevy_re_attach_consumes_detached_state() {
 /// Exercise the kernel parity directly via `stage_attach_combine` —
 /// covers the Tier 1 surface for the orchestration helper.
 #[test]
-fn stage_attach_combine_parity_smoke() {
+fn bevy_parity_attach_detach_momentum_stage_attach_combine_parity_smoke() {
     use astrodyn::stage_attach_combine;
     let parent_mass = MassProperties::with_inertia(
         100.0,
@@ -836,7 +836,7 @@ fn stage_attach_combine_parity_smoke() {
 /// (advanced by one ballistic `dt`), not the pre-step position the
 /// detached subtree carried at the start of the tick.
 #[test]
-fn bevy_step_detached_runs_before_frame_tree_sync() {
+fn bevy_parity_attach_detach_momentum_bevy_step_detached_runs_before_frame_tree_sync() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let initial_trans = TranslationalState {
@@ -859,7 +859,7 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
     // Attach so the child enters the parent's composite, then detach
     // to put the child in `DetachedSubtreeStateC` with a known
     // ballistic state (matches the parent's composite at the detach
-    // instant — same as `bevy_detached_subtree_propagates_ballistically`).
+    // instant — same as `bevy_parity_attach_detach_momentum_bevy_detached_subtree_propagates_ballistically`).
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent<astrodyn::SelfRef, astrodyn::SelfRef>>>()
         .write(AttachEvent {
@@ -971,11 +971,12 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
 /// numerics inconsistent with the post-attach frame-tree topology for
 /// every consumer in the staging→propagate window. The cross-integ
 /// reparent + rewrite is exercised by the companion regressions
-/// `bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame`
-/// and `bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
+/// `bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame`
+/// and `bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
 /// below.
 #[test]
-fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_does_not_reparent_child_frame_under_parent_frame()
+{
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -1149,7 +1150,7 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
 /// in-place by `(old_origin - new_origin)` during the same staging
 /// tick (same physical pose, just relabeled into the new integration
 /// frame's coordinates) — exercised in detail by
-/// `bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
+/// `bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
 /// further below. This test focuses on the parent's merged
 /// composite-body state computed by `combine_states_at_attach`
 /// (lifted to root inertial via each body's pre-attach
@@ -1165,7 +1166,7 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
 /// kernel's output (lowered through the parent's integ origin)
 /// component-wise against the parent's post-attach
 /// `TranslationalStateC`. This is the same kernel-parity contract
-/// `bevy_attach_conserves_linear_and_angular_momentum` enforces for
+/// `bevy_parity_attach_detach_momentum_bevy_attach_conserves_linear_and_angular_momentum` enforces for
 /// the same-integ-frame case, generalised across non-zero integ
 /// origins.
 ///
@@ -1175,7 +1176,8 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
 /// entity, JEOD's `set_integ_frame` semantics) — not source B's
 /// frame entity (the child's pre-attach integ frame).
 #[test]
-fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame(
+) {
     let parent_mass = MassProperties::with_inertia(
         1000.0,
         DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
@@ -1540,7 +1542,8 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
 /// inertial positions — both shifts are large and asymmetric, so
 /// the regression scale dominates any f64-rounding noise.
 #[test]
-fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame(
+) {
     let parent_mass = MassProperties::with_inertia(
         1000.0,
         DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
@@ -1795,7 +1798,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
 /// body-frame entities' `ChildOf` parents — what the live integ
 /// frame *actually is* — accepts it.
 #[test]
-fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -1999,7 +2002,7 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
 /// even when a gravity source is in range that would otherwise produce
 /// a non-trivial acceleration / total force.
 #[test]
-fn bevy_detached_body_skips_force_pipeline() {
+fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() {
     // Build a minimal world with a gravity source at the origin so a
     // free-flying body at 7e6 m would otherwise see ~µ/r² gravity.
     let mu = 3.986004415e14_f64;
@@ -2180,7 +2183,8 @@ fn bevy_detached_body_skips_force_pipeline() {
 /// parent's `MassPropertiesC` to core. No multi-step propagation
 /// needed.
 #[test]
-fn bevy_detach_reads_live_composite_through_mass_property_revert() {
+fn bevy_parity_attach_detach_momentum_bevy_detach_reads_live_composite_through_mass_property_revert(
+) {
     let parent_mass = MassProperties::with_inertia(
         420.0,
         DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
@@ -2307,7 +2311,7 @@ fn bevy_detach_reads_live_composite_through_mass_property_revert() {
 /// comparison would diverge by integrator floor even when both
 /// adapters' kernel output is bit-identical.
 #[test]
-fn bevy_runner_parity_attach_detach_momentum() {
+fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum() {
     use astrodyn::{
         GravityControl as RunnerGravityControl, GravityControls as RunnerGravityControls,
         GravityModel as RunnerGravityModel, GravitySource as RunnerGravitySource,
@@ -2633,9 +2637,9 @@ fn bevy_runner_parity_attach_detach_momentum() {
 /// `Moon.inertial`-style placeholder source at a distinct position)
 /// so the lift / lower contributions are non-trivial; the
 /// same-integ-frame path collapses them to zero and is already
-/// covered by `bevy_runner_parity_attach_detach_momentum`.
+/// covered by `bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum`.
 #[test]
-fn bevy_runner_parity_cross_integ_frame_attach() {
+fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attach() {
     use astrodyn::{
         GravityControl as RunnerGravityControl, GravityControls as RunnerGravityControls,
         GravityModel as RunnerGravityModel, GravitySource as RunnerGravitySource,
@@ -2972,7 +2976,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
 /// helper resolves both to root, the fence accepts the attach, and the
 /// merge proceeds.
 #[test]
-fn bevy_attach_root_equivalent_parents_succeed() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succeed() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3118,7 +3122,7 @@ fn bevy_attach_root_equivalent_parents_succeed() {
 /// `ChildOf` insertion.
 #[test]
 #[should_panic(expected = "has no ChildOf parent")]
-fn bevy_attach_malformed_frame_node_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3219,7 +3223,7 @@ fn bevy_attach_malformed_frame_node_panics() {
 /// the "registered gravity source" diagnostic.
 #[test]
 #[should_panic(expected = "is neither the root frame entity")]
-fn bevy_attach_equal_but_illegal_parents_panic() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_panic() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3346,7 +3350,7 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
 /// pass after folding) gets a chance to let the attach through.
 #[test]
 #[should_panic(expected = "is neither the root frame entity")]
-fn bevy_attach_root_equivalent_stray_parent_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_panics() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3470,7 +3474,7 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
 /// registration), fire `AttachEvent`, and verify the fence is
 /// bypassed and the mass tree composes successfully.
 #[test]
-fn bevy_attach_mass_only_no_frame_entity_succeeds() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_no_frame_entity_succeeds() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
 
@@ -3572,7 +3576,7 @@ fn bevy_attach_mass_only_no_frame_entity_succeeds() {
 /// the "no ChildOf parent" diagnostic.
 #[test]
 #[should_panic(expected = "has no ChildOf parent")]
-fn bevy_attach_frame_entity_without_child_of_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_panics() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3679,7 +3683,7 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
 /// registration-race diagnostic instead of silently bypassing.
 #[test]
 #[should_panic(expected = "registration race")]
-fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_entity_panics() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3785,7 +3789,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
 /// panics with the dynamic-child-on-mass-only-parent diagnostic.
 #[test]
 #[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
-fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_parent_panics() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let child_trans = TranslationalState {
@@ -3880,7 +3884,8 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
 /// instead of silently dropping the merge.
 #[test]
 #[should_panic(expected = "missing required state component")]
-fn bevy_attach_frame_entity_without_translational_state_panics() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translational_state_panics()
+{
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let parent_trans = TranslationalState {
@@ -3982,7 +3987,8 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
 /// panic that fires with `AstrodynPlugin` still fires here.
 #[test]
 #[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
-fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin(
+) {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
     let child_trans = TranslationalState {
@@ -4106,7 +4112,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
 /// no eligibility components, no `RootFrameEntityR`) and verifies
 /// `AttachEvent` composes their masses without panicking.
 #[test]
-fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
+fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_succeeds_without_jeod_plugin() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
 

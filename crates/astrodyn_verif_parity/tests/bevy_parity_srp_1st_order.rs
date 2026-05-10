@@ -7,6 +7,6 @@ use astrodyn_verif_jeod::run_verification::sim_srp;
 use astrodyn_verif_parity::VerificationCaseParityExt;
 
 #[test]
-fn tier3_bevy_srp_1st_order_trajectory() {
+fn bevy_parity_srp_1st_order_trajectory() {
     sim_srp::srp_1st_order_trajectory().run_and_assert_parity::<astrodyn::Earth>();
 }
