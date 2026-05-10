@@ -406,8 +406,14 @@ by default):
 ```bash
 cargo build --workspace
 cargo nextest run --workspace                                 # all tests
-cargo nextest run --workspace -E 'not test(tier3_)'           # unit + tier 2 (fast)
+# `unit + tier 2 (fast)` excludes Tier 3 *and* every `bevy_parity_*`
+# lockstep parity wrapper. The latter run each scenario through both
+# `astrodyn_runner` and `astrodyn_bevy` for bit-identity, so their
+# cost profile matches Tier 3 trajectory runs. Keep this filter in
+# sync with the `test` and `test-parity-trajectory` jobs in CI.
+cargo nextest run --workspace -E 'not test(tier3_) and not test(bevy_parity)'
 cargo nextest run --workspace -E 'test(tier3_)'               # tier 3 only
+cargo nextest run --workspace -E 'test(bevy_parity)'          # bevy_parity_* only
 cargo nextest run -p astrodyn_math                                # single crate
 cargo nextest run -p astrodyn_gravity -E 'test(verif)'            # gravity verification only
 cargo nextest run -p astrodyn_runner --test tier3_sim_dyncomp_run2  # single Tier 3 test
@@ -469,14 +475,19 @@ gating policy, the `tier3_baseline_diff` check, and the refreeze workflow.
 All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based
 filtering. CI (`.github/workflows/ci.yml`) uses this:
 
-- **PRs**: `check` (fmt + clippy), `test` (unit + tier 2), and `test-tier3`
-  (tier 3 excluding `earth_moon`) run in parallel for fast feedback.
+- **PRs**: `check` (fmt + clippy), `test` (unit + tier 2),
+  `test-parity-trajectory` (every `bevy_parity_*` lockstep wrapper),
+  and `test-tier3` (tier 3 excluding `earth_moon`) run in parallel for
+  fast feedback.
 - **Main push**: same jobs, plus `test-tier3-full` which includes the
   `earth_moon` test (~17 min) and generates the cross-validation report.
 - **Push to non-main branches**: no CI (only PRs and main trigger workflows).
 
 When adding new Tier 3 tests, always prefix the function name with `tier3_` so
-CI filtering picks it up automatically.
+CI filtering picks it up automatically. When adding a new parity wrapper,
+the `bevy_parity_` file-stem prefix (enforced by `parity_coverage.rs`)
+routes it through `test-parity-trajectory` automatically; no regex
+maintenance is required.
 
 See `crates/astrodyn_bevy/tests/README.md` for tier conventions and the tolerance/baseline workflow.
 

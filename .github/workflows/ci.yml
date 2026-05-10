@@ -102,14 +102,40 @@ jobs:
             echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
             exit 1
           fi
+      # The `bevy_parity_*` tests share the Tier 3 cost profile: each
+      # parity wrapper runs the same scenario through `astrodyn_runner`
+      # and `astrodyn_bevy` in lockstep, so the runtime cost is
+      # comparable to a Tier 3 trajectory run. They run in the
+      # dedicated `test-parity-trajectory` job below to keep this
+      # unit/Tier-2 lane fast.
       - name: Run tests (skip Tier 3 trajectory validation and bevy parity)
-        # The `bevy_parity_*` tests share the Tier 3 lane: each parity wrapper
-        # runs the same scenario through `astrodyn_runner` and `astrodyn_bevy`
-        # in lockstep, so the runtime cost is comparable to a Tier 3 trajectory
-        # run. Routing them through `test-tier3` keeps the unit/Tier-2 lane
-        # fast and matches the file-stem convention enforced by
-        # `crates/astrodyn_verif_parity/tests/parity_coverage.rs`.
         run: cargo nextest run --workspace -E 'not test(tier3_) and not test(bevy_parity)'
+
+  test-parity-trajectory:
+    name: Test (parity trajectory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        # Parity tests propagate from committed JEOD fixtures
+        # (same regen path as tier3_), so $JEOD_HOME must be unset
+        # exactly like the other test jobs.
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
+      # All `bevy_parity_*` tests run here. The runner-vs-bevy
+      # lockstep harness (see `crates/astrodyn_verif_parity/src/lib.rs`)
+      # propagates each scenario twice for bit-identity, so the cost
+      # profile matches Tier 3 trajectory runs. The file-stem naming
+      # convention (every `#[test] fn` shares its file's stem) is
+      # enforced by `crates/astrodyn_verif_parity/tests/parity_coverage.rs`.
+      - name: Run bevy_parity_* tests
+        run: cargo nextest run --workspace -E 'test(bevy_parity)'
 
   test-tier3:
     name: Test (Tier 3 fast)
@@ -131,11 +157,9 @@ jobs:
             exit 1
           fi
       - name: Run Tier 3 tests (exclude earth_moon ~17 min)
-        # Includes the `bevy_parity_*` lockstep parity wrappers — the
-        # cost profile matches Tier 3, and the meta-test in
-        # `crates/astrodyn_verif_parity/tests/parity_coverage.rs` keeps
-        # the parity set a superset of the Tier 3 topic set.
-        run: cargo nextest run --workspace -E '(test(tier3_) or test(bevy_parity)) and not test(earth_moon)'
+        # `bevy_parity_*` tests run in the dedicated `test-parity-trajectory`
+        # job, so this filter is the plain Tier 3 prefix.
+        run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
       - name: Generate cross-validation report
         run: cargo run -p astrodyn_verif_jeod --bin tier3_report
       - name: Enforce Tier 3 baseline invariance
@@ -163,7 +187,7 @@ jobs:
             exit 1
           fi
       - name: Run all Tier 3 tests (including earth_moon)
-        run: cargo nextest run --workspace -E 'test(tier3_) or test(bevy_parity)'
+        run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p astrodyn_verif_jeod --bin tier3_report
       - name: Enforce Tier 3 baseline invariance
