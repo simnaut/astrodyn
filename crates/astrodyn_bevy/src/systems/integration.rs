@@ -1188,10 +1188,42 @@ pub fn staging_system<P: Planet>(
     frame_origin: FrameOrigin,
     root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
-    // No mass tree resource → drain events and return.
+    // JEOD_INV: MA.24 — `MassTreeR` must be present whenever an
+    // `AttachEvent` / `DetachEvent` is processed. Without the arena
+    // there is no live mass tree to mutate, the event would be
+    // silently dropped, and the targeted body would propagate
+    // unattached — a "wrong physics that still runs" failure. Per
+    // the Fail Loudly rule, a missing resource panics with a
+    // diagnostic that names both fix paths.
+    let attach_pending = !attach_events.is_empty();
+    let detach_pending = !detach_events.is_empty();
     let Some(mut tree) = tree else {
-        attach_events.clear();
-        detach_events.clear();
+        assert!(
+            !attach_pending,
+            "AttachEvent received but `MassTreeR` is not registered in the world. \
+             Mass-tree attach events require an arena to write into; without \
+             `MassTreeR` the event would silently drop and the body would propagate \
+             unattached. Fix: either (a) insert `MassTreeR(MassTree::new())` as a \
+             resource before sending the event, or (b) use \
+             `SimulationBuilder::register_in_mass_tree(idx, name)` + \
+             `populate_app::<P>()` which pre-allocates the arena + `MassBodyId` for \
+             each registered body. See `crates/astrodyn_bevy/src/scenario.rs` \
+             for the canonical flow."
+        );
+        assert!(
+            !detach_pending,
+            "DetachEvent received but `MassTreeR` is not registered in the world. \
+             Mass-tree detach events require an arena to mutate; without \
+             `MassTreeR` the event would silently drop and the targeted subtree \
+             would never be split off (no `DetachedSubtreeStateC` would be \
+             inserted, so the detached body never advances ballistically). \
+             Fix: either (a) insert `MassTreeR(MassTree::new())` as a resource \
+             before sending the event, or (b) use \
+             `SimulationBuilder::register_in_mass_tree(idx, name)` + \
+             `populate_app::<P>()` which pre-allocates the arena + `MassBodyId` \
+             for each registered body. See `crates/astrodyn_bevy/src/scenario.rs` \
+             for the canonical flow."
+        );
         return;
     };
 
