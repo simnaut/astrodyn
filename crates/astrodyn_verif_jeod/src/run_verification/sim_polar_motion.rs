@@ -9,7 +9,7 @@
 
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
-    default_leap_second_table, GravityControl, GravityControls, GravityModel, GravityRole,
+    default_leap_second_table, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, GravitySourceEntry, RotationModel, SimulationBuilder, SimulationTime,
     TranslationalState, VehicleConfig,
 };
@@ -59,7 +59,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

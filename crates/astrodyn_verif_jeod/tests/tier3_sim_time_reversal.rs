@@ -10,7 +10,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, MassProperties,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -127,7 +127,7 @@ fn tier3_sim_time_reversal_run1() {
             &(MassProperties::new(1.0)),
         )), // mass doesn't affect spherical gravity
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

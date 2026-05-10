@@ -9,7 +9,7 @@
 //! assert_eq!(apollo::MOON_IDX, 1);
 //! ```
 
-use astrodyn_gravity::{GravityControl, GravityRole};
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::DVec3;
 
@@ -83,7 +83,7 @@ pub fn apollo_translunar() -> SimulationBuilder {
         .rk4()
         .gravity(GravityControl::new_spherical(
             earth_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .gravity(GravityControl::new_third_body(moon_idx))
         .gravity(GravityControl::new_third_body(sun_idx))

@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+    DynamicsConfig, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
     IntegratorType, JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
@@ -81,7 +81,7 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Spawn vehicle entity with all required components for 6-DOF integration.
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -154,7 +154,7 @@ fn run_simulation_steps() -> SixDofState {
             &(mass_props()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -250,7 +250,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         .id();
 
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
     };
 
     let vehicle = app
@@ -301,7 +301,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         )),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

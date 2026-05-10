@@ -17,7 +17,7 @@
 use astrodyn::recipes::helpers::state_helpers::max_mat_diff;
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn_runner::{RotationModel, Simulation};
@@ -53,7 +53,7 @@ fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simu
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&body),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             lvlh: true,

@@ -51,7 +51,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, IntegratorType,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, IntegratorType,
     SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -200,7 +200,7 @@ fn run_integ_test(
         }),
         integrator,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

@@ -12,7 +12,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -66,7 +66,7 @@ fn propagate_mercury_periapses(
         ),
     );
 
-    let mut ctrl = GravityControl::new_spherical(sun, GravityRole::Central);
+    let mut ctrl = GravityControl::new_spherical(sun, GravityGradient::Skip);
     ctrl.relativistic = relativistic;
 
     sim.add_body(VehicleConfig {
@@ -274,7 +274,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
             velocity: init_vel,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(sun_n, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(sun_n, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -297,7 +297,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
             None,
         ),
     );
-    let mut ctrl = GravityControl::new_spherical(sun_r, GravityRole::Central);
+    let mut ctrl = GravityControl::new_spherical(sun_r, GravityGradient::Skip);
     ctrl.relativistic = true;
     sim_r.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {

@@ -99,7 +99,7 @@ use std::path::PathBuf;
 use astrodyn::GeoIndexType;
 use astrodyn::{
     default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
-    EphemerisBody, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+    EphemerisBody, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState,
     SimulationBuilder, SimulationTime, TranslationalState, Vec3Ext, VehicleConfig, EARTH,
 };
@@ -349,7 +349,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(earth_idx, 8, 8, GravityRole::ThirdBody),
+                GravityControl::new_nonspherical(earth_idx, 8, 8, GravityGradient::Compute),
                 GravityControl::new_third_body(sun_idx),
                 GravityControl::new_third_body(moon_idx),
             ],

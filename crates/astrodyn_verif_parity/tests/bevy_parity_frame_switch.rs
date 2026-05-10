@@ -17,7 +17,7 @@
 use std::time::Duration;
 
 use astrodyn::{
-    DynamicsConfig, FrameSwitchConfig, GravityControl, GravityControls, GravityRole,
+    DynamicsConfig, FrameSwitchConfig, GravityControl, GravityControls, GravityGradient,
     GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SwitchSense, TranslationalState,
     VehicleConfig, EARTH, MOON,
 };
@@ -117,9 +117,9 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(earth, GravityRole::Central),
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
                     {
-                        let mut c = GravityControl::new_spherical(moon, GravityRole::Central);
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
                         c.differential = true;
                         c
                     },
@@ -234,9 +234,9 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(0_usize, GravityRole::Central),
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
                 {
-                    let mut c = GravityControl::new_spherical(moon_idx, GravityRole::Central);
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
                     c.differential = true;
                     c
                 },
@@ -346,9 +346,9 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(earth, GravityRole::Central),
+                    GravityControl::new_spherical(earth, GravityGradient::Skip),
                     {
-                        let mut c = GravityControl::new_spherical(moon, GravityRole::Central);
+                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
                         c.differential = true;
                         c
                     },
@@ -412,9 +412,9 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(0_usize, GravityRole::Central),
+                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
                 {
-                    let mut c = GravityControl::new_spherical(moon_idx, GravityRole::Central);
+                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
                     c.differential = true;
                     c
                 },

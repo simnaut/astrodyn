@@ -7,7 +7,7 @@
 //! assert_eq!(sb.sources.len(), 1);
 //! ```
 
-use astrodyn_gravity::{GravityControl, GravityRole};
+use astrodyn_gravity::{GravityControl, GravityGradient};
 
 use crate::recipes::{constants, earth, epoch, orbital_elements, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -35,7 +35,7 @@ pub fn iss_leo() -> SimulationBuilder {
         .rk4()
         .gravity(GravityControl::new_spherical(
             earth_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .build();
     sb.add_body(vehicle);
@@ -84,7 +84,7 @@ pub fn iss_leo_drag() -> SimulationBuilder {
         .rk4()
         .gravity(GravityControl::new_spherical(
             earth_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .drag(DragConfig {
             cd: 2.2,

@@ -16,7 +16,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravityRole,
+    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, SrpModel, VehicleConfig};
@@ -178,7 +178,7 @@ fn tier3_simulation_earth_moon_clem() {
         }),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(moon, 60, 60, GravityRole::Central),
+                GravityControl::new_nonspherical(moon, 60, 60, GravityGradient::Skip),
                 GravityControl::new_third_body(earth),
                 GravityControl::new_third_body(sun),
             ],

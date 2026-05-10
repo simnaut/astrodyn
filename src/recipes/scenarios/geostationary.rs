@@ -6,7 +6,7 @@
 //! assert_eq!(sb.bodies.len(), 1);
 //! ```
 
-use astrodyn_gravity::{GravityControl, GravityRole};
+use astrodyn_gravity::{GravityControl, GravityGradient};
 
 use crate::recipes::{constants, earth, epoch, orbital_elements, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -31,7 +31,7 @@ pub fn geo() -> SimulationBuilder {
         .rk4()
         .gravity(GravityControl::new_spherical(
             earth_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .build();
     sb.add_body(vehicle);

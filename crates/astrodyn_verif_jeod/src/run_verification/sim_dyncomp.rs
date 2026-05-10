@@ -18,8 +18,8 @@ use crate::verification::{
 use astrodyn::GeoIndexType;
 use astrodyn::{
     default_leap_second_table, AtmosphereConfig, AtmosphereModel, BodyAction, DragConfig,
-    Ephemeris, EphemerisBody, EulerSequence, GravityControl, GravityControls, GravityModel,
-    GravityRole, GravitySource, GravitySourceEntry, JeodQuat, LvlhAngularVelocityFrame,
+    Ephemeris, EphemerisBody, EulerSequence, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, GravitySourceEntry, JeodQuat, LvlhAngularVelocityFrame,
     MassProperties, MetAtmosphere, RotationModel, RotationalState, SimulationBuilder,
     SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
@@ -95,7 +95,7 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -145,7 +145,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
         )),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -297,7 +297,7 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
         rot: Some(super::typed_helpers::rot_typed(&(rot_state))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -476,10 +476,10 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_sh_with_rnp());
-    let role = if grav_cfg.gradient {
-        GravityRole::ThirdBody
+    let earth_gradient = if grav_cfg.gradient {
+        GravityGradient::Compute
     } else {
-        GravityRole::Central
+        GravityGradient::Skip
     };
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
@@ -488,7 +488,7 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
                 earth,
                 grav_cfg.degree,
                 grav_cfg.order,
-                role,
+                earth_gradient,
             )],
         },
         ..Default::default()
@@ -625,7 +625,7 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
         mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityRole::Central),
+                GravityControl::new_spherical(earth, GravityGradient::Skip),
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),
             ],
@@ -775,7 +775,7 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
         mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityRole::Central),
+                GravityControl::new_spherical(earth, GravityGradient::Skip),
                 sun_control,
                 moon_control,
             ],
@@ -926,10 +926,10 @@ fn build_run7(
         None
     };
 
-    let earth_role = if grav_cfg.gradient {
-        GravityRole::ThirdBody
+    let earth_gradient = if grav_cfg.gradient {
+        GravityGradient::Compute
     } else {
-        GravityRole::Central
+        GravityGradient::Skip
     };
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
@@ -943,7 +943,7 @@ fn build_run7(
                     earth,
                     grav_cfg.degree,
                     grav_cfg.order,
-                    earth_role,
+                    earth_gradient,
                 ),
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),
@@ -1079,7 +1079,10 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::ThirdBody)], // gradient=true
+            controls: vec![GravityControl::new_spherical(
+                earth,
+                GravityGradient::Compute,
+            )],
         },
         ..Default::default()
     });
@@ -1172,7 +1175,7 @@ fn build_run6_drag(
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
         ..Default::default()
@@ -1291,7 +1294,10 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::ThirdBody)], // gradient=true
+            controls: vec![GravityControl::new_spherical(
+                earth,
+                GravityGradient::Compute,
+            )],
         },
         compute_gravity_gradient: true,
         ..Default::default()
@@ -1390,7 +1396,10 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
         )),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::ThirdBody)],
+            controls: vec![GravityControl::new_spherical(
+                earth,
+                GravityGradient::Compute,
+            )],
         },
         ..Default::default()
     });
@@ -1454,7 +1463,7 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
             &(MassProperties::new(1.0)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(DragConfig {
             cd: 0.02,

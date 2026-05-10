@@ -52,7 +52,10 @@ fn build_app() -> (App, Entity) {
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
@@ -99,7 +102,7 @@ fn validation_fires_for_body_added_after_startup() {
             0_usize,
             4,
             4,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .build();
 

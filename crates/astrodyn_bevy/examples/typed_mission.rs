@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{F64Ext, GravityControl, GravityRole, SourceHandle, VehicleBuilder};
+use astrodyn::{F64Ext, GravityControl, GravityGradient, SourceHandle, VehicleBuilder};
 use astrodyn_bevy::{
     AstrodynAppExt, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
     TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
@@ -111,7 +111,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         // should prefer the named constructor for self-documenting intent.
         .gravity(GravityControl::new_spherical(
             SourceHandle::central(),
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .build();
 

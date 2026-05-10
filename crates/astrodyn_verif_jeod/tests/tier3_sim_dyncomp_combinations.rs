@@ -33,7 +33,7 @@
 
 use astrodyn::recipes::helpers::energy_conservation::specific_orbital_energy;
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, JeodQuat,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, JeodQuat,
     MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -100,7 +100,7 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -236,7 +236,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityRole::Central),
+                GravityControl::new_spherical(earth, GravityGradient::Skip),
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),
             ],
@@ -343,7 +343,7 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(DragConfig {
             cd: 2.2,
@@ -435,7 +435,7 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
         )),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         // Gravity gradient torque OFF (RUN_8 has it off).
         compute_gravity_gradient: false,
@@ -593,7 +593,7 @@ fn tier3_dyncomp_external_torque_impulse_response() {
         )),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         compute_gravity_gradient: false,
         ..Default::default()
@@ -683,7 +683,7 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
         )),
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         compute_gravity_gradient: false,
         ..Default::default()

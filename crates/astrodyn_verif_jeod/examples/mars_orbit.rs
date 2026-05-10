@@ -18,7 +18,9 @@
 
 use astrodyn::recipes::{self, epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
-use astrodyn::{EphemerisBody, GravityControl, GravityRole, SimulationBuilder, TranslationalState};
+use astrodyn::{
+    EphemerisBody, GravityControl, GravityGradient, SimulationBuilder, TranslationalState,
+};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::DVec3;
 
@@ -80,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mars,
             110,
             110,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();

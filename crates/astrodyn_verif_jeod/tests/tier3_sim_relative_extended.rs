@@ -24,8 +24,8 @@
 
 use astrodyn::{
     compute_lvlh_relative_state_typed, compute_relative_state, Earth, GravityControl,
-    GravityControls, GravityModel, GravityRole, GravitySource, PlanetInertial, RelativeTranslation,
-    SelfRef, SimulationTime, TranslationalState, Vec3Ext,
+    GravityControls, GravityGradient, GravityModel, GravitySource, PlanetInertial,
+    RelativeTranslation, SelfRef, SimulationTime, TranslationalState, Vec3Ext,
 };
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
@@ -65,7 +65,7 @@ fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalStat
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             lvlh: true,

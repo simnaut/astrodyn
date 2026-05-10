@@ -1279,7 +1279,8 @@ mod tests {
         use crate::PlanetBundle;
         use astrodyn::recipes::{constants, orbital_elements, vehicle};
         use astrodyn::{
-            GravityControl, GravityRole, IntegratorType, TranslationalState, VehicleBuilder, EARTH,
+            GravityControl, GravityGradient, IntegratorType, TranslationalState, VehicleBuilder,
+            EARTH,
         };
         use bevy::time::Fixed;
         use std::time::Duration;
@@ -1308,7 +1309,10 @@ mod tests {
             .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
             .three_dof_point_mass(vehicle::iss_mass())
             .with_integrator(IntegratorType::Rk4)
-            .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+            .gravity(GravityControl::new_spherical(
+                0_usize,
+                GravityGradient::Skip,
+            ))
             .build();
         let parent = {
             // Lift `VehicleConfig::spawn_bevy` (defined on
@@ -1351,7 +1355,7 @@ mod tests {
                     velocity: DVec3::ZERO,
                 }),
                 crate::GravityControlsC(astrodyn::GravityControls::<Entity> {
-                    controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
                 }),
                 crate::GravityAccelerationC::default(),
                 ExternalForceC::default(),

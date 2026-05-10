@@ -16,7 +16,7 @@
 //! use astrodyn_runner::Simulation;
 //! use astrodyn::{default_leap_second_table, F64Ext, SimulationTime};
 //! use astrodyn::recipes::{earth, orbital_elements, vehicle};
-//! use astrodyn::{GravityControl, GravityRole, VehicleBuilder};
+//! use astrodyn::{GravityControl, GravityGradient, VehicleBuilder};
 //!
 //! let time = SimulationTime::at_j2000(default_leap_second_table());
 //! let final_pos_x = Simulation::run(time, 60.0, |mut sim| {
@@ -27,7 +27,7 @@
 //!         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!         .three_dof_point_mass(vehicle::iss_mass())
 //!         .rk4()
-//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityRole::Central))
+//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityGradient::Skip))
 //!         .build();
 //!     let sat = sim.add_body(cfg);
 //!     sim.body(sat).trans.position.raw_si().x
@@ -280,7 +280,7 @@ impl Simulation {
     /// use astrodyn_runner::Simulation;
     /// use astrodyn::{default_leap_second_table, F64Ext, SimulationTime};
     /// use astrodyn::recipes::{earth, orbital_elements, vehicle};
-    /// use astrodyn::{GravityControl, GravityRole, VehicleBuilder};
+    /// use astrodyn::{GravityControl, GravityGradient, VehicleBuilder};
     ///
     /// let time = SimulationTime::at_j2000(default_leap_second_table());
     /// let r = Simulation::run(time, 60.0, |mut sim| {
@@ -292,7 +292,7 @@ impl Simulation {
     ///         )
     ///         .three_dof_point_mass(vehicle::iss_mass())
     ///         .rk4()
-    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityRole::Central))
+    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityGradient::Skip))
     ///         .build();
     ///     let sat = sim.add_body(cfg);
     ///     sim.body(sat).trans.position.raw_si().length()

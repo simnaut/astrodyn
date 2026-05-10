@@ -654,7 +654,7 @@ mod tests {
     use std::time::Duration;
 
     use astrodyn::{
-        GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+        GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
         GravitySourceEntry, Position, RootInertial, SimulationTime, TranslationalState,
         VehicleConfig, Velocity,
     };
@@ -699,7 +699,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
                     earth_idx,
-                    GravityRole::Central,
+                    GravityGradient::Skip,
                 )],
             },
             ..Default::default()
@@ -821,7 +821,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
                     earth_idx,
-                    GravityRole::Central,
+                    GravityGradient::Skip,
                 )],
             },
             ..Default::default()

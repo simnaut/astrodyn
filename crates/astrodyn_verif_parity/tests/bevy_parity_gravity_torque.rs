@@ -4,7 +4,7 @@
 mod common;
 
 use astrodyn::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravityRole, GravitySource,
+    DynamicsConfig, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
     JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -53,7 +53,7 @@ fn bevy_parity_gravity_torque_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(
                     planet,
-                    GravityRole::ThirdBody,
+                    GravityGradient::Compute,
                 )],
             }),
             GravityTorqueC::default(),
@@ -116,7 +116,10 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
         model: GravityModel::PointMass,
     };
     let controls: GravityControls<usize> = GravityControls {
-        controls: vec![GravityControl::new_spherical(0_usize, GravityRole::Central)],
+        controls: vec![GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        )],
     };
 
     let external_torque = DVec3::new(10.0, 0.0, 0.0);
@@ -194,7 +197,7 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -248,7 +251,7 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(
                     planet,
-                    GravityRole::ThirdBody,
+                    GravityGradient::Compute,
                 )],
             }),
             GravityTorqueC::default(),
@@ -267,7 +270,7 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::ThirdBody,
+                GravityGradient::Compute,
             )],
         },
         compute_gravity_gradient: true,
@@ -355,7 +358,7 @@ fn run_external_parity(
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             ExternalForceC::default(),
             ExternalTorqueC::default(),
@@ -371,7 +374,7 @@ fn run_external_parity(
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()

@@ -4,8 +4,8 @@
 mod common;
 
 use astrodyn::{
-    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravityRole, GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
+    GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
@@ -65,7 +65,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
                     planet,
                     4,
                     4,
-                    GravityRole::Central,
+                    GravityGradient::Skip,
                 )],
             }),
         ))
@@ -100,7 +100,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
                 earth_idx,
                 4,
                 4,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -182,7 +182,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
                     planet,
                     4,
                     4,
-                    GravityRole::Central,
+                    GravityGradient::Skip,
                 )],
             }),
         ))
@@ -217,7 +217,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
                 earth_idx,
                 4,
                 4,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -251,7 +251,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -275,7 +275,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -320,7 +320,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(gj_trans),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
@@ -350,7 +350,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()

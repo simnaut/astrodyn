@@ -641,7 +641,7 @@ until a state is set, refuses `.rk4()` until mass is set, refuses `.build()`
 until an integrator is chosen.
 
 ```rust
-// `VehicleBuilder`, `GravityControl`, `GravityRole`, and `F64Ext` come from
+// `VehicleBuilder`, `GravityControl`, `GravityGradient`, and `F64Ext` come from
 // `astrodyn_bevy::prelude`. `earth`, `orbital_elements`, `vehicle` come from
 // `astrodyn_bevy::recipes`.
 let mu = earth::point_mass().source.mu.m3_per_s2();
@@ -649,7 +649,7 @@ let cfg = VehicleBuilder::new()
     .from_orbital_elements(orbital_elements::iss(), mu)
     .three_dof_point_mass(vehicle::iss_mass())
     .rk4()
-    .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+    .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
     .build();
 let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth_entity]);
 ```

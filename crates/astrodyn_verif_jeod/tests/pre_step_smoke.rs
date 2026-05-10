@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use astrodyn::GravitySourceEntry;
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, RotationModel,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, RotationModel,
     SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
@@ -130,7 +130,7 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

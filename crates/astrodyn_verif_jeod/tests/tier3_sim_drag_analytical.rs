@@ -11,7 +11,7 @@
 use astrodyn::recipes::helpers::energy_conservation::specific_orbital_energy;
 use astrodyn::{
     AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere, GravityControl,
-    GravityControls, GravityModel, GravityRole, GravitySource, JeodQuat, MassProperties,
+    GravityControls, GravityGradient, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
@@ -103,7 +103,7 @@ fn make_drag_sim(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
         ..Default::default()
@@ -561,7 +561,7 @@ fn make_drag_sim_with_wind(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
         ..Default::default()

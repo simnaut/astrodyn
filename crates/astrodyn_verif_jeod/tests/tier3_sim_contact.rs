@@ -32,7 +32,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{
-    evaluate_contact_pair, GravityControl, GravityControls, GravityModel, GravityRole,
+    evaluate_contact_pair, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, JeodQuat, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use astrodyn::{ContactFacet, ContactMaterial};
@@ -885,7 +885,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
     let earth_grav = GravityControls {
         controls: vec![GravityControl::new_spherical(
             earth_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         )],
     };
 

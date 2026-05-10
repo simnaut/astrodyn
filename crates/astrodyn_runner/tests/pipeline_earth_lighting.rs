@@ -11,7 +11,7 @@
 use astrodyn::VehicleConfig;
 use astrodyn::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry};
 use astrodyn::{
-    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravityRole,
+    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, SimulationTime,
 };
 use astrodyn_runner::{RotationModel, Simulation};
@@ -122,7 +122,7 @@ fn pipeline_earth_lighting_smoke() {
             )),
         },
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {

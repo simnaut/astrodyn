@@ -6,7 +6,7 @@
 //! assert_eq!(sb.sources.len(), 2);
 //! ```
 
-use astrodyn_gravity::{GravityControl, GravityRole};
+use astrodyn_gravity::{GravityControl, GravityGradient};
 use astrodyn_quantities::ext::Vec3Ext;
 use glam::DVec3;
 
@@ -58,7 +58,7 @@ pub fn mars_orbit() -> SimulationBuilder {
         .rk4()
         .gravity(GravityControl::new_spherical(
             mars_idx,
-            GravityRole::Central,
+            GravityGradient::Skip,
         ))
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();

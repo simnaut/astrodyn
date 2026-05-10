@@ -27,7 +27,7 @@
 //!    walk; `step_detached_system` owns its propagation.
 
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, JeodQuat,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, JeodQuat,
     MassProperties, MassTree, RotationalState, StageAttachInputs, TranslationalState,
 };
 use astrodyn_bevy::frame_param::RelativeFrameState;
@@ -2045,7 +2045,7 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
             MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(&(body_mass))),
             MassBodyIdC(id_body),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
         ))
         .id();
@@ -2432,7 +2432,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
                 inertial,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -2445,7 +2445,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
                 inertial,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         ..Default::default()
@@ -2874,7 +2874,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
                 runner_source_a,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         integ_source: Some(runner_source_a),
@@ -2888,7 +2888,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
                 runner_source_b,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         integ_source: Some(runner_source_b),

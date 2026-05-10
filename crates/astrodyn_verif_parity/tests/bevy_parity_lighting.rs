@@ -4,8 +4,8 @@ mod common;
 
 use astrodyn::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, TranslationalState,
-    MOON,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
+    TranslationalState, MOON,
 };
 use astrodyn_bevy::{
     DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityControlsC, IntegSourceC,
@@ -90,7 +90,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -143,7 +143,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -304,7 +304,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -355,7 +355,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -491,7 +491,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -558,7 +558,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {

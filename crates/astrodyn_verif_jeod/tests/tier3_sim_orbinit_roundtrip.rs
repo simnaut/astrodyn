@@ -12,7 +12,7 @@
 use astrodyn::recipes::helpers::state_helpers::state_from_elements;
 use astrodyn::OrbitalElements;
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_runner::{RotationModel, Simulation};
@@ -78,7 +78,7 @@ fn roundtrip_via_simulation(
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });
@@ -214,7 +214,7 @@ fn tier3_orbinit_roundtrip_circular() {
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         ..Default::default()
     });

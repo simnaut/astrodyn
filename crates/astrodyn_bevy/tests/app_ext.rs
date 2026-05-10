@@ -41,7 +41,10 @@ fn setup_iss(mut commands: Commands) {
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .build();
 
     let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);

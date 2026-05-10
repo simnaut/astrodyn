@@ -36,9 +36,9 @@
 use std::time::Duration;
 
 use astrodyn::{
-    FrameSwitchConfig, GravityControl, GravityRole, GravitySourceEntry, JeodQuat, MassProperties,
-    RootInertial, RotationalState, SixDofState, SwitchSense, TranslationalStateTyped, Vec3Ext,
-    VehicleBuilder, VehicleConfig, EARTH, MOON,
+    FrameSwitchConfig, GravityControl, GravityGradient, GravitySourceEntry, JeodQuat,
+    MassProperties, RootInertial, RotationalState, SixDofState, SwitchSense,
+    TranslationalStateTyped, Vec3Ext, VehicleBuilder, VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::{
     AstrodynPlugin, FrameEntityC, FrameSwitchesC, IntegSourceC, PlanetBundle, RotationalStateC,
@@ -115,9 +115,12 @@ fn earth_then_moon_config() -> VehicleConfig {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .gravity({
-            let mut c = GravityControl::new_spherical(1_usize, GravityRole::Central);
+            let mut c = GravityControl::new_spherical(1_usize, GravityGradient::Skip);
             c.differential = true;
             c
         })
@@ -149,8 +152,14 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
-        .gravity(GravityControl::new_spherical(1_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
+        .gravity(GravityControl::new_spherical(
+            1_usize,
+            GravityGradient::Skip,
+        ))
         .integ_source(1)
         .build();
 
@@ -224,7 +233,10 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .build();
 
     let vehicle = {
@@ -254,7 +266,10 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .build();
 
     let vehicle = {
@@ -283,7 +298,10 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .integ_source(7) // out of range — only Earth was spawned
         .build();
 
@@ -305,7 +323,10 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityRole::Central))
+        .gravity(GravityControl::new_spherical(
+            0_usize,
+            GravityGradient::Skip,
+        ))
         .frame_switches(vec![FrameSwitchConfig {
             target_source: 7, // out of range
             switch_sense: SwitchSense::OnApproach,

@@ -6,8 +6,8 @@ mod common;
 
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, SrpModel, VehicleConfig};
 use astrodyn::{
-    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravityRole, GravitySource, MassProperties, SixDofState, TranslationalState,
+    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, MassProperties, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
     CannonballSrpC, DynamicsConfigC, EphemerisBodyC, GravityControlsC, GravitySourceC,
@@ -62,7 +62,7 @@ fn bevy_parity_third_body_solar_beta_equ() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(equ_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             SolarBetaC::default(),
         ))
@@ -94,7 +94,7 @@ fn bevy_parity_third_body_solar_beta_equ() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -155,7 +155,7 @@ fn bevy_parity_third_body_solar_beta_obliquity() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(obl_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             SolarBetaC::default(),
         ))
@@ -187,7 +187,7 @@ fn bevy_parity_third_body_solar_beta_obliquity() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -277,15 +277,15 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         None
     };
 
-    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityRole::Central);
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityGradient::Skip);
     sun_ctrl.differential = true;
 
     let mut controls = vec![
-        GravityControl::new_spherical(planet, GravityRole::Central),
+        GravityControl::new_spherical(planet, GravityGradient::Skip),
         sun_ctrl,
     ];
     if let Some(moon_ent) = moon_entity {
-        let mut moon_ctrl = GravityControl::new_spherical(moon_ent, GravityRole::Central);
+        let mut moon_ctrl = GravityControl::new_spherical(moon_ent, GravityGradient::Skip);
         moon_ctrl.differential = true;
         controls.push(moon_ctrl);
     }
@@ -360,15 +360,15 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
 
     sim.ephemeris = Some(eph_sim);
 
-    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityRole::Central);
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     sim_sun_ctrl.differential = true;
 
     let mut sim_controls = vec![
-        GravityControl::new_spherical(earth_idx, GravityRole::Central),
+        GravityControl::new_spherical(earth_idx, GravityGradient::Skip),
         sim_sun_ctrl,
     ];
     if let Some(m_idx) = moon_idx {
-        let mut sim_moon_ctrl = GravityControl::new_spherical(m_idx, GravityRole::Central);
+        let mut sim_moon_ctrl = GravityControl::new_spherical(m_idx, GravityGradient::Skip);
         sim_moon_ctrl.differential = true;
         sim_controls.push(sim_moon_ctrl);
     }
@@ -517,7 +517,7 @@ fn bevy_parity_third_body_mars_dawn() {
         ))
         .id();
 
-    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityRole::Central);
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityGradient::Skip);
     sun_ctrl.differential = true;
 
     let vehicle = app
@@ -527,7 +527,7 @@ fn bevy_parity_third_body_mars_dawn() {
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(mars_entity, GravityRole::Central),
+                    GravityControl::new_spherical(mars_entity, GravityGradient::Skip),
                     sun_ctrl,
                 ],
             }),
@@ -573,14 +573,14 @@ fn bevy_parity_third_body_mars_dawn() {
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
 
-    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityRole::Central);
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     sim_sun_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&mars_trans),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(mars_idx, GravityRole::Central),
+                GravityControl::new_spherical(mars_idx, GravityGradient::Skip),
                 sim_sun_ctrl,
             ],
         },
@@ -626,7 +626,7 @@ fn bevy_parity_third_body_mercury_relativistic() {
         ))
         .id();
 
-    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityRole::Central);
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityGradient::Skip);
     sun_ctrl.relativistic = true;
 
     let vehicle = app
@@ -656,7 +656,7 @@ fn bevy_parity_third_body_mercury_relativistic() {
     sun_entry.central = true;
     let sun_idx = sim.add_source("Sun", sun_entry);
 
-    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityRole::Central);
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
@@ -720,7 +720,7 @@ fn bevy_parity_third_body_relativistic_moving_source() {
         ))
         .id();
 
-    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityRole::Central);
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityGradient::Skip);
     sun_ctrl.relativistic = true;
 
     let vehicle = app
@@ -759,7 +759,7 @@ fn bevy_parity_third_body_relativistic_moving_source() {
         },
     );
 
-    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityRole::Central);
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     sim_sun_ctrl.relativistic = true;
 
     sim.add_body(VehicleConfig {
@@ -860,9 +860,9 @@ fn bevy_parity_third_body_earth_moon_clem() {
         ))
         .id();
 
-    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityRole::Central);
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, GravityGradient::Skip);
     sun_ctrl.differential = true;
-    let mut moon_ctrl = GravityControl::new_spherical(moon_entity, GravityRole::Central);
+    let mut moon_ctrl = GravityControl::new_spherical(moon_entity, GravityGradient::Skip);
     moon_ctrl.differential = true;
 
     let vehicle = app
@@ -875,7 +875,7 @@ fn bevy_parity_third_body_earth_moon_clem() {
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(planet, GravityRole::Central),
+                    GravityControl::new_spherical(planet, GravityGradient::Skip),
                     sun_ctrl,
                     moon_ctrl,
                 ],
@@ -922,9 +922,9 @@ fn bevy_parity_third_body_earth_moon_clem() {
     sim.moon_source = Some(moon_sim_idx);
     sim.ephemeris = Some(eph_sim);
 
-    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityRole::Central);
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
     sim_sun_ctrl.differential = true;
-    let mut sim_moon_ctrl = GravityControl::new_spherical(moon_sim_idx, GravityRole::Central);
+    let mut sim_moon_ctrl = GravityControl::new_spherical(moon_sim_idx, GravityGradient::Skip);
     sim_moon_ctrl.differential = true;
 
     sim.add_body(VehicleConfig {
@@ -932,7 +932,7 @@ fn bevy_parity_third_body_earth_moon_clem() {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth_idx, GravityRole::Central),
+                GravityControl::new_spherical(earth_idx, GravityGradient::Skip),
                 sim_sun_ctrl,
                 sim_moon_ctrl,
             ],

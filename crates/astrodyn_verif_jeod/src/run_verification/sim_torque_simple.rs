@@ -30,8 +30,9 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
-    GravityModel, GravityRole, GravitySource, GravitySourceEntry, MassProperties, RotationModel,
-    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
+    GravityGradient, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
+    RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
+    VehicleConfig,
 };
 use glam::{DMat3, DVec3};
 use uom::si::f64::Time;
@@ -184,15 +185,15 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         "Moon source index drifted; update MOON_IDX or keep add_source order in sync with pre_step"
     );
 
-    let role = if cfg.earth_gradient {
-        GravityRole::ThirdBody
+    let earth_gradient = if cfg.earth_gradient {
+        GravityGradient::Compute
     } else {
-        GravityRole::Central
+        GravityGradient::Skip
     };
     let mut earth_ctrl = if cfg.earth_nonspherical {
-        GravityControl::new_nonspherical(earth, 20, 20, role)
+        GravityControl::new_nonspherical(earth, 20, 20, earth_gradient)
     } else {
-        GravityControl::new_spherical(earth, role)
+        GravityControl::new_spherical(earth, earth_gradient)
     };
     if cfg.earth_gradient {
         earth_ctrl.gradient_degree = cfg.gradient_degree;

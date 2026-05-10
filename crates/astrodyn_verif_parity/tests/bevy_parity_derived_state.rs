@@ -6,7 +6,7 @@ mod common;
 
 use astrodyn::{DerivedStateConfig, GeodeticConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravityRole,
+    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, PlanetShape, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
@@ -66,7 +66,7 @@ fn bevy_parity_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -202,7 +202,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -237,7 +237,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -335,7 +335,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -391,7 +391,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -491,7 +491,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -526,7 +526,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -618,7 +618,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             SolarBetaC::default(),
         ))
@@ -659,7 +659,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -715,7 +715,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             EulerAnglesConfigC { sequence },
         ))
@@ -733,7 +733,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -799,7 +799,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             LvlhFrameC::default(),
         ))
@@ -815,7 +815,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -898,7 +898,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             GeodeticConfigC { planet },
         ))
@@ -931,7 +931,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -988,7 +988,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -1010,7 +1010,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -1113,7 +1113,7 @@ fn bevy_parity_derived_state_orbelem() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             OrbitalElementsConfigC {
                 gravity_source: planet,
@@ -1135,7 +1135,7 @@ fn bevy_parity_derived_state_orbelem() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
@@ -1186,7 +1186,7 @@ fn bevy_parity_derived_state_solar_beta() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityRole::Central)],
+                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
             SolarBetaC::default(),
         ))
@@ -1214,7 +1214,7 @@ fn bevy_parity_derived_state_solar_beta() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
                 earth_idx,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {

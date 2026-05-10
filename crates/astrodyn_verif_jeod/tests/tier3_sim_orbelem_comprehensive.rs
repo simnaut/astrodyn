@@ -9,7 +9,7 @@ use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use astrodyn::{
-    GravityControl, GravityControls, GravityModel, GravityRole, GravitySource, SimulationTime,
+    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
 use astrodyn_runner::{RotationModel, Simulation};
@@ -145,7 +145,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
             velocity: rec.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             orbital_elements_source: Some(earth),

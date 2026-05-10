@@ -23,7 +23,7 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
-    GravityModel, GravityRole, GravitySource, GravitySourceEntry, JeodQuat, MassProperties,
+    GravityGradient, GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties,
     RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
     VehicleConfig,
 };
@@ -182,7 +182,7 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(earth, 8, 8, GravityRole::ThirdBody),
+                GravityControl::new_nonspherical(earth, 8, 8, GravityGradient::Compute),
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),
             ],

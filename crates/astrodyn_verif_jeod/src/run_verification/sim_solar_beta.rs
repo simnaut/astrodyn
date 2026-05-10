@@ -31,8 +31,8 @@ use crate::verification::{
 };
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, Ephemeris, EphemerisBody, GravityControl,
-    GravityControls, GravityModel, GravityRole, GravitySource, GravitySourceEntry, RotationModel,
-    SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
+    GravityControls, GravityGradient, GravityModel, GravitySource, GravitySourceEntry,
+    RotationModel, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
 use glam::DVec3;
 use uom::si::f64::Time;
@@ -137,7 +137,7 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -277,7 +277,7 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityRole::Central)],
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -366,7 +366,7 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
                 earth,
                 8,
                 8,
-                GravityRole::Central,
+                GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
