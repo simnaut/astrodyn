@@ -152,11 +152,12 @@ opt-level = 3
 # `incremental = false` is required for cross-translation-unit opts
 # (incremental forces a per-CGU compilation barrier).
 #
-# Bit-identity with the 53 `bevy_parity_*` tests is preserved because
-# none of these flags re-order f64 ops. `target-cpu=native` (FMA
-# contraction) and Rayon-based parallelism are intentionally NOT enabled
-# here — they would break parity. See plan
-# `you-are-computer-scientist-enumerated-otter.md` Phase 1.
+# Bit-identity with the `bevy_parity_*` suite (which asserts the
+# `astrodyn_runner` and `astrodyn_bevy` paths agree bit-for-bit per
+# step) is preserved because none of these flags re-order f64 ops.
+# `target-cpu=native` (FMA contraction) and Rayon-based parallelism
+# are intentionally NOT enabled here — they would change the order of
+# floating-point operations and break the bit-identity invariant.
 [profile.release]
 opt-level = 3
 lto = "fat"
