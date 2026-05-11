@@ -157,7 +157,9 @@ fn period_s(mu_earth: f64, r: f64) -> f64 {
 // ── Equatorial-at-equinox (full-period scan) ─────────────────────────
 
 fn equatorial_at_equinox_num_steps() -> usize {
-    (period_s(load_mu_earth(), R_LEO_M) / DT_S) as usize
+    // `.ceil()` so the cadence actually covers a full orbital period —
+    // bare `as usize` would truncate and stop a few seconds short.
+    (period_s(load_mu_earth(), R_LEO_M) / DT_S).ceil() as usize
 }
 
 fn build_equatorial_at_equinox(_init: &InitialConditions) -> SimulationBuilder {
@@ -299,10 +301,15 @@ pub fn polar_sun_z() -> VerificationCase {
 //   * +Z: ĥ · ẑ = cos i → β = π/2 − i;
 //   * −Y: ĥ · (−ŷ) = sin i → β = i.
 
-/// ISS inclination (51.6°) as a radian constant. Kept private so the
-/// recipes and the tier3 assertions reach the same value through the
-/// same const-fold path.
-const ISS_INCLINATION_RAD: f64 = 51.6 * std::f64::consts::PI / 180.0;
+/// ISS inclination (51.6°) as a radian constant. Mirrors the
+/// expression used by [`f64::to_radians`] (`x * (PI / 180)`) — not
+/// the alternate associativity `(x * PI) / 180` — so the body-state
+/// inclination this constant fixes matches `51.6_f64.to_radians()`
+/// at the last bit. The tier3 closed-form assertion encodes 51.6°
+/// independently via `to_radians`; this convention keeps the two
+/// evaluation paths bit-identical even though they are textually
+/// separate.
+const ISS_INCLINATION_RAD: f64 = 51.6 * (std::f64::consts::PI / 180.0);
 /// Number of cycle steps for the ISS-snapshot recipes — same single-
 /// step rationale as [`POLAR_SNAPSHOT_NUM_STEPS`].
 const ISS_SNAPSHOT_NUM_STEPS: usize = 1;
