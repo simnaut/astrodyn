@@ -14,7 +14,7 @@ use glam::DVec3;
 
 use crate::components::*;
 use crate::frame_param::{FrameOrigin, RelativeFrameState};
-use crate::SimulationTimeR;
+use crate::{IntegrationDtR, SimulationTimeR};
 use astrodyn::typed_bridge::{
     mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
     trans_raw_to_planet, trans_typed_to_raw,
@@ -320,10 +320,20 @@ pub fn integration_system<P: Planet>(
         // don't alias and panics with `assert_component_access_compatibility`.
         Without<DynamicsConfigC>,
     >,
+    dt_override: Option<Res<IntegrationDtR>>,
     time: Res<Time<Fixed>>,
     sim_time: Res<SimulationTimeR>,
 ) {
-    let dt = time.delta_secs_f64();
+    // `dt` comes from `IntegrationDtR` (bit-exact f64) when installed,
+    // else falls back to `Time<Fixed>::delta_secs_f64()`. The override
+    // preserves the runner's raw-f64 `dt` through
+    // `Simulation::step_internal` so `runner ↔ bevy` parity holds
+    // bit-identically on irrational-in-seconds timesteps (e.g.
+    // `period / 560`); the fallback keeps historical
+    // `Time<Fixed>::advance_by`-driven tests working unchanged.
+    let dt = dt_override
+        .map(|r| r.0)
+        .unwrap_or_else(|| time.delta_secs_f64());
     if dt == 0.0 {
         return;
     }
@@ -3022,6 +3032,7 @@ pub fn staging_system<P: Planet>(
 /// body.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn step_detached_system<P: Planet>(
+    dt_override: Option<Res<IntegrationDtR>>,
     time: Res<Time<Fixed>>,
     sim_time: Res<SimulationTimeR>,
     mut detached: Query<(
@@ -3035,7 +3046,14 @@ pub fn step_detached_system<P: Planet>(
     frame_origin: FrameOrigin,
     root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
-    let dt = time.delta().as_secs_f64();
+    // See `integration_system` for the override rationale: when
+    // `IntegrationDtR` is installed it supplies a bit-exact f64 `dt`
+    // mirroring the runner's `step_detached_subtrees(dt)`, otherwise
+    // we fall back to `Time<Fixed>::delta()` for historical Bevy-
+    // driven callers.
+    let dt = dt_override
+        .map(|r| r.0)
+        .unwrap_or_else(|| time.delta().as_secs_f64());
     if dt == 0.0 {
         return;
     }

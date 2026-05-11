@@ -67,6 +67,32 @@ impl Default for SimulationTimeR {
     }
 }
 
+/// Optional bit-exact f64 override for the pipeline integration
+/// timestep.
+///
+/// The runner stores `dt` as a plain `f64` and feeds it through
+/// `Simulation::step_internal(self.dt)` unchanged. The Bevy adapter
+/// normally reads `dt` from `Time::<Fixed>::delta_secs_f64()`, which
+/// round-trips through `Duration` and rounds to integer nanoseconds —
+/// fine for whole-second timesteps but lossy whenever `dt` is
+/// irrational in seconds (e.g. `period / 560 ≈ 9.917 s` in the LVLH-
+/// periodicity recipe). The rounding broke `runner ↔ bevy` bit-identity
+/// on those scenarios.
+///
+/// When this resource is present, the four pipeline systems that read
+/// `dt` (time advance, SRP integration, state integration, detached-
+/// subtree ballistic drift) consume the contained `f64` directly,
+/// bypassing the `Duration` round-trip. When the resource is absent the
+/// systems fall back to `Time<Fixed>::delta_secs_f64()`, preserving
+/// the historical behavior for tests and mission code that never opted
+/// into bit-exact dt.
+///
+/// Installed automatically by [`crate::AstrodynAppExt::add_astrodyn`],
+/// [`crate::AstrodynAppExt::step_fixed_dt`], and by
+/// [`crate::SimulationBuilderBevyExt::populate_app`].
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct IntegrationDtR(pub f64);
+
 /// Optional Bevy resource for polar motion (xp, yp) in radians.
 ///
 /// When inserted, the `planet_fixed_rotation_system` includes polar motion
@@ -199,6 +225,15 @@ impl Plugin for AstrodynPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
+        // `IntegrationDtR` is an *optional* bit-exact f64 override for
+        // the pipeline `dt`; see the type's doc. Plugin does not
+        // install it — when absent, the four pipeline systems fall
+        // back to `Time<Fixed>::delta_secs_f64()` and tests that drive
+        // the schedule via `Time<Fixed>::advance_by` see the same
+        // behavior as before. `add_astrodyn`, `populate_app`, and
+        // `step_fixed_dt` install the override explicitly for callers
+        // that need bit-identity (parity tests, irrational-in-seconds
+        // timesteps like `period / 560`).
 
         // ── ECS-native root frame entity ──
         // Spawn the root frame entity. Source / body registration

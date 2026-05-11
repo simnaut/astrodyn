@@ -99,8 +99,8 @@ use crate::components::{
     SourceInertialVelocityC, SunMarker, TidalConfigC, TranslationalStateC,
 };
 use crate::{
-    AstrodynPlugin, AtmosphereModelR, EphemerisR, MassTreeR, PolarMotionR, SimulationTimeR,
-    VehicleConfigBevyExt,
+    AstrodynPlugin, AtmosphereModelR, EphemerisR, IntegrationDtR, MassTreeR, PolarMotionR,
+    SimulationTimeR, VehicleConfigBevyExt,
 };
 
 /// Handles to entities spawned by [`SimulationBuilderBevyExt::populate_app`].
@@ -240,6 +240,14 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         // `self.dt` is a plain `f64` integrator timestep, not a typed
         // duration phantom.
         app.insert_resource(Time::<Fixed>::from_seconds(self.dt));
+        // `IntegrationDtR` is the bit-exact f64 source of `dt` for the
+        // pipeline (`Time<Fixed>::delta_secs_f64()` rounds to integer
+        // nanoseconds via `Duration::from_secs_f64`, which breaks
+        // `runner ↔ bevy` bit-identity on irrational-in-seconds
+        // timesteps like `period / 560`). The runner side reads
+        // `SimulationBuilder.dt` directly as f64 through
+        // `Simulation::step_internal`; the Bevy side now mirrors that.
+        app.insert_resource(IntegrationDtR(self.dt));
         app.insert_resource(SimulationTimeR(self.time));
 
         // Optional global resources. AstrodynPlugin doesn't insert any

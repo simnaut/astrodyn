@@ -171,15 +171,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "lvlh_extended",
-        "lvlh_ecc / lvlh_equ / prograde_circular / retrograde_circular wrappers \
-         landed; the `periodicity` wrapper remains `#[ignore]`d because the \
-         Bevy `Time<Fixed>::advance_by(Duration::from_secs_f64(dt))` path \
-         rounds `dt` to integer nanoseconds and diverges from the runner's \
-         f64 `dt` arithmetic when `dt` is irrational. Drop this entry once \
-         the Bevy-side f64 time-advance path lands.",
-    ),
-    (
         "orbelem_comprehensive",
         "pre-recipe sibling — comprehensive sweep recipe not yet defined \
          (#389 follow-up)",

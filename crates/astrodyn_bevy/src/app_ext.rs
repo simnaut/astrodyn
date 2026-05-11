@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::AstrodynPlugin;
+use crate::{AstrodynPlugin, IntegrationDtR};
 
 /// Ergonomic helpers for setting up and advancing an [`App`] running
 /// [`AstrodynPlugin`] in `FixedUpdate`.
@@ -97,6 +97,11 @@ impl AstrodynAppExt for App {
         // `from_seconds` indiscriminately; the argument is a plain `f64`
         // integrator timestep, not a typed-duration phantom.
         self.insert_resource(Time::<Fixed>::from_seconds(dt_seconds));
+        // `IntegrationDtR` is the bit-exact f64 source of `dt` for the
+        // pipeline; `Time<Fixed>` is kept in sync for `FixedUpdate`
+        // gating but its `Duration`-rounded delta is no longer the
+        // physics source. See `IntegrationDtR` doc.
+        self.insert_resource(IntegrationDtR(dt_seconds));
         if !self.is_plugin_added::<AstrodynPlugin>() {
             self.add_plugins(AstrodynPlugin);
         }
@@ -105,6 +110,10 @@ impl AstrodynAppExt for App {
 
     fn step_fixed_dt(&mut self, n: usize, dt_seconds: f64) -> &mut Self {
         let dur = Duration::from_secs_f64(dt_seconds);
+        // Keep `IntegrationDtR` in sync each call so callers that
+        // bypass `add_astrodyn` (or that vary `dt` between calls) still
+        // drive the pipeline with the exact f64 they passed in.
+        self.insert_resource(IntegrationDtR(dt_seconds));
         for _ in 0..n {
             self.world_mut()
                 .resource_mut::<Time<Fixed>>()

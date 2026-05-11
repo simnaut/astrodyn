@@ -30,18 +30,14 @@ fn bevy_parity_lvlh_eccentric() {
 
 // `periodicity` deliberately uses `dt = period / 560`, which is
 // irrational in seconds (≈9.917 s). The runner integrates with the f64
-// value directly; the Bevy adapter routes time through
-// `Time<Fixed>::advance_by(Duration::from_secs_f64(dt))`, which rounds
-// to integer nanoseconds. The two paths therefore diverge in the LSBs
-// of position after the first few ticks even though the underlying
-// `astrodyn_*` math is identical. Re-enabling this wrapper requires a
-// Bevy-side time-advance path that preserves full f64 dt precision —
-// tracked alongside other parity-trait-infrastructure follow-ups to
-// #389. The runner-side `tier3_lvlh_periodicity` continues to exercise
-// the recipe under the analytical assertion.
+// value directly; the Bevy adapter now reads `dt` from
+// `IntegrationDtR` (bit-exact f64) rather than
+// `Time<Fixed>::delta_secs_f64()` (rounded through
+// `Duration::from_secs_f64` to integer nanoseconds), so the two paths
+// share the same `dt` bit pattern at every tick and parity holds
+// bit-identical. The runner-side `tier3_lvlh_periodicity` continues to
+// exercise the recipe under the analytical assertion.
 #[test]
-#[ignore = "parity-gap: irrational dt loses precision through Time<Fixed>'s \
-            Duration round-trip; needs Bevy-side f64 time advance"]
 fn bevy_parity_lvlh_periodicity() {
     sim_lvlh_extended::periodicity().run_and_assert_parity::<astrodyn::Earth>();
 }

@@ -16,6 +16,7 @@ use glam::DVec3;
 
 use crate::components::*;
 use crate::frame_param::FrameOrigin;
+use crate::IntegrationDtR;
 
 use super::util::body_integ_origin_in_root;
 
@@ -294,6 +295,7 @@ pub fn flat_plate_srp_system<P: Planet>(
     >,
     sun_query: Query<&TranslationalStateC<P>, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC<P>, &ShadowBodyC), Without<SunMarker>>,
+    dt_override: Option<Res<IntegrationDtR>>,
     time: Res<Time<Fixed>>,
 ) {
     // Drop stale state for any kinematic-child SRP body. Runs first
@@ -318,7 +320,16 @@ pub fn flat_plate_srp_system<P: Planet>(
         }
     };
 
-    let dt = time.delta_secs_f64();
+    // `dt` comes from `IntegrationDtR` (bit-exact f64) when installed,
+    // else falls back to `Time<Fixed>::delta_secs_f64()`. The override
+    // preserves the runner's raw-f64 `dt` through
+    // `Simulation::step_internal` so `runner ↔ bevy` parity holds
+    // bit-identically on irrational-in-seconds timesteps (e.g.
+    // `period / 560`); the fallback keeps historical
+    // `Time<Fixed>::advance_by`-driven tests working unchanged.
+    let dt = dt_override
+        .map(|r| r.0)
+        .unwrap_or_else(|| time.delta_secs_f64());
 
     for (mut flat_config, state, rot, mass, struct_xform, body_frame, mut srp_force) in &mut query {
         // Clear per-step SRP state unconditionally (before the Sun check)
