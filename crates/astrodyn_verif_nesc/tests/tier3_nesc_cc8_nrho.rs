@@ -30,16 +30,17 @@
 //! the consensus methodology will widen them to the inter-sim spread
 //! envelope.
 //!
-//! ## Known issue: attitude divergence
+//! ## Attitude convention note (issue #454, resolved)
 //!
-//! The attitude assertion is intentionally **skipped** today. Initial
-//! propagation runs show our quaternion diverging from sim_01 by ~π rad
-//! (max quat-angle ≈ 3.14) over 7 days, despite the angular-velocity
-//! channel agreeing to ~2 µrad/s. With a torqueless 605° total spin
-//! over the run (0.001 deg/s × 7 days), this looks like an
-//! attitude-integrator bug — quaternion convention or sign — not a
-//! tolerance issue. Tracked separately; tier3 cross-val for the
-//! translational state still passes.
+//! Initial propagation runs showed a ~π rad quaternion drift vs sim_01
+//! over the 7-day, 605° body-frame spin. Root cause was a convention
+//! mismatch: NESC-RP-23-01853 §7.4.1 publishes the IC and reference-CSV
+//! quaternions as **right-transformative**, but our `JeodQuat` is
+//! left-transformative. `cc8.rs` now conjugates the vector part at both
+//! the IC boundary and the CSV parser. Post-fix attitude drift over the
+//! full 7-day run is ~0.15 rad (~8.4°), consistent with the
+//! inter-propagator numerical noise the consensus methodology will
+//! calibrate against in a follow-up.
 
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_nesc::{cc8::cc8_builder, cc8::cc8_reference, CrossvalReport, StateLog};
@@ -83,7 +84,8 @@ fn tier3_nesc_cc8_nrho() {
     report.assert_position([6.1e1, 1.24e2, 9.5e1]); // m, ~150 m magnitude over 7 days
     report.assert_velocity([1.17e-2, 2.78e-2, 3.31e-2]); // m/s
     report.assert_ang_vel([2.6e-8, 2.4e-6, 3.5e-7]); // rad/s
-                                                     // Attitude (quat_angle) assertion intentionally skipped — see the
-                                                     // module-level "Known issue: attitude divergence" note. Add back
-                                                     // once the attitude-integrator divergence is debugged.
+                                                     // Attitude max-error angle over the full 7-day run vs sim_01,
+                                                     // observed-max × 1.05 (0.1465 × 1.05 ≈ 0.154). See the module-level
+                                                     // "Attitude convention note" for the underlying fix.
+    report.assert_quat_angle(0.154); // rad
 }

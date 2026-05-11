@@ -11,20 +11,18 @@ case's reference trajectory at the published checkpoint cadence.
 
 | Case | Status | Notes |
 |------|--------|-------|
-| CC8 (NRHO) — runner ↔ NESC | passing translational, attitude skipped | sim_01 baseline; consensus methodology pending |
-| CC8 (NRHO) — bevy ↔ runner   | passing (translational + attitude bit-identity) | unblocked by `populate_app::<P>` per-planet auto-registration fix |
+| CC8 (NRHO) — runner ↔ NESC | passing translation + attitude | sim_01 baseline; consensus methodology pending |
+| CC8 (NRHO) — bevy ↔ runner   | passing (translation + attitude bit-identity) | unblocked by `populate_app::<P>` per-planet auto-registration fix |
 
 The DE440 SPK and the NESC sim_01 reference CSV are committed, the
 recipe layer (`epoch::at_iso`, `moon::grail150_with_libration`,
 `SimulationBuilder::add_third_body_with_ephemeris`,
 `recipes::vehicle::nesc_apollo_lm`, `recipes::ephemeris::de440_with_moon_pa`)
-is in place, and the runner-side test runs end-to-end. Translational
-fit to sim_01 over 7 days is ~150 m magnitude (per-axis tolerances at
-observed-max × 1.05). The attitude assertion is intentionally skipped
-pending an attitude-integrator divergence investigation; the runner
-matches sim_01's angular velocity to ~2 µrad/s but the quaternion
-diverges to ~π rad over the 7-day spin (605° total). Tracked
-separately.
+is in place, and the runner-side test runs end-to-end with **both
+translational and attitude assertions live**. Translational fit to
+sim_01 over 7 days is ~150 m magnitude; attitude fit is ~0.15 rad
+(~8.4°) over the 605° body-frame spin. Per-component tolerances are
+set at observed-max × 1.05 per the CLAUDE.md rule.
 
 ## Cases
 
@@ -213,12 +211,12 @@ follow-up.
   current source. The tree is hot-updated as participants resubmit;
   pin a date-checkpointed snapshot once the consensus methodology
   lands so regen reproducibility is guaranteed.
-- **Attitude-integrator divergence** — runner attitude diverges from
-  sim_01 by ~π rad over CC8's 7-day 605°-spin propagation despite the
-  angular-velocity channel agreeing to ~2 µrad/s. Quaternion-convention
-  bug or sign-flip suspected. Tracked separately; the consensus
-  methodology can compute attitude z-scores once the underlying
-  divergence is fixed.
+- ~~**Attitude-integrator divergence**~~ — *resolved (#454).* NESC
+  publishes IC and reference quaternions as right-transformative
+  (NESC-RP-23-01853 §7.4.1); our `JeodQuat` is left-transformative.
+  `cc8.rs` now conjugates the vector part at the IC boundary and the
+  CSV parser. Residual attitude drift vs sim_01 over 7 days is
+  ~0.15 rad (~8.4°), consistent with inter-propagator numerical noise.
 
 ## See also
 

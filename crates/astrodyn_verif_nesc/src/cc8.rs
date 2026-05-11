@@ -46,9 +46,17 @@ pub const INITIAL_VELOCITY_MCI_MPS: [f64; 3] = [
 ];
 
 /// CC8 initial attitude quaternion `(W, X, Y, Z)` — body-from-inertial,
-/// scalar-first / left-transformation. Matches [`JeodQuat::new`] argument
-/// order verbatim; do **not** reorder for `glam::DQuat::new` (which is
-/// `(X, Y, Z, W)`).
+/// scalar-first / **right-transformation** as published.
+///
+/// NESC-RP-23-01853 §7.4.1: *"the right transformative quaternions were
+/// chosen for the simulation output products"*. §7.7.10's CC8 IC table
+/// uses the same convention (column `quaternionWrtMi`). The components
+/// are in `[W X Y Z]` order per the paper.
+///
+/// Our internal kernel ([`JeodQuat`]) is **left-transformation**; for
+/// the same physical rotation `r`, `q_left = conjugate(q_right) =
+/// (w, -x, -y, -z)`. [`cc8_builder`] converts at the boundary — do not
+/// feed this constant to [`JeodQuat::new`] directly.
 ///
 /// Full-precision sim_01 t=0 values; rounds to spec
 /// `(0.6461, 0.3344, 0.6855, 0.0282)`.
@@ -137,12 +145,22 @@ pub fn cc8_builder() -> SimulationBuilder {
         velocity: DVec3::from(INITIAL_VELOCITY_MCI_MPS).m_per_s_at::<RootInertial>(),
     };
 
-    // 5. Rotational IC. NESC publishes (W, X, Y, Z) — scalar-first,
-    // matches JeodQuat directly. Body rate in deg/s → rad/s.
+    // 5. Rotational IC. NESC publishes (W, X, Y, Z) as a **right-transformative**
+    // quaternion (NESC-RP-23-01853 §7.4.1 + §7.7.10). Our `JeodQuat` is
+    // left-transformative, so convert at the boundary by conjugating the
+    // vector part: `q_left = (w, -x, -y, -z)` represents the same physical
+    // rotation as `q_right = (w, x, y, z)`. Without this negation the
+    // integrator propagates the inverse rotation and accumulates ~π rad of
+    // attitude drift over CC8's 605° body-frame spin (see #454).
+    //
+    // Body rate is body-frame components of ω_BI per §7.7.10
+    // ("angular rotation rate of the body frame relative to MI presented in
+    // the body frame"), matching our `ang_vel_body` convention. Just deg/s →
+    // rad/s.
     let [qw, qx, qy, qz] = INITIAL_QUATERNION_WXYZ;
     let [wx_dps, wy_dps, wz_dps] = INITIAL_BODY_RATE_DEG_PER_S;
     let rot = RotationalState {
-        quaternion: JeodQuat::new(qw, qx, qy, qz),
+        quaternion: JeodQuat::new(qw, -qx, -qy, -qz),
         ang_vel_body: DVec3::new(wx_dps, wy_dps, wz_dps).map(f64::to_radians),
     };
 
@@ -221,9 +239,18 @@ fn parse_cc8_csv(content: &str) -> Vec<crate::StateLog> {
             time,
             position: Some(DVec3::new(p(1), p(2), p(3))),
             velocity: Some(DVec3::new(p(4), p(5), p(6))),
-            // Canonical column layout: qw, qx, qy, qz at columns 7, 8, 9, 10.
-            // glam::DQuat::from_xyzw expects (x, y, z, w) — translate.
-            quaternion: Some(glam::DQuat::from_xyzw(p(8), p(9), p(10), p(7))),
+            // Columns 7..10 are NESC's right-transformative `quaternionWrtMi_W/X/Y/Z`
+            // (NESC-RP-23-01853 §7.4.1: "Expressed as a right transformative
+            // unit quaternion"). The runner-side test logs the propagated
+            // attitude as a glam::DQuat in left-transformative convention
+            // (via `JeodQuat::to_glam`), so convert NESC's published quat to
+            // its left-trans equivalent here at the parse boundary — the
+            // `CrossvalReport` then compares like-for-like.
+            //
+            // glam::DQuat::from_xyzw expects (x, y, z, w). For the same
+            // physical rotation `r`, `q_left = conjugate(q_right) =
+            // (w, -x, -y, -z)`.
+            quaternion: Some(glam::DQuat::from_xyzw(-p(8), -p(9), -p(10), p(7))),
             ang_vel: Some(DVec3::new(p(11), p(12), p(13))),
             ..Default::default()
         });
