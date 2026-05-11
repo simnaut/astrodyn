@@ -129,15 +129,19 @@ pub const ECCENTRIC_R_PERIGEE_M: f64 = R_LEO_M;
 /// See [`ECCENTRIC_R_PERIGEE_M`].
 pub const ECCENTRIC_R_APOGEE_M: f64 = 20_000_000.0;
 
-/// Number of `DT_S`-sized intervals across one full orbital period of
-/// the eccentric case. Computed once so the parity trait's checkpoint
-/// cadence covers the whole orbit (the analytical test scans for the
-/// per-revolution radius extrema).
+/// Number of `DT_S`-sized intervals needed for the parity trait's
+/// checkpoint cadence to span at least one full orbital period of the
+/// eccentric case. The ceiling matters: with truncation the final
+/// checkpoint `N * DT_S` lands strictly before `period` (by up to one
+/// step), so the analytical scan for per-revolution radius extrema
+/// could miss apogee whenever apogee falls inside the dropped tail.
+/// Rounding up guarantees the cadence covers the entire orbit at the
+/// cost of one extra checkpoint past `period`.
 fn eccentric_num_steps() -> usize {
     let mu_earth = load_mu_earth();
     let a = 0.5 * (ECCENTRIC_R_PERIGEE_M + ECCENTRIC_R_APOGEE_M);
     let period = 2.0 * std::f64::consts::PI * (a * a * a / mu_earth).sqrt();
-    (period / DT_S) as usize
+    (period / DT_S).ceil() as usize
 }
 
 fn build_lvlh_eccentric(_init: &InitialConditions) -> SimulationBuilder {
@@ -245,8 +249,10 @@ pub fn retrograde_circular() -> VerificationCase {
 
 /// Eccentric equatorial orbit (perigee 400 km, apogee 20 000 km from
 /// Earth centre) used to verify `|ω_LVLH| = |h|/r²` at the radius
-/// extrema. Cadence covers one full period so the analytical test sees
-/// both perigee and apogee.
+/// extrema. Cadence covers at least one full period (rounded up from
+/// `period / DT_S`) so the analytical test sees both perigee and
+/// apogee even when the orbital period is not an exact multiple of
+/// `DT_S`.
 pub fn eccentric() -> VerificationCase {
     VerificationCase {
         name: "tier3_lvlh_eccentric",
