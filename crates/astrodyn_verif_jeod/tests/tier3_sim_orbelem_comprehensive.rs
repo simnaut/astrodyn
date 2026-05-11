@@ -100,12 +100,14 @@ fn build_sim(case: &VerificationCase) -> Simulation {
 
 /// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
 /// reference. Every recipe in `sim_orbelem_comprehensive` uses this
-/// variant because the orbelem verification CSVs are initialization-only
-/// (one row at t=0); panicking on any other variant surfaces a future
-/// recipe-shape drift here rather than producing a silently-truncated
-/// propagation. Returning both halves of the cadence lets callers
-/// assert that the `dt` they're stepping at (`sim.dt`) matches the
-/// cadence the recipe declared.
+/// variant because the per-case assertions only need the JEOD-logged
+/// initial state (baked into the recipe directly), not the full
+/// fixture CSV — even though most CSVs do contain a handful of
+/// downstream rows (and t50 spans t=0..5000). Panicking on any other
+/// variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (`sim.dt`) matches the cadence the recipe declared.
 fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
     match &case.reference {
         CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),

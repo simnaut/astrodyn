@@ -19,9 +19,12 @@
 //!
 //! Each recipe pairs with [`CsvReference::SyntheticTimes`] so the
 //! parity wrapper drives a lockstep `runner ↔ bevy` bit-identity
-//! assertion at the synthetic checkpoint without needing a multi-record
-//! reference CSV (the orbelem CSVs are initialization-only — they log
-//! only the t=0 row).
+//! assertion at the synthetic checkpoint without consulting the
+//! reference CSV at all. (The orbelem fixture CSVs *do* contain
+//! multiple rows — most are just t=0..2, but t50 spans t=0..5000 —
+//! but the per-case tier3 assertions only need the JEOD-logged
+//! initial state, which is baked into each recipe directly rather
+//! than parsed at runtime.)
 //!
 //! Initial state values originate from the JEOD output rows of
 //! `crates/astrodyn_verif_jeod/test_data/orbelem_verif_tXX_orbelem.csv`,
