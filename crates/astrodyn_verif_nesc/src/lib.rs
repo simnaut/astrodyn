@@ -1,6 +1,6 @@
 //! NESC GN&C Lunar Check Cases — Tier 3 cross-validation track.
 //!
-//! Parallel to [`astrodyn_verif_jeod`] but for the NASA NESC
+//! Parallel to the `astrodyn_verif_jeod` crate but for the NASA NESC
 //! "Independent Orbit Propagation Verification" benchmark
 //! (NESC-RP-12-00767). Each `tier3_nesc_*` test under `tests/`
 //! propagates [`astrodyn_runner::Simulation`] from NESC-published

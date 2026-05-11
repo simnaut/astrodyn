@@ -182,7 +182,7 @@ impl SimulationBuilder {
     /// [`add_source`](Self::add_source) +
     /// [`set_source_ephemeris`](Self::set_source_ephemeris) flow:
     /// constructs a point-mass third-body
-    /// [`GravitySourceEntry`](crate::sources::GravitySourceEntry) at the
+    /// [`GravitySourceEntry`] at the
     /// origin and immediately wires its `(target, observer)` ephemeris
     /// pair.
     ///
