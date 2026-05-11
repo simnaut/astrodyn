@@ -247,3 +247,150 @@ jobs:
         with:
           name: tier3-crossval-report-full
           path: target/tier3_report.md
+
+  perf-microbench-smoke:
+    name: Perf microbench smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run criterion benches in --quick mode
+        # --quick takes ~10 samples per bench (~5s/bench × 3 benches +
+        # build cost). We assert only that every bench compiles, runs,
+        # and exits zero — no timing thresholds, runner variance makes
+        # those flaky. The job catches "I broke the bench harness"
+        # regressions cheaply.
+        #
+        # `--workspace -- --quick` doesn't work because cargo also
+        # invokes the default cargo-test bench harness on every lib /
+        # bin target, and those reject criterion's `--quick` flag. We
+        # name each bench explicitly instead — three lines now, easy to
+        # extend as the suite grows.
+        run: |
+          cargo bench -p astrodyn_gravity --bench accumulate \
+                      -p astrodyn_gravity --bench integration \
+                      -p astrodyn_verif_jeod --bench step -- --quick
+
+  perf-baseline-track:
+    name: Perf baseline (main-only)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # `permissions:` overrides the workflow default, so every scope the
+    # job's steps need must be listed explicitly. `contents: read` lets
+    # `actions/checkout` fetch the repo; `actions: read` lets the
+    # artifact-download step pull the previous perf-history artifact;
+    # `statuses: write` lets the final step post the commit-status
+    # baseline-delta.
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset" >&2
+            exit 1
+          fi
+      - name: Download previous perf-history (best-effort)
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          branch: main
+          name: perf-history
+          path: ./perf-history-prev
+          if_no_artifact_found: warn
+      - name: Build tier3_perf_runner (release-with-debug)
+        run: |
+          cargo build --profile release-with-debug \
+                      -p astrodyn_verif_jeod --bin tier3_perf_runner
+      - name: Run perf baseline
+        run: |
+          mkdir -p target/perf
+          ./target/release-with-debug/tier3_perf_runner \
+            --scenario earth_moon_clem \
+            --steps 100000 --warmup 1000 --repeat 5 \
+            --output target/perf/latest.json
+          cat target/perf/latest.json
+      - name: Append to perf-history.csv
+        run: |
+          set -eo pipefail
+          HIST=target/perf/perf-history.csv
+          if [ -f ./perf-history-prev/perf-history.csv ]; then
+            cp ./perf-history-prev/perf-history.csv "$HIST"
+          else
+            echo "git_sha,scenario,steps,warmup,repeat,mean_secs,stdev_secs,per_step_us,max_rss_mb,timestamp" > "$HIST"
+          fi
+          jq -r --arg sha "${GITHUB_SHA::7}" --arg ts "$(date -u +%FT%TZ)" '
+            [$sha, .scenario, .steps, .warmup, .repeat,
+             .mean_secs, .stdev_secs, .per_step_us, .max_rss_mb, $ts] | @csv
+          ' target/perf/latest.json >> "$HIST"
+          echo "--- last 10 perf-history.csv rows ---"
+          tail -n 10 "$HIST"
+      - name: Upload perf-history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-history
+          path: target/perf/perf-history.csv
+          # 365-day retention pushes the first artifact aging out well
+          # past the issue's "≥ 5 entries" criterion. Migrate to
+          # `gh-pages` or an external store before the first run ages
+          # out (track as a follow-on issue).
+          retention-days: 365
+      - name: Post commit status (informational, never failing)
+        # Always green — this surface is informational, not gating.
+        # Failures from `gh api` (network blip, etc) are non-fatal.
+        run: |
+          MEAN=$(jq -r .mean_secs target/perf/latest.json)
+          PER=$(jq -r .per_step_us target/perf/latest.json)
+          gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
+            -f state=success \
+            -f context="perf/earth_moon_clem" \
+            -f description="mean=${MEAN}s per_step=${PER}us" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  runtime-budget:
+    name: Runtime budget (envelope)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset" >&2
+            exit 1
+          fi
+      - name: Measure earth_moon Tier 3 wall time
+        # Mirrors `compile-time-budget`'s envelope-only philosophy. The
+        # measured window is `cargo nextest run` end-to-end on a cold
+        # GitHub-runner cache: cargo network/index work + workspace
+        # compile + the actual `tier3_simulation_earth_moon_clem`
+        # propagation (~30 min steady-state). Observed wall-clock is
+        # ~2200 s; the 3000 s budget sits ~35% above that for cold-cache
+        # variance. A change pushing the job past 50 min fails this
+        # envelope without false-positive noise from runner jitter.
+        #
+        # If GitHub's runner profile drifts (faster or slower) such
+        # that the observed baseline moves outside [60%, 90%] of the
+        # budget, refresh both the observation and the budget rather
+        # than papering over a regression.
+        run: |
+          set -eo pipefail
+          start=$(date +%s)
+          cargo nextest run --workspace -E 'test(tier3_simulation_earth_moon_clem)'
+          end=$(date +%s)
+          DURATION=$((end - start))
+          echo "tier3_simulation_earth_moon_clem took ${DURATION}s (budget: 3000s = 50 min)"
+          if [ "$DURATION" -ge 3000 ]; then
+            echo "::error::runtime budget exceeded: ${DURATION}s >= 3000s"
+            exit 1
+          fi

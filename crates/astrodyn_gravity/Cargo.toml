@@ -25,6 +25,13 @@ include = [
 [package.metadata.docs.rs]
 all-features = true
 
+[lib]
+# Disable the default cargo-test bench harness on the lib target so
+# criterion bench CLI flags (`--quick`, `--measurement-time`, …) don't
+# get rejected by the unittest runner. The lib's correctness is
+# checked by `cargo test`; benches don't need to re-run unit tests.
+bench = false
+
 [dependencies]
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
 astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
@@ -39,6 +46,22 @@ astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 proptest = "1"
+criterion = { workspace = true }
+pprof = { workspace = true }
+
+[[bench]]
+name = "accumulate"
+harness = false
+
+# Combined integration + gravity bench. Lives here (not in
+# `astrodyn_dynamics`) because `astrodyn_gravity` already depends on
+# `astrodyn_dynamics`; the inverse dev-dep would create a cycle and
+# `cargo` rejects it. Diffing `trivial_accel` against `degree60_accel`
+# tells whether a regression sits in RK4 plumbing or the gravity
+# kernel.
+[[bench]]
+name = "integration"
+harness = false
 
 [lints]
 workspace = true

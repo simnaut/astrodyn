@@ -9,6 +9,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+# See `astrodyn_gravity/Cargo.toml` for rationale — disables the default
+# cargo-test bench harness so criterion flags reach our `[[bench]]`s.
+bench = false
+
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
 glam = { workspace = true }

@@ -187,11 +187,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          not yet defined (#389 follow-up)",
     ),
     (
-        "orbinit_roundtrip",
-        "pre-recipe sibling — Cartesian↔Keplerian round-trip, recipe not yet \
-         defined (#389 follow-up)",
-    ),
-    (
         "ref_attach",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined (#389 follow-up)",

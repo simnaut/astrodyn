@@ -6,11 +6,14 @@ TRICK_HOME = { value = "../trick", relative = true }
 
 # `cargo xtask <subcommand>` — workspace dev tooling. The xtask crate
 # wraps the Trick / JEOD reference-CSV regeneration Docker invocation
-# so contributors don't need to remember the bind-mount flags.
+# and the `tier3_perf_runner` performance harness so contributors don't
+# need to remember the bind-mount or feature flags.
 #
 #   cargo xtask regenerate-tier3            # incremental regeneration
 #   cargo xtask regenerate-tier3 --force    # regenerate everything
 #   cargo xtask regenerate-tier3 --build    # force rebuild image first
+#   cargo xtask perf-baseline               # tier3_perf_runner sample
+#   cargo xtask perf-baseline --phase-timing  # with per-phase breakdown
 #   cargo xtask --help                      # print full help
 [alias]
 xtask = "run --quiet --package xtask --"

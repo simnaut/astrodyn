@@ -8,31 +8,17 @@
 //! - Cannonball solar radiation pressure (no shadow body — illumination
 //!   stays at 1.0; matches the original example's behaviour)
 //!
-//! Moon LP150Q gravity, DE421 planetary positions, and the Moon
-//! principal-axes orientation kernel are all loaded from
-//! [`recipes::ephemeris::de421_with_moon_pa`] and
-//! [`recipes::moon::lp150q`], which embed the underlying binaries at
-//! compile time. No JEOD checkout is required.
+//! Scenario construction lives in
+//! [`astrodyn_verif_jeod::setups::earth_moon_clem`], shared with the
+//! `tier3_simulation_earth_moon_clem` Tier 3 test and the
+//! `tier3_perf_runner` binary so that all three callers stay in sync.
 //!
 //! ```bash
 //! cargo run -p astrodyn_verif_jeod --example earth_moon
 //! ```
 
-use astrodyn::recipes::{self, epoch, sun, vehicle};
-use astrodyn::vehicle_builder::VehicleBuilder;
-use astrodyn::{
-    EphemerisBody, GravityControl, GravityGradient, SimulationBuilder, TranslationalState,
-};
 use astrodyn_runner::SimulationBuilderExt;
-use glam::DVec3;
-
-// Initial state from JEOD SIM_Earth_Moon RUN_clem at t=0 (Moon-centered inertial).
-const INIT_POS: DVec3 = DVec3::new(1_296_944.012, -1_060_824.45, 2_522_289.146);
-const INIT_VEL: DVec3 = DVec3::new(-930.578, -439.312, 862.075);
-
-const SRP_CX_AREA: f64 = 2.1432;
-const SRP_ALBEDO: f64 = 1.0;
-const SRP_DIFFUSE: f64 = 0.27;
+use astrodyn_verif_jeod::setups::earth_moon_clem::{earth_moon_clem, moon_mu};
 
 const DT: f64 = 1.0;
 const DURATION: f64 = 86_400.0;
@@ -56,62 +42,15 @@ fn parse_steps_arg(default: usize) -> usize {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ephemeris = recipes::ephemeris::de421_with_moon_pa()?;
+    let mut sim = earth_moon_clem(DT, None)
+        .build()
+        .expect("earth_moon_clem scenario must validate");
 
-    let time = epoch::clementine_1994();
-    let epoch_tdb_jd = time.tdb_julian_date();
-
-    let mut moon_source = recipes::moon::lp150q();
-    moon_source.t_inertial_pfix =
-        Some(ephemeris.get_body_rotation(EphemerisBody::Moon, epoch_tdb_jd)?);
-    let moon_mu = moon_source.source.mu;
-
-    // Earth and Sun as 3rd-body point-mass perturbations (positions
-    // overwritten each step by the ephemeris stage).
-    let (earth_pos_typed, _) =
-        ephemeris.get_state_typed(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)?;
-    let earth_pos = earth_pos_typed.raw_si();
-    let (sun_pos_typed, _) =
-        ephemeris.get_state_typed(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)?;
-    let sun_pos = sun_pos_typed.raw_si();
-
-    let mut sb = SimulationBuilder::new(time, DT);
-    let moon = sb.add_source("Moon", moon_source);
-    let earth = sb.add_source(
-        "Earth",
-        astrodyn::recipes::earth::third_body(astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(
-            earth_pos,
-        )),
-    );
-    let sun_idx = sb.add_source(
-        "Sun",
-        sun::third_body(astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(sun_pos)),
-    );
-    sb.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
-    sb.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Moon);
-    sb = sb.sun(sun_idx).ephemeris(ephemeris);
-
-    let trans = TranslationalState {
-        position: INIT_POS,
-        velocity: INIT_VEL,
-    };
-    let clementine = VehicleBuilder::new()
-        .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(&trans))
-        .three_dof_point_mass(vehicle::clementine_mass())
-        .rk4()
-        .gravity(GravityControl::new_nonspherical(
-            moon,
-            60,
-            60,
-            GravityGradient::Skip,
-        ))
-        .gravity(GravityControl::new_third_body(earth))
-        .gravity(GravityControl::new_third_body(sun_idx))
-        .cannonball_srp(SRP_CX_AREA, SRP_ALBEDO, SRP_DIFFUSE)
-        .build();
-    sb.add_body(clementine);
-
-    let mut sim = sb.build().expect("earth_moon scenario must validate");
+    // Mu of the central Moon source — needed for the orbital-metrics
+    // print loop below. Pulled from the same LP150Q fixture loader the
+    // setup module uses, so the orbital bookkeeping stays consistent
+    // with the integrator.
+    let moon_mu = moon_mu();
 
     let print_interval = 7_200.0;
     let total_steps = parse_steps_arg((DURATION / DT).round() as usize);

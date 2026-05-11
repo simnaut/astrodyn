@@ -1,4 +1,3 @@
-// JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_Earth_Moon — Clementine lunar orbit cross-validation.
 //!
 //! Validates multi-body gravity (Earth + Moon LP150Q 60×60 spherical harmonics,
@@ -12,25 +11,17 @@
 //! - Earth/Sun: point-mass 3rd-body with per-step DE421 ephemeris (JEOD uses DE405)
 //! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
 //! - No drag, no gravity torque
+//!
+//! The scenario is constructed via
+//! [`astrodyn_verif_jeod::setups::earth_moon_clem::earth_moon_clem`] —
+//! the same canonical builder consumed by `examples/earth_moon.rs` and
+//! the `tier3_perf_runner` binary (issue #447).
 
-use astrodyn_verif_jeod::tier3_csv::test_data_path;
-
-use astrodyn::{
-    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityGradient, GravityModel,
-    GravitySource, SimulationTime, TranslationalState,
-};
-use astrodyn::{GravitySourceEntry, SrpModel, VehicleConfig};
-use astrodyn_runner::{RotationModel, Simulation};
+use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
+use astrodyn_verif_jeod::setups::earth_moon_clem::earth_moon_clem;
+use astrodyn_verif_jeod::tier3_csv::test_data_path;
 use glam::DVec3;
-
-fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
-}
-
-fn load_mu_sun() -> f64 {
-    astrodyn::gravity_fixtures::load_sun_spherical_mu()
-}
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
 fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog> {
@@ -68,8 +59,6 @@ fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog>
 /// + cannonball SRP, matching JEOD SIM_Earth_Moon RUN_clem.
 #[test]
 fn tier3_simulation_earth_moon_clem() {
-    let mu_earth = load_mu_earth();
-    let mu_sun = load_mu_sun();
     let csv_path = test_data_path("earth_moon_clem_earth_moon.csv");
     let ref_states = load_interleaved_csv(&csv_path, "SIM_Earth_Moon RUN_clem");
     assert!(
@@ -77,127 +66,19 @@ fn tier3_simulation_earth_moon_clem() {
         "No reference data for SIM_Earth_Moon RUN_clem"
     );
 
-    // Use JEOD's initial state from CSV
+    // Use JEOD's initial state from the CSV's t=0 row so any future JEOD
+    // regen stays the single source of truth.
     let init = &ref_states[0];
     let init_pos = init.position.unwrap();
     let init_vel = init.velocity.unwrap();
 
-    // JEOD uses DE405; we use DE421 (no LE DE405 BSP available for Anise).
-    // DE405/DE421 difference is sub-meter for Moon-centered 7-day orbits.
-    let bsp_path = astrodyn::ephemeris_assets::de421_path();
-    let mut ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
-    let bpc_path = astrodyn::ephemeris_assets::moon_pa_path();
-    ephemeris
-        .load_bpc(&bpc_path)
-        .expect("load Moon BPC for libration");
-
-    // Clementine epoch: 1994-03-01 00:00:00 UTC
-    // JD = 2449412.5; MJD = 49412.0; TJT = MJD - 40000 = 9412.0
-    // TAI-UTC = 28 s at 1994-03-01 (29th leap second added 1994-07-01)
-    let clem_tai_tjt = 9412.0 + 28.0 / 86400.0;
-    let leap_table = astrodyn::default_leap_second_table();
-    let time = SimulationTime::new(clem_tai_tjt, leap_table);
-    let mut sim = Simulation::new(time, 0.03125); // 32 Hz, matching JEOD S_define
-
-    // Load LP150Q spherical harmonics for Moon (matching JEOD's SIM_Earth_Moon)
-    let sh_data = astrodyn::gravity_fixtures::load_moon_lp150q();
-    let moon_mu = sh_data.mu;
-
-    // Moon rotation from DE421 BPC libration data, updated per step.
-    let epoch_tdb_jd = sim.time.tdb_julian_date();
-    let moon_rotation = ephemeris
-        .get_body_rotation(EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Moon DE421 libration rotation");
-
-    // Moon at origin with LP150Q SH gravity + per-step DE421 BPC rotation.
-    let moon = sim.add_source(
-        "Moon",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: moon_mu,
-                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: Some(moon_rotation),
-            rotation_model: RotationModel::MoonDE421,
-            delta_c20: 0.0,
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    );
-
-    // Earth as 3rd-body with per-step ephemeris updates
-    let epoch_tdb_jd = sim.time.tdb_julian_date();
-    let (earth_pos_typed, _earth_vel) = ephemeris
-        .get_state_typed(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Earth-Moon state from DE421");
-    let earth_pos_from_moon = earth_pos_typed.raw_si();
-
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(earth_pos_from_moon),
-            None,
-        ),
-    );
-    sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
-
-    // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
-    let (sun_pos_typed, _) = ephemeris
-        .get_state_typed(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Sun-Moon state from DE421");
-    let sun_pos_from_moon = sun_pos_typed.raw_si();
-    let sun = sim.add_source(
-        "Sun",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: mu_sun,
-                model: GravityModel::PointMass,
-            },
-            astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(sun_pos_from_moon),
-            None,
-        ),
-    );
-    sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Moon);
-    sim.sun_source = Some(sun);
-
-    // Store ephemeris for per-step updates
-    sim.ephemeris = Some(ephemeris);
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: init_pos,
-            velocity: init_vel,
-        }),
-        gravity_controls: GravityControls {
-            controls: vec![
-                GravityControl::new_nonspherical(moon, 60, 60, GravityGradient::Skip),
-                GravityControl::new_third_body(earth),
-                GravityControl::new_third_body(sun),
-            ],
-        },
-        // Clementine mass: 424 kg (from Modified_data/mass.py)
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(astrodyn::MassProperties::new(424.0)),
-        )),
-        // Cannonball SRP matching JEOD Clementine: cx_area=2.1432 m²,
-        // albedo=1.0, diffuse=0.27 (from Modified_data/radiation_pressure.py)
-        srp: Some(SrpModel::Cannonball {
-            cx_area: 2.1432,
-            albedo: 1.0,
-            diffuse: 0.27,
-        }),
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
+    // Build the canonical Earth–Moon Clementine scenario: 32 Hz RK4,
+    // Moon LP150Q 60×60 + DE421 BPC libration, Earth/Sun third-body with
+    // per-step DE421 ephemeris updates, cannonball SRP. See
+    // `astrodyn_verif_jeod::setups::earth_moon_clem` for the full wiring.
+    let mut sim = earth_moon_clem(0.03125, Some((init_pos, init_vel)))
+        .build()
+        .expect("earth_moon_clem scenario must validate");
 
     let mut our_states = vec![StateLog {
         time: 0.0,
