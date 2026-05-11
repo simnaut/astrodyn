@@ -269,8 +269,8 @@ jobs:
         # extend as the suite grows.
         run: |
           cargo bench -p astrodyn_gravity --bench accumulate \
-                      -p astrodyn_dynamics --bench integration \
-                      -p astrodyn_runner --bench step -- --quick
+                      -p astrodyn_gravity --bench integration \
+                      -p astrodyn_verif_jeod --bench step -- --quick
 
   perf-baseline-track:
     name: Perf baseline (main-only)
