@@ -265,26 +265,38 @@ fn line_mass_props() -> MassProperties {
 // Tolerances for contact-force/torque comparisons. The evaluator is
 // re-run at logged (end-of-step) states — not at the RK4 stages JEOD
 // used during integration — so a small difference is expected. Values
-// are set at 5% above the observed maximum per CLAUDE.md policy.
+// follow CLAUDE.md's "5% above observed maximum" tolerance policy,
+// with one explicitly-noted exception for `CONTACT_TORQUE_TOL` where
+// the observed max sits at the machine-precision noise floor.
 //
 // Issue #117 closed two bugs that previously inflated these tolerances:
 // (1) the spring/damping unit-conversion constants used a slightly off
 // `lbf` factor, producing a 1e-5 relative error in `K` and `c`; and
 // (2) the relative-velocity formula in `evaluate_contact_pair` omitted
-// the `(ω_a + ω_b) × arm_a` rotating-frame term that JEOD includes for
-// sphere-sphere contact. After both fixes the head-on scenarios match
-// JEOD to machine precision (~1e-15 m position over 10 s); the
-// off-center oblique case drops from ~2.7 cm trajectory drift to
-// ~2.5 mm — an ω²-scaled per-stage residual of ~120 μN per RK4 stage
-// remains, likely from JEOD's per-stage `Q_parent_this.normalize_integ`
-// + `compute_transformation` recomputation that our coupled-RK4
-// kernel doesn't currently mirror. The remaining off-center drift is
-// 12 orders of magnitude better than head-on (machine precision) but
+// the rotating-frame contribution that JEOD includes for sphere-sphere
+// contact. After both fixes the head-on scenarios match JEOD to
+// machine precision (~1e-15 m position over 10 s); the off-center
+// oblique case drops from ~2.7 cm trajectory drift to ~2.5 mm — an
+// ω²-scaled per-stage residual of ~120 μN per RK4 stage remains,
+// likely from JEOD's per-stage `Q_parent_this.normalize_integ` +
+// `compute_transformation` recomputation that our coupled-RK4 kernel
+// doesn't currently mirror. The remaining off-center drift is 12
+// orders of magnitude better than head-on (machine precision) but
 // not at parity; tracked for future tightening.
-const CONTACT_FORCE_TOL: f64 = 0.034; // N (head-on cases; observed max 32 mN)
-const CONTACT_TORQUE_TOL: f64 = 2.0e-13; // N*m (head-on; observed ~1.2e-13 machine noise)
-const POINT_OFF_CENTER_FORCE_TOL: f64 = 0.63; // N (observed 0.60 N — 8x improvement over pre-fix 5.07 N)
-const POINT_OFF_CENTER_TORQUE_TOL: f64 = 0.61; // N*m (observed 0.57 N*m — 8x improvement over pre-fix 4.82 N*m)
+const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
+
+// `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
+// observed max (~1.2e-13 N·m) is f64 round-off on torque arms of order
+// 1 m crossed with forces of order 1 N. A strict 1.05× literal
+// (~1.26e-13) would false-fail on platforms whose FP rounding paths
+// differ by a few ULPs. `2.0e-13` sits ~1.7× above the observed
+// noise floor — large enough to absorb cross-platform FP variance,
+// still ~12 orders of magnitude tighter than the pre-issue-#117
+// envelope, so any real torque regression trips it.
+const CONTACT_TORQUE_TOL: f64 = 2.0e-13;
+
+const POINT_OFF_CENTER_FORCE_TOL: f64 = 0.63; // N — observed 0.60 N; literal is 1.05× observed (policy).
+const POINT_OFF_CENTER_TORQUE_TOL: f64 = 0.61; // N·m — observed 0.57 N·m; literal is ~1.07× observed (policy).
 
 /// Body state snapshot at a single checkpoint. Carries the full 6-DOF
 /// state (position, velocity, attitude, angular velocity) for each of
@@ -489,13 +501,24 @@ fn tier3_contact_point_pair() {
     println!("  veh1 max vel error: {max_vel_err_1:.3e} m/s");
     println!("  veh2 max vel error: {max_vel_err_2:.3e} m/s");
 
-    // Head-on sphere-sphere symmetric contact: pipeline-coupled RK4 matches
-    // JEOD to ~14 μm over 10 s (observed max). Tolerances set at 5% above
-    // observed max per CLAUDE.md cross-validation policy.
-    // Issue #117 closed two unit/formula bugs (see tolerance comment block
-    // earlier in this file). Head-on contact now matches JEOD to machine
-    // precision over 10 s; tolerance set generously above 1 ULP to absorb
-    // platform-level FP noise.
+    // Head-on sphere-sphere symmetric contact: after the issue-#117 fixes
+    // (unit-conversion constants + rotating-frame rel-vel term), our
+    // pipeline-coupled RK4 matches JEOD to ~1e-15 m / 1e-15 m·s⁻¹ over
+    // 10 s — i.e. the machine-precision floor for f64 arithmetic on this
+    // trajectory length.
+    //
+    // The literal `1.0e-13` is a deliberate ~100× exception to the
+    // CLAUDE.md "5% above observed" tolerance policy: the observed
+    // max is f64 round-off noise (a few ULPs of ~1 m positions), which
+    // is platform-, microarchitecture-, and codegen-dependent within
+    // a small constant factor. Setting the literal to `observed * 1.05`
+    // (~1e-15) would produce false failures on x86_64 hosts whose
+    // FMA / x87-80-bit rounding differs from the host that observed
+    // the current value. `1.0e-13` is the noise-floor budget — large
+    // enough to absorb cross-platform FP variance, but still 12
+    // orders of magnitude below the pre-issue-#117 head-on drift
+    // (~14 μm), so any genuine regression in the contact pipeline
+    // will trip it immediately.
     assert!(
         max_pos_err_1 < 1.0e-13,
         "veh1 position error {max_pos_err_1:.3e} > 100 fm"

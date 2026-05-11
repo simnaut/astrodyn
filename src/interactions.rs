@@ -520,24 +520,25 @@ pub fn evaluate_contact_pair(
     //
     // This is the velocity of A's contact point in inertial minus the
     // velocity of B's contact point in inertial, where each body's
-    // contact-point arm is from its own CoM. For sphere-sphere
-    // (point-point) contact, the formula is mathematically equivalent to
-    // JEOD's `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
-    // formulation (`point_contact_pair.cc:83-84`), where JEOD's
-    // `v_target_in_subject_frame` includes the rotating-frame correction
-    // `−ω_subject × rel_pos`. The difference between the two formulations
-    // collapses to `ω_subject × (2·arm_a + rel_pos)`, which is identically
-    // zero for sphere-sphere contact (`arm_a = +direction · R_a` and
-    // `rel_pos = pos_a − pos_b = −2·arm_a` when spheres are touching).
+    // contact-point arm is from its own CoM. JEOD computes the same
+    // quantity in the subject body frame using
+    // `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
+    // (`point_contact_pair.cc:83-84`), where `v_target_in_subject_frame`
+    // is the target's velocity expressed in the rotating subject frame
+    // and therefore already contains the `−ω_subject × rel_pos`
+    // contribution. The two forms produce the same physical velocity
+    // for any pair geometry; the textbook form above is preferred here
+    // because it composes naturally with the inertial-frame arms we
+    // already need for the torque calculation below.
     //
     // Issue #117: an earlier port (PR #87) used `(ω_b − ω_a) × arm_a`
-    // alone, omitting the `(ω_a + ω_b) × arm_a` rotating-frame term.
-    // For equal-mass equal-inertia spheres ω_a = ω_b ⇒ ω_rel = 0, so the
-    // earlier formula collapsed to `vel_a − vel_b` (inertial frame),
-    // missing the entire `2ω × arm_a` contribution from the bodies'
-    // rotation about the contact point. The textbook formula above
-    // gives the correct rotating-frame answer at the contact point and
-    // matches JEOD exactly for sphere-sphere contact.
+    // alone, omitting the `ω_b × (arm_a − arm_b) = ω_b × (rel_pos −
+    // (arm_b − arm_a))` rotating-frame contribution. For equal-mass
+    // equal-inertia spheres ω_a = ω_b ⇒ ω_rel = 0, so the earlier
+    // formula collapsed to `vel_a − vel_b` (pure inertial frame),
+    // missing the rotating-frame term entirely. The textbook formula
+    // above is correct for all facet geometries and reproduces JEOD's
+    // result for sphere-sphere contact to machine precision.
     //
     // `t_inertial_body` is inertial→body (see
     // `astrodyn_dynamics::compute_t_inertial_struct` docs), so going
