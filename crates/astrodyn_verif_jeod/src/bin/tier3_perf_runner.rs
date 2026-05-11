@@ -4,10 +4,12 @@
 //! many times, captures elapsed time across `--repeat` independent runs,
 //! and emits a single JSON object with mean / stdev / per-step µs / peak
 //! RSS. Used by the `xtask perf-baseline` wrapper and CI's
-//! `perf-baseline-track` job. Designed for stability across runs — one
-//! cold setup per repeat (catches setup-time regressions), explicit
-//! warmup window (absorbs first-step transients), no shared mutable
-//! state across repeats.
+//! `perf-baseline-track` job. Designed for stability across runs — each
+//! repeat builds its own `Simulation` (no shared mutable state across
+//! repeats), runs a warmup window before starting the timer (absorbs
+//! first-step transients and caches), and times only the steady-state
+//! measurement loop (`elapsed`/`mean_secs` exclude `build()` and
+//! warmup).
 //!
 //! ## CLI
 //!
