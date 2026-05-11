@@ -56,8 +56,12 @@ fn read_beta(sim: &Simulation, case_name: &str) -> f64 {
 /// makes a future recipe-shape drift surface here rather than producing
 /// a silently-truncated propagation.
 fn synthetic_num_steps(case: &VerificationCase) -> usize {
-    match case.reference {
-        CsvReference::SyntheticTimes { num_steps, .. } => num_steps,
+    // Match through `&case.reference` so the borrow is explicit — the
+    // pattern only reads a `usize` (Copy), so this avoids any
+    // ambiguity about whether the non-Copy `CsvReference` is being
+    // moved out of the `&VerificationCase` argument.
+    match &case.reference {
+        CsvReference::SyntheticTimes { num_steps, .. } => *num_steps,
         _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
     }
 }
