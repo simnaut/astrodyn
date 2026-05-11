@@ -125,9 +125,8 @@ fn app_ext_chain_runs_pipeline() {
 fn step_fixed_preserves_bit_exact_dt() {
     // Pick a dt whose seconds-to-Duration round-trip differs in the
     // mantissa: `period / 560` for a representative ISS-period scale.
-    let dt: f64 = (2.0 * std::f64::consts::PI * (7000e3_f64).powf(1.5)
-        / (3.986004418e14_f64).sqrt())
-        / 560.0;
+    let dt: f64 =
+        (2.0 * std::f64::consts::PI * (7000e3_f64).powf(1.5) / (3.986004418e14_f64).sqrt()) / 560.0;
     let dt_via_duration = std::time::Duration::from_secs_f64(dt).as_secs_f64();
     assert_ne!(
         dt.to_bits(),
