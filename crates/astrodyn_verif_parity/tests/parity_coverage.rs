@@ -182,11 +182,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          recipe factory not yet defined (#389 follow-up)",
     ),
     (
-        "orbinit_families",
-        "pre-recipe sibling — sweep across orbit families, recipe factory \
-         not yet defined (#389 follow-up)",
-    ),
-    (
         "ref_attach",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined (#389 follow-up)",
