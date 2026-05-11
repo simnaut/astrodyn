@@ -182,8 +182,15 @@ pub trait SimulationBuilderBevyExt: Sized {
     /// atmosphere, entities for sources and vehicles, mass-tree
     /// pre-allocation + `MassChildOf` edges, integrator-state auto-init)
     /// and returns [`ScenarioHandles`] keyed parallel to the builder's
-    /// vectors. Callers can immediately step the app via
-    /// `Time::<Fixed>::advance_by` + `run_schedule(FixedUpdate)`.
+    /// vectors. The pipeline reads its integrator timestep from
+    /// [`IntegrationDtR`], which `populate_app` inserts at `self.dt`;
+    /// callers can immediately step the app via
+    /// [`crate::AstrodynAppExt::step_fixed_dt`]
+    /// (which keeps `Time<Fixed>` and `IntegrationDtR` in sync) or by
+    /// running the schedule directly. Direct callers that drive the
+    /// schedule manually must also update `IntegrationDtR` if they want
+    /// to vary `dt` mid-run — advancing `Time<Fixed>` alone won't change
+    /// the physics timestep.
     ///
     /// ```ignore
     /// use astrodyn::recipes::scenarios;
