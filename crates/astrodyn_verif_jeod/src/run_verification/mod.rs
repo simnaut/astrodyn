@@ -31,6 +31,7 @@ pub mod sim_derived_state;
 pub mod sim_dyncomp;
 pub mod sim_gj;
 pub mod sim_kinematic_propagation;
+pub mod sim_lvlh_extended;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
 pub mod sim_relative;

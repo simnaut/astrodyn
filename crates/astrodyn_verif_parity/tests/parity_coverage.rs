@@ -176,10 +176,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "lvlh_extended",
-        "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
-    ),
-    (
         "ned_edge",
         "pre-recipe edge-case sibling — recipe factory not yet defined \
          (#389 follow-up)",
