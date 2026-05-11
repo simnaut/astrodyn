@@ -12,6 +12,11 @@ repository.workspace = true
 [package.metadata.docs.rs]
 all-features = true
 
+[lib]
+# See `astrodyn_gravity/Cargo.toml` for rationale — disables the default
+# cargo-test bench harness so criterion flags reach our `[[bench]]`s.
+bench = false
+
 [dependencies]
 astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
@@ -23,8 +28,15 @@ uom = { workspace = true }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0", features = ["test-utils"] }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
 sha2 = "0.10"
 proptest = "1"
+criterion = { workspace = true }
+pprof = { workspace = true }
+
+[[bench]]
+name = "integration"
+harness = false
 
 [lints]
 workspace = true

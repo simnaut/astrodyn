@@ -79,6 +79,13 @@ thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 typenum = "1.20"
 
+# Benchmarking — dev-only deps, opted into per-crate via
+# `[dev-dependencies]` on the crates that own `benches/`. `pprof`
+# emits criterion-integrated flamegraph SVGs under
+# `target/criterion/<group>/<bench>/profile/`.
+criterion = "0.5"
+pprof = { version = "0.14", features = ["flamegraph", "criterion"] }
+
 # Workspace-wide lint policy. Inherited by every member that adds
 # `[lints] workspace = true` to its Cargo.toml. Single point of truth
 # for doc and safety hygiene.
