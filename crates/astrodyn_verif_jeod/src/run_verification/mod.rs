@@ -32,6 +32,7 @@ pub mod sim_dyncomp;
 pub mod sim_gj;
 pub mod sim_kinematic_propagation;
 pub mod sim_lvlh_extended;
+pub mod sim_orbelem_comprehensive;
 pub mod sim_orbinit_edge;
 pub mod sim_orbinit_families;
 pub mod sim_orbinit_roundtrip;

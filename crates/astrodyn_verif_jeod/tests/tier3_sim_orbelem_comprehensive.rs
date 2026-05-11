@@ -1,23 +1,23 @@
 //! Tier 3: SIM_orb_elem comprehensive -- 7 orbit families via Simulation pipeline
 //!
-//! Creates a `Simulation` for each orbit family, adds a body with
-//! `orbital_elements_source` configured, steps once to trigger derived-state
-//! computation, and compares orbital elements against JEOD reference.
+//! Builds each scenario through its `sim_orbelem_comprehensive` recipe,
+//! propagates for the recipe's declared `SyntheticTimes` cadence (one
+//! tiny-dt step), and compares the resulting orbital elements against
+//! the JEOD-logged columns at t=0.
+//!
+//! The `Simulation` construction lives in the
+//! `sim_orbelem_comprehensive` recipe module so the parity wrapper
+//! (`bevy_parity_orbelem_comprehensive.rs`) can drive the same scenarios
+//! through the Bevy adapter for the `runner ↔ bevy` half of the
+//! transitivity argument.
 
 use astrodyn::recipes::helpers::state_helpers::angle_diff;
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_orbelem_comprehensive;
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
-
-use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
-use astrodyn_runner::{RotationModel, Simulation};
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 use glam::DVec3;
-
-fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
-}
 
 /// Full record parsed from the verification CSV (all 21 columns).
 struct VerifRecord {
@@ -85,6 +85,44 @@ fn load_verif_record(csv_name: &str) -> VerifRecord {
     }
 }
 
+/// Build the recipe's `Simulation`.
+///
+/// Calls the scenario factory with a default `InitialConditions` and
+/// then `.build()`. Note: `VerificationCaseParityExt::run_and_assert_parity`
+/// derives `init` from `ref_states[0]` via `initial_conditions_from`
+/// (for `CsvReference::SyntheticTimes` that resolves to all-defaults
+/// anyway, so the two paths coincide today). Every recipe in this
+/// module ignores the passed `InitialConditions` — initial state is
+/// baked in from each case's JEOD-output t=0 row — so the runner-side
+/// propagation here and the Bevy-side propagation in
+/// `bevy_parity_orbelem_comprehensive.rs` see the same initial state
+/// bit-pattern regardless of which `InitialConditions` is threaded in.
+/// If a future recipe in this module starts reading `init`, this
+/// helper would need to match what the parity trait does to keep the
+/// two sides in lockstep.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
+}
+
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_orbelem_comprehensive` uses this
+/// variant because the per-case assertions only need the JEOD-logged
+/// initial state (baked into the recipe directly), not the full
+/// fixture CSV — even though most CSVs do contain a handful of
+/// downstream rows (and t50 spans t=0..5000). Panicking on any other
+/// variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (`sim.dt`) matches the cadence the recipe declared.
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
+}
+
 fn assert_close(name: &str, computed: f64, reference: f64, rel_tol: f64, abs_tol: f64) {
     let diff = (computed - reference).abs();
     let tol = if reference.abs() > abs_tol {
@@ -108,62 +146,55 @@ fn assert_angle_close(name: &str, computed: f64, reference: f64, abs_tol: f64) {
     );
 }
 
-/// Create a Simulation, add body with orbital_elements derived state, step once,
-/// and compare orbital elements against JEOD reference.
-fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: bool) {
-    let mu_earth = load_mu_earth();
+/// Build a Simulation from the recipe, propagate for the declared
+/// SyntheticTimes cadence, and compare orbital elements against the
+/// JEOD-logged t=0 row from `csv_name`. The recipe's baked-in initial
+/// state is cross-checked against the CSV's position/velocity so a
+/// future recipe-side edit can't silently drift away from the
+/// JEOD-source values.
+fn verify_orbit_family(
+    case: VerificationCase,
+    csv_name: &str,
+    label: &str,
+    skip_degenerate_scalars: bool,
+) {
     let rec = load_verif_record(csv_name);
 
-    // Create Simulation with Earth point-mass gravity
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    // Use tiny dt so one step barely changes the state.
-    // dt=1e-9 keeps position drift below 1e-5 m.
-    let mut sim = Simulation::new(time, 1e-9);
-
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
 
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: rec.position,
-            velocity: rec.velocity,
-        }),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    // Fence: the recipe's baked-in state must reproduce the JEOD-logged
+    // t=0 row to f64 precision. A future edit that tweaks recipe-side
+    // numbers will trip this check first instead of silently changing
+    // what the parity wrapper integrates.
+    let body0 = sim.body(0);
+    let init_pos = body0.trans.position.raw_si();
+    let init_vel = body0.trans.velocity.raw_si();
+    let pos_drift = (init_pos - rec.position).length();
+    let vel_drift = (init_vel - rec.velocity).length();
+    assert!(
+        pos_drift < 1e-6,
+        "{label}: recipe init position drifted from CSV by {pos_drift:.6e} m"
+    );
+    assert!(
+        vel_drift < 1e-9,
+        "{label}: recipe init velocity drifted from CSV by {vel_drift:.6e} m/s"
+    );
 
-    sim.validate().unwrap();
-
-    // Step once to trigger derived-state computation (stage 9)
-    sim.step().expect("step failed");
+    // `step_n` advances exactly `n_steps` whole steps. (`step_until`
+    // has a 1 ms slop and may stop one step short.)
+    sim.step_n(n_steps).expect("step_n failed");
 
     let output = sim.body(0);
     let oe = output
         .orbital_elements
         .as_ref()
-        .unwrap_or_else(|| panic!("{label}: orbital_elements not computed after step()"));
+        .unwrap_or_else(|| panic!("{label}: orbital_elements not computed after propagation"));
 
     println!("Tier 3 (Simulation): {label}");
     println!(
@@ -317,14 +348,20 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
 
 #[test]
 fn tier3_simulation_orbelem_t01() {
-    verify_orbit_family("orbelem_verif_t01_orbelem.csv", "T01 circular (e~0)", false);
+    verify_orbit_family(
+        sim_orbelem_comprehensive::t01(),
+        "orbelem_verif_t01_orbelem.csv",
+        "T01 equatorial circular (e=0, i=0)",
+        false,
+    );
 }
 
 #[test]
 fn tier3_simulation_orbelem_t10() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t10(),
         "orbelem_verif_t10_orbelem.csv",
-        "T10 eccentric (0<e<1)",
+        "T10 inclined near-circular (i=30deg, e~0)",
         false,
     );
 }
@@ -332,8 +369,9 @@ fn tier3_simulation_orbelem_t10() {
 #[test]
 fn tier3_simulation_orbelem_t20() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t20(),
         "orbelem_verif_t20_orbelem.csv",
-        "T20 hyperbolic (e>1)",
+        "T20 eccentric inclined (e=0.2, i=45deg)",
         false,
     );
 }
@@ -341,8 +379,9 @@ fn tier3_simulation_orbelem_t20() {
 #[test]
 fn tier3_simulation_orbelem_t30() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t30(),
         "orbelem_verif_t30_orbelem.csv",
-        "T30 near-parabolic (e~1)",
+        "T30 orb_elem edge case (sma=0 output, i=30deg)",
         true,
     );
 }
@@ -350,8 +389,9 @@ fn tier3_simulation_orbelem_t30() {
 #[test]
 fn tier3_simulation_orbelem_t40() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t40(),
         "orbelem_verif_t40_orbelem.csv",
-        "T40 retrograde (i>90deg)",
+        "T40 orb_elem edge case (sma=0 output, e=0.2, i=45deg)",
         true,
     );
 }
@@ -359,8 +399,9 @@ fn tier3_simulation_orbelem_t40() {
 #[test]
 fn tier3_simulation_orbelem_t50() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t50(),
         "orbelem_verif_t50_orbelem.csv",
-        "T50 equatorial (i~0)",
+        "T50 equatorial circular extended log (same as T01, fixture spans 5000s)",
         false,
     );
 }
@@ -368,8 +409,9 @@ fn tier3_simulation_orbelem_t50() {
 #[test]
 fn tier3_simulation_orbelem_t55() {
     verify_orbit_family(
+        sim_orbelem_comprehensive::t55(),
         "orbelem_verif_t55_orbelem.csv",
-        "T55 polar (i~90deg)",
+        "T55 ISS-like LEO (i=51.7deg, e=0.0025)",
         false,
     );
 }

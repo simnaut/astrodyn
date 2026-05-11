@@ -172,11 +172,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "orbelem_comprehensive",
-        "pre-recipe sibling — comprehensive sweep recipe not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "orbinit_docker",
         "pre-recipe sibling exercising orbital-element initialization — \
          recipe factory not yet defined (#389 follow-up)",
