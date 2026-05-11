@@ -314,6 +314,24 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         "KNOWN_PARITY_GAPS contains topics that no longer exist in tier3_*.rs: {stale:?}\n  \
          Either restore the missing tier3 test or drop the exemption.",
     );
+
+    // Surface redundant `KNOWN_PARITY_GAPS` entries: a topic listed
+    // here that already has a `bevy_parity_*.rs` wrapper is one whose
+    // gap should be dropped entirely — the wrapper file satisfies the
+    // superset invariant on its own, and leaving the entry in place
+    // gives a false impression that the topic is still a known gap.
+    let mut redundant: Vec<&str> = Vec::new();
+    for (topic, _reason) in KNOWN_PARITY_GAPS {
+        if is_covered_by_parity(topic, &parity_topics) {
+            redundant.push(topic);
+        }
+    }
+    assert!(
+        redundant.is_empty(),
+        "KNOWN_PARITY_GAPS contains topics that already have a bevy_parity_*.rs wrapper: \
+         {redundant:?}\n  \
+         Drop the exemption — the wrapper file covers the topic.",
+    );
 }
 
 /// Decide whether a tier3 topic is covered by some `bevy_parity_*.rs`
