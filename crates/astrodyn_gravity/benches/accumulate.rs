@@ -43,16 +43,20 @@ fn bench_accumulate_gravity(c: &mut Criterion) {
     let mut group = c.benchmark_group("accumulate_gravity");
 
     // Fixture parses — outside iter() so the per-iteration cost is the
-    // kernel call, not the binary fixture decode.
+    // kernel call, not the binary fixture decode. Read `mu` into a
+    // local first, then move the (Vec-of-Vec) coefficient table into
+    // the Box rather than cloning it.
     let ggm05c = fixtures::load_ggm05c();
     let lp150q = fixtures::load_moon_lp150q();
+    let earth_mu = ggm05c.mu;
+    let moon_mu = lp150q.mu;
     let earth_src = GravitySource {
-        mu: ggm05c.mu,
-        model: GravityModel::SphericalHarmonics(Box::new(ggm05c.clone())),
+        mu: earth_mu,
+        model: GravityModel::SphericalHarmonics(Box::new(ggm05c)),
     };
     let moon_src = GravitySource {
-        mu: lp150q.mu,
-        model: GravityModel::SphericalHarmonics(Box::new(lp150q.clone())),
+        mu: moon_mu,
+        model: GravityModel::SphericalHarmonics(Box::new(lp150q)),
     };
 
     // Scenario-representative positions in the body-fixed frame.
