@@ -269,6 +269,28 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
             app.add_plugins(AstrodynPlugin);
         }
 
+        // `AstrodynPlugin::build` only installs the per-planet system
+        // instantiations for `astrodyn::Earth` (frame registration,
+        // body-action queue, validator, etc.). Missions integrating in
+        // a different planet's inertial frame must additionally call
+        // [`register_planet_systems::<P>`](crate::register_planet_systems)
+        // — without those instantiations, the FixedUpdate pipeline
+        // never picks up the planet's bodies and `populate_app` returns
+        // a world that "stays at IC" no matter how many ticks the
+        // caller pumps. Do it once here so callers don't have to know
+        // about the helper. The `RegisteredPlanetsR` registry is
+        // populated by both `AstrodynPlugin::build` (for Earth) and the
+        // helper itself, so the contains-check makes this idempotent
+        // and safe even when `<P> == astrodyn::Earth` or when
+        // populate_app runs twice on the same App.
+        if !app
+            .world()
+            .resource::<crate::RegisteredPlanetsR>()
+            .contains::<P>()
+        {
+            crate::register_planet_systems::<P>(app);
+        }
+
         // ── Sources ──
         let sources_len = self.sources.len();
         let mut source_entities = Vec::with_capacity(sources_len);
