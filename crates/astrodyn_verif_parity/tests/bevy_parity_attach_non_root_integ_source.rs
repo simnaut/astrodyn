@@ -52,8 +52,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
-    GravityControlsC, IntegSourceC, MassBodyIdC, MassPropertiesC, MassTreeR, PlanetBundle,
-    RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
+    GravityControlsC, IntegSourceC, IntegrationDtR, MassBodyIdC, MassPropertiesC, MassTreeR,
+    PlanetBundle, RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -139,6 +139,14 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    // `IntegrationDtR(0.0)` makes `integration_system` /
+    // `step_detached_system` noop on the single `run_schedule(
+    // FixedUpdate)` calls the staging tests below issue (the schedule
+    // is fired without an `advance_by` because the assertions target
+    // the merged composite produced by `staging_system`, not the
+    // integrator). Installing the real `DT` here would integrate a
+    // 10-second step on top of staging and corrupt the comparison.
+    app.insert_resource(IntegrationDtR(0.0));
     app.add_plugins(AstrodynPlugin);
 
     let _earth = app

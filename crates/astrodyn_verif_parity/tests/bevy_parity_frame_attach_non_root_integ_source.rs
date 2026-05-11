@@ -49,8 +49,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, FrameAttachEvent, FrameAttachedC, FrameDerivativesC,
-    FrameEntityC, FrameTransC, GravityControlsC, IntegSourceC, MassPropertiesC, PlanetBundle,
-    RootFrameEntityR, RotationalStateC, SourceMutator, TranslationalStateC,
+    FrameEntityC, FrameTransC, GravityControlsC, IntegSourceC, IntegrationDtR, MassPropertiesC,
+    PlanetBundle, RootFrameEntityR, RotationalStateC, SourceMutator, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -103,6 +103,7 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let _earth = app

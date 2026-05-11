@@ -20,7 +20,7 @@
 
 use astrodyn::{GravitySourceEntry, EARTH, MOON};
 use astrodyn_bevy::{
-    AstrodynPlugin, CentralSourceMarker, FrameEntityC, FrameTransC, PlanetBundle,
+    AstrodynPlugin, CentralSourceMarker, FrameEntityC, FrameTransC, IntegrationDtR, PlanetBundle,
     SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
@@ -33,6 +33,7 @@ fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app
 }

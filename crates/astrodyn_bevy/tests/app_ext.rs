@@ -7,13 +7,13 @@
 //!    + `AstrodynPlugin` in one chained call.
 //! 2. [`AstrodynAppExt::step_fixed_dt`] advances the schedule with an
 //!    explicit `dt`.
-//! 3. [`AstrodynAppExt::step_fixed`] reads `dt` from `Time<Fixed>` and
-//!    advances. The body must move under gravity (otherwise the bring-up
-//!    didn't actually wire the pipeline).
+//! 3. [`AstrodynAppExt::step_fixed`] reads `dt` from `IntegrationDtR`
+//!    (the bit-exact source) and advances. The body must move under
+//!    gravity (otherwise the bring-up didn't actually wire the pipeline).
 //!
 //! A separate `#[should_panic]` test pins the diagnostic substring used
-//! when a caller invokes `step_fixed` on an `App` that never received a
-//! `Time<Fixed>` resource — the fail-loud guard at the trait surface.
+//! when a caller invokes `step_fixed` on an `App` that never received an
+//! `IntegrationDtR` resource — the fail-loud guard at the trait surface.
 
 use astrodyn_bevy::prelude::*;
 use astrodyn_bevy::recipes::{earth, orbital_elements, vehicle};
@@ -110,13 +110,49 @@ fn app_ext_chain_runs_pipeline() {
     );
 }
 
-/// `step_fixed` panics with a diagnostic that names `Time<Fixed>` and the
-/// fix (call `add_astrodyn` first / use `step_fixed_dt`).
+/// `step_fixed` reads `dt` from `IntegrationDtR`, not from
+/// `Time<Fixed>::timestep()` — the latter rounds through `Duration`
+/// (integer ns) and would corrupt the bit-exact source for
+/// non-nanosecond-representable timesteps.
+///
+/// Regression for the lvlh_extended parity gap: `period / 560` is
+/// irrational at f64 precision, so a `dt` reconstructed via
+/// `Duration::from_secs_f64(dt).as_secs_f64()` differs in the last few
+/// bits. If `step_fixed` round-trips through `Time<Fixed>::timestep()`,
+/// the overwrite in `step_fixed_dt` lands a rounded value back into
+/// `IntegrationDtR` and silently breaks bit-identity parity downstream.
 #[test]
-#[should_panic(expected = "Time<Fixed>` resource is missing")]
-fn step_fixed_panics_without_time_fixed() {
+fn step_fixed_preserves_bit_exact_dt() {
+    // Pick a dt whose seconds-to-Duration round-trip differs in the
+    // mantissa: `period / 560` for a representative ISS-period scale.
+    let dt: f64 =
+        (2.0 * std::f64::consts::PI * (7000e3_f64).powf(1.5) / (3.986004418e14_f64).sqrt()) / 560.0;
+    let dt_via_duration = std::time::Duration::from_secs_f64(dt).as_secs_f64();
+    assert_ne!(
+        dt.to_bits(),
+        dt_via_duration.to_bits(),
+        "test premise broken: dt must round-trip non-identically through Duration",
+    );
+
     let mut app = App::new();
-    // No `add_astrodyn`, no `insert_resource(Time::<Fixed>::...)` — the
+    app.add_plugins(MinimalPlugins).add_astrodyn(dt);
+    app.step_fixed(3);
+
+    let stored = app.world().resource::<IntegrationDtR>().0;
+    assert_eq!(
+        stored.to_bits(),
+        dt.to_bits(),
+        "step_fixed must preserve the bit-exact dt installed by add_astrodyn",
+    );
+}
+
+/// `step_fixed` panics with a diagnostic that names `IntegrationDtR`
+/// and the fix (call `add_astrodyn` first / use `step_fixed_dt`).
+#[test]
+#[should_panic(expected = "IntegrationDtR` resource is missing")]
+fn step_fixed_panics_without_integration_dt() {
+    let mut app = App::new();
+    // No `add_astrodyn`, no `insert_resource(IntegrationDtR(...))` — the
     // resource is absent, so `step_fixed` must panic at the read site.
     app.step_fixed(1);
 }

@@ -11,9 +11,9 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     DynamicsConfigC, EulerAnglesC, EulerAnglesConfigC, GeodeticConfigC, GeodeticStateC,
-    GravityControlsC, GravitySourceC, LvlhFrameC, MassPropertiesC, OrbitalElementsC,
-    OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RotationalStateC, SolarBetaC,
-    SourceInertialPositionC, SunMarker, TranslationalStateC,
+    GravityControlsC, GravitySourceC, IntegrationDtR, LvlhFrameC, MassPropertiesC,
+    OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RotationalStateC,
+    SolarBetaC, SourceInertialPositionC, SunMarker, TranslationalStateC,
 };
 use astrodyn_runner::RotationModel;
 use bevy::prelude::*;
@@ -299,6 +299,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
@@ -465,6 +466,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
@@ -582,6 +584,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app

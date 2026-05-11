@@ -33,7 +33,7 @@ use std::time::Duration;
 use astrodyn::recipes::scenarios::apollo;
 use astrodyn::recipes::{ephemeris as ephemeris_recipes, Mission};
 use astrodyn::EphemerisBody;
-use astrodyn_bevy::{AstrodynSet, SimulationBuilderBevyExt, TranslationalStateC};
+use astrodyn_bevy::{AstrodynSet, IntegrationDtR, SimulationBuilderBevyExt, TranslationalStateC};
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 
@@ -113,6 +113,7 @@ fn main() {
     app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))));
     let dt = sb.dt;
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.insert_resource(IntegrationDtR(dt));
 
     let handles = sb
         .populate_app::<astrodyn::Earth>(&mut app)

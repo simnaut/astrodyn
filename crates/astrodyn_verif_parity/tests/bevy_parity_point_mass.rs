@@ -10,7 +10,8 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    DynamicsConfigC, GravityControlsC, MassPropertiesC, RotationalStateC, TranslationalStateC,
+    DynamicsConfigC, GravityControlsC, IntegrationDtR, MassPropertiesC, RotationalStateC,
+    TranslationalStateC,
 };
 use astrodyn_runner::{RotationModel, Simulation};
 use bevy::prelude::*;
@@ -28,6 +29,7 @@ fn bevy_parity_point_mass_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app

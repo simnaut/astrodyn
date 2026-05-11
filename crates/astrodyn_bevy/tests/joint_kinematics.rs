@@ -46,6 +46,7 @@ fn build_app_with_joint(spec: JointKinematicsSpec) -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let entity = app
         .world_mut()
@@ -203,6 +204,7 @@ fn joint_kinematics_does_not_touch_unrelated_frame_entities() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     // Spawn a bare frame entity (no JointKinematicsC).
@@ -309,6 +311,7 @@ fn joint_kinematics_system_is_a_public_system_function() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.insert_resource(IntegrationDtR(DT));
         app.insert_resource(SimulationTimeR::default());
         app.add_systems(FixedUpdate, systems::joint_kinematics_system);
     }
@@ -380,6 +383,7 @@ fn joint_kinematics_relative_frame_state_walk_matches_analytical() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let root_e = app
@@ -557,6 +561,7 @@ fn build_app_with_sinusoidal_joint(spec: SinusoidalJointKinematicsSpec) -> (App,
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(SinusoidalJointKinematicsC(spec)).id();
     (app, entity)
@@ -664,6 +669,7 @@ fn closure_joint_kinematics_is_time_invariant_across_ticks() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(ClosureJointKinematicsC(spec)).id();
 
@@ -716,6 +722,7 @@ fn multi_dof_joint_kinematics_two_stage_matches_kernel() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let entity = app.world_mut().spawn(MultiDofJointKinematicsC(chain)).id();
 
@@ -777,6 +784,7 @@ fn sibling_kinematic_drivers_dispatch_disjoint_entity_sets() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let const_e = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
@@ -868,6 +876,7 @@ fn closure_joint_kinematics_panics_on_non_unit_axis() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app.world_mut().spawn(ClosureJointKinematicsC(spec));
     step_once(&mut app);
@@ -889,6 +898,7 @@ fn multi_dof_joint_kinematics_panics_on_non_unit_axis_in_stage() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app.world_mut().spawn(MultiDofJointKinematicsC(chain));
     step_once(&mut app);
@@ -905,6 +915,7 @@ fn sibling_joint_kinematics_systems_are_public() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.insert_resource(IntegrationDtR(DT));
         app.insert_resource(SimulationTimeR::default());
         app.add_systems(
             FixedUpdate,
@@ -1017,6 +1028,7 @@ fn build_app_with_plugin() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app
 }

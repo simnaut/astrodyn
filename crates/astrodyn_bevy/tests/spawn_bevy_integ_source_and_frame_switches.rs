@@ -41,8 +41,9 @@ use astrodyn::{
     TranslationalStateTyped, Vec3Ext, VehicleBuilder, VehicleConfig, EARTH, MOON,
 };
 use astrodyn_bevy::{
-    AstrodynPlugin, FrameEntityC, FrameSwitchesC, IntegSourceC, PlanetBundle, RotationalStateC,
-    SourceInertialVelocityC, SourceMutator, TranslationalStateC, VehicleConfigBevyExt,
+    AstrodynPlugin, FrameEntityC, FrameSwitchesC, IntegSourceC, IntegrationDtR, PlanetBundle,
+    RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
+    VehicleConfigBevyExt,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -351,6 +352,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app

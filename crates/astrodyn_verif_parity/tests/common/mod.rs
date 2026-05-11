@@ -25,7 +25,8 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    AstrodynPlugin, GravitySourceC, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, GravitySourceC, IntegrationDtR, RotationalStateC, SourceInertialPositionC,
+    TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -87,7 +88,12 @@ pub fn earth_source() -> GravitySource {
 pub fn new_bevy_app(dt: f64) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
+    // `Time<Fixed>` and `IntegrationDtR` are inserted in lockstep:
+    // `Time<Fixed>` drives `FixedUpdate` cadence; `IntegrationDtR`
+    // carries the bit-exact f64 the pipeline systems consume as
+    // physics `dt` (see `astrodyn_bevy::IntegrationDtR` doc).
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.insert_resource(IntegrationDtR(dt));
     app.add_plugins(AstrodynPlugin);
     app
 }
@@ -97,6 +103,10 @@ pub fn step_bevy(app: &mut App, n: usize) {
 }
 
 pub fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
+    // Keep `IntegrationDtR` in sync with the caller's `dt` so a test
+    // that varies `dt` between calls drives the pipeline with the
+    // exact f64 it passed in (mirrors `AstrodynAppExt::step_fixed_dt`).
+    app.insert_resource(IntegrationDtR(dt));
     for _ in 0..n {
         app.world_mut()
             .resource_mut::<Time<Fixed>>()

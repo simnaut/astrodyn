@@ -67,6 +67,36 @@ impl Default for SimulationTimeR {
     }
 }
 
+/// Bit-exact f64 pipeline integration timestep.
+///
+/// The runner stores `dt` as a plain `f64` and feeds it through
+/// `Simulation::step_internal(self.dt)` unchanged. The Bevy adapter
+/// reads `dt` from this resource for the four pipeline systems that
+/// consume it (time advance, SRP integration, state integration,
+/// detached-subtree ballistic drift), so the Bevy side mirrors the
+/// runner's raw-f64 cadence and `runner ↔ bevy` parity holds
+/// bit-identically even when `dt` is irrational in seconds (e.g.
+/// `period / 560 ≈ 9.917 s` in the LVLH-periodicity recipe).
+/// `Time<Fixed>::delta_secs_f64()` round-trips through `Duration` and
+/// rounds to integer nanoseconds, which is unsuitable as a physics
+/// source.
+///
+/// **Required for any app that runs the `FixedUpdate` pipeline.**
+/// `AstrodynPlugin::build` does not install it; callers must do so
+/// explicitly. The four pipeline systems take it as a non-`Option`
+/// `Res<IntegrationDtR>`, so Bevy panics on schedule run if the
+/// resource is missing — the scheduler diagnostic names
+/// `IntegrationDtR` as the missing resource. See the installers
+/// listed below.
+///
+/// Installed by [`crate::AstrodynAppExt::add_astrodyn`],
+/// [`crate::AstrodynAppExt::step_fixed_dt`], and by
+/// [`crate::SimulationBuilderBevyExt::populate_app`]. Mission code that
+/// bypasses those entry points must call
+/// `app.insert_resource(IntegrationDtR(dt))` itself.
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct IntegrationDtR(pub f64);
+
 /// Optional Bevy resource for polar motion (xp, yp) in radians.
 ///
 /// When inserted, the `planet_fixed_rotation_system` includes polar motion
@@ -199,6 +229,17 @@ impl Plugin for AstrodynPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
+        // `IntegrationDtR` is the mandatory bit-exact f64 source of
+        // pipeline `dt`; see the type's doc. The plugin does not
+        // install it — callers must, either through one of the
+        // canonical installers (`AstrodynAppExt::add_astrodyn`,
+        // `AstrodynAppExt::step_fixed_dt`, or
+        // `SimulationBuilderBevyExt::populate_app`) or by
+        // `app.insert_resource(IntegrationDtR(dt))` directly. The four
+        // pipeline systems that consume `dt` take it as
+        // `Res<IntegrationDtR>` (non-`Option`), so Bevy panics on the
+        // first FixedUpdate run if it's missing — naming the resource
+        // and pointing the caller at the installers.
 
         // ── ECS-native root frame entity ──
         // Spawn the root frame entity. Source / body registration

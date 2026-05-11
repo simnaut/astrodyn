@@ -752,7 +752,7 @@ mod tests {
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, KinematicChildC,
         MassChildOf, MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
     };
-    use crate::AstrodynPlugin;
+    use crate::{AstrodynPlugin, IntegrationDtR};
     use astrodyn::{MassProperties, RotationalState, TranslationalState};
     use bevy::prelude::FixedUpdate;
     use bevy::time::{Fixed, Time};
@@ -760,6 +760,10 @@ mod tests {
     use std::time::Duration;
 
     fn step_bevy(app: &mut App, n: usize, dt: f64) {
+        // Keep `IntegrationDtR` in sync with the caller's `dt` so the
+        // pipeline systems see the exact f64 the test passed in
+        // (mirrors `AstrodynAppExt::step_fixed_dt`).
+        app.insert_resource(IntegrationDtR(dt));
         for _ in 0..n {
             app.world_mut()
                 .resource_mut::<Time<Fixed>>()

@@ -66,8 +66,8 @@ use astrodyn::{
     RotationalState, TranslationalState,
 };
 use astrodyn_bevy::{
-    AstrodynPlugin, BodyActionEvent, GravityControlsC, MassPropertiesC, RotationalStateC,
-    SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, BodyActionEvent, GravityControlsC, IntegrationDtR, MassPropertiesC,
+    RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 use bevy::prelude::*;
@@ -143,6 +143,7 @@ fn build_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app
@@ -461,6 +462,7 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
+    app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app
@@ -625,6 +627,7 @@ fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history()
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
+    app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app
@@ -798,6 +801,7 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
+    app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app

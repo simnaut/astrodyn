@@ -567,6 +567,7 @@ mod tests {
     };
     use crate::mass_tree::composite_mass_system;
     use crate::systems::force_collection_system;
+    use crate::IntegrationDtR;
     use astrodyn::MassProperties;
 
     // allowed: typed↔raw kernel-boundary helpers for test scaffolding
@@ -1295,6 +1296,7 @@ mod tests {
         // typed-quantities bypasses in production code paths, not
         // one-shot test-app setup of the Bevy `Time<Fixed>` resource.
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.insert_resource(IntegrationDtR(DT));
         app.add_plugins(crate::AstrodynPlugin);
 
         // Earth point-mass source.
@@ -1540,6 +1542,7 @@ mod tests {
         // `child_translational_state_does_not_drift_under_gravity`
         // and the wider `tests/bevy_parity*.rs` integration tests.
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.insert_resource(IntegrationDtR(DT));
         app.add_systems(
             Update,
             (
