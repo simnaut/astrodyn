@@ -22,9 +22,9 @@
 //! scenarios are added by extending [`build_scenario`].
 //!
 //! `--phase-timing` is gated by the `phase_timing` cargo feature; the
-//! binary panics with a rebuild command if the flag is passed without
-//! the feature. The `xtask perf-baseline` wrapper handles the feature
-//! flag automatically.
+//! binary prints a rebuild command on stderr and exits with code 2 if
+//! the flag is passed without the feature. The `xtask perf-baseline`
+//! wrapper handles the feature flag automatically.
 //!
 //! ## Output schema
 //!
@@ -284,8 +284,10 @@ fn run_one_repeat(args: &PerfArgs) -> Sample {
 }
 
 /// Format a f64 with a fixed number of decimals into a JSON-safe
-/// number literal (no trailing `.0` for integer values is fine —
-/// every consumer is `jq`).
+/// number literal. `{x:.*}` always emits exactly `decimals` digits
+/// after the point (e.g. `1.000000` for `(1.0, 6)`), so the output is
+/// already a valid JSON number — `jq` and other parsers accept the
+/// fixed-decimal form without trimming.
 fn fmt_f64(x: f64, decimals: usize) -> String {
     format!("{x:.*}", decimals)
 }
