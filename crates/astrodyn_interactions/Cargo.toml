@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_interactions"
-description = "Aerodynamic drag, SRP, gravity-gradient torque, shadow, and contact for astrodyn_bevy"
+description = "Aerodynamic drag, SRP, gravity-gradient torque, shadow, and contact for the astrodyn orbital-dynamics pipeline"
 readme = "README.md"
 keywords = ["drag", "srp", "gravity-gradient", "orbital-mechanics", "aerospace"]
 categories = ["science", "aerospace"]
@@ -24,7 +24,7 @@ astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
 astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
-astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
+astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures" }
 astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 proptest = "1"
 

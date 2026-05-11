@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_planet"
-description = "Planet definitions and presets (Earth, Moon, Sun, Mars) for astrodyn_bevy"
+description = "Planet definitions and presets (Earth, Moon, Sun, Mars) for the astrodyn orbital-dynamics pipeline"
 readme = "README.md"
 keywords = ["planet", "ephemeris", "orbital-mechanics", "aerospace"]
 categories = ["science", "aerospace"]

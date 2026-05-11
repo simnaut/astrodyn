@@ -70,10 +70,10 @@ ships in a real simulation reads the workspace through `astrodyn` and only
 through `astrodyn`. The narrower the production-path surface, the smaller the
 contract that has to stay stable across phases.
 
-This rule is scoped to the production path because the workspace also contains
-a non-shipping test harness (`astrodyn_runner`) whose role is the inverse: it owns
-its own state container and *needs* to construct concrete physics types
-itself. See [`astrodyn_bevy` vs `astrodyn_runner`](#astrodyn_bevy-vs-astrodyn_runner-two-parallel-consumers-of-astrodyn)
+This rule is scoped to the production path because the workspace also ships
+a standalone arena-state simulation harness (`astrodyn_runner`) whose role
+is the inverse: it owns its own state container and *needs* to construct
+concrete physics types itself. See [`astrodyn_bevy` vs `astrodyn_runner`](#astrodyn_bevy-vs-astrodyn_runner-two-parallel-consumers-of-astrodyn)
 below for why that asymmetry is intentional and what each consumer is allowed
 to depend on.
 
