@@ -207,11 +207,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          CsvReference variant; follow-up to #389",
     ),
     (
-        "solar_beta_extended",
-        "pre-recipe sibling — extended cases recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",
