@@ -116,12 +116,14 @@ fn tier3_simulation_orbinit_cross_consistency() {
         let (init_pos, init_vel) = runner_initial_state(&case);
 
         // Fence: the recipe's baked-in state must reproduce the
-        // JEOD-logged t=0 row exactly, bit-for-bit for the OE RUNs and
-        // within the CSV's printed precision for the Cartesian RUN
-        // (RUN_0401 logs 6 significant digits — JEOD's truncation, not
-        // ours). A future edit that tweaks recipe-side numbers will
-        // trip this check first instead of silently changing what the
-        // parity wrapper integrates.
+        // JEOD-logged t=0 row to within the CSV's printed precision
+        // (≤ 1 m position, ≤ 0.01 m/s velocity). RUN_0401 logs 6
+        // significant digits — JEOD's truncation, not ours; the other
+        // RUNs print closer to f64 precision but the threshold below is
+        // the same for all to keep the diagnostic uniform. A future
+        // edit that tweaks recipe-side numbers will trip this check
+        // first instead of silently changing what the parity wrapper
+        // integrates.
         let pos_drift = (init_pos - csv_init.position).length();
         let vel_drift = (init_vel - csv_init.velocity).length();
         assert!(
@@ -133,11 +135,14 @@ fn tier3_simulation_orbinit_cross_consistency() {
             "{label}: recipe init velocity drifted from CSV by {vel_drift:.6e} m/s"
         );
 
-        // Step once through the full pipeline (TimeUpdate → Environment →
+        // Step through the full pipeline (TimeUpdate → Environment →
         // Integration → DerivedState) at the recipe's synthetic cadence.
-        // Cross-check `dt` against the built `Simulation`'s integrator dt
-        // to catch a future recipe edit that updates one half of the
-        // cadence but not the other.
+        // Drive propagation off the recipe's `n_steps`, not a hardcoded
+        // single step, so any future recipe edit that increases the
+        // cadence rolls through this test on the same `dt`. Cross-check
+        // `dt` against the built `Simulation`'s integrator dt to catch
+        // a recipe edit that updates one half of the cadence but not
+        // the other.
         let mut sim = build_sim(&case);
         let (dt, n_steps) = synthetic_cadence(&case);
         assert_eq!(
@@ -150,7 +155,18 @@ fn tier3_simulation_orbinit_cross_consistency() {
             "`{}`: recipe must propagate at least one step",
             case.name
         );
-        sim.step_until(dt).expect("step_until failed");
+        let t_end = n_steps as f64 * dt;
+        sim.step_until(t_end).expect("step_until failed");
+        // Sanity: propagation actually reached the requested end time.
+        // `step_until` rounds to the next integer step boundary, but for
+        // `n_steps * dt` the boundary IS the request, so equality holds
+        // to within float precision.
+        assert!(
+            (sim.elapsed() - t_end).abs() < 1e-9,
+            "`{}`: sim elapsed {} did not reach requested end {t_end}",
+            case.name,
+            sim.elapsed(),
+        );
 
         // Read back the body state after one step (confirms pipeline ran).
         let body = sim.body(0);
