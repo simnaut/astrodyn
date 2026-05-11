@@ -9,8 +9,9 @@ use astrodyn::{
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC, IntegratorTypeC,
-    PlanetFixedRotationC, PolarMotionR, SourceInertialPositionC, TidalConfigC, TranslationalStateC,
+    DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC, IntegrationDtR,
+    IntegratorTypeC, PlanetFixedRotationC, PolarMotionR, SourceInertialPositionC, TidalConfigC,
+    TranslationalStateC,
 };
 use astrodyn_runner::RotationModel;
 use bevy::prelude::*;
@@ -36,6 +37,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
@@ -152,6 +154,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
@@ -299,6 +302,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.insert_resource(IntegrationDtR(dt));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app

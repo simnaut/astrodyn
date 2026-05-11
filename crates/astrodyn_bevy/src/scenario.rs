@@ -99,8 +99,8 @@ use crate::components::{
     SourceInertialVelocityC, SunMarker, TidalConfigC, TranslationalStateC,
 };
 use crate::{
-    AstrodynPlugin, AtmosphereModelR, EphemerisR, MassTreeR, PolarMotionR, SimulationTimeR,
-    VehicleConfigBevyExt,
+    AstrodynPlugin, AtmosphereModelR, EphemerisR, IntegrationDtR, MassTreeR, PolarMotionR,
+    SimulationTimeR, VehicleConfigBevyExt,
 };
 
 /// Handles to entities spawned by [`SimulationBuilderBevyExt::populate_app`].
@@ -182,8 +182,15 @@ pub trait SimulationBuilderBevyExt: Sized {
     /// atmosphere, entities for sources and vehicles, mass-tree
     /// pre-allocation + `MassChildOf` edges, integrator-state auto-init)
     /// and returns [`ScenarioHandles`] keyed parallel to the builder's
-    /// vectors. Callers can immediately step the app via
-    /// `Time::<Fixed>::advance_by` + `run_schedule(FixedUpdate)`.
+    /// vectors. The pipeline reads its integrator timestep from
+    /// [`IntegrationDtR`], which `populate_app` inserts at `self.dt`;
+    /// callers can immediately step the app via
+    /// [`crate::AstrodynAppExt::step_fixed_dt`]
+    /// (which keeps `Time<Fixed>` and `IntegrationDtR` in sync) or by
+    /// running the schedule directly. Direct callers that drive the
+    /// schedule manually must also update `IntegrationDtR` if they want
+    /// to vary `dt` mid-run — advancing `Time<Fixed>` alone won't change
+    /// the physics timestep.
     ///
     /// ```ignore
     /// use astrodyn::recipes::scenarios;
@@ -240,6 +247,14 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
         // `self.dt` is a plain `f64` integrator timestep, not a typed
         // duration phantom.
         app.insert_resource(Time::<Fixed>::from_seconds(self.dt));
+        // `IntegrationDtR` is the bit-exact f64 source of `dt` for the
+        // pipeline (`Time<Fixed>::delta_secs_f64()` rounds to integer
+        // nanoseconds via `Duration::from_secs_f64`, which breaks
+        // `runner ↔ bevy` bit-identity on irrational-in-seconds
+        // timesteps like `period / 560`). The runner side reads
+        // `SimulationBuilder.dt` directly as f64 through
+        // `Simulation::step_internal`; the Bevy side now mirrors that.
+        app.insert_resource(IntegrationDtR(self.dt));
         app.insert_resource(SimulationTimeR(self.time));
 
         // Optional global resources. AstrodynPlugin doesn't insert any

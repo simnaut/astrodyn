@@ -70,10 +70,10 @@ ships in a real simulation reads the workspace through `astrodyn` and only
 through `astrodyn`. The narrower the production-path surface, the smaller the
 contract that has to stay stable across phases.
 
-This rule is scoped to the production path because the workspace also contains
-a non-shipping test harness (`astrodyn_runner`) whose role is the inverse: it owns
-its own state container and *needs* to construct concrete physics types
-itself. See [`astrodyn_bevy` vs `astrodyn_runner`](#astrodyn_bevy-vs-astrodyn_runner-two-parallel-consumers-of-astrodyn)
+This rule is scoped to the production path because the workspace also ships
+a standalone arena-state simulation harness (`astrodyn_runner`) whose role
+is the inverse: it owns its own state container and *needs* to construct
+concrete physics types itself. See [`astrodyn_bevy` vs `astrodyn_runner`](#astrodyn_bevy-vs-astrodyn_runner-two-parallel-consumers-of-astrodyn)
 below for why that asymmetry is intentional and what each consumer is allowed
 to depend on.
 
@@ -484,18 +484,24 @@ All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based
 filtering. CI (`.github/workflows/ci.yml`) uses this:
 
 - **PRs**: `check` (fmt + clippy), `test` (unit + tier 2),
-  `test-parity-trajectory` (every `bevy_parity_*` lockstep wrapper),
-  and `test-tier3` (tier 3 excluding `earth_moon`) run in parallel for
+  `test-parity-trajectory` (the fast `bevy_parity_*` subset — the
+  exclusion list lives inline in `.github/workflows/ci.yml`), and
+  `test-tier3` (tier 3 excluding `earth_moon`) run in parallel for
   fast feedback.
-- **Main push**: same jobs, plus `test-tier3-full` which includes the
-  `earth_moon` test (~17 min) and generates the cross-validation report.
+- **Main push**: same jobs, plus `test-tier3-full` (includes the
+  `earth_moon` test, ~17 min, generates the cross-validation report)
+  and `test-parity-trajectory-full` (the heavy parity binaries excluded
+  from PR CI; full bit-identity coverage on `main`).
 - **Push to non-main branches**: no CI (only PRs and main trigger workflows).
 
 When adding new Tier 3 tests, always prefix the function name with `tier3_` so
 CI filtering picks it up automatically. When adding a new parity wrapper,
 the `bevy_parity_` file-stem prefix (enforced by `parity_coverage.rs`)
-routes it through `test-parity-trajectory` automatically; no regex
-maintenance is required.
+routes it through `test-parity-trajectory` automatically. If the new
+wrapper joins the heavy bucket (e.g. multi-hour SH+drag trajectory),
+extend the exclusion filter in `.github/workflows/ci.yml` so the PR
+lane stays under ~12 min — see the comment above the filter for the
+binaries currently deferred to `test-parity-trajectory-full`.
 
 See `crates/astrodyn_bevy/tests/README.md` for tier conventions and the tolerance/baseline workflow.
 

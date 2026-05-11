@@ -32,6 +32,11 @@ Subcommands:
                             release-with-debug, emit a JSON sample.
                             Wraps the binary so local invocations
                             match the CI `perf-baseline-track` flow.
+    publish                 Publish the 13 non-verif crates to crates.io
+                            in topological order. Pass --dry-run to
+                            walk the sequence without uploading to
+                            crates.io (the registry is still queried
+                            to resolve dependencies).
 
 regenerate-tier3 options:
     --force                 Set FORCE=1 in the container so all sims
@@ -58,6 +63,37 @@ perf-baseline options:
                             of `tier3_perf_runner` with the feature on.
     --output <path>         Write JSON to <path> instead of stdout.
 
+publish options:
+    --dry-run               Run `cargo publish --dry-run` for each
+                            crate. No registry changes; no waiting
+                            between crates. Useful for validating a
+                            republish — for the *first* publish of a
+                            crate, dry-run will fail at the second
+                            crate (its workspace dep isn't on crates.io
+                            yet), so use `cargo package --workspace
+                            --no-verify` for first-publish validation.
+    --from <crate>          Resume from a specific crate in the
+                            sequence. Lets you recover from a
+                            mid-sequence failure without re-publishing
+                            crates the registry has already accepted.
+    --token <token>         Pass-through to `cargo publish --token`.
+                            If omitted, cargo reads CARGO_REGISTRY_TOKEN
+                            from the environment (the path CI uses).
+    --no-wait               Skip the post-publish index-propagation
+                            poll. Use only when chasing a transient
+                            bug — without the poll, the next crate's
+                            publish may fail with `package not found in
+                            registry` while the sparse index catches up.
+    --allow-dirty           Pass `--allow-dirty` to `cargo publish`.
+                            Local-validation escape hatch for running
+                            `--dry-run` against an uncommitted working
+                            tree; never set this in CI.
+    --no-verify             Pass `--no-verify` to `cargo publish`,
+                            skipping the build step that resolves
+                            dependencies from crates.io. Required for
+                            first-publish dry-runs (deps aren't on the
+                            registry yet); harmless on republishes.
+
     -h, --help              Print this help.
 ";
 
@@ -77,6 +113,9 @@ fn main() {
         }
         "perf-baseline" => {
             perf_baseline(args.collect());
+        }
+        "publish" => {
+            publish(args.collect());
         }
         other => {
             eprintln!("xtask: unknown subcommand `{other}`\n\n{HELP}");
@@ -423,4 +462,258 @@ fn perf_baseline(argv: Vec<String>) {
         eprintln!("perf-baseline: tier3_perf_runner exited non-zero");
         exit(status.code().unwrap_or(1));
     }
+}
+
+// Topological order for `cargo xtask publish`. Each entry must be
+// publishable using only registry copies of the entries above it. The
+// layers are: (0) astrodyn_quantities; (1) astrodyn_math, _time,
+// _ephemeris, _atmosphere; (2) _planet, _frames, _dynamics; (3)
+// _gravity, _interactions; (4) astrodyn (root); (5) _bevy, _runner.
+const PUBLISH_ORDER: &[&str] = &[
+    "astrodyn_quantities",
+    "astrodyn_math",
+    "astrodyn_time",
+    "astrodyn_ephemeris",
+    "astrodyn_atmosphere",
+    "astrodyn_planet",
+    "astrodyn_frames",
+    "astrodyn_dynamics",
+    "astrodyn_gravity",
+    "astrodyn_interactions",
+    "astrodyn",
+    "astrodyn_bevy",
+    "astrodyn_runner",
+];
+
+struct PublishArgs {
+    dry_run: bool,
+    from: Option<String>,
+    token: Option<String>,
+    no_wait: bool,
+    allow_dirty: bool,
+    no_verify: bool,
+}
+
+impl PublishArgs {
+    fn parse(argv: Vec<String>) -> Self {
+        let mut a = Self {
+            dry_run: false,
+            from: None,
+            token: None,
+            no_wait: false,
+            allow_dirty: false,
+            no_verify: false,
+        };
+        let mut iter = argv.into_iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--dry-run" => a.dry_run = true,
+                "--no-wait" => a.no_wait = true,
+                "--allow-dirty" => a.allow_dirty = true,
+                "--no-verify" => a.no_verify = true,
+                "--from" => {
+                    a.from = Some(iter.next().unwrap_or_else(|| {
+                        eprintln!("publish: --from needs a crate name");
+                        exit(2);
+                    }));
+                }
+                "--token" => {
+                    a.token = Some(iter.next().unwrap_or_else(|| {
+                        eprintln!("publish: --token needs a value");
+                        exit(2);
+                    }));
+                }
+                "-h" | "--help" => {
+                    println!("{HELP}");
+                    exit(0);
+                }
+                other => {
+                    eprintln!("publish: unknown arg `{other}`\n\n{HELP}");
+                    exit(2);
+                }
+            }
+        }
+        a
+    }
+}
+
+fn publish(argv: Vec<String>) {
+    let args = PublishArgs::parse(argv);
+
+    if let Some(ref from) = args.from {
+        if !PUBLISH_ORDER.contains(&from.as_str()) {
+            eprintln!(
+                "publish: --from `{from}` is not in the publish order. \
+                 Valid crates: {}",
+                PUBLISH_ORDER.join(", ")
+            );
+            exit(2);
+        }
+    }
+
+    let start_idx = match args.from.as_deref() {
+        Some(name) => PUBLISH_ORDER
+            .iter()
+            .position(|c| *c == name)
+            .expect("validated above"),
+        None => 0,
+    };
+
+    // All 13 crates ship at the same workspace version. Read it once
+    // so `wait_for_index` can poll for the *new version*, not just the
+    // crate name (which is already on the registry on every publish
+    // after the first).
+    let expected_version = workspace_version();
+
+    let total = PUBLISH_ORDER.len();
+    for (i, crate_name) in PUBLISH_ORDER.iter().enumerate().skip(start_idx) {
+        let step = i + 1;
+        eprintln!(
+            "publish [{step}/{total}]: {crate_name}{}",
+            if args.dry_run { " (dry-run)" } else { "" }
+        );
+
+        let mut cmd = Command::new("cargo");
+        cmd.arg("publish").arg("-p").arg(crate_name);
+        if args.dry_run {
+            cmd.arg("--dry-run");
+        }
+        if args.allow_dirty {
+            cmd.arg("--allow-dirty");
+        }
+        if args.no_verify {
+            cmd.arg("--no-verify");
+        }
+        if let Some(ref token) = args.token {
+            cmd.arg("--token").arg(token);
+        }
+
+        let status = cmd
+            .status()
+            .expect("failed to spawn `cargo publish` — is the cargo CLI on PATH?");
+        if !status.success() {
+            eprintln!(
+                "\npublish: `cargo publish -p {crate_name}` failed (step {step}/{total}).\n\
+                 To resume after fixing the issue, run:\n\
+                 \n    cargo xtask publish --from {crate_name}{}\n",
+                if args.dry_run { " --dry-run" } else { "" }
+            );
+            exit(1);
+        }
+
+        // Real publishes need to wait for the crates.io sparse index to
+        // pick up the new version before the next crate (which depends
+        // on this one via path+version) can resolve it. Dry-runs don't
+        // touch the registry, so skip the wait.
+        let is_last = i == total - 1;
+        if !args.dry_run && !args.no_wait && !is_last {
+            wait_for_index(crate_name, &expected_version);
+        }
+    }
+
+    eprintln!(
+        "\npublish: done — {total} crate(s) {}",
+        if args.dry_run {
+            "dry-run-published"
+        } else {
+            "published"
+        }
+    );
+}
+
+// Poll `cargo search` until the just-published crate AND VERSION
+// appear in the sparse index. `cargo publish` returns success once
+// the upload is accepted, but the index can lag by 10–60s before
+// path+version deps in the next crate resolve. Matching on the
+// version (not just the name) is critical: on every publish after the
+// first, the crate name is already on the registry from a prior
+// version, so a name-only check would short-circuit while the index
+// is still serving stale metadata. Cap at 5 minutes — anything
+// longer is almost certainly a registry incident worth a human eye.
+fn wait_for_index(crate_name: &str, expected_version: &str) {
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let mut attempt = 0u32;
+    eprintln!("publish: waiting for crates.io index to serve {crate_name} {expected_version}...");
+    // `cargo search foo --limit 1` prints `foo = "x.y.z" # ...` for
+    // the latest version. Match on the exact version literal.
+    let needle = format!("{crate_name} = \"{expected_version}\"");
+    loop {
+        attempt += 1;
+        let out = Command::new("cargo")
+            .args(["search", crate_name, "--limit", "1"])
+            .output()
+            .expect("failed to spawn `cargo search`");
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if stdout.lines().any(|line| line.starts_with(&needle)) {
+                eprintln!("publish: {crate_name} {expected_version} is live on the index.");
+                return;
+            }
+        }
+        if Instant::now() >= deadline {
+            eprintln!(
+                "publish: timed out after 5 min waiting for {crate_name} {expected_version} \
+                 on the index. If `cargo publish` succeeded, you can resume with:\n\
+                 \n    cargo xtask publish --from <next crate> --no-wait\n"
+            );
+            exit(1);
+        }
+        // Backoff: 10s, 10s, 15s, 20s, then 30s. Most publishes land
+        // within the first two polls; the longer waits are insurance
+        // against a stuck index.
+        let delay = match attempt {
+            1 | 2 => 10,
+            3 => 15,
+            4 => 20,
+            _ => 30,
+        };
+        sleep(Duration::from_secs(delay));
+    }
+}
+
+// Read `[workspace.package].version` from the workspace `Cargo.toml`.
+// All 13 publishable crates inherit this value via
+// `version.workspace = true`, so we only need to find it once.
+fn workspace_version() -> String {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+    let manifest_path = workspace_root.join("Cargo.toml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
+        panic!(
+            "failed to read workspace manifest {}: {e}",
+            manifest_path.display()
+        )
+    });
+    let mut in_block = false;
+    for line in manifest.lines() {
+        let trim = line.trim();
+        if trim == "[workspace.package]" {
+            in_block = true;
+            continue;
+        }
+        if in_block && trim.starts_with('[') {
+            break;
+        }
+        if in_block {
+            // Match `version = "X.Y.Z"` (with arbitrary whitespace
+            // around the `=`); ignore comments after the value.
+            if let Some(rest) = trim.strip_prefix("version") {
+                let rest = rest.trim_start();
+                if let Some(rest) = rest.strip_prefix('=') {
+                    if let Some(v) = rest.trim().split('"').nth(1) {
+                        return v.to_string();
+                    }
+                }
+            }
+        }
+    }
+    panic!(
+        "could not find `[workspace.package].version` in {}",
+        manifest_path.display()
+    );
 }

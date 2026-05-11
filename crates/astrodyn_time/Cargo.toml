@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_time"
-description = "Time scales (TAI/UTC/UT1/TDB/TT/GMST) and converters for astrodyn_bevy"
+description = "Time scales (TAI/UTC/UT1/TDB/TT/GMST) and converters for the astrodyn orbital-dynamics pipeline"
 readme = "README.md"
 keywords = ["time", "timescale", "tai", "utc", "aerospace"]
 categories = ["science", "aerospace", "date-and-time"]

@@ -22,6 +22,8 @@ include = [
     "assets/moon_pa_de421_1900-2050.bpc",
     "README.md",
     "Cargo.toml",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
 ]
 
 [package.metadata.docs.rs]

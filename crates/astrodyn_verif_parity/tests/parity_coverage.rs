@@ -172,10 +172,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "lvlh_extended",
-        "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
-    ),
-    (
         "orbelem_comprehensive",
         "pre-recipe sibling — comprehensive sweep recipe not yet defined \
          (#389 follow-up)",
@@ -319,10 +315,11 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
          Either restore the missing tier3 test or drop the exemption.",
     );
 
-    // Cross-list redundancy: a topic with an existing parity wrapper
-    // shouldn't *also* be in `KNOWN_PARITY_GAPS` (the gap entry would
-    // be a lie). Catches the "added the wrapper but forgot to drop the
-    // gap entry" failure mode.
+    // Surface redundant `KNOWN_PARITY_GAPS` entries: a topic listed
+    // here that already has a `bevy_parity_*.rs` wrapper is one whose
+    // gap should be dropped entirely — the wrapper file satisfies the
+    // superset invariant on its own, and leaving the entry in place
+    // gives a false impression that the topic is still a known gap.
     let mut redundant: Vec<&str> = Vec::new();
     for (topic, _reason) in KNOWN_PARITY_GAPS {
         if is_covered_by_parity(topic, &parity_topics) {
@@ -331,8 +328,9 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
     }
     assert!(
         redundant.is_empty(),
-        "KNOWN_PARITY_GAPS lists topics that already have a parity wrapper: {redundant:?}\n  \
-         Drop the redundant gap entry — the wrapper supersedes it.",
+        "KNOWN_PARITY_GAPS contains topics that already have a bevy_parity_*.rs wrapper: \
+         {redundant:?}\n  \
+         Drop the exemption — the wrapper file covers the topic.",
     );
 }
 

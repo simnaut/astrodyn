@@ -279,13 +279,10 @@ name = "astrodyn_dynamics"
 version = "0.1.0"
 dependencies = [
  "astrodyn_frames",
- "astrodyn_gravity",
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
- "criterion",
  "glam 0.30.10",
- "pprof",
  "proptest",
  "sha2",
  "uom",
@@ -386,11 +383,8 @@ name = "astrodyn_runner"
 version = "0.1.0"
 dependencies = [
  "astrodyn",
- "astrodyn_verif_jeod",
- "criterion",
  "glam 0.30.10",
  "log",
- "pprof",
  "uom",
 ]
 
@@ -410,8 +404,10 @@ dependencies = [
  "astrodyn",
  "astrodyn_runner",
  "astrodyn_verif_jeod_fixtures",
+ "criterion",
  "glam 0.30.10",
  "log",
+ "pprof",
  "regex",
  "thiserror 2.0.18",
  "uom",

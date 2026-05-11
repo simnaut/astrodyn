@@ -12,62 +12,25 @@
 //! * `tier3_lvlh_periodicity` — after one orbital period the LVLH frame
 //!   returns to its initial orientation to high precision.
 //!
-//! No Docker reference data required.
+//! No Docker reference data required. The `Simulation` construction lives
+//! in the `sim_lvlh_extended` recipe module so the parity wrapper
+//! (`bevy_parity_lvlh_extended.rs`) can drive the same scenarios through
+//! the Bevy adapter for the `runner ↔ bevy` half of the transitivity
+//! argument.
 
 use astrodyn::recipes::helpers::state_helpers::max_mat_diff;
-use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
-use astrodyn_runner::{RotationModel, Simulation};
-use glam::DVec3;
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_verif_jeod::run_verification::sim_lvlh_extended;
+use astrodyn_verif_jeod::verification::InitialConditions;
+use glam::{DMat3, DVec3};
 
 fn load_mu_earth() -> f64 {
     astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
-fn make_earth_lvlh_sim(dt: f64, mu_earth: f64, body: TranslationalState) -> Simulation {
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
-
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    );
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&body),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        derived: DerivedStateConfig {
-            lvlh: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-
-    sim
-}
-
 /// Extract the LVLH Y-hat axis (row 1 of T_parent_this) expressed in the
 /// parent (inertial) frame.
-fn lvlh_y_hat(t_parent_this: &glam::DMat3) -> DVec3 {
+fn lvlh_y_hat(t_parent_this: &DMat3) -> DVec3 {
     // Row 1 is the Y-axis expressed in parent: columns of DMat3 are
     // column-major, so row 1 is (col(0).y, col(1).y, col(2).y).
     DVec3::new(
@@ -82,41 +45,27 @@ fn tier3_lvlh_retrograde_orbit() {
     // Prograde orbit: position +X, velocity +Y → h = +Z → Y-hat = -Z.
     // Retrograde orbit: position +X, velocity -Y → h = -Z → Y-hat = +Z.
     //
-    // We propagate both for one step, read the Y-hat from the LVLH frame,
-    // and verify the sign flip.
-    let mu_earth = load_mu_earth();
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
-    let dt = 10.0;
+    // We propagate both for one step (recipe-defined dt), read the Y-hat
+    // from the LVLH frame, and verify the sign flip.
+    let prograde = sim_lvlh_extended::prograde_circular();
+    let retrograde = sim_lvlh_extended::retrograde_circular();
 
-    // Prograde (equatorial)
-    let mut sim_prograde = make_earth_lvlh_sim(
-        dt,
-        mu_earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
-    );
-    sim_prograde.validate().unwrap();
-    sim_prograde.step_until(dt).expect("step_until failed");
+    let mut sim_prograde = (prograde.scenario)(&InitialConditions::default())
+        .build()
+        .expect("prograde scenario build");
+    let dt_p = sim_prograde.dt;
+    sim_prograde.step_until(dt_p).expect("step_until failed");
     let lvlh_p = sim_prograde
         .body(0)
         .lvlh_frame
         .expect("prograde: LVLH not computed");
     let y_p = lvlh_y_hat(&lvlh_p.t_parent_this);
 
-    // Retrograde (equatorial, velocity reversed)
-    let mut sim_retro = make_earth_lvlh_sim(
-        dt,
-        mu_earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, -v, 0.0),
-        },
-    );
-    sim_retro.validate().unwrap();
-    sim_retro.step_until(dt).expect("step_until failed");
+    let mut sim_retro = (retrograde.scenario)(&InitialConditions::default())
+        .build()
+        .expect("retrograde scenario build");
+    let dt_r = sim_retro.dt;
+    sim_retro.step_until(dt_r).expect("step_until failed");
     let lvlh_r = sim_retro
         .body(0)
         .lvlh_frame
@@ -161,20 +110,18 @@ fn tier3_lvlh_eccentric_orbit() {
     // |ω_LVLH| = |h| / r². At perigee r = r_p, velocity is perpendicular to
     // position, so h = r_p * v_p. Same at apogee. We start at perigee.
     let mu_earth = load_mu_earth();
-    let r_p = 6_778_137.0;
-    let r_a = 20_000_000.0;
+    let r_p = sim_lvlh_extended::ECCENTRIC_R_PERIGEE_M;
+    let r_a = sim_lvlh_extended::ECCENTRIC_R_APOGEE_M;
     let a = 0.5 * (r_p + r_a);
     let e = (r_a - r_p) / (r_a + r_p);
     let v_p = (mu_earth * (1.0 + e) / (a * (1.0 - e))).sqrt();
     let v_a = (mu_earth * (1.0 - e) / (a * (1.0 + e))).sqrt();
-    let dt = 10.0;
 
-    let body = TranslationalState {
-        position: DVec3::new(r_p, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v_p, 0.0),
-    };
-    let mut sim = make_earth_lvlh_sim(dt, mu_earth, body);
-    sim.validate().unwrap();
+    let case = sim_lvlh_extended::eccentric();
+    let mut sim = (case.scenario)(&InitialConditions::default())
+        .build()
+        .expect("eccentric scenario build");
+    let dt = sim.dt;
 
     let period = 2.0 * std::f64::consts::PI * (a * a * a / mu_earth).sqrt();
     // Angular momentum magnitude (constant along orbit).
@@ -249,28 +196,26 @@ fn tier3_lvlh_periodicity() {
     // state, we perform a "cold" LVLH computation from the initial conditions
     // and compare it to the pipeline-reported LVLH after exactly one period.
     //
-    // We also tune the step size so that the configured period is an exact
-    // integer multiple of dt — otherwise any LVLH mismatch is dominated by
-    // rounding the stop time to a grid point rather than by physics error.
-    let mu_earth = load_mu_earth();
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    // Integer number of steps; choose n_steps ≈ 560 then set dt = period/n_steps.
-    let n_steps: usize = 560;
-    let dt = period / n_steps as f64;
+    // The recipe tunes the step size so that the configured period is an
+    // exact integer multiple of dt — otherwise any LVLH mismatch is
+    // dominated by rounding the stop time to a grid point rather than by
+    // physics error.
+    let case = sim_lvlh_extended::periodicity();
+    let mut sim = (case.scenario)(&InitialConditions::default())
+        .build()
+        .expect("periodicity scenario build");
+    let dt = sim.dt;
+    let n_steps = sim_lvlh_extended::PERIODICITY_NUM_STEPS;
 
-    let initial_state = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v, 0.0),
-    };
-    let mut sim = make_earth_lvlh_sim(dt, mu_earth, initial_state);
-    sim.validate().unwrap();
+    // Recover the recipe's initial inertial state from the freshly-built
+    // simulation so the analytical reference frame matches what the
+    // pipeline integrated from.
+    let initial_position = sim.body(0).trans.position.raw_si();
+    let initial_velocity = sim.body(0).trans.velocity.raw_si();
 
     // Reference LVLH from the initial conditions (independent of the sim).
     let lvlh_reference =
-        astrodyn::compute_body_lvlh_frame(initial_state.position, initial_state.velocity)
-            .t_parent_this;
+        astrodyn::compute_body_lvlh_frame(initial_position, initial_velocity).t_parent_this;
 
     // Propagate exactly one orbital period.
     sim.step_until(n_steps as f64 * dt)
@@ -292,7 +237,7 @@ fn tier3_lvlh_periodicity() {
 
     // Additionally verify the orbit position at one period is close to the
     // initial position (confirms we did indeed complete ~1 full revolution).
-    let pos_return_err = (sim.body(0).trans.position.raw_si() - initial_state.position).length();
+    let pos_return_err = (sim.body(0).trans.position.raw_si() - initial_position).length();
     // RK4 truncation over one orbit on a dt ≈ period/560 is tens of cm.
     assert!(
         pos_return_err < 1.0,

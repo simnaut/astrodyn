@@ -19,7 +19,7 @@
 //!   passes `None`; uses the same constants for measurement workloads.
 //!
 //! The function returns a fully-wired [`SimulationBuilder`]; callers
-//! call `.build()` to materialize a [`Simulation`].
+//! call `.build()` to materialize a [`astrodyn_runner::Simulation`].
 
 use astrodyn::recipes;
 use astrodyn::{
@@ -70,8 +70,8 @@ pub fn moon_mu() -> f64 {
 ///   source of truth for the initial conditions).
 ///
 /// Returns a fully-wired [`SimulationBuilder`]; the caller materializes
-/// the simulation via `.build()` ([`SimulationBuilderExt`] from
-/// `astrodyn_runner`).
+/// the simulation via `.build()` ([`astrodyn_runner::SimulationBuilderExt`]
+/// from `astrodyn_runner`).
 ///
 /// # Panics
 ///

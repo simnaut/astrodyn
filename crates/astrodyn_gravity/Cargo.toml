@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_gravity"
-description = "Spherical-harmonics gravity (Gottlieb), tides, and third-body for astrodyn_bevy"
+description = "Spherical-harmonics gravity (Gottlieb), tides, and third-body for the astrodyn orbital-dynamics pipeline"
 readme = "README.md"
 keywords = ["gravity", "spherical-harmonics", "orbital-mechanics", "aerospace", "physics"]
 categories = ["science", "aerospace"]
@@ -18,6 +18,8 @@ include = [
     "test_data/gravity/*.json",
     "README.md",
     "Cargo.toml",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
 ]
 
 [package.metadata.docs.rs]
@@ -49,6 +51,16 @@ pprof = { workspace = true }
 
 [[bench]]
 name = "accumulate"
+harness = false
+
+# Combined integration + gravity bench. Lives here (not in
+# `astrodyn_dynamics`) because `astrodyn_gravity` already depends on
+# `astrodyn_dynamics`; the inverse dev-dep would create a cycle and
+# `cargo` rejects it. Diffing `trivial_accel` against `degree60_accel`
+# tells whether a regression sits in RK4 plumbing or the gravity
+# kernel.
+[[bench]]
+name = "integration"
 harness = false
 
 [lints]

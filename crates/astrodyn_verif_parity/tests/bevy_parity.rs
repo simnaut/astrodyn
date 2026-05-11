@@ -18,8 +18,9 @@ use astrodyn::{
     TranslationalState,
 };
 use astrodyn_bevy::{
-    AstrodynPlugin, DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC,
-    MassPropertiesC, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, GravityControlsC, GravitySourceC, IntegrationDtR,
+    IntegratorTypeC, MassPropertiesC, RotationalStateC, SourceInertialPositionC,
+    TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -67,6 +68,7 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Set fixed timestep before adding JEOD plugins.
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
 
     // Unified JEOD plugin: sets up system ordering, gravity, integration, time, etc.
     app.add_plugins(AstrodynPlugin);
@@ -232,6 +234,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let planet = app

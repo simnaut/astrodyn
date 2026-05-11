@@ -34,7 +34,7 @@ use astrodyn::{
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC,
-    IntegratorTypeC, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
+    IntegrationDtR, IntegratorTypeC, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use astrodyn_verif_jeod::run_verification::sim_gj;
@@ -134,6 +134,7 @@ fn run_gj_bootstrap_parity(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
     app.world_mut()
         .resource_mut::<SimulationTimeR>()

@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::AstrodynPlugin;
+use crate::{AstrodynPlugin, IntegrationDtR};
 
 /// Ergonomic helpers for setting up and advancing an [`App`] running
 /// [`AstrodynPlugin`] in `FixedUpdate`.
@@ -70,19 +70,24 @@ pub trait AstrodynAppExt {
     /// advance the clock without running the pipeline (or vice versa).
     fn step_fixed_dt(&mut self, n: usize, dt_seconds: f64) -> &mut Self;
 
-    /// Convenience: read `dt` from the existing `Time<Fixed>` resource and
-    /// invoke [`Self::step_fixed_dt`] with it.
+    /// Convenience: read `dt` from the existing [`IntegrationDtR`] resource
+    /// and invoke [`Self::step_fixed_dt`] with it.
+    ///
+    /// `IntegrationDtR` is the bit-exact `f64` source the pipeline reads.
+    /// Reading from `Time<Fixed>::timestep()` instead would round through
+    /// `Duration` (integer nanoseconds), reintroducing the precision loss
+    /// the resource exists to avoid for non-nanosecond-representable
+    /// timesteps.
     ///
     /// # Panics
     ///
-    /// Panics if `Time<Fixed>` is absent from the world. Callers must
-    /// install it first via [`Self::add_astrodyn`] (or a manual
-    /// `insert_resource(Time::<Fixed>::from_seconds(...))` before adding
-    /// [`AstrodynPlugin`]). A missing `Time<Fixed>` means the
-    /// [`AstrodynPlugin`] pipeline never advanced under a known `dt`, so
-    /// silently picking a default would propagate physics under the wrong
-    /// integrator step — exactly the silent-wrong-physics failure mode the
-    /// fail-loud rule forbids.
+    /// Panics if [`IntegrationDtR`] is absent from the world. Callers
+    /// must install it first via [`Self::add_astrodyn`] (or a manual
+    /// `insert_resource(IntegrationDtR(...))` before running the
+    /// pipeline). A missing `IntegrationDtR` means the pipeline never
+    /// advanced under a known `dt`, so silently picking a default would
+    /// propagate physics under the wrong integrator step — exactly the
+    /// silent-wrong-physics failure mode the fail-loud rule forbids.
     fn step_fixed(&mut self, n: usize) -> &mut Self;
 }
 
@@ -97,6 +102,11 @@ impl AstrodynAppExt for App {
         // `from_seconds` indiscriminately; the argument is a plain `f64`
         // integrator timestep, not a typed-duration phantom.
         self.insert_resource(Time::<Fixed>::from_seconds(dt_seconds));
+        // `IntegrationDtR` is the bit-exact f64 source of `dt` for the
+        // pipeline; `Time<Fixed>` is kept in sync for `FixedUpdate`
+        // gating but its `Duration`-rounded delta is no longer the
+        // physics source. See `IntegrationDtR` doc.
+        self.insert_resource(IntegrationDtR(dt_seconds));
         if !self.is_plugin_added::<AstrodynPlugin>() {
             self.add_plugins(AstrodynPlugin);
         }
@@ -105,6 +115,10 @@ impl AstrodynAppExt for App {
 
     fn step_fixed_dt(&mut self, n: usize, dt_seconds: f64) -> &mut Self {
         let dur = Duration::from_secs_f64(dt_seconds);
+        // Keep `IntegrationDtR` in sync each call so callers that
+        // bypass `add_astrodyn` (or that vary `dt` between calls) still
+        // drive the pipeline with the exact f64 they passed in.
+        self.insert_resource(IntegrationDtR(dt_seconds));
         for _ in 0..n {
             self.world_mut()
                 .resource_mut::<Time<Fixed>>()
@@ -115,21 +129,24 @@ impl AstrodynAppExt for App {
     }
 
     fn step_fixed(&mut self, n: usize) -> &mut Self {
+        // Read from `IntegrationDtR`, not `Time<Fixed>::timestep()` —
+        // the latter rounds through `Duration` (integer ns) and would
+        // re-introduce the precision loss for non-nanosecond-representable
+        // dts that `IntegrationDtR` exists to avoid.
         let dt_seconds = self
             .world()
-            .get_resource::<Time<Fixed>>()
+            .get_resource::<IntegrationDtR>()
             .unwrap_or_else(|| {
                 panic!(
-                    "AstrodynAppExt::step_fixed: `Time<Fixed>` resource is missing from \
-                     the world. The convenience overload reads `dt` from the existing \
-                     `Time<Fixed>` to bond the advance to the same step the pipeline \
-                     was configured for. Call `app.add_astrodyn(dt_seconds)` first \
-                     (which installs `Time<Fixed>` then adds `AstrodynPlugin`), or use \
-                     `step_fixed_dt(n, dt_seconds)` to pass the step explicitly."
+                    "AstrodynAppExt::step_fixed: `IntegrationDtR` resource is missing from \
+                     the world. The convenience overload reads `dt` from `IntegrationDtR` \
+                     to drive the pipeline with the bit-exact f64 it was configured for. \
+                     Call `app.add_astrodyn(dt_seconds)` first (which installs both \
+                     `Time<Fixed>` and `IntegrationDtR` then adds `AstrodynPlugin`), or \
+                     use `step_fixed_dt(n, dt_seconds)` to pass the step explicitly."
                 )
             })
-            .timestep()
-            .as_secs_f64();
+            .0;
         self.step_fixed_dt(n, dt_seconds)
     }
 }

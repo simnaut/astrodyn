@@ -17,8 +17,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, BodyFrameMarker, DynamicsConfigC, FrameEntityC, GravityControlsC,
-    InertialFrameMarker, MassPropertiesC, PfixFrameEntityC, PlanetBundle, PlanetFixedFrameMarker,
-    RotationModelC, TranslationalStateC,
+    InertialFrameMarker, IntegrationDtR, MassPropertiesC, PfixFrameEntityC, PlanetBundle,
+    PlanetFixedFrameMarker, RotationModelC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -29,6 +29,7 @@ fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app
 }

@@ -21,8 +21,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     register_planet_systems, AstrodynPlugin, DynamicsConfigC, FlatPlateConfigC, GravityControlsC,
-    IntegSourceC, MassPropertiesC, PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC,
-    SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, SunMarker,
+    IntegSourceC, IntegrationDtR, MassPropertiesC, PlanetBundle, RadiationForceC, RotationalStateC,
+    SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, SunMarker,
     TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
@@ -120,6 +120,7 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`
     // — its integration frame is `PlanetInertial<Moon>`. Register the
@@ -270,6 +271,7 @@ fn bevy_parity_integ_source_moving_moon_matches_simulation() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems so the body is matched by
@@ -393,6 +395,7 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app
@@ -541,6 +544,7 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems (including
@@ -754,6 +758,7 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // The lunar-orbit vehicle below carries `TranslationalStateC<Moon>`;
     // register the Moon-instantiated systems (the SRP system unifies

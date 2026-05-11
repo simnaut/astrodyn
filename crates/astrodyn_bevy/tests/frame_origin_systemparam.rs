@@ -30,8 +30,9 @@ use astrodyn::{
 };
 use astrodyn_bevy::frame_param::{FrameOrigin, RelativeFrameState};
 use astrodyn_bevy::{
-    AstrodynPlugin, DynamicsConfigC, FrameEntityC, GravityControlsC, MassPropertiesC,
-    PfixFrameEntityC, PlanetBundle, RootFrameEntityR, RotationalStateC, TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, FrameEntityC, GravityControlsC, IntegrationDtR,
+    MassPropertiesC, PfixFrameEntityC, PlanetBundle, RootFrameEntityR, RotationalStateC,
+    TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -49,6 +50,7 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let planet_e = app
@@ -177,6 +179,7 @@ fn after_diff_mission_code_shape_compiles() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app.world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH));

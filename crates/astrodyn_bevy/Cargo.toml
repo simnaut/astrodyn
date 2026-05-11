@@ -17,8 +17,8 @@ bevy_reflect = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
-astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
-astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
+astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod" }
+astrodyn_runner = { path = "../astrodyn_runner" }
 uom = { workspace = true }
 
 [[example]]

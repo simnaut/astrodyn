@@ -17,8 +17,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GaussJacksonStateC,
-    GravityControlsC, GravitySourceC, IntegratorTypeC, MassBodyIdC, MassPropertiesC, MassTreeR,
-    SourceInertialPositionC, TranslationalStateC,
+    GravityControlsC, GravitySourceC, IntegrationDtR, IntegratorTypeC, MassBodyIdC,
+    MassPropertiesC, MassTreeR, SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -52,6 +52,7 @@ fn build_two_body_app(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
 
     // Mass tree resource — required for `staging_system` to be a no-op-free
@@ -219,6 +220,7 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();

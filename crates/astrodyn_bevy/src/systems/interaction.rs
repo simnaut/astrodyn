@@ -16,6 +16,7 @@ use glam::DVec3;
 
 use crate::components::*;
 use crate::frame_param::FrameOrigin;
+use crate::IntegrationDtR;
 
 use super::util::body_integ_origin_in_root;
 
@@ -294,7 +295,7 @@ pub fn flat_plate_srp_system<P: Planet>(
     >,
     sun_query: Query<&TranslationalStateC<P>, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC<P>, &ShadowBodyC), Without<SunMarker>>,
-    time: Res<Time<Fixed>>,
+    dt: Res<IntegrationDtR>,
 ) {
     // Drop stale state for any kinematic-child SRP body. Runs first
     // so a transition from non-kinematic → kinematic this tick
@@ -318,7 +319,12 @@ pub fn flat_plate_srp_system<P: Planet>(
         }
     };
 
-    let dt = time.delta_secs_f64();
+    // `dt` is the mandatory bit-exact f64 pipeline timestep from
+    // `IntegrationDtR`; see its doc on `crate::IntegrationDtR`. The
+    // non-`Option` `Res<...>` makes the resource a Bevy-level
+    // requirement — the scheduler panics with the "resource does not
+    // exist" diagnostic naming the type if no installer was called.
+    let dt = dt.0;
 
     for (mut flat_config, state, rot, mass, struct_xform, body_frame, mut srp_force) in &mut query {
         // Clear per-step SRP state unconditionally (before the Sun check)

@@ -14,7 +14,7 @@ use glam::DVec3;
 
 use crate::components::*;
 use crate::frame_param::{FrameOrigin, RelativeFrameState};
-use crate::SimulationTimeR;
+use crate::{IntegrationDtR, SimulationTimeR};
 use astrodyn::typed_bridge::{
     mass_raw_to_self_ref, mass_typed_to_raw, rot_raw_to_self_ref, rot_typed_to_raw,
     trans_raw_to_planet, trans_typed_to_raw,
@@ -320,10 +320,15 @@ pub fn integration_system<P: Planet>(
         // don't alias and panics with `assert_component_access_compatibility`.
         Without<DynamicsConfigC>,
     >,
-    time: Res<Time<Fixed>>,
+    dt: Res<IntegrationDtR>,
     sim_time: Res<SimulationTimeR>,
 ) {
-    let dt = time.delta_secs_f64();
+    // `dt` is the mandatory bit-exact f64 pipeline timestep from
+    // `IntegrationDtR`; see its doc on `crate::IntegrationDtR`. The
+    // non-`Option` `Res<...>` makes the resource a Bevy-level
+    // requirement — the scheduler panics with the "resource does not
+    // exist" diagnostic naming the type if no installer was called.
+    let dt = dt.0;
     if dt == 0.0 {
         return;
     }
@@ -3022,7 +3027,7 @@ pub fn staging_system<P: Planet>(
 /// body.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn step_detached_system<P: Planet>(
-    time: Res<Time<Fixed>>,
+    dt: Res<IntegrationDtR>,
     sim_time: Res<SimulationTimeR>,
     mut detached: Query<(
         Entity,
@@ -3035,7 +3040,13 @@ pub fn step_detached_system<P: Planet>(
     frame_origin: FrameOrigin,
     root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
-    let dt = time.delta().as_secs_f64();
+    // `dt` is the mandatory bit-exact f64 pipeline timestep from
+    // `IntegrationDtR`; mirrors `integration_system`. The non-`Option`
+    // `Res<...>` makes the resource a Bevy-level requirement. The
+    // ballistic detached-subtree advance must use the same f64 the
+    // runner's `step_detached_subtrees(dt)` consumes so the two stay
+    // bit-identical.
+    let dt = dt.0;
     if dt == 0.0 {
         return;
     }

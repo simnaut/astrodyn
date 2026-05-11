@@ -54,8 +54,9 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC,
-    FrameDerivativesC, GravityControlsC, IntegSourceC, MassBodyIdC, MassPropertiesC, MassTreeR,
-    PlanetBundle, RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
+    FrameDerivativesC, GravityControlsC, IntegSourceC, IntegrationDtR, MassBodyIdC,
+    MassPropertiesC, MassTreeR, PlanetBundle, RotationalStateC, SourceInertialVelocityC,
+    SourceMutator, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -132,6 +133,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let _earth = app

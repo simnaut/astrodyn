@@ -26,7 +26,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     register_planet_systems, AstrodynPlugin, BodyActionCommandsExt, BodyActionEvent,
-    MassPropertiesC, PlanetBundle, SourceInertialPositionC, TranslationalStateC,
+    IntegrationDtR, MassPropertiesC, PlanetBundle, SourceInertialPositionC, TranslationalStateC,
     VehicleConfigBevyExt,
 };
 use bevy::prelude::*;
@@ -129,6 +129,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
@@ -275,6 +276,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
@@ -428,6 +430,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
@@ -595,6 +598,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 
@@ -665,6 +669,7 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 

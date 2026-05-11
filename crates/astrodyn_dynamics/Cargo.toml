@@ -27,16 +27,9 @@ uom = { workspace = true }
 [dev-dependencies]
 astrodyn_math = { path = "../astrodyn_math", version = "0.1.0", features = ["test-utils"] }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
-astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
-astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
+astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures" }
 sha2 = "0.10"
 proptest = "1"
-criterion = { workspace = true }
-pprof = { workspace = true }
-
-[[bench]]
-name = "integration"
-harness = false
 
 [lints]
 workspace = true

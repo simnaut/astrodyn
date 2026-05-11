@@ -111,7 +111,21 @@ impl PerfArgs {
                     let v = it
                         .next()
                         .ok_or_else(|| "--dt requires a value".to_string())?;
-                    a.dt = v.parse().map_err(|e| format!("--dt {v:?}: {e}"))?;
+                    let parsed: f64 = v.parse().map_err(|e| format!("--dt {v:?}: {e}"))?;
+                    // Fail loudly on physically invalid timesteps. A
+                    // NaN/inf/non-positive `dt` would either propagate
+                    // into the integrator (silently corrupting the
+                    // trajectory) or surface as `NaN` in the JSON
+                    // (poisoning downstream perf-history math). The
+                    // boundary is the only place we know enough to
+                    // reject it with an actionable message.
+                    if !parsed.is_finite() || parsed <= 0.0 {
+                        return Err(format!(
+                            "--dt {v:?}: must be a finite, strictly positive number \
+                             (got {parsed}); pass a value like 0.03125"
+                        ));
+                    }
+                    a.dt = parsed;
                 }
                 "--phase-timing" => {
                     a.phase_timing = true;
@@ -205,11 +219,25 @@ fn build_profile() -> &'static str {
     }
 }
 
-/// Compile-time rustc version string.
+/// Actual rustc version string. Runs `rustc -V` and returns the full
+/// "rustc X.Y.Z (HASH DATE)" line. Empty string on failure (rustc not
+/// on PATH, or the invocation errored). Capturing the real toolchain
+/// — not `CARGO_PKG_RUST_VERSION`, which is this package's *MSRV
+/// requirement*, not the compiler that built the binary — lets
+/// perf-history correlate regressions to specific compiler revisions.
 fn rustc_version() -> String {
-    // Use rustversion crate? No — adds a build dep. Empty is fine; the
-    // perf-history consumer can correlate via git_sha.
-    env!("CARGO_PKG_RUST_VERSION").to_string()
+    std::process::Command::new("rustc")
+        .arg("-V")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
 }
 
 /// Result of one repeat: wall-clock window + accumulated phase

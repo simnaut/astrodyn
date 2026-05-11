@@ -34,16 +34,6 @@ uom = { workspace = true }
 # `Simulation::phase_timings_summary()`.
 phase_timing = []
 
-[dev-dependencies]
-# Pulls in the shared `setups::earth_moon_clem` scenario for
-# `benches/step.rs`. This is the only dev-time cross-crate edge to a
-# verif crate; `scripts/check_no_bypass_deps.sh` fences direct
-# `astrodyn_*` *physics-crate* deps only, so this verif-crate dev-dep
-# is permitted.
-astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
-criterion = { workspace = true }
-pprof = { workspace = true }
-
 [[example]]
 name = "batch_propagation"
 path = "examples/batch_propagation.rs"
@@ -51,10 +41,6 @@ path = "examples/batch_propagation.rs"
 [[example]]
 name = "leo_drag"
 path = "examples/leo_drag.rs"
-
-[[bench]]
-name = "step"
-harness = false
 
 [lints]
 workspace = true
