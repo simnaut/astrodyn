@@ -177,11 +177,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          (#389 follow-up)",
     ),
     (
-        "orbinit_docker",
-        "pre-recipe sibling exercising orbital-element initialization — \
-         recipe factory not yet defined (#389 follow-up)",
-    ),
-    (
         "ref_attach",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined (#389 follow-up)",

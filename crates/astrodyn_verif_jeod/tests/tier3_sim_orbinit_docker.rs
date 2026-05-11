@@ -1,17 +1,26 @@
 //! Tier 3: SIM_orbinit docker cross-validation (t=0 initialization)
 //!
-//! JEOD's SIM_orbinit is an initialization-only sim (`exec_set_terminate_time(0)`)
-//! that writes the post-initialization state of `composite_body` into a CSV at t=0.
-//! Each RUN exercises a different orbital-element set or coordinate frame.
+//! JEOD's SIM_orbinit is an initialization-only sim
+//! (`exec_set_terminate_time(0)`) that writes the post-initialization
+//! state of `composite_body` into a CSV at t=0. Each RUN exercises a
+//! different orbital-element set or coordinate frame.
 //!
-//! These tests start from JEOD source files (the `Modified_data/*.py` orbital
-//! element specifications plus the epoch in `earth.py`) and reproduce JEOD's
-//! initialization output through our own implementation of
-//! `DynBodyInitOrbit::apply()`. The CSV's t=0 row is compared to our computed
-//! inertial position/velocity.
+//! These tests build each scenario through its `sim_orbinit_docker`
+//! recipe, which performs the orbital-element-to-Cartesian conversion
+//! (or direct-Cartesian pass-through for RUN_0401) from JEOD source
+//! fixtures and feeds the result into a point-mass-Earth `Simulation`.
+//! The pre-propagation `body(0)` state is compared against JEOD's
+//! logged t=0 row with the same tight tolerances the inline test used
+//! (single-digit nanometre position on the inertial RUNs, tens of
+//! micrometres on the pfix RUNs where RNP-series drift dominates).
+//! The synthetic-cadence checkpoint then propagates one tick so the
+//! integrator + frame-propagation stages run end-to-end, exercising
+//! the full `Simulation` pipeline.
 //!
-//! Per CLAUDE.md: initial conditions from JEOD source files are permitted;
-//! JEOD output (CSV values) is never fed back into our computation.
+//! Per CLAUDE.md: initial conditions from JEOD source files are
+//! permitted; JEOD output (CSV values) is never fed back into our
+//! computation. The Docker reference CSVs are read here only as the
+//! comparison target for the recipe's computed initial state.
 //!
 //! Scenarios:
 //!   RUN_0001: ISS orbital elements in inertial frame (set01, time_periapsis)
@@ -23,130 +32,61 @@
 //! All scenarios share the same JEOD epoch: 2005-07-28 10:09:59 UT1.
 //! The SIM disables polar motion (`earth.rnp.enable_polar = False`).
 //! Gravity uses `earth_GGM05C` with `mu = 3.9860044150e14 m^3/s^2`.
+//!
+//! The `Simulation` construction lives in the `sim_orbinit_docker`
+//! recipe module so the parity wrapper (`bevy_parity_orbinit_docker.rs`)
+//! can drive the same scenarios through the Bevy adapter for the
+//! `runner ↔ bevy` half of the transitivity argument.
 
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_orbinit_docker;
 use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
-use astrodyn::compute_t_parent_this_from_tjt;
-use astrodyn::init_from_mean_anomaly;
-use astrodyn::{calendar_to_tjt, CalendarDate};
-use astrodyn::{default_leap_second_table, TranslationalState};
-use glam::{DMat3, DVec3};
-
-/// SIM_orbinit epoch: 2005-07-28 10:09:59 UT1 (from `Modified_data/earth.py`).
-const ORBINIT_YEAR: i32 = 2005;
-const ORBINIT_MONTH: i32 = 7;
-const ORBINIT_DAY: i32 = 28;
-const ORBINIT_HOUR: i32 = 10;
-const ORBINIT_MINUTE: i32 = 9;
-const ORBINIT_SECOND: f64 = 59.0;
-
-/// Compute the inertial-to-planet-fixed rotation matrix at the SIM_orbinit epoch.
-///
-/// SIM_orbinit uses `initializer = "UT1"` with `set_date_and_time(2005,7,28,10,9,59)`
-/// and `earth.rnp.enable_polar = False`. Following JEOD `rnp.update_rnp(tt, gmst, ut1)`,
-/// the rotation uses precession+nutation (via TT) and GAST (via GMST).
-///
-/// GMST is derived from UT1 directly. TT = TAI + 32.184 s, and we use the default
-/// leap second table to compute TAI-UTC at this epoch (= 32 s for 2005), giving
-/// TAI = UT1 + (TAI-UTC) when UT1-UTC ≈ 0.
-fn compute_t_inertial_pfix_at_orbinit_epoch() -> DMat3 {
-    // UT1 TJT for the calendar date.
-    let ut1_cal = CalendarDate::new(
-        ORBINIT_YEAR,
-        ORBINIT_MONTH,
-        ORBINIT_DAY,
-        ORBINIT_HOUR,
-        ORBINIT_MINUTE,
-        ORBINIT_SECOND,
-    );
-    let ut1_tjt = calendar_to_tjt(&ut1_cal);
-
-    // For SIM_orbinit, UT1-UTC≈0 (no override). So UTC_tjt ≈ UT1_tjt, and
-    // TAI_tjt = UTC_tjt + TAI-UTC/86400.
-    let leap = default_leap_second_table();
-    let tai_utc_s = leap.tai_utc_at_utc_tjt(ut1_tjt);
-    let tai_tjt = ut1_tjt + tai_utc_s / 86_400.0;
-
-    // TT = TAI + 32.184 s
-    let tt_tjt = tai_tjt + 32.184 / 86_400.0;
-
-    // GMST seconds since J2000 noon UT1, computed from UT1 directly.
-    // Matches SimulationTime::recompute_derived(): du = ut1_tjt - 11544.5
-    let du = ut1_tjt - 11_544.5;
-    let gmst_seconds = astrodyn::ut1_to_gmst_seconds(du);
-
-    // SIM_orbinit sets enable_polar = False → no polar motion
-    compute_t_parent_this_from_tjt(gmst_seconds, tt_tjt)
+/// Build the recipe's `Simulation` exactly the way the parity trait
+/// does — call the scenario factory with a default `InitialConditions`
+/// (the recipes compute their initial state from committed body-init
+/// fixtures and don't read `InitialConditions`), then `.build()` — so
+/// the runner-side propagation here and the Bevy-side propagation in
+/// `bevy_parity_orbinit_docker.rs` see the same initial state
+/// bit-pattern.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
 }
 
-/// Load an orbit initialization record from a JEOD SIM_orbinit CSV and assert
-/// the expected initial state matches our reproduction.
-///
-/// For `time_periapsis`-parameterized orbits, mean anomaly is computed as
-/// `M = t_peri * sqrt(mu/a^3)` (JEOD `dyn_body_init_orbit.cc:295`).
-///
-/// For pfix orbits, the orbital elements are interpreted in the planet-fixed
-/// frame; we build the state there and rotate to inertial via `T_pfix_to_inertial`
-/// (no ω×r term — JEOD `dyn_body_init_orbit.cc:331-332` rotates position and
-/// velocity as pure 3-vectors).
+/// Pull `(dt, num_steps)` off a recipe's
+/// [`CsvReference::SyntheticTimes`] reference. Every recipe in
+/// `sim_orbinit_docker` uses this variant because the orbinit Docker
+/// CSVs are initialization-only (one row at t=0); panicking on any
+/// other variant surfaces a future recipe-shape drift here rather
+/// than producing a silently-truncated propagation. Returning both
+/// halves of the cadence lets callers assert that the `dt` they're
+/// stepping at (`sim.dt`) matches the cadence the recipe declared.
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
+}
+
+/// Build a Simulation from the recipe, compare its pre-propagation
+/// initial state against the JEOD-logged t=0 row, then propagate the
+/// recipe's synthetic cadence so the integrator + frame-propagation
+/// stages run end-to-end. The initial-state comparison is the
+/// substantive assertion — the orbital-element-to-Cartesian
+/// conversion runs inside the recipe's scenario factory, so this
+/// check exercises the same code paths the parity wrapper drives on
+/// both runtimes.
 fn assert_orbinit_match(
-    vehicle: &str,
-    init_name: &str,
+    case: VerificationCase,
     csv_filename: &str,
     label: &str,
     pos_tol: f64,
     vel_tol: f64,
 ) {
-    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
-
-    // Load JEOD orbital elements input from the committed body_init fixture
-    // (originally extracted from Modified_data/<vehicle>/<init_name>.py).
-    let init = astrodyn_verif_jeod::orbital_init::load_orbital_init(vehicle, init_name);
-
-    // JEOD input.py for set01 uses time_periapsis (M = n * t_peri).
-    let t_peri = init
-        .time_periapsis
-        .unwrap_or_else(|| panic!("{label}: set01 expected time_periapsis in {init_name}.py"));
-    let a = init.semi_major_axis;
-    let n = (mu_earth / (a * a * a)).sqrt();
-    let mean_anomaly = n * t_peri;
-
-    // Build the orbit in the reference frame (inertial for set01 inertial,
-    // pfix for set01 pfix). The orbital elements define a rotation from the
-    // perifocal frame into whichever reference frame `orbit_frame_name`
-    // points to; our `init_from_mean_anomaly` computes that perifocal→reference
-    // rotation internally via (RAAN, argp, inclination).
-    let state_ref = init_from_mean_anomaly(
-        init.semi_major_axis,
-        init.eccentricity,
-        init.inclination,
-        init.ascending_node,
-        init.arg_periapsis,
-        mean_anomaly,
-        mu_earth,
-    );
-
-    // Transform reference-frame state to inertial.
-    let state_inertial = match init.reference_frame.as_str() {
-        "Earth.inertial" => state_ref,
-        "Earth.pfix" => {
-            // JEOD `dyn_body_init_orbit.cc` lines 323-333:
-            //   rel_state: orbit_frame wrt planet.inertial,
-            //   T_parent_this == T_inertial_to_pfix (rotation pfix from inertial),
-            //   Vector3::transform_transpose(T_parent_this, v) == T_inertial_to_pfix^T * v
-            //     == T_pfix_to_inertial * v
-            //   Applied to both position and velocity (no ω×r term).
-            let t_inertial_pfix = compute_t_inertial_pfix_at_orbinit_epoch();
-            let t_pfix_inertial = t_inertial_pfix.transpose();
-            TranslationalState {
-                position: t_pfix_inertial * state_ref.position,
-                velocity: t_pfix_inertial * state_ref.velocity,
-            }
-        }
-        other => panic!("{label}: unsupported reference_frame '{other}'"),
-    };
-
-    // Load JEOD's logged state at t=0 from CSV.
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -164,12 +104,26 @@ fn assert_orbinit_match(
     let jeod = &records[0];
     assert_eq!(jeod.time, 0.0, "{label}: expected t=0 row in CSV");
 
-    let pos_err = (state_inertial.position - jeod.position).length();
-    let vel_err = (state_inertial.velocity - jeod.velocity).length();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt,
+    );
+
+    // Read the pre-propagation initial state — this is what the recipe
+    // built from the orbital-element fixture (and optional pfix
+    // rotation), and it's what the parity wrapper integrates from.
+    let init_pos = sim.body(0).trans.position.raw_si();
+    let init_vel = sim.body(0).trans.velocity.raw_si();
+
+    let pos_err = (init_pos - jeod.position).length();
+    let vel_err = (init_vel - jeod.velocity).length();
 
     println!(
         "  {label}: our pos=[{:.3}, {:.3}, {:.3}] m",
-        state_inertial.position.x, state_inertial.position.y, state_inertial.position.z
+        init_pos.x, init_pos.y, init_pos.z
     );
     println!(
         "  {label}: JEOD pos=[{:.3}, {:.3}, {:.3}] m",
@@ -185,6 +139,12 @@ fn assert_orbinit_match(
         vel_err < vel_tol,
         "{label}: velocity error {vel_err:.6e} m/s exceeds tolerance {vel_tol:.1e} m/s"
     );
+
+    // Drive the integrator + frame-propagation stages end-to-end at
+    // the recipe's synthetic cadence so the pipeline runs through.
+    // `step_n` advances exactly `n_steps` whole steps. (`step_until`
+    // has a 1 ms slop and may stop one step short.)
+    sim.step_n(n_steps).expect("step_n failed");
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -194,11 +154,10 @@ fn assert_orbinit_match(
 #[test]
 fn tier3_orbinit_docker_run0001_iss_inertial() {
     // RUN_0001: ISS, SmaEccIncAscnodeArgperTimeperi, reference=Earth.inertial.
-    // No frame rotation required — our output is already in inertial.
+    // No frame rotation required — recipe output is already in inertial.
     // Observed: pos=3.76e-9 m, vel=3.43e-12 m/s (5% above → listed).
     assert_orbinit_match(
-        "ISS",
-        "trans_Orbit_inertial_body_set01",
+        sim_orbinit_docker::run_0001(),
         "orbinit_0001_orbinit.csv",
         "RUN_0001 (ISS inertial set01)",
         3.95e-9,
@@ -214,8 +173,7 @@ fn tier3_orbinit_docker_run0001_iss_inertial() {
 fn tier3_orbinit_docker_run0101_sts_inertial() {
     // Observed: pos=1.04e-9 m, vel=1.83e-12 m/s (5% above → listed).
     assert_orbinit_match(
-        "STS_114",
-        "trans_Orbit_inertial_body_set01",
+        sim_orbinit_docker::run_0101(),
         "orbinit_0101_orbinit.csv",
         "RUN_0101 (STS-114 inertial set01)",
         1.10e-9,
@@ -229,13 +187,13 @@ fn tier3_orbinit_docker_run0101_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0201_iss_pfix() {
-    // RUN_0201: ISS pfix set01. Requires RNP rotation at the SIM epoch.
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
-    // The residual reflects tiny differences between our RNP series and
-    // JEOD's over the ~11 000 km Earth rotation arm from 2005-07-28.
+    // RUN_0201: ISS pfix set01. Requires RNP rotation at the SIM epoch
+    // (handled inside the recipe). Observed: pos=1.51e-5 m, vel=1.17e-8 m/s
+    // (5% above → listed). The residual reflects tiny differences
+    // between our RNP series and JEOD's over the ~11 000 km Earth
+    // rotation arm from 2005-07-28.
     assert_orbinit_match(
-        "ISS",
-        "trans_Orbit_pfix_body_set01",
+        sim_orbinit_docker::run_0201(),
         "orbinit_0201_orbinit.csv",
         "RUN_0201 (ISS pfix set01)",
         1.59e-5,
@@ -251,8 +209,7 @@ fn tier3_orbinit_docker_run0201_iss_pfix() {
 fn tier3_orbinit_docker_run0301_sts_pfix() {
     // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
     assert_orbinit_match(
-        "STS_114",
-        "trans_Orbit_pfix_body_set01",
+        sim_orbinit_docker::run_0301(),
         "orbinit_0301_orbinit.csv",
         "RUN_0301 (STS-114 pfix set01)",
         1.59e-5,
@@ -266,52 +223,16 @@ fn tier3_orbinit_docker_run0301_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0401_sts_trans_state() {
-    // RUN_0401 uses DynBodyInitTransState (direct Cartesian input in inertial).
-    // The JEOD input.py sets position and velocity directly; initialization
-    // should be a pass-through to the body state. Inputs come from the
-    // committed `test_data/body_init/sts_114.json` fixture.
-    let trans = astrodyn_verif_jeod::orbital_init::load_trans_state(
-        "STS_114",
-        "trans_TransState_inertial_body",
-    );
-    let expected = TranslationalState {
-        position: DVec3::from_array(trans.position),
-        velocity: DVec3::from_array(trans.velocity),
-    };
-
-    let csv_path = test_data_path("orbinit_0401_orbinit.csv");
-    assert!(
-        csv_path.exists(),
-        "RUN_0401: JEOD reference CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-         -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-        csv_path.display()
-    );
-    let records = load_orbinit_csv(&csv_path);
-    assert!(!records.is_empty(), "RUN_0401: no records in CSV");
-    let jeod = &records[0];
-    assert_eq!(jeod.time, 0.0, "RUN_0401: expected t=0 row in CSV");
-
-    let pos_err = (expected.position - jeod.position).length();
-    let vel_err = (expected.velocity - jeod.velocity).length();
-    println!(
-        "  RUN_0401: our pos=[{:.3}, {:.3}, {:.3}] m",
-        expected.position.x, expected.position.y, expected.position.z
-    );
-    println!(
-        "  RUN_0401: JEOD pos=[{:.3}, {:.3}, {:.3}] m",
-        jeod.position.x, jeod.position.y, jeod.position.z
-    );
-    println!("  RUN_0401: pos_err={pos_err:.6e} m  vel_err={vel_err:.6e} m/s");
-
-    // Direct Cartesian: expected to be bit-exact (both read from same input).
-    // The CSV has only 10-char precision for RUN_0401 inputs; allow 1 µm / 1 nm/s.
-    assert!(
-        pos_err < 1.0e-6,
-        "RUN_0401: position error {pos_err:.6e} m exceeds 1 µm tolerance"
-    );
-    assert!(
-        vel_err < 1.0e-9,
-        "RUN_0401: velocity error {vel_err:.6e} m/s exceeds 1 nm/s tolerance"
+    // RUN_0401 uses DynBodyInitTransState (direct Cartesian input in
+    // inertial). The JEOD input.py sets position and velocity directly;
+    // recipe initialization is a pass-through to the body state. The
+    // CSV has only ~10-char precision for RUN_0401 inputs; allow 1 µm
+    // / 1 nm/s.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0401(),
+        "orbinit_0401_orbinit.csv",
+        "RUN_0401 (STS-114 inertial cart)",
+        1.0e-6,
+        1.0e-9,
     );
 }
