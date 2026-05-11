@@ -30,8 +30,9 @@ Subcommands:
                             default; pass --force to regenerate all.
     publish                 Publish the 13 non-verif crates to crates.io
                             in topological order. Pass --dry-run to
-                            walk the sequence without contacting the
-                            registry.
+                            walk the sequence without uploading to
+                            crates.io (the registry is still queried
+                            to resolve dependencies).
 
 regenerate-tier3 options:
     --force                 Set FORCE=1 in the container so all sims
@@ -404,6 +405,12 @@ fn publish(argv: Vec<String>) {
         None => 0,
     };
 
+    // All 13 crates ship at the same workspace version. Read it once
+    // so `wait_for_index` can poll for the *new version*, not just the
+    // crate name (which is already on the registry on every publish
+    // after the first).
+    let expected_version = workspace_version();
+
     let total = PUBLISH_ORDER.len();
     for (i, crate_name) in PUBLISH_ORDER.iter().enumerate().skip(start_idx) {
         let step = i + 1;
@@ -446,7 +453,7 @@ fn publish(argv: Vec<String>) {
         // touch the registry, so skip the wait.
         let is_last = i == total - 1;
         if !args.dry_run && !args.no_wait && !is_last {
-            wait_for_index(crate_name);
+            wait_for_index(crate_name, &expected_version);
         }
     }
 
@@ -460,18 +467,25 @@ fn publish(argv: Vec<String>) {
     );
 }
 
-// Poll `cargo search` until the just-published crate appears in the
-// sparse index. `cargo publish` returns success once the upload is
-// accepted, but the index can lag by 10–60s before path+version deps
-// in the next crate resolve. Cap at 5 minutes — anything longer is
-// almost certainly a registry incident worth a human eye.
-fn wait_for_index(crate_name: &str) {
+// Poll `cargo search` until the just-published crate AND VERSION
+// appear in the sparse index. `cargo publish` returns success once
+// the upload is accepted, but the index can lag by 10–60s before
+// path+version deps in the next crate resolve. Matching on the
+// version (not just the name) is critical: on every publish after the
+// first, the crate name is already on the registry from a prior
+// version, so a name-only check would short-circuit while the index
+// is still serving stale metadata. Cap at 5 minutes — anything
+// longer is almost certainly a registry incident worth a human eye.
+fn wait_for_index(crate_name: &str, expected_version: &str) {
     use std::thread::sleep;
     use std::time::{Duration, Instant};
 
     let deadline = Instant::now() + Duration::from_secs(300);
     let mut attempt = 0u32;
-    eprintln!("publish: waiting for crates.io index to pick up {crate_name}...");
+    eprintln!("publish: waiting for crates.io index to serve {crate_name} {expected_version}...");
+    // `cargo search foo --limit 1` prints `foo = "x.y.z" # ...` for
+    // the latest version. Match on the exact version literal.
+    let needle = format!("{crate_name} = \"{expected_version}\"");
     loop {
         attempt += 1;
         let out = Command::new("cargo")
@@ -480,19 +494,15 @@ fn wait_for_index(crate_name: &str) {
             .expect("failed to spawn `cargo search`");
         if out.status.success() {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            // `cargo search foo --limit 1` prints `foo = "x.y.z" # ...`
-            // when the crate is found. Match on the leading
-            // `<crate_name> = "` so we don't false-match on a substring.
-            let prefix = format!("{crate_name} = \"");
-            if stdout.lines().any(|line| line.starts_with(&prefix)) {
-                eprintln!("publish: {crate_name} is live on the index.");
+            if stdout.lines().any(|line| line.starts_with(&needle)) {
+                eprintln!("publish: {crate_name} {expected_version} is live on the index.");
                 return;
             }
         }
         if Instant::now() >= deadline {
             eprintln!(
-                "publish: timed out after 5 min waiting for {crate_name} on the index. \
-                 If `cargo publish` succeeded, you can resume with:\n\
+                "publish: timed out after 5 min waiting for {crate_name} {expected_version} \
+                 on the index. If `cargo publish` succeeded, you can resume with:\n\
                  \n    cargo xtask publish --from <next crate> --no-wait\n"
             );
             exit(1);
@@ -508,4 +518,48 @@ fn wait_for_index(crate_name: &str) {
         };
         sleep(Duration::from_secs(delay));
     }
+}
+
+// Read `[workspace.package].version` from the workspace `Cargo.toml`.
+// All 13 publishable crates inherit this value via
+// `version.workspace = true`, so we only need to find it once.
+fn workspace_version() -> String {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+    let manifest_path = workspace_root.join("Cargo.toml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
+        panic!(
+            "failed to read workspace manifest {}: {e}",
+            manifest_path.display()
+        )
+    });
+    let mut in_block = false;
+    for line in manifest.lines() {
+        let trim = line.trim();
+        if trim == "[workspace.package]" {
+            in_block = true;
+            continue;
+        }
+        if in_block && trim.starts_with('[') {
+            break;
+        }
+        if in_block {
+            // Match `version = "X.Y.Z"` (with arbitrary whitespace
+            // around the `=`); ignore comments after the value.
+            if let Some(rest) = trim.strip_prefix("version") {
+                let rest = rest.trim_start();
+                if let Some(rest) = rest.strip_prefix('=') {
+                    if let Some(v) = rest.trim().split('"').nth(1) {
+                        return v.to_string();
+                    }
+                }
+            }
+        }
+    }
+    panic!(
+        "could not find `[workspace.package].version` in {}",
+        manifest_path.display()
+    );
 }
