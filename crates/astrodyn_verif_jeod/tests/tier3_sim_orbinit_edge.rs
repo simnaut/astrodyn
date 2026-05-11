@@ -1,41 +1,101 @@
 //! Tier 3: SIM_orbinit cross-validation via Simulation pipeline
 //!
 //! Validates body initialization from 4 distinct coordinate representations
-//! by creating a `Simulation`, adding each body, validating, and stepping once.
-//! Checks cross-consistency between methods and against JEOD output.
+//! by building each scenario through its `sim_orbinit_edge` recipe,
+//! propagating for the recipe's declared `SyntheticTimes` cadence, and
+//! checking range + cross-consistency against JEOD's logged t=0 state.
 //!
 //!   RUN_0101: Orbital elements in inertial frame (STS-114)
 //!   RUN_0201: Orbital elements in planet-fixed frame (ISS)
 //!   RUN_0301: Orbital elements in planet-fixed frame (STS-114)
 //!   RUN_0401: Cartesian state in inertial frame (STS-114)
+//!
+//! The `Simulation` construction lives in the `sim_orbinit_edge` recipe
+//! module so the parity wrapper (`bevy_parity_orbinit_edge.rs`) can drive
+//! the same scenarios through the Bevy adapter for the `runner ↔ bevy`
+//! half of the transitivity argument.
 
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_orbinit_edge;
 use astrodyn_verif_jeod::tier3_csv::{load_orbinit_csv, test_data_path};
-
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
-use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_runner::{RotationModel, Simulation};
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 use glam::DVec3;
+
+/// Build the recipe's `Simulation` exactly the way the parity trait does
+/// — call the scenario factory with a default `InitialConditions` (the
+/// recipes don't read it — initial state is baked in from each RUN's
+/// JEOD output t=0 row), then `.build()` — so the runner-side
+/// propagation here and the Bevy-side propagation in
+/// `bevy_parity_orbinit_edge.rs` see the same initial state bit-pattern.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
+}
+
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_orbinit_edge` uses this variant
+/// because the orbinit CSVs are initialization-only (one row at t=0);
+/// panicking on any other variant surfaces a future recipe-shape drift
+/// here rather than producing a silently-truncated propagation.
+/// Returning both halves of the cadence lets callers assert that the
+/// `dt` they're stepping at (typically `sim.dt`) matches the cadence
+/// the recipe declared.
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
+}
+
+/// Read the post-construction translational state from each RUN's
+/// recipe so the cross-consistency assertions are driven by exactly the
+/// same numbers the parity wrapper integrates. The state is read from
+/// the runner's `body(0)` *before* any propagation step, so each entry
+/// is the t=0 state the recipe bakes in.
+fn runner_initial_state(case: &VerificationCase) -> (DVec3, DVec3) {
+    let sim = build_sim(case);
+    let body = sim.body(0);
+    (body.trans.position.raw_si(), body.trans.velocity.raw_si())
+}
+
+/// Per-RUN row: CSV file name, recipe factory, human-readable label.
+type RunRow = (&'static str, fn() -> VerificationCase, &'static str);
 
 #[test]
 fn tier3_simulation_orbinit_cross_consistency() {
-    let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
-
-    let runs: Vec<(&str, &str)> = vec![
-        ("orbinit_0101_orbinit.csv", "RUN_0101 (STS-114 inertial OE)"),
-        ("orbinit_0201_orbinit.csv", "RUN_0201 (ISS pfix OE)"),
-        ("orbinit_0301_orbinit.csv", "RUN_0301 (STS-114 pfix OE)"),
+    // The CSV is loaded only to cross-check the recipe's baked-in
+    // initial state against JEOD's logged t=0 row — a regression
+    // fence so a future recipe-side edit can't silently drift away
+    // from the JEOD-source values. The actual propagation uses the
+    // recipe-driven `Simulation`.
+    let runs: [RunRow; 4] = [
+        (
+            "orbinit_0101_orbinit.csv",
+            sim_orbinit_edge::run_0101,
+            "RUN_0101 (STS-114 inertial OE)",
+        ),
+        (
+            "orbinit_0201_orbinit.csv",
+            sim_orbinit_edge::run_0201,
+            "RUN_0201 (ISS pfix OE)",
+        ),
+        (
+            "orbinit_0301_orbinit.csv",
+            sim_orbinit_edge::run_0301,
+            "RUN_0301 (STS-114 pfix OE)",
+        ),
         (
             "orbinit_0401_orbinit.csv",
+            sim_orbinit_edge::run_0401,
             "RUN_0401 (STS-114 inertial cart)",
         ),
     ];
 
     let mut states: Vec<(DVec3, DVec3, &str)> = Vec::new();
 
-    for (filename, label) in &runs {
+    for (filename, recipe, label) in runs {
         let csv_path = test_data_path(filename);
         assert!(
             csv_path.exists(),
@@ -50,49 +110,65 @@ fn tier3_simulation_orbinit_cross_consistency() {
             !records.is_empty(),
             "{label}: no records found in {filename}"
         );
+        let csv_init = &records[0];
 
-        let init = &records[0];
+        let case = recipe();
+        let (init_pos, init_vel) = runner_initial_state(&case);
 
-        // Create a Simulation with Earth point-mass gravity and this body
-        let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-        let mut sim = Simulation::new(time, 10.0);
-
-        let earth = sim.add_source(
-            "Earth",
-            GravitySourceEntry {
-                source: GravitySource {
-                    mu: mu_earth,
-                    model: GravityModel::PointMass,
-                },
-                position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-                velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-                t_inertial_pfix: None,
-                delta_c20: 0.0,
-                rotation_model: RotationModel::default(),
-                tidal_config: None,
-                planet_omega: 0.0,
-                central: true,
-                marker_only: false,
-            },
+        // Fence: the recipe's baked-in state must reproduce the
+        // JEOD-logged t=0 row to within the CSV's printed precision
+        // (≤ 1 m position, ≤ 0.01 m/s velocity). RUN_0401 logs 6
+        // significant digits — JEOD's truncation, not ours; the other
+        // RUNs print closer to f64 precision but the threshold below is
+        // the same for all to keep the diagnostic uniform. A future
+        // edit that tweaks recipe-side numbers will trip this check
+        // first instead of silently changing what the parity wrapper
+        // integrates.
+        let pos_drift = (init_pos - csv_init.position).length();
+        let vel_drift = (init_vel - csv_init.velocity).length();
+        assert!(
+            pos_drift < 1.0,
+            "{label}: recipe init position drifted from CSV by {pos_drift:.6} m"
+        );
+        assert!(
+            vel_drift < 0.01,
+            "{label}: recipe init velocity drifted from CSV by {vel_drift:.6e} m/s"
         );
 
-        sim.add_body(VehicleConfig {
-            trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-                position: init.position,
-                velocity: init.velocity,
-            }),
-            gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-            },
-            ..Default::default()
-        });
+        // Step through the full pipeline (TimeUpdate → Environment →
+        // Integration → DerivedState) at the recipe's synthetic cadence.
+        // Drive propagation off the recipe's `n_steps`, not a hardcoded
+        // single step, so any future recipe edit that increases the
+        // cadence rolls through this test on the same `dt`. Cross-check
+        // `dt` against the built `Simulation`'s integrator dt to catch
+        // a recipe edit that updates one half of the cadence but not
+        // the other.
+        let mut sim = build_sim(&case);
+        let (dt, n_steps) = synthetic_cadence(&case);
+        assert_eq!(
+            dt, sim.dt,
+            "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+            case.name, sim.dt
+        );
+        assert!(
+            n_steps >= 1,
+            "`{}`: recipe must propagate at least one step",
+            case.name
+        );
+        // `step_n` advances exactly `n_steps` whole steps. (`step_until`
+        // has a 1 ms slop and may stop one step short — see
+        // `Simulation::step_until` doc; sidestep both pitfalls by using
+        // the integer-step entrypoint.)
+        sim.step_n(n_steps).expect("step_n failed");
+        let t_end = n_steps as f64 * dt;
+        assert!(
+            (sim.elapsed() - t_end).abs() < 1e-9,
+            "`{}`: sim elapsed {} did not reach requested end {t_end}",
+            case.name,
+            sim.elapsed(),
+        );
 
-        sim.validate().unwrap();
-
-        // Step once to exercise the full pipeline
-        sim.step().expect("step failed");
-
-        // Read back the body state after one step (confirms pipeline ran)
+        // Read back the body state after propagation (confirms pipeline ran).
         let body = sim.body(0);
         let r_mag = body.trans.position.raw_si().length();
         let v_mag = body.trans.velocity.raw_si().length();
@@ -101,23 +177,25 @@ fn tier3_simulation_orbinit_cross_consistency() {
             "  {label}: r={:.3} km  v={:.6} km/s  pos=[{:.1}, {:.1}, {:.1}] m",
             r_mag / 1000.0,
             v_mag / 1000.0,
-            init.position.x,
-            init.position.y,
-            init.position.z,
+            init_pos.x,
+            init_pos.y,
+            init_pos.z,
         );
 
-        // Sanity: LEO orbit (post-step state should still be LEO)
+        // Sanity: LEO orbit (post-step state should still be LEO).
         assert!(
             (6_000_000.0..=8_000_000.0).contains(&r_mag),
-            "{label}: r={r_mag:.0} m outside LEO range after one step"
+            "{label}: r={r_mag:.0} m outside LEO range after propagation"
         );
         assert!(
             (6_000.0..=8_000.0).contains(&v_mag),
-            "{label}: v={v_mag:.1} m/s outside LEO range after one step"
+            "{label}: v={v_mag:.1} m/s outside LEO range after propagation"
         );
 
-        // Use the initial state for cross-consistency (matches JEOD's initialization output)
-        states.push((init.position, init.velocity, label));
+        // Use the initial (t=0) state for cross-consistency: it
+        // mirrors the original test, which compared the JEOD-logged
+        // t=0 vectors across RUNs.
+        states.push((init_pos, init_vel, label));
     }
 
     println!();
@@ -147,7 +225,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
         }
     }
 
-    // ISS vs STS-114: different vehicles at similar epoch
+    // ISS vs STS-114: different vehicles at similar epoch.
     let (pos_iss, _, _) = states[1];
     let (pos_sts, _, _) = states[0];
     let cross_vehicle_err = (pos_iss - pos_sts).length();
