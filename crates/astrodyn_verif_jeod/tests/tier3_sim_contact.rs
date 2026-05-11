@@ -43,11 +43,34 @@ use std::path::Path;
 use std::sync::Arc;
 
 // ── Shared JEOD material constants ──────────────────────────────────
-
-/// Spring stiffness: 20 lbf/in = 20 × 4.4482216152605 / 0.0254 N/m = 3502.5 N/m
-const JEOD_SPRING_K: f64 = 3502.500484488583;
-/// Damping: 0.4 lbf·s/in = 0.4 × 4.4482216152605 / 0.0254 N·s/m
-const JEOD_DAMPING_B: f64 = 70.05000968977167;
+//
+// Match `Trick::attach_units("lbf/in", 20.0)` and `attach_units("lbf*s/in", 0.4)`
+// in JEOD's `Contact_Modified_data/contact/pair_interaction.py`. Trick's
+// internal SI conversion uses NIST CODATA exact values
+// `1 lbf = 4.4482216152605 N` and `1 in = 0.0254 m`, yielding
+// `20 lbf/in = 3502.53670492952642 N/m` and
+// `0.4 lbf·s/in = 70.0507340985905387 N·s/m`.
+//
+// Issue #117: prior values (3502.500484488583 / 70.05000968977167) used an
+// incorrect lbf conversion factor (4.4481756 instead of 4.4482216152605),
+// producing a ~1e-5 relative error in spring stiffness and damping. The
+// error compounded through friction and angular dynamics during the oblique
+// `RUN_point_off_center` contact event, accumulating to ~2.7 cm trajectory
+// drift over 10 s. Head-on tests showed only ~14 μm drift from the same bug
+// because head-on contact has no torque and no compounding friction loop.
+// Diagnosis confirmed by capturing JEOD's reported `spring_k` / `damping_b`
+// from a `FORCE_COMPONENT_TRACE` patch on `spring_pair_interaction.cc` and
+// directly invoking `evaluate_contact_pair` at JEOD-reported state — same
+// formula, same state, force agreed to ~5e-13 relative once the constants
+// matched.
+/// Spring stiffness: 20 lbf/in (NIST exact conversion, matching Trick's
+/// `attach_units("lbf/in", 20.0)`). Truncated to f64 precision; the
+/// trailing digits beyond ~16 sig figs in `3502.53670492952642` are
+/// not representable.
+const JEOD_SPRING_K: f64 = 3_502.536_704_929_526_4;
+/// Damping: 0.4 lbf·s/in (NIST exact conversion, matching Trick's
+/// `attach_units("lbf*s/in", 0.4)`). Truncated to f64 precision.
+const JEOD_DAMPING_B: f64 = 70.050_734_098_590_54;
 /// Friction coefficient
 const JEOD_MU: f64 = 0.05;
 
@@ -244,13 +267,24 @@ fn line_mass_props() -> MassProperties {
 // used during integration — so a small difference is expected. Values
 // are set at 5% above the observed maximum per CLAUDE.md policy.
 //
-// Head-on scenarios agree with JEOD essentially exactly (< 30 mN, < 1e-12 N*m);
-// the off-center oblique case has known state drift (~cm-scale) after
-// contact, so the tolerance for that scenario is larger (~5 N / ~5 N*m).
-const CONTACT_FORCE_TOL: f64 = 0.028; // N (head-on cases; observed max 26 mN)
+// Issue #117 closed two bugs that previously inflated these tolerances:
+// (1) the spring/damping unit-conversion constants used a slightly off
+// `lbf` factor, producing a 1e-5 relative error in `K` and `c`; and
+// (2) the relative-velocity formula in `evaluate_contact_pair` omitted
+// the `(ω_a + ω_b) × arm_a` rotating-frame term that JEOD includes for
+// sphere-sphere contact. After both fixes the head-on scenarios match
+// JEOD to machine precision (~1e-15 m position over 10 s); the
+// off-center oblique case drops from ~2.7 cm trajectory drift to
+// ~2.5 mm — an ω²-scaled per-stage residual of ~120 μN per RK4 stage
+// remains, likely from JEOD's per-stage `Q_parent_this.normalize_integ`
+// + `compute_transformation` recomputation that our coupled-RK4
+// kernel doesn't currently mirror. The remaining off-center drift is
+// 12 orders of magnitude better than head-on (machine precision) but
+// not at parity; tracked for future tightening.
+const CONTACT_FORCE_TOL: f64 = 0.034; // N (head-on cases; observed max 32 mN)
 const CONTACT_TORQUE_TOL: f64 = 2.0e-13; // N*m (head-on; observed ~1.2e-13 machine noise)
-const POINT_OFF_CENTER_FORCE_TOL: f64 = 5.4; // N (observed 5.07 N due to ~5% oblique drift)
-const POINT_OFF_CENTER_TORQUE_TOL: f64 = 5.2; // N*m (observed 4.82 N*m due to ~5% oblique drift)
+const POINT_OFF_CENTER_FORCE_TOL: f64 = 0.63; // N (observed 0.60 N — 8x improvement over pre-fix 5.07 N)
+const POINT_OFF_CENTER_TORQUE_TOL: f64 = 0.61; // N*m (observed 0.57 N*m — 8x improvement over pre-fix 4.82 N*m)
 
 /// Body state snapshot at a single checkpoint. Carries the full 6-DOF
 /// state (position, velocity, attitude, angular velocity) for each of
@@ -458,21 +492,25 @@ fn tier3_contact_point_pair() {
     // Head-on sphere-sphere symmetric contact: pipeline-coupled RK4 matches
     // JEOD to ~14 μm over 10 s (observed max). Tolerances set at 5% above
     // observed max per CLAUDE.md cross-validation policy.
+    // Issue #117 closed two unit/formula bugs (see tolerance comment block
+    // earlier in this file). Head-on contact now matches JEOD to machine
+    // precision over 10 s; tolerance set generously above 1 ULP to absorb
+    // platform-level FP noise.
     assert!(
-        max_pos_err_1 < 1.5e-5,
-        "veh1 position error {max_pos_err_1:.3e} > 15 μm"
+        max_pos_err_1 < 1.0e-13,
+        "veh1 position error {max_pos_err_1:.3e} > 100 fm"
     );
     assert!(
-        max_pos_err_2 < 1.5e-5,
-        "veh2 position error {max_pos_err_2:.3e} > 15 μm"
+        max_pos_err_2 < 1.0e-13,
+        "veh2 position error {max_pos_err_2:.3e} > 100 fm"
     );
     assert!(
-        max_vel_err_1 < 8.0e-6,
-        "veh1 velocity error {max_vel_err_1:.3e} > 8 μm/s"
+        max_vel_err_1 < 1.0e-13,
+        "veh1 velocity error {max_vel_err_1:.3e} > 1e-13 m/s"
     );
     assert!(
-        max_vel_err_2 < 8.0e-6,
-        "veh2 velocity error {max_vel_err_2:.3e} > 8 μm/s"
+        max_vel_err_2 < 1.0e-13,
+        "veh2 velocity error {max_vel_err_2:.3e} > 1e-13 m/s"
     );
 
     assert_contact_force_torque(
@@ -522,10 +560,10 @@ fn tier3_contact_line_pair() {
     }
     println!("SIM_contact RUN_line: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s");
 
-    // Head-on capsule-capsule (line-line) head-on contact: observed max
-    // ~11 μm. Tolerances set at 5% above observed per CLAUDE.md policy.
-    assert!(max_pos_err < 1.2e-5, "position error {max_pos_err:.3e}");
-    assert!(max_vel_err < 9.0e-6, "velocity error {max_vel_err:.3e}");
+    // Head-on capsule-capsule. After issue #117 fixes, matches JEOD to
+    // machine precision over 10 s.
+    assert!(max_pos_err < 1.0e-13, "position error {max_pos_err:.3e}");
+    assert!(max_vel_err < 1.0e-13, "velocity error {max_vel_err:.3e}");
 
     assert_contact_force_torque(
         "SIM_contact RUN_line",
@@ -575,10 +613,10 @@ fn tier3_contact_line_point() {
         "SIM_contact RUN_line_point: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
     );
 
-    // Head-on line-point (capsule end-cap vs sphere) contact: observed
-    // max ~10 μm. Tolerances at 5% above observed per CLAUDE.md policy.
-    assert!(max_pos_err < 1.0e-5, "pos err {max_pos_err:.3e}");
-    assert!(max_vel_err < 9.0e-6, "vel err {max_vel_err:.3e}");
+    // Head-on line-point. After issue #117 fixes, matches JEOD to
+    // machine precision over 10 s.
+    assert!(max_pos_err < 1.0e-13, "pos err {max_pos_err:.3e}");
+    assert!(max_vel_err < 1.0e-13, "vel err {max_vel_err:.3e}");
 
     assert_contact_force_torque(
         "SIM_contact RUN_line_point",
@@ -695,10 +733,10 @@ fn tier3_contact_line_side_to_side() {
     // Perpendicular-capsule side-to-side contact — the capsules meet at
     // their midpoints so the contact is effectively sphere-sphere along
     // the inter-body x-axis. Rotated geometry is exercised here but the
-    // collision remains symmetric. Observed max ~10 μm. Tolerances at 5%
-    // above observed per CLAUDE.md policy.
-    assert!(max_pos_err < 1.0e-5, "pos err {max_pos_err:.3e}");
-    assert!(max_vel_err < 9.0e-6, "vel err {max_vel_err:.3e}");
+    // collision remains symmetric. After issue #117 fixes, matches JEOD
+    // to machine precision over 10 s.
+    assert!(max_pos_err < 1.0e-13, "pos err {max_pos_err:.3e}");
+    assert!(max_vel_err < 1.0e-13, "vel err {max_vel_err:.3e}");
 
     assert_contact_force_torque(
         "SIM_contact RUN_line_side",
@@ -794,35 +832,43 @@ fn tier3_contact_point_off_center() {
         "SIM_contact RUN_point_off_center: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
     );
 
-    // Oblique collision: unlike the head-on tests (which agree with JEOD to
-    // 14 μm), RUN_point_off_center drifts from JEOD by ~2.7 cm in position
-    // and ~5.7 mm/s in velocity after the stiff 0.5 s contact event, which
-    // then accumulates over the 4.5 s free-flight tail. `evaluate_contact_pair`
-    // is a faithful port of JEOD's `point_contact_pair.cc:83-84` rel_vel
-    // formula (single-cross (ω_B − ω_A) × r_A_contact), and both bodies
-    // develop equal, same-direction ω from Newton's-third-law torques on
-    // equal-mass, equal-inertia spheres ⇒ ω_rel = 0, so the rel_vel term is
-    // identically zero — the formula is not the source of the drift.
+    // Oblique collision. Issue #117 closed the two principal bugs that
+    // previously held this test at ~2.7 cm trajectory drift:
     //
-    // The remaining gap likely stems from JEOD's Trick integrator sub-
-    // stepping the stiff contact event differently from our fixed
-    // four-stage RK4. See issue #117 for the investigation plan.
+    // 1. Spring/damping unit-conversion (`JEOD_SPRING_K`, `JEOD_DAMPING_B`):
+    //    used a slightly off `lbf` factor (`4.4481756` vs NIST CODATA
+    //    `4.4482216152605`), producing a 1e-5 relative error in `K` and
+    //    `c`. Affected both head-on and oblique tests, but compounded
+    //    far more in oblique through the tangential-friction loop.
+    //
+    // 2. Relative-velocity formula in `evaluate_contact_pair`: the prior
+    //    one-cross form `(ω_b − ω_a) × arm_a` (PR #87) was identically
+    //    zero for equal-ω cases (sphere-sphere with symmetric
+    //    Newton's-third-law torques) and missed the textbook
+    //    `(ω_a + ω_b) × arm_a` rotating-frame term. Replaced with the
+    //    full two-body kinematic formula
+    //    `(v_a − v_b) + ω_a × arm_a − ω_b × arm_b`, which matches JEOD's
+    //    `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
+    //    formulation for sphere-sphere contact (`src/interactions.rs::evaluate_contact_pair`).
+    //
+    // After both fixes, oblique trajectory error drops from ~2.7 cm to
+    // ~2.5 mm (and head-on tests reach machine precision). The residual
+    // ~120 μN per-RK4-stage force divergence scales with ω², attributable
+    // to JEOD's per-stage `Q_parent_this.normalize_integ()` +
+    // `compute_transformation()` recomputation
+    // (`dyn_body_integration.cc:380-383`) that our coupled-RK4 kernel
+    // does not currently mirror. Tracked for follow-up.
     assert!(
-        max_pos_err < 3.0e-2,
-        "veh{{1,2}} position error {max_pos_err:.3e} > 3 cm"
+        max_pos_err < 2.7e-3,
+        "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
     );
     assert!(
-        max_vel_err < 6.0e-3,
-        "veh{{1,2}} velocity error {max_vel_err:.3e} > 6 mm/s"
+        max_vel_err < 5.7e-4,
+        "veh{{1,2}} velocity error {max_vel_err:.3e} > 0.57 mm/s"
     );
 
-    // Oblique friction differs from JEOD (~5 % in tangential momentum), so
-    // state drift during and after the contact event means our
-    // `evaluate_contact_pair` at a logged state is *not* at the same body
-    // configuration as JEOD's. Use looser tolerances that reflect the
-    // documented drift — the assertion still catches gross regressions
-    // (bad frame transforms, missing terms) without getting confused by
-    // the well-characterized tangential discrepancy.
+    // Oblique force/torque tolerances reflect the residual ~120 μN
+    // per-stage divergence accumulated over the contact event.
     assert_contact_force_torque(
         "SIM_contact RUN_point_off_center",
         facet,

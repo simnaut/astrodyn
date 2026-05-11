@@ -513,20 +513,31 @@ pub fn evaluate_contact_pair(
     // to the same thing: see `point_contact_facet::calculate_torque`).
     let contact_arm_a_inertial = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
 
-    // Relative velocity at the contact point, faithful port of JEOD
-    // `point_contact_pair.cc:83-84`:
+    // Relative velocity at the contact point — textbook two-body kinematic
+    // formula:
     //
-    //   rel_velocity = (ω_target − ω_subject) × r_subject_contact
-    //                  − (v_target − v_subject)
+    //   rel_vel = (v_A − v_B) + ω_A × r_A_contact − ω_B × r_B_contact
     //
-    // i.e., a *single* cross product between the relative angular velocity
-    // and the SUBJECT's contact-point arm from the CoM (not a separate
-    // ω × r per body). An earlier version of this code used the textbook
-    // two-body kinematic formula `(v_A−v_B) + ω_A×r_A − ω_B×r_B`, which
-    // differs from JEOD when the contact point isn't at the same arm on
-    // both bodies (e.g., SIM_contact RUN_point_off_center) and produced a
-    // tangential-friction discrepancy of ~5 % during the contact event.
-    // Per project policy we match JEOD's formulation exactly.
+    // This is the velocity of A's contact point in inertial minus the
+    // velocity of B's contact point in inertial, where each body's
+    // contact-point arm is from its own CoM. For sphere-sphere
+    // (point-point) contact, the formula is mathematically equivalent to
+    // JEOD's `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
+    // formulation (`point_contact_pair.cc:83-84`), where JEOD's
+    // `v_target_in_subject_frame` includes the rotating-frame correction
+    // `−ω_subject × rel_pos`. The difference between the two formulations
+    // collapses to `ω_subject × (2·arm_a + rel_pos)`, which is identically
+    // zero for sphere-sphere contact (`arm_a = +direction · R_a` and
+    // `rel_pos = pos_a − pos_b = −2·arm_a` when spheres are touching).
+    //
+    // Issue #117: an earlier port (PR #87) used `(ω_b − ω_a) × arm_a`
+    // alone, omitting the `(ω_a + ω_b) × arm_a` rotating-frame term.
+    // For equal-mass equal-inertia spheres ω_a = ω_b ⇒ ω_rel = 0, so the
+    // earlier formula collapsed to `vel_a − vel_b` (inertial frame),
+    // missing the entire `2ω × arm_a` contribution from the bodies'
+    // rotation about the contact point. The textbook formula above
+    // gives the correct rotating-frame answer at the contact point and
+    // matches JEOD exactly for sphere-sphere contact.
     //
     // `t_inertial_body` is inertial→body (see
     // `astrodyn_dynamics::compute_t_inertial_struct` docs), so going
@@ -537,9 +548,10 @@ pub fn evaluate_contact_pair(
     let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
         t_inertial_body_b.transpose() * r.ang_vel_body
     });
-    let omega_rel_inertial = omega_b_inertial - omega_a_inertial;
-    let rel_vel =
-        (trans_a.velocity - trans_b.velocity) + omega_rel_inertial.cross(contact_arm_a_inertial);
+    let contact_arm_b_inertial = facet_b_offset_from_cm_inertial + geom.contact_point_on_b;
+    let rel_vel = (trans_a.velocity - trans_b.velocity)
+        + omega_a_inertial.cross(contact_arm_a_inertial)
+        - omega_b_inertial.cross(contact_arm_b_inertial);
 
     // Reuse the geometry from above — avoid repeating closest-point math
     // inside the RK4 inner loop.
@@ -738,18 +750,20 @@ mod tests {
         ContactMaterial::jeod_spring(stiffness, damping, mu)
     }
 
-    /// Covers the ω × r_contact_arm term in `evaluate_contact_pair`.
+    /// Covers the per-body `ω × r_contact_arm` terms in
+    /// `evaluate_contact_pair`'s textbook two-body rel-vel formula.
     ///
     /// Two equal-mass, equal-inertia spheres at rest translationally but
     /// with a non-zero angular velocity on A only. The pair is at an
     /// off-centre geometry (veh2 offset in +y), so `r_A_contact` has a
     /// non-zero tangential component in the y direction. With
     /// translational `v_rel = 0`, any non-zero friction force proves that
-    /// the `(ω_B − ω_A) × r_A_contact` kinematic term flowed through
-    /// into `rel_vel` (matching JEOD `point_contact_pair.cc:83`). This
-    /// locks the kinematic plumbing against regressions that Tier 3
-    /// doesn't catch (the SIM_contact scenarios produce ω_rel = 0 by
-    /// symmetry).
+    /// `ω_a × arm_a − ω_b × arm_b` propagates into `rel_vel`
+    /// (issue #117 — matches JEOD `point_contact_pair.cc:83-84` for
+    /// sphere-sphere contact). This locks the kinematic plumbing against
+    /// regressions that Tier 3 doesn't catch on its own — the symmetric
+    /// SIM_contact scenarios produce `ω_a = ω_b` so the per-body terms
+    /// don't cancel even though `ω_rel = 0`.
     #[test]
     fn evaluate_contact_pair_uses_omega_cross_contact_arm_in_rel_vel() {
         // Identity attitudes and t_struct_body so all frames coincide
@@ -811,8 +825,10 @@ mod tests {
         );
 
         // Case 2: give veh1 a non-zero ω about +z; veh2 still at rest
-        // rotationally. rel_vel = (ω_B − ω_A) × r_A_contact
-        //                      = -(0,0,ω_z) × r_A_contact
+        // rotationally. With our two-body formula:
+        //   rel_vel = (v_a − v_b) + ω_a × arm_a − ω_b × arm_b
+        //          = 0 + (0,0,ω_z) × r_A_contact − 0
+        //          = (0,0,ω_z) × r_A_contact
         // where r_A_contact ≈ radius · u_ab = (0.964, 0.268, 0).
         // This is a purely tangential contribution (it lies in the plane
         // perpendicular to r_A_contact, which is the contact-tangent
@@ -861,12 +877,12 @@ mod tests {
         );
 
         // And it must oppose the slip direction. rel_vel_a_wrt_b =
-        // (ω_B − ω_A) × r_A_contact ≈ -(0,0,1) × (0.964, 0.268, 0)
-        //   = (0.268, -0.964, 0). Friction direction is the negation of
-        // the tangential slip, so expect friction ∝ (-0.268, +0.964, 0)
+        // ω_a × r_A_contact = (0,0,1) × (0.964, 0.268, 0)
+        //   = (-0.268, 0.964, 0). Friction direction is the negation of
+        // the tangential slip, so expect friction ∝ (0.268, -0.964, 0)
         // (projected onto the tangent plane).
         let r_arm = 1.0 * u_ab;
-        let rel_vel = -DVec3::new(0.0, 0.0, omega_z).cross(r_arm);
+        let rel_vel = DVec3::new(0.0, 0.0, omega_z).cross(r_arm);
         // rel_vel is approximately tangent (normal dot ≈ 0 since ω ⊥ r).
         let expected_tangent_dir = (-rel_vel).normalize();
         let got_tangent_dir = tangent_component.normalize();
