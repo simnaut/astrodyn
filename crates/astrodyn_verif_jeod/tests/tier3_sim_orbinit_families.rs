@@ -5,78 +5,76 @@
 //! near-parabolic. Since no Docker reference data exists for these cases,
 //! verification uses analytical invariants:
 //!
-//! - Specific orbital energy conservation: E = v^2/2 - mu/r
-//! - Specific angular momentum conservation: |h| = |r x v|
+//! - Specific orbital energy conservation: E = v²/2 − μ/r
+//! - Specific angular momentum conservation: |h| = |r × v|
 //! - Radius constancy for circular orbits
 //! - Periapsis/apoapsis radius bounds for elliptic orbits
+//!
+//! The `Simulation` construction lives in the
+//! [`sim_orbinit_families`] recipe module so the parity wrapper
+//! (`bevy_parity_orbinit_families.rs`) can drive the same scenarios
+//! through the Bevy adapter for the `runner ↔ bevy` half of the
+//! transitivity argument.
 
 use astrodyn::recipes::helpers::energy_conservation::specific_orbital_energy;
-use astrodyn::recipes::helpers::state_helpers::state_from_elements;
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
-use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_runner::{RotationModel, Simulation};
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_orbinit_families;
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 use glam::DVec3;
 
-/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+/// Earth gravitational parameter (m³/s²) — same const-folded literal
+/// the recipe uses, so the expected-vs-recovered conservation bounds
+/// resolve against the same bit-pattern that drove the initial state.
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
-/// Earth equatorial radius (m) — JEOD `earth.cc`.
+/// Earth equatorial radius (m) — same const-folded literal the recipe
+/// uses. Tier3 geometric bounds (radius checks, altitude expectations)
+/// resolve against the same bit-pattern that seeded the initial state.
 const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
 
-/// Build a Simulation with point-mass Earth gravity and a single body
-/// at the given translational state. Returns the simulation ready to step.
-fn build_sim(trans: TranslationalState, dt: f64) -> Simulation {
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
+/// Build the recipe's `Simulation` exactly the way the parity trait
+/// does — call the scenario factory with a default `InitialConditions`,
+/// then `.build()` — so the runner-side propagation here and the
+/// Bevy-side propagation in `bevy_parity_orbinit_families.rs` see the
+/// same initial state bit-pattern.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
+}
 
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    );
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-    sim
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_orbinit_families` uses this variant
+/// because the family is analytical-only; panicking on any other
+/// variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (`sim.dt`) matches the cadence the recipe declared — catches a
+/// future edit that updates the builder dt but forgets the
+/// `SyntheticTimes` dt (or vice versa).
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
 }
 
 /// Specific orbital energy delegate that resolves to
-/// [`recipes::helpers::energy_conservation::specific_orbital_energy`]. Kept
-/// as a local alias so the bespoke conservation loop reads as it did
-/// pre-Phase 8.
+/// [`recipes::helpers::energy_conservation::specific_orbital_energy`].
 fn specific_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {
     specific_orbital_energy(pos, vel, mu)
 }
 
-/// Compute specific angular momentum magnitude: |h| = |r x v|.
+/// Compute specific angular momentum magnitude: |h| = |r × v|.
 fn specific_ang_momentum(pos: DVec3, vel: DVec3) -> f64 {
     pos.cross(vel).length()
 }
 
-/// Conservation verification results — radius extremes tracked during propagation.
+/// Conservation verification results — radius extremes tracked during
+/// propagation. Returned by [`verify_conservation`] so callers can
+/// assert family-specific radius bounds (circular constancy,
+/// periapsis/apoapsis windows) without a second propagation pass.
 struct ConservationResult {
     min_r: f64,
     max_r: f64,
@@ -87,9 +85,9 @@ struct ConservationResult {
 /// Also tracks min/max radius across all steps so callers can assert
 /// radius bounds without a separate propagation pass.
 ///
-/// Energy error is relative when |E₀| is large, but switches to absolute
-/// error normalized by mu/r₀ when |E₀| is small (near-parabolic orbits
-/// where E₀ ≈ 0 makes relative error ill-conditioned).
+/// Energy error is relative when |E₀| is large, but switches to
+/// absolute error normalized by μ/r₀ when |E₀| is small (near-parabolic
+/// orbits where E₀ ≈ 0 makes relative error ill-conditioned).
 fn verify_conservation(
     sim: &mut Simulation,
     n_steps: usize,
@@ -106,7 +104,7 @@ fn verify_conservation(
     let h0 = specific_ang_momentum(body0.trans.position.raw_si(), body0.trans.velocity.raw_si());
 
     // For near-parabolic orbits, |E₀| can be near zero, making relative
-    // energy error ill-conditioned (inf/NaN). Use mu/r₀ as a stable scale.
+    // energy error ill-conditioned (inf/NaN). Use μ/r₀ as a stable scale.
     let r0 = body0.trans.position.raw_si().length();
     let energy_scale = if energy_0.abs() > MU_EARTH / r0 * 1e-6 {
         energy_0.abs() // standard relative error
@@ -168,37 +166,46 @@ fn verify_conservation(
     ConservationResult { min_r, max_r }
 }
 
+/// Drive `sim` for the recipe's full SyntheticTimes cadence and assert
+/// energy + angular momentum conservation. Shared by every family
+/// test; case-specific geometric invariants (radius bounds, plane
+/// confinement, polar passage, …) wrap this with extra checks. The
+/// `dt`-vs-`sim.dt` assert catches a future edit that updates the
+/// recipe builder dt without updating the matching SyntheticTimes dt.
+fn run_and_verify_conservation(
+    case: &VerificationCase,
+    sim: &mut Simulation,
+    label: &str,
+    energy_tol: f64,
+    h_tol: f64,
+) -> ConservationResult {
+    let (dt, n_steps) = synthetic_cadence(case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
+    );
+    verify_conservation(sim, n_steps, label, energy_tol, h_tol)
+}
+
 // ======================================================================
 // Circular LEO
 // ======================================================================
 
 #[test]
 fn tier3_orbinit_circular_leo() {
-    let alt = 400_000.0; // 400 km
-    let r = R_EARTH + alt;
-    let a = r;
-    let e = 0.0;
-    let i = 51.6_f64.to_radians(); // ISS-like inclination
-    let raan = 30.0_f64.to_radians();
-    let argp = 0.0;
-    let nu = 0.0;
+    let case = sim_orbinit_families::circular_leo();
+    let (a, _e, i, _raan, _argp, _nu) = sim_orbinit_families::elements::circular_leo();
+    let r = a; // e = 0 → r = a
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    // Orbital period ~ 2*pi*sqrt(a^3/mu) ~ 5554 s. Propagate 2 orbits.
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (2.0 * period / dt).ceil() as usize;
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Circular LEO (a={a:.0} m, e={e}, i={:.1} deg)",
+        "Tier 3: Circular LEO (a={a:.0} m, e=0, i={:.1} deg)",
         i.to_degrees()
     );
-    println!("  Period={period:.1} s, dt={dt} s, n_steps={n_steps}");
 
-    let result = verify_conservation(&mut sim, n_steps, "circular_leo", 1e-10, 1e-10);
+    let result = run_and_verify_conservation(&case, &mut sim, "circular_leo", 1e-10, 1e-10);
 
     // Additional check: radius should stay nearly constant for circular orbit.
     let max_rel_err = ((result.max_r - r).abs().max((r - result.min_r).abs())) / r;
@@ -209,7 +216,8 @@ fn tier3_orbinit_circular_leo() {
     assert!(
         max_rel_err < 1e-8,
         "Circular orbit radius varied during propagation: min={:.6e}, max={:.6e}, max_rel_err={max_rel_err:.6e}",
-        result.min_r, result.max_r
+        result.min_r,
+        result.max_r
     );
 }
 
@@ -219,28 +227,17 @@ fn tier3_orbinit_circular_leo() {
 
 #[test]
 fn tier3_orbinit_eccentric() {
-    let a = R_EARTH + 2_000_000.0; // ~8378 km semi-major axis
-    let e = 0.3;
-    let i = 28.5_f64.to_radians(); // Cape Canaveral latitude
-    let raan = 45.0_f64.to_radians();
-    let argp = 90.0_f64.to_radians();
-    let nu = 60.0_f64.to_radians();
+    let case = sim_orbinit_families::eccentric();
+    let (a, e, i, _raan, _argp, _nu) = sim_orbinit_families::elements::eccentric();
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (2.0 * period / dt).ceil() as usize;
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Eccentric orbit (a={:.0} m, e={e}, i={:.1} deg)",
-        a,
+        "Tier 3: Eccentric orbit (a={a:.0} m, e={e}, i={:.1} deg)",
         i.to_degrees()
     );
 
-    let result = verify_conservation(&mut sim, n_steps, "eccentric_e03", 2.2e-10, 1e-10);
+    let result = run_and_verify_conservation(&case, &mut sim, "eccentric_e03", 2.2e-10, 1e-10);
 
     // Verify periapsis/apoapsis bounds over the full propagation window.
     let r_peri = a * (1.0 - e);
@@ -263,28 +260,17 @@ fn tier3_orbinit_eccentric() {
 
 #[test]
 fn tier3_orbinit_highly_eccentric() {
-    let a = R_EARTH + 10_000_000.0; // ~16378 km
-    let e = 0.7;
-    let i = 63.4_f64.to_radians(); // Molniya inclination
-    let raan = 120.0_f64.to_radians();
-    let argp = 270.0_f64.to_radians();
-    let nu = 0.0; // at periapsis
+    let case = sim_orbinit_families::highly_eccentric();
+    let (a, e, i, _raan, _argp, _nu) = sim_orbinit_families::elements::highly_eccentric();
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (1.0 * period / dt).ceil() as usize; // 1 orbit
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Highly eccentric (a={:.0} m, e={e}, i={:.1} deg)",
-        a,
+        "Tier 3: Highly eccentric (a={a:.0} m, e={e}, i={:.1} deg)",
         i.to_degrees()
     );
 
-    verify_conservation(&mut sim, n_steps, "eccentric_e07", 5.2e-9, 1e-10);
+    run_and_verify_conservation(&case, &mut sim, "eccentric_e07", 5.2e-9, 1e-10);
 }
 
 // ======================================================================
@@ -293,28 +279,17 @@ fn tier3_orbinit_highly_eccentric() {
 
 #[test]
 fn tier3_orbinit_retrograde() {
-    let a = R_EARTH + 800_000.0; // ~7178 km
-    let e = 0.05;
-    let i = 150.0_f64.to_radians(); // retrograde
-    let raan = 200.0_f64.to_radians();
-    let argp = 30.0_f64.to_radians();
-    let nu = 180.0_f64.to_radians(); // at apoapsis
+    let case = sim_orbinit_families::retrograde();
+    let (a, e, i, _raan, _argp, _nu) = sim_orbinit_families::elements::retrograde();
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (2.0 * period / dt).ceil() as usize;
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Retrograde orbit (a={:.0} m, e={e}, i={:.1} deg)",
-        a,
+        "Tier 3: Retrograde orbit (a={a:.0} m, e={e}, i={:.1} deg)",
         i.to_degrees()
     );
 
-    verify_conservation(&mut sim, n_steps, "retrograde", 1e-10, 1e-10);
+    run_and_verify_conservation(&case, &mut sim, "retrograde", 1e-10, 1e-10);
 
     // Verify orbit is retrograde: angular momentum Z component should be negative
     let body = sim.body(0);
@@ -336,27 +311,21 @@ fn tier3_orbinit_retrograde() {
 
 #[test]
 fn tier3_orbinit_equatorial() {
-    let a = R_EARTH + 600_000.0;
-    let e = 0.1;
-    let i = 0.0; // equatorial
-    let raan = 0.0; // undefined for equatorial, set to 0
-    let argp = 45.0_f64.to_radians();
-    let nu = 90.0_f64.to_radians();
+    let case = sim_orbinit_families::equatorial();
+    let (a, e, _i, _raan, _argp, _nu) = sim_orbinit_families::elements::equatorial();
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
+    let mut sim = build_sim(&case);
 
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (2.0 * period / dt).ceil() as usize;
+    println!("Tier 3: Equatorial orbit (a={a:.0} m, e={e}, i=0)");
 
-    let mut sim = build_sim(trans, dt);
+    run_and_verify_conservation(&case, &mut sim, "equatorial", 1e-10, 1e-10);
 
-    println!("Tier 3: Equatorial orbit (a={:.0} m, e={e}, i=0)", a);
-
-    verify_conservation(&mut sim, n_steps, "equatorial", 1e-10, 1e-10);
-
-    // Verify orbit stays in equatorial plane over the full propagation window.
-    let mut eq_sim = build_sim(trans, dt);
+    // Verify orbit stays in equatorial plane over the full propagation
+    // window. A second sim build is required because the first call
+    // has already consumed the cadence — `step_n`-style integer
+    // counters don't rewind.
+    let mut eq_sim = build_sim(&case);
+    let (_, n_steps) = synthetic_cadence(&case);
     let mut max_z_frac = 0.0_f64;
     for _ in 0..n_steps {
         eq_sim.step().expect("step failed");
@@ -378,27 +347,21 @@ fn tier3_orbinit_equatorial() {
 
 #[test]
 fn tier3_orbinit_polar() {
-    let a = R_EARTH + 500_000.0;
-    let e = 0.02;
-    let i = 90.0_f64.to_radians(); // polar
-    let raan = 60.0_f64.to_radians();
-    let argp = 0.0;
-    let nu = 45.0_f64.to_radians();
+    let case = sim_orbinit_families::polar();
+    let (a, e, _i, _raan, _argp, _nu) = sim_orbinit_families::elements::polar();
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
+    let mut sim = build_sim(&case);
 
-    let dt = 10.0;
-    let period = 2.0 * std::f64::consts::PI * (a * a * a / MU_EARTH).sqrt();
-    let n_steps = (2.0 * period / dt).ceil() as usize;
+    println!("Tier 3: Polar orbit (a={a:.0} m, e={e}, i=90 deg)");
 
-    let mut sim = build_sim(trans, dt);
+    run_and_verify_conservation(&case, &mut sim, "polar", 1e-10, 1e-10);
 
-    println!("Tier 3: Polar orbit (a={:.0} m, e={e}, i=90 deg)", a);
-
-    verify_conservation(&mut sim, n_steps, "polar", 1e-10, 1e-10);
-
-    // Propagate another 2 orbits to verify the orbit passes over the poles:
-    // track the maximum |z|/r ratio across steps.
+    // Propagate another full cadence to verify the orbit passes over
+    // the poles: track the maximum |z|/r ratio across steps. The
+    // conservation pass left `sim` at the end of its first cadence;
+    // stepping the same number of integer steps again lets us scan a
+    // second pass without rebuilding.
+    let (_, n_steps) = synthetic_cadence(&case);
     let mut max_z_frac = 0.0_f64;
     for _ in 0..n_steps {
         sim.step().expect("step failed");
@@ -414,7 +377,7 @@ fn tier3_orbinit_polar() {
     );
 
     // For polar orbit, angular momentum should be perpendicular to Z:
-    // h_z = x*vy - y*vx should be ~0 for i=90.
+    // h_z = x*vy − y*vx should be ~0 for i=90.
     let body = sim.body(0);
     let pos = body.trans.position.raw_si();
     let vel = body.trans.velocity.raw_si();
@@ -438,26 +401,14 @@ fn tier3_orbinit_polar() {
 
 #[test]
 fn tier3_orbinit_hyperbolic() {
-    // Hyperbolic: a < 0, e > 1
-    let e = 1.5;
-    let r_peri = R_EARTH + 300_000.0; // periapsis at 300 km altitude
-    let a = -(r_peri / (e - 1.0)); // a < 0
-    let i = 30.0_f64.to_radians();
-    let raan = 0.0;
-    let argp = 0.0;
-    let nu = 0.1; // just past periapsis
+    let case = sim_orbinit_families::hyperbolic();
+    let (a, e, _i, _raan, _argp, _nu) = sim_orbinit_families::elements::hyperbolic();
+    let r_peri = R_EARTH + 300_000.0;
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    // Hyperbolic: propagate for a short time (~10 minutes)
-    let dt = 1.0;
-    let n_steps = 600;
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Hyperbolic orbit (a={:.0} m, e={e}, r_peri={:.0} km)",
-        a,
+        "Tier 3: Hyperbolic orbit (a={a:.0} m, e={e}, r_peri={:.0} km)",
         r_peri / 1000.0
     );
 
@@ -473,7 +424,7 @@ fn tier3_orbinit_hyperbolic() {
         "Hyperbolic orbit should have positive energy: E={e0:.6e}"
     );
 
-    verify_conservation(&mut sim, n_steps, "hyperbolic", 1e-10, 1e-10);
+    run_and_verify_conservation(&case, &mut sim, "hyperbolic", 1e-10, 1e-10);
 
     // Verify the body is moving away (radius increasing after periapsis)
     let body = sim.body(0);
@@ -492,27 +443,14 @@ fn tier3_orbinit_hyperbolic() {
 
 #[test]
 fn tier3_orbinit_near_parabolic() {
-    // Near-parabolic: e is slightly above 1.0 but still within
-    // ORBIT_SWITCH_TOL (1e-2), so this remains in JEOD's near-parabolic branch.
-    let e = 1.005;
+    let case = sim_orbinit_families::near_parabolic();
+    let (a, e, _i, _raan, _argp, _nu) = sim_orbinit_families::elements::near_parabolic();
     let r_peri = R_EARTH + 500_000.0;
-    let a = -(r_peri / (e - 1.0)); // very large |a|
-    let i = 10.0_f64.to_radians();
-    let raan = 0.0;
-    let argp = 0.0;
-    let nu = 0.05; // near periapsis
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    // Short propagation -- near-parabolic orbit moves slowly near periapsis
-    let dt = 1.0;
-    let n_steps = 300;
-
-    let mut sim = build_sim(trans, dt);
+    let mut sim = build_sim(&case);
 
     println!(
-        "Tier 3: Near-parabolic orbit (a={:.0} m, e={e}, r_peri={:.0} km)",
-        a,
+        "Tier 3: Near-parabolic orbit (a={a:.0} m, e={e}, r_peri={:.0} km)",
         r_peri / 1000.0
     );
 
@@ -526,5 +464,5 @@ fn tier3_orbinit_near_parabolic() {
     println!("  Initial energy: {e0:.6e} J/kg (should be near zero)");
 
     // Relaxed tolerance for near-parabolic: numerical sensitivity is higher
-    verify_conservation(&mut sim, n_steps, "near_parabolic", 1e-9, 1e-10);
+    run_and_verify_conservation(&case, &mut sim, "near_parabolic", 1e-9, 1e-10);
 }
