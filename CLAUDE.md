@@ -484,9 +484,10 @@ All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based
 filtering. CI (`.github/workflows/ci.yml`) uses this:
 
 - **PRs**: `check` (fmt + clippy), `test` (unit + tier 2),
-  `test-parity-trajectory` (the fast `bevy_parity_*` subset — see
-  exclusion list below), and `test-tier3` (tier 3 excluding
-  `earth_moon`) run in parallel for fast feedback.
+  `test-parity-trajectory` (the fast `bevy_parity_*` subset — the
+  exclusion list lives inline in `.github/workflows/ci.yml`), and
+  `test-tier3` (tier 3 excluding `earth_moon`) run in parallel for
+  fast feedback.
 - **Main push**: same jobs, plus `test-tier3-full` (includes the
   `earth_moon` test, ~17 min, generates the cross-validation report)
   and `test-parity-trajectory-full` (the heavy parity binaries excluded
