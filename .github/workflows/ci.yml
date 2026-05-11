@@ -116,7 +116,7 @@ jobs:
         run: cargo nextest run --workspace -E 'not test(tier3_) and not test(bevy_parity)'
 
   test-parity-trajectory:
-    name: Test (parity trajectory)
+    name: Test (parity trajectory fast)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,13 +132,59 @@ jobs:
             echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
             exit 1
           fi
-      # All `bevy_parity_*` tests run here. The runner-vs-bevy
-      # lockstep harness (see `crates/astrodyn_verif_parity/src/lib.rs`)
-      # propagates each scenario twice for bit-identity, so the cost
-      # profile matches Tier 3 trajectory runs. The file-stem naming
-      # convention (every `#[test] fn` shares its file's stem) is
-      # enforced by `crates/astrodyn_verif_parity/tests/parity_coverage.rs`.
-      - name: Run bevy_parity_* tests
+      # All `bevy_parity_*` tests run here, MINUS a slow subset that
+      # is deferred to the main-branch `test-parity-trajectory-full`
+      # job below. The runner-vs-bevy lockstep harness (see
+      # `crates/astrodyn_verif_parity/src/lib.rs`) propagates each
+      # scenario twice for bit-identity, so the cost profile matches
+      # Tier 3 trajectory runs.
+      #
+      # The exclusion list below mirrors the `not test(earth_moon)`
+      # filter on `test-tier3`: drop the few heaviest binaries on PRs
+      # to keep this lane fast, then re-run everything on main. The
+      # excluded binaries account for ~80% of release-build CPU time
+      # measured on commit 97231b3 (see PR introducing this split for
+      # the per-binary timing table). Dropping them takes a ~45-60 min
+      # PR job to ~10-12 min; full coverage still gates merges to main
+      # through `test-parity-trajectory-full`.
+      #
+      # When adding a new heavy parity binary that bloats this lane,
+      # extend both this exclusion and the
+      # `test-parity-trajectory-full` job's matching comment so the
+      # full-coverage invariant stays explicit.
+      - name: Run fast bevy_parity_* tests (exclude heavy binaries)
+        run: |
+          cargo nextest run --workspace -E '
+            test(bevy_parity) and not (
+              binary(/^bevy_parity_dyncomp_/)
+              or binary(/^bevy_parity_solar_beta/)
+              or binary(=bevy_parity_torque_simple)
+              or binary(=bevy_parity_srp_1st_order)
+            )
+          '
+
+  test-parity-trajectory-full:
+    name: Test (parity trajectory full)
+    if: github.ref == 'refs/heads/main'
+    needs: test-parity-trajectory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
+      # Full bevy_parity_* coverage, including the slow binaries that
+      # `test-parity-trajectory` excludes on PRs (dyncomp_run*,
+      # solar_beta + solar_beta_edge, torque_simple, srp_1st_order).
+      # This lane only runs on push to main, mirroring the
+      # `test-tier3-full` job's role for the `earth_moon` Tier 3 test.
+      - name: Run all bevy_parity_* tests
         run: cargo nextest run --workspace -E 'test(bevy_parity)'
 
   test-tier3:
