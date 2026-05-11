@@ -21,10 +21,11 @@
 //! `--scenario` is required. Known scenarios: `earth_moon_clem`. Future
 //! scenarios are added by extending [`build_scenario`].
 //!
-//! `--phase-timing` is gated by the `phase_timing` cargo feature; the
-//! binary panics with a rebuild command if the flag is passed without
-//! the feature. The `xtask perf-baseline` wrapper handles the feature
-//! flag automatically.
+//! `--phase-timing` is gated by the `phase_timing` cargo feature; if
+//! the flag is passed without the feature, the binary exits with
+//! status 2 and prints an actionable rebuild command. The
+//! `xtask perf-baseline` wrapper handles the feature flag
+//! automatically.
 //!
 //! ## Output schema
 //!
@@ -283,9 +284,11 @@ fn run_one_repeat(args: &PerfArgs) -> Sample {
     }
 }
 
-/// Format a f64 with a fixed number of decimals into a JSON-safe
-/// number literal (no trailing `.0` for integer values is fine —
-/// every consumer is `jq`).
+/// Format a f64 as a JSON-safe number literal with a fixed number of
+/// decimal places (e.g. `1.000000` for a whole-number input at
+/// `decimals=6`). The trailing zeros are harmless for every consumer
+/// — the schema is read by `jq` and the perf-history CSV appender,
+/// which both accept fixed-decimal JSON numbers.
 fn fmt_f64(x: f64, decimals: usize) -> String {
     format!("{x:.*}", decimals)
 }
