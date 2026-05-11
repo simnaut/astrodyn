@@ -2,8 +2,8 @@
 //!
 //! Validates body initialization from 4 distinct coordinate representations
 //! by building each scenario through its `sim_orbinit_edge` recipe,
-//! propagating one step, and checking range + cross-consistency against
-//! JEOD's logged t=0 state.
+//! propagating for the recipe's declared `SyntheticTimes` cadence, and
+//! checking range + cross-consistency against JEOD's logged t=0 state.
 //!
 //!   RUN_0101: Orbital elements in inertial frame (STS-114)
 //!   RUN_0201: Orbital elements in planet-fixed frame (ISS)
@@ -168,7 +168,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
             sim.elapsed(),
         );
 
-        // Read back the body state after one step (confirms pipeline ran).
+        // Read back the body state after propagation (confirms pipeline ran).
         let body = sim.body(0);
         let r_mag = body.trans.position.raw_si().length();
         let v_mag = body.trans.velocity.raw_si().length();
@@ -185,11 +185,11 @@ fn tier3_simulation_orbinit_cross_consistency() {
         // Sanity: LEO orbit (post-step state should still be LEO).
         assert!(
             (6_000_000.0..=8_000_000.0).contains(&r_mag),
-            "{label}: r={r_mag:.0} m outside LEO range after one step"
+            "{label}: r={r_mag:.0} m outside LEO range after propagation"
         );
         assert!(
             (6_000.0..=8_000.0).contains(&v_mag),
-            "{label}: v={v_mag:.1} m/s outside LEO range after one step"
+            "{label}: v={v_mag:.1} m/s outside LEO range after propagation"
         );
 
         // Use the initial (t=0) state for cross-consistency: it
