@@ -16,6 +16,12 @@ exclude = [
     "assets/*.bsp",
 ]
 
+[lib]
+# Disable the default cargo-test bench harness so criterion bench CLI
+# flags reach our `[[bench]]`s without being intercepted by the
+# unittest runner. See `astrodyn_gravity/Cargo.toml` for rationale.
+bench = false
+
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
@@ -25,6 +31,16 @@ log = { workspace = true }
 regex = "1"
 thiserror = { workspace = true }
 uom = { workspace = true }
+
+[dev-dependencies]
+# Full-step microbench for `Simulation::step()`. Lives here (not in
+# `astrodyn_runner`) because the bench builds the Earth–Moon scenario
+# via `setups::earth_moon_clem`, which lives in this crate. Putting
+# the bench on the runner side would require `astrodyn_runner` to dev-
+# depend on `astrodyn_verif_jeod`, and this crate already depends on
+# `astrodyn_runner` — the inverse edge would form a cycle.
+criterion = { workspace = true }
+pprof = { workspace = true }
 
 [features]
 # Pass-through for `astrodyn_runner`'s per-phase wall-clock instrumentation.
@@ -41,6 +57,10 @@ path = "examples/earth_moon.rs"
 [[example]]
 name = "mars_orbit"
 path = "examples/mars_orbit.rs"
+
+[[bench]]
+name = "step"
+harness = false
 
 [lints]
 workspace = true

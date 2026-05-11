@@ -90,6 +90,38 @@ for the layered-architecture rules.
   mutators `set_source_position` / `set_source_state`. Lifted out
   of `astrodyn_runner` in #71 so both consumers share one implementation.
 
+## Performance toolkit
+
+Three criterion microbenches measure the hot path under `cargo bench`:
+
+- `cargo bench -p astrodyn_gravity --bench accumulate` — spherical-harmonics
+  kernel at degree 4 / 20 / 60.
+- `cargo bench -p astrodyn_gravity --bench integration` — RK4 6-DOF
+  step, with and without realistic Moon LP150Q gravity.
+- `cargo bench -p astrodyn_verif_jeod --bench step` — full `Simulation::step`
+  for the Earth–Moon Clementine scenario.
+
+Flamegraph SVGs land under `target/criterion/<group>/<bench>/profile/`
+via `pprof`'s criterion integration.
+
+For steady-state per-step measurement with JSON output (used by CI's
+`perf-baseline-track` job), the `tier3_perf_runner` binary wraps the
+canonical scenarios:
+
+```bash
+cargo xtask perf-baseline                     # default Earth–Moon run
+cargo xtask perf-baseline --phase-timing      # adds per-phase µs/step
+cargo xtask perf-baseline --help              # see all options
+```
+
+Direct invocation (skipping the xtask wrapper) is also available:
+
+```bash
+cargo run --profile release-with-debug \
+    -p astrodyn_verif_jeod --bin tier3_perf_runner -- \
+    --scenario earth_moon_clem --steps 100000 --warmup 1000 --repeat 5
+```
+
 ## See also
 
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and

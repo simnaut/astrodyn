@@ -28,6 +28,10 @@ Subcommands:
     regenerate-tier3        Regenerate Tier 3 reference CSVs via the
                             jeod-trick Docker image. Incremental by
                             default; pass --force to regenerate all.
+    perf-baseline           Run `tier3_perf_runner` under
+                            release-with-debug, emit a JSON sample.
+                            Wraps the binary so local invocations
+                            match the CI `perf-baseline-track` flow.
     publish                 Publish the 13 non-verif crates to crates.io
                             in topological order. Pass --dry-run to
                             walk the sequence without uploading to
@@ -47,6 +51,17 @@ regenerate-tier3 options:
                             MAX_PARALLEL=<n> in the container. Lower if
                             you hit OOM (each build is ~1–2 GB).
                             Default: 4 (script default).
+
+perf-baseline options:
+    --scenario <id>         Scenario name (default: earth_moon_clem).
+    --steps <N>             Measurement steps per repeat (default: 100000).
+    --warmup <N>            Warmup steps per repeat (default: 1000).
+    --repeat <K>            Number of independent samples (default: 5).
+    --dt <secs>             Integration timestep (default: 0.03125).
+    --phase-timing          Build with the `phase_timing` cargo feature
+                            and emit per-phase µs/step. Forces a rebuild
+                            of `tier3_perf_runner` with the feature on.
+    --output <path>         Write JSON to <path> instead of stdout.
 
 publish options:
     --dry-run               Run `cargo publish --dry-run` for each
@@ -95,6 +110,9 @@ fn main() {
         }
         "regenerate-tier3" => {
             regenerate_tier3(args.collect());
+        }
+        "perf-baseline" => {
+            perf_baseline(args.collect());
         }
         "publish" => {
             publish(args.collect());
@@ -308,6 +326,142 @@ fn run_regenerate(output: &Path, script: &Path, tag: &str, force: bool, max_para
         exit(1);
     }
     eprintln!("regenerate-tier3: done.");
+}
+
+struct PerfBaselineArgs {
+    scenario: String,
+    steps: usize,
+    warmup: usize,
+    repeat: usize,
+    dt: f64,
+    phase_timing: bool,
+    output: Option<PathBuf>,
+}
+
+impl PerfBaselineArgs {
+    fn parse(argv: Vec<String>) -> Self {
+        let mut a = Self {
+            scenario: "earth_moon_clem".to_string(),
+            steps: 100_000,
+            warmup: 1_000,
+            repeat: 5,
+            dt: 0.03125,
+            phase_timing: false,
+            output: None,
+        };
+        let mut iter = argv.into_iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--scenario" => {
+                    a.scenario = iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --scenario needs a value");
+                        exit(2);
+                    });
+                }
+                "--steps" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --steps needs a value");
+                        exit(2);
+                    });
+                    a.steps = v.parse().unwrap_or_else(|e| {
+                        eprintln!("perf-baseline: --steps `{v}` is not a usize: {e}");
+                        exit(2);
+                    });
+                }
+                "--warmup" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --warmup needs a value");
+                        exit(2);
+                    });
+                    a.warmup = v.parse().unwrap_or_else(|e| {
+                        eprintln!("perf-baseline: --warmup `{v}` is not a usize: {e}");
+                        exit(2);
+                    });
+                }
+                "--repeat" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --repeat needs a value");
+                        exit(2);
+                    });
+                    a.repeat = v.parse().unwrap_or_else(|e| {
+                        eprintln!("perf-baseline: --repeat `{v}` is not a usize: {e}");
+                        exit(2);
+                    });
+                }
+                "--dt" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --dt needs a value");
+                        exit(2);
+                    });
+                    a.dt = v.parse().unwrap_or_else(|e| {
+                        eprintln!("perf-baseline: --dt `{v}` is not a f64: {e}");
+                        exit(2);
+                    });
+                }
+                "--phase-timing" => a.phase_timing = true,
+                "--output" => {
+                    a.output = Some(PathBuf::from(iter.next().unwrap_or_else(|| {
+                        eprintln!("perf-baseline: --output needs a value");
+                        exit(2);
+                    })));
+                }
+                "-h" | "--help" => {
+                    println!("{HELP}");
+                    exit(0);
+                }
+                other => {
+                    eprintln!("perf-baseline: unknown arg `{other}`\n\n{HELP}");
+                    exit(2);
+                }
+            }
+        }
+        a
+    }
+}
+
+fn perf_baseline(argv: Vec<String>) {
+    let args = PerfBaselineArgs::parse(argv);
+
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(&workspace_root);
+    cmd.args([
+        "run",
+        "--profile",
+        "release-with-debug",
+        "-p",
+        "astrodyn_verif_jeod",
+        "--bin",
+        "tier3_perf_runner",
+    ]);
+    if args.phase_timing {
+        cmd.args(["--features", "astrodyn_verif_jeod/phase_timing"]);
+    }
+    cmd.arg("--");
+    cmd.args(["--scenario", &args.scenario]);
+    cmd.args(["--steps", &args.steps.to_string()]);
+    cmd.args(["--warmup", &args.warmup.to_string()]);
+    cmd.args(["--repeat", &args.repeat.to_string()]);
+    cmd.args(["--dt", &args.dt.to_string()]);
+    if args.phase_timing {
+        cmd.arg("--phase-timing");
+    }
+    if let Some(path) = &args.output {
+        cmd.arg("--output").arg(path);
+    }
+
+    eprintln!("perf-baseline: invoking {cmd:?}");
+    let status = cmd
+        .status()
+        .expect("failed to spawn `cargo run` — is cargo on PATH?");
+    if !status.success() {
+        eprintln!("perf-baseline: tier3_perf_runner exited non-zero");
+        exit(status.code().unwrap_or(1));
+    }
 }
 
 // Topological order for `cargo xtask publish`. Each entry must be

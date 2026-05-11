@@ -39,6 +39,7 @@ pub use astrodyn_verif_jeod_fixtures::{
 };
 
 pub mod run_verification;
+pub mod setups;
 pub mod verification;
 
 pub use run_verification::VerificationCaseExt;
