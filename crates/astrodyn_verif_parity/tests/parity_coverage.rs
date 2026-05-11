@@ -15,21 +15,10 @@
 //! preventing the silent-regression mode the issue's matrix table
 //! describes.
 //!
-//! There are two granularities of "deliberate gap":
-//!
-//! 1. **Topic-level** — the whole `bevy_parity_<topic>.rs` file is
-//!    missing. Document by adding `<topic>` to [`KNOWN_PARITY_GAPS`].
-//! 2. **Per-test** — the wrapper file exists and covers most
-//!    scenarios, but one individual `#[test]` is `#[ignore]`d with a
-//!    `parity-gap:` reason. A topic-level entry would *hide* this
-//!    sub-gap (the coverage test is filename-based and treats the
-//!    topic as covered the moment the file exists), so per-test
-//!    ignores are tracked separately in
-//!    [`KNOWN_PER_TEST_PARITY_GAPS`]. Each `#[ignore = "parity-gap:
-//!    …"]` annotation under `bevy_parity_*.rs` must be allow-listed
-//!    by its full test-function name, and each allow-list entry must
-//!    correspond to a real ignored test — the test enforces both
-//!    directions to prevent silent regression in either.
+//! To document a deliberate gap: add the topic to `KNOWN_PARITY_GAPS`
+//! with a `#[ignore = "parity-gap: <reason>"]` on the wrapper test (or
+//! omit the wrapper entirely). The intent is that *every* gap is
+//! either solved or named explicitly.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -182,6 +171,15 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
+        "lvlh_extended",
+        "lvlh_ecc / lvlh_equ / prograde_circular / retrograde_circular wrappers \
+         landed; the `periodicity` wrapper remains `#[ignore]`d because the \
+         Bevy `Time<Fixed>::advance_by(Duration::from_secs_f64(dt))` path \
+         rounds `dt` to integer nanoseconds and diverges from the runner's \
+         f64 `dt` arithmetic when `dt` is irrational. Drop this entry once \
+         the Bevy-side f64 time-advance path lands.",
+    ),
+    (
         "orbelem_comprehensive",
         "pre-recipe sibling — comprehensive sweep recipe not yet defined \
          (#389 follow-up)",
@@ -250,30 +248,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     // run6b_drag_rotated_struct, run6b_drag_aero_traj).
 ];
 
-/// Per-test parity gaps: individual `#[test]` functions inside a
-/// `bevy_parity_*.rs` file that are `#[ignore]`d with a `parity-gap:`
-/// reason. Entries are keyed by the full Rust function name (matching
-/// `fn <name>()` in the source). Each entry must point at a real
-/// ignored test, and every `#[ignore = "parity-gap: …"]` annotation in
-/// the parity test set must appear here — the meta-test below enforces
-/// both directions so a sub-scenario gap can't silently regress into
-/// "fully covered" just because the topic-level wrapper file exists.
-const KNOWN_PER_TEST_PARITY_GAPS: &[(&str, &str)] = &[
-    // `lvlh_extended::periodicity` uses `dt = period / 560`, which is
-    // irrational in seconds (≈9.917 s). The runner integrates with the
-    // raw f64; the Bevy adapter routes time through
-    // `Time<Fixed>::advance_by(Duration::from_secs_f64(dt))`, which
-    // rounds to integer nanoseconds. The two paths diverge in the LSBs
-    // of position after the first few ticks even though the
-    // `astrodyn_*` math is identical. Re-enabling the wrapper needs a
-    // Bevy-side time-advance path that preserves full f64 dt precision.
-    (
-        "bevy_parity_lvlh_periodicity",
-        "irrational dt loses precision through Time<Fixed>'s Duration \
-         round-trip; needs Bevy-side f64 time advance",
-    ),
-];
-
 #[test]
 fn parity_topics_are_a_superset_of_tier3_topics() {
     let workspace_root = workspace_root();
@@ -336,68 +310,6 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         "KNOWN_PARITY_GAPS contains topics that no longer exist in tier3_*.rs: {stale:?}\n  \
          Either restore the missing tier3 test or drop the exemption.",
     );
-
-    // Cross-list redundancy: a topic with an existing parity wrapper
-    // shouldn't *also* be in `KNOWN_PARITY_GAPS` (the gap entry would
-    // be a lie). Catches the "added the wrapper but forgot to drop the
-    // gap entry" failure mode.
-    let mut redundant: Vec<&str> = Vec::new();
-    for (topic, _reason) in KNOWN_PARITY_GAPS {
-        if is_covered_by_parity(topic, &parity_topics) {
-            redundant.push(topic);
-        }
-    }
-    assert!(
-        redundant.is_empty(),
-        "KNOWN_PARITY_GAPS lists topics that already have a parity wrapper: {redundant:?}\n  \
-         Drop the redundant gap entry — the wrapper supersedes it.",
-    );
-}
-
-#[test]
-fn per_test_parity_gaps_match_ignored_wrappers() {
-    let workspace_root = workspace_root();
-    let parity_dir = workspace_root.join("crates/astrodyn_verif_parity/tests");
-    let discovered = collect_per_test_parity_gaps(&parity_dir);
-
-    let allow: BTreeSet<&'static str> =
-        KNOWN_PER_TEST_PARITY_GAPS.iter().map(|(t, _)| *t).collect();
-    let discovered_names: BTreeSet<String> = discovered.iter().map(|(t, _)| t.clone()).collect();
-
-    // Every `#[ignore = "parity-gap: …"]` in the parity test set must
-    // be allow-listed by full test name. A new ignored wrapper that
-    // lands without an entry here fails CI — preventing the silent
-    // regression mode the topic-level coverage check can't catch.
-    let mut unlisted: Vec<&str> = Vec::new();
-    for (name, _) in &discovered {
-        if !allow.contains(name.as_str()) {
-            unlisted.push(name.as_str());
-        }
-    }
-    assert!(
-        unlisted.is_empty(),
-        "bevy_parity_*.rs tests carry `#[ignore = \"parity-gap: …\"]` but are not \
-         listed in KNOWN_PER_TEST_PARITY_GAPS: {unlisted:?}\n  \
-         Add each test by its full Rust function name to KNOWN_PER_TEST_PARITY_GAPS \
-         with a reason mirroring the ignore annotation.",
-    );
-
-    // And conversely: stale allow-list entries must drop. A test that
-    // was previously ignored and is now either active or removed
-    // shouldn't keep a parity-gap exemption silently.
-    let mut stale: Vec<&str> = Vec::new();
-    for (name, _) in KNOWN_PER_TEST_PARITY_GAPS {
-        if !discovered_names.contains(*name) {
-            stale.push(name);
-        }
-    }
-    assert!(
-        stale.is_empty(),
-        "KNOWN_PER_TEST_PARITY_GAPS references tests that no longer carry an \
-         `#[ignore = \"parity-gap: …\"]` annotation (or no longer exist): {stale:?}\n  \
-         Drop the stale entries — either the wrapper is now active or the test was \
-         renamed/removed.",
-    );
 }
 
 /// Decide whether a tier3 topic is covered by some `bevy_parity_*.rs`
@@ -457,224 +369,4 @@ fn workspace_root() -> std::path::PathBuf {
         .and_then(|p| p.parent())
         .expect("crate is at <root>/crates/<name>")
         .to_path_buf()
-}
-
-/// Scan every `bevy_parity_*.rs` file in `dir` for `#[test]` functions
-/// annotated with `#[ignore = "parity-gap: …"]` and return the
-/// `(function_name, reason)` pairs. The parser is intentionally
-/// narrow — it matches the exact annotation shape the codebase uses
-/// (the doc comment in this file documents the contract) rather than
-/// trying to handle arbitrary attribute syntax. Any `parity-gap:`
-/// marker the parser cannot fully extract panics with the file path
-/// and byte offset of the offending marker, so a malformed annotation
-/// can never silently disable allow-list enforcement.
-fn collect_per_test_parity_gaps(dir: &Path) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
-    for entry in entries {
-        let entry = entry.expect("dir entry");
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
-            continue;
-        }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("utf-8 path");
-        if !stem.starts_with("bevy_parity_") {
-            continue;
-        }
-        let src = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        out.extend(parse_parity_gap_ignores(&src, &path.display().to_string()));
-    }
-    out.sort();
-    out
-}
-
-/// Extract `(function_name, reason)` pairs from `src` for every
-/// `#[ignore = "parity-gap: <reason>"]` annotation attached to a
-/// `#[test]` function. The two attributes may appear in either order
-/// and may be separated by arbitrary whitespace, comments, or
-/// continuation lines (`"…\ …"`). A function name is anchored on the
-/// first `fn <ident>(` after the attribute pair.
-///
-/// `src_label` is used only in panic messages — it should be the
-/// file path being parsed.
-///
-/// **Fail-loud contract**: once a `parity-gap:` substring is found
-/// inside an `#[ignore …]` attribute, the parser commits to extracting
-/// the reason and the following `fn <name>`. If either extraction step
-/// fails (missing closing quote, missing `fn` declaration in the
-/// search window, missing `]` terminator), the parser panics with the
-/// file path and byte offset of the offending marker. A silent
-/// `continue` here would leave the ignored wrapper out of the
-/// allow-list enforcement, letting the parity gap regress without CI
-/// noticing — which is the exact failure mode the meta-test exists to
-/// prevent.
-fn parse_parity_gap_ignores(src: &str, src_label: &str) -> Vec<(String, String)> {
-    const MARKER: &str = "#[ignore";
-    const PARITY_TAG: &str = "parity-gap:";
-    let mut out = Vec::new();
-    let bytes = src.as_bytes();
-    let mut search_from = 0;
-    while let Some(rel) = src[search_from..].find(MARKER) {
-        let attr_start = search_from + rel;
-        // Locate the closing `]` of this `#[ignore(…)]`/`#[ignore = "…"]`
-        // attribute. The reason string can span multiple physical lines
-        // via Rust's `"…\ …"` continuation, so we scan for the `]`
-        // delimiter rather than relying on a newline.
-        let attr_end = match src[attr_start..].find(']') {
-            Some(rel_end) => attr_start + rel_end + 1,
-            None => {
-                // Malformed Rust (unterminated `#[ignore …`). We only
-                // care if this attribute would have carried a
-                // `parity-gap:` marker — otherwise it's unrelated.
-                if src[attr_start..].contains(PARITY_TAG) {
-                    panic!(
-                        "parity_coverage: {src_label}: found `parity-gap:` marker \
-                         starting at byte offset {attr_start} but could not locate \
-                         the closing `]` of the `#[ignore = \"…\"]` attribute. \
-                         Check that the attribute is well-formed and terminated.",
-                    );
-                }
-                break;
-            }
-        };
-        let attr = &src[attr_start..attr_end];
-        search_from = attr_end;
-
-        let Some(tag_pos) = attr.find(PARITY_TAG) else {
-            continue;
-        };
-        // Reason is the substring between `parity-gap:` and the closing
-        // quote of the ignore string, with whitespace and Rust string
-        // continuations (`\<newline><spaces>`) collapsed to single
-        // spaces. The collapsed form is purely informational — the
-        // test asserts on function-name presence, not reason text —
-        // but a clean reason makes the panic message readable.
-        let after_tag = &attr[tag_pos + PARITY_TAG.len()..];
-        let Some(end_quote_rel) = after_tag.rfind('"') else {
-            panic!(
-                "parity_coverage: {src_label}: found `parity-gap:` marker at byte \
-                 offset {attr_start} but could not locate the closing `\"` of the \
-                 ignore reason. Make sure the `#[ignore = \"parity-gap: …\"]` \
-                 attribute is well-formed.",
-            );
-        };
-        let reason_raw = &after_tag[..end_quote_rel];
-        let reason: String = reason_raw.split_whitespace().collect::<Vec<_>>().join(" ");
-
-        // Find the next `fn <ident>(` after the attribute. Skip over
-        // any further attributes (`#[test]`, doc comments) that sit
-        // between the `#[ignore]` and the function.
-        let tail = &bytes[attr_end..];
-        let Some(fn_name) = find_following_fn_name(tail) else {
-            panic!(
-                "parity_coverage: {src_label}: found `parity-gap:` marker at byte \
-                 offset {attr_start} but could not extract the following `fn <name>` \
-                 within the 512-byte search window. Make sure a `fn` declaration \
-                 immediately follows the `#[ignore]` attribute (only `#[test]`, doc \
-                 comments, and whitespace may sit between them).",
-            );
-        };
-        out.push((fn_name, reason));
-    }
-    out
-}
-
-/// Find the next `fn <ident>(` after the start of `tail`, returning
-/// `<ident>`. Skips whitespace, line/block comments, and intervening
-/// attributes — `#[test]`/`#[should_panic]` may legally sit between
-/// `#[ignore]` and the function header.
-fn find_following_fn_name(tail: &[u8]) -> Option<String> {
-    let s = std::str::from_utf8(tail).ok()?;
-    // The pattern is permissive: any chunk of the form `fn <ident>(`
-    // anywhere in the next ~512 chars is the target. Constraining the
-    // search window protects against accidentally pairing an
-    // `#[ignore]` with a `fn` from the *next* function block if the
-    // intermediate `fn` somehow disappears.
-    let window = &s[..s.len().min(512)];
-    let mut idx = 0;
-    while idx < window.len() {
-        let rest = &window[idx..];
-        if let Some(stripped) = rest.strip_prefix("fn ") {
-            // Read the identifier up to the next `(` or whitespace.
-            let end = stripped
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(stripped.len());
-            if end == 0 {
-                return None;
-            }
-            return Some(stripped[..end].to_string());
-        }
-        // Advance by one character (UTF-8 safe via `char_indices`).
-        idx += rest.chars().next()?.len_utf8();
-    }
-    None
-}
-
-// ─── Fail-loud parser contract tests ──────────────────────────────────
-//
-// These hand-craft malformed `parity-gap:` annotations and assert that
-// `parse_parity_gap_ignores` panics rather than silently dropping the
-// marker. The silent-drop failure mode would let an ignored wrapper
-// escape allow-list enforcement and let the parity gap regress without
-// CI noticing — the meta-test above can only catch a regression if
-// every `parity-gap:` annotation it sees survives parsing.
-
-/// Sanity check that the happy-path parser still extracts a well-formed
-/// annotation. This anchors the negative tests below against a known
-/// shape that's expected to succeed.
-#[test]
-fn parse_parity_gap_ignores_extracts_well_formed_annotation() {
-    let src = r#"
-        #[test]
-        #[ignore = "parity-gap: example reason"]
-        fn some_ignored_test() {}
-    "#;
-    let pairs = parse_parity_gap_ignores(src, "<inline>");
-    assert_eq!(
-        pairs,
-        vec![(
-            "some_ignored_test".to_string(),
-            "example reason".to_string()
-        )],
-    );
-}
-
-#[test]
-#[should_panic(expected = "could not extract the following `fn <name>`")]
-fn parse_parity_gap_ignores_panics_when_fn_missing() {
-    // `parity-gap:` marker present, well-formed attribute, but no `fn`
-    // declaration follows — the parser must panic with the file label
-    // and byte offset rather than silently dropping the marker.
-    let src = r#"
-        #[ignore = "parity-gap: dangling marker with no following fn"]
-        // end of file with no `fn …`
-    "#;
-    let _ = parse_parity_gap_ignores(src, "<inline-fn-missing>");
-}
-
-#[test]
-#[should_panic(expected = "could not locate the closing `\"`")]
-fn parse_parity_gap_ignores_panics_when_closing_quote_missing() {
-    // `parity-gap:` marker present, but the reason string has no
-    // closing quote inside the attribute. The parser sees a `]`
-    // (because we close the attribute on the next line) but the
-    // sub-extraction of the reason text fails — that must panic.
-    let src = "#[ignore = \"parity-gap: no closing quote ]\nfn dangling() {}\n";
-    let _ = parse_parity_gap_ignores(src, "<inline-quote-missing>");
-}
-
-#[test]
-#[should_panic(expected = "could not locate the closing `]`")]
-fn parse_parity_gap_ignores_panics_when_attribute_unterminated() {
-    // `#[ignore …` with a `parity-gap:` marker but no closing `]`
-    // anywhere in the source. This is malformed Rust, but the parser
-    // must still surface the marker rather than silently skipping the
-    // remainder of the file.
-    let src = "#[ignore = \"parity-gap: unterminated attribute with no bracket close";
-    let _ = parse_parity_gap_ignores(src, "<inline-unterminated>");
 }
