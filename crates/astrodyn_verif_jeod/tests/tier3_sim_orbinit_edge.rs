@@ -155,12 +155,12 @@ fn tier3_simulation_orbinit_cross_consistency() {
             "`{}`: recipe must propagate at least one step",
             case.name
         );
+        // `step_n` advances exactly `n_steps` whole steps. (`step_until`
+        // has a 1 ms slop and may stop one step short — see
+        // `Simulation::step_until` doc; sidestep both pitfalls by using
+        // the integer-step entrypoint.)
+        sim.step_n(n_steps).expect("step_n failed");
         let t_end = n_steps as f64 * dt;
-        sim.step_until(t_end).expect("step_until failed");
-        // Sanity: propagation actually reached the requested end time.
-        // `step_until` rounds to the next integer step boundary, but for
-        // `n_steps * dt` the boundary IS the request, so equality holds
-        // to within float precision.
         assert!(
             (sim.elapsed() - t_end).abs() < 1e-9,
             "`{}`: sim elapsed {} did not reach requested end {t_end}",
