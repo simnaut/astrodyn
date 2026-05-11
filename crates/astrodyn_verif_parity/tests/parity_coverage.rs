@@ -464,10 +464,10 @@ fn workspace_root() -> std::path::PathBuf {
 /// `(function_name, reason)` pairs. The parser is intentionally
 /// narrow — it matches the exact annotation shape the codebase uses
 /// (the doc comment in this file documents the contract) rather than
-/// trying to handle arbitrary attribute syntax. Anything that doesn't
-/// fit the shape is silently skipped, which is the conservative choice:
-/// an unparseable annotation simply won't be allow-listed, so CI fails
-/// loudly with a clear hint about the expected form.
+/// trying to handle arbitrary attribute syntax. Any `parity-gap:`
+/// marker the parser cannot fully extract panics with the file path
+/// and byte offset of the offending marker, so a malformed annotation
+/// can never silently disable allow-list enforcement.
 fn collect_per_test_parity_gaps(dir: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let entries =
@@ -487,7 +487,7 @@ fn collect_per_test_parity_gaps(dir: &Path) -> Vec<(String, String)> {
         }
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        out.extend(parse_parity_gap_ignores(&src));
+        out.extend(parse_parity_gap_ignores(&src, &path.display().to_string()));
     }
     out.sort();
     out
@@ -499,7 +499,21 @@ fn collect_per_test_parity_gaps(dir: &Path) -> Vec<(String, String)> {
 /// and may be separated by arbitrary whitespace, comments, or
 /// continuation lines (`"…\ …"`). A function name is anchored on the
 /// first `fn <ident>(` after the attribute pair.
-fn parse_parity_gap_ignores(src: &str) -> Vec<(String, String)> {
+///
+/// `src_label` is used only in panic messages — it should be the
+/// file path being parsed.
+///
+/// **Fail-loud contract**: once a `parity-gap:` substring is found
+/// inside an `#[ignore …]` attribute, the parser commits to extracting
+/// the reason and the following `fn <name>`. If either extraction step
+/// fails (missing closing quote, missing `fn` declaration in the
+/// search window, missing `]` terminator), the parser panics with the
+/// file path and byte offset of the offending marker. A silent
+/// `continue` here would leave the ignored wrapper out of the
+/// allow-list enforcement, letting the parity gap regress without CI
+/// noticing — which is the exact failure mode the meta-test exists to
+/// prevent.
+fn parse_parity_gap_ignores(src: &str, src_label: &str) -> Vec<(String, String)> {
     const MARKER: &str = "#[ignore";
     const PARITY_TAG: &str = "parity-gap:";
     let mut out = Vec::new();
@@ -511,10 +525,23 @@ fn parse_parity_gap_ignores(src: &str) -> Vec<(String, String)> {
         // attribute. The reason string can span multiple physical lines
         // via Rust's `"…\ …"` continuation, so we scan for the `]`
         // delimiter rather than relying on a newline.
-        let Some(attr_end_rel) = src[attr_start..].find(']') else {
-            break;
+        let attr_end = match src[attr_start..].find(']') {
+            Some(rel_end) => attr_start + rel_end + 1,
+            None => {
+                // Malformed Rust (unterminated `#[ignore …`). We only
+                // care if this attribute would have carried a
+                // `parity-gap:` marker — otherwise it's unrelated.
+                if src[attr_start..].contains(PARITY_TAG) {
+                    panic!(
+                        "parity_coverage: {src_label}: found `parity-gap:` marker \
+                         starting at byte offset {attr_start} but could not locate \
+                         the closing `]` of the `#[ignore = \"…\"]` attribute. \
+                         Check that the attribute is well-formed and terminated.",
+                    );
+                }
+                break;
+            }
         };
-        let attr_end = attr_start + attr_end_rel + 1;
         let attr = &src[attr_start..attr_end];
         search_from = attr_end;
 
@@ -529,7 +556,12 @@ fn parse_parity_gap_ignores(src: &str) -> Vec<(String, String)> {
         // but a clean reason makes the panic message readable.
         let after_tag = &attr[tag_pos + PARITY_TAG.len()..];
         let Some(end_quote_rel) = after_tag.rfind('"') else {
-            continue;
+            panic!(
+                "parity_coverage: {src_label}: found `parity-gap:` marker at byte \
+                 offset {attr_start} but could not locate the closing `\"` of the \
+                 ignore reason. Make sure the `#[ignore = \"parity-gap: …\"]` \
+                 attribute is well-formed.",
+            );
         };
         let reason_raw = &after_tag[..end_quote_rel];
         let reason: String = reason_raw.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -539,7 +571,13 @@ fn parse_parity_gap_ignores(src: &str) -> Vec<(String, String)> {
         // between the `#[ignore]` and the function.
         let tail = &bytes[attr_end..];
         let Some(fn_name) = find_following_fn_name(tail) else {
-            continue;
+            panic!(
+                "parity_coverage: {src_label}: found `parity-gap:` marker at byte \
+                 offset {attr_start} but could not extract the following `fn <name>` \
+                 within the 512-byte search window. Make sure a `fn` declaration \
+                 immediately follows the `#[ignore]` attribute (only `#[test]`, doc \
+                 comments, and whitespace may sit between them).",
+            );
         };
         out.push((fn_name, reason));
     }
@@ -575,4 +613,68 @@ fn find_following_fn_name(tail: &[u8]) -> Option<String> {
         idx += rest.chars().next()?.len_utf8();
     }
     None
+}
+
+// ─── Fail-loud parser contract tests ──────────────────────────────────
+//
+// These hand-craft malformed `parity-gap:` annotations and assert that
+// `parse_parity_gap_ignores` panics rather than silently dropping the
+// marker. The silent-drop failure mode would let an ignored wrapper
+// escape allow-list enforcement and let the parity gap regress without
+// CI noticing — the meta-test above can only catch a regression if
+// every `parity-gap:` annotation it sees survives parsing.
+
+/// Sanity check that the happy-path parser still extracts a well-formed
+/// annotation. This anchors the negative tests below against a known
+/// shape that's expected to succeed.
+#[test]
+fn parse_parity_gap_ignores_extracts_well_formed_annotation() {
+    let src = r#"
+        #[test]
+        #[ignore = "parity-gap: example reason"]
+        fn some_ignored_test() {}
+    "#;
+    let pairs = parse_parity_gap_ignores(src, "<inline>");
+    assert_eq!(
+        pairs,
+        vec![(
+            "some_ignored_test".to_string(),
+            "example reason".to_string()
+        )],
+    );
+}
+
+#[test]
+#[should_panic(expected = "could not extract the following `fn <name>`")]
+fn parse_parity_gap_ignores_panics_when_fn_missing() {
+    // `parity-gap:` marker present, well-formed attribute, but no `fn`
+    // declaration follows — the parser must panic with the file label
+    // and byte offset rather than silently dropping the marker.
+    let src = r#"
+        #[ignore = "parity-gap: dangling marker with no following fn"]
+        // end of file with no `fn …`
+    "#;
+    let _ = parse_parity_gap_ignores(src, "<inline-fn-missing>");
+}
+
+#[test]
+#[should_panic(expected = "could not locate the closing `\"`")]
+fn parse_parity_gap_ignores_panics_when_closing_quote_missing() {
+    // `parity-gap:` marker present, but the reason string has no
+    // closing quote inside the attribute. The parser sees a `]`
+    // (because we close the attribute on the next line) but the
+    // sub-extraction of the reason text fails — that must panic.
+    let src = "#[ignore = \"parity-gap: no closing quote ]\nfn dangling() {}\n";
+    let _ = parse_parity_gap_ignores(src, "<inline-quote-missing>");
+}
+
+#[test]
+#[should_panic(expected = "could not locate the closing `]`")]
+fn parse_parity_gap_ignores_panics_when_attribute_unterminated() {
+    // `#[ignore …` with a `parity-gap:` marker but no closing `]`
+    // anywhere in the source. This is malformed Rust, but the parser
+    // must still surface the marker rather than silently skipping the
+    // remainder of the file.
+    let src = "#[ignore = \"parity-gap: unterminated attribute with no bracket close";
+    let _ = parse_parity_gap_ignores(src, "<inline-unterminated>");
 }
