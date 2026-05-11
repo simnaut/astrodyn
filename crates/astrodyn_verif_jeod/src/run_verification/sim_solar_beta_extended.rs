@@ -49,12 +49,14 @@ const DT_S: f64 = 10.0;
 /// initial state.
 const R_LEO_M: f64 = 6_778_137.0;
 
-/// Reference radius (7000 km — ~ISS altitude band) for the
-/// `sun_in_orbital_plane`, `sun_perpendicular_to_plane`, and `bounded`
-/// recipes. The β formula is radius-independent, so this is just the
-/// constant the pre-recipe tier3 file used for these specific cases;
-/// holding it fixed here keeps the recipe and the analytical assertion
-/// driving identical initial states.
+/// Reference radius (7000 km — ~622 km altitude above the equatorial
+/// Earth radius, above the LEO cluster used for the ISS-snapshot
+/// recipes) for the `sun_in_orbital_plane`,
+/// `sun_perpendicular_to_plane`, and `bounded` recipes. The β formula
+/// is radius-independent, so this is just the constant the pre-recipe
+/// tier3 file used for these specific cases; holding it fixed here
+/// keeps the recipe and the analytical assertion driving identical
+/// initial states.
 const R_MID_M: f64 = 7_000_000.0;
 
 fn load_mu_earth() -> f64 {
