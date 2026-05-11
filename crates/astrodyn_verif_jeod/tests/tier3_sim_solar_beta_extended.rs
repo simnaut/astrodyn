@@ -55,13 +55,14 @@ fn read_beta(sim: &Simulation, case_name: &str) -> f64 {
 /// because the family is analytical-only; panicking on any other variant
 /// makes a future recipe-shape drift surface here rather than producing
 /// a silently-truncated propagation.
-fn synthetic_num_steps(case: &VerificationCase) -> usize {
-    // Match through `&case.reference` so the borrow is explicit — the
-    // pattern only reads a `usize` (Copy), so this avoids any
-    // ambiguity about whether the non-Copy `CsvReference` is being
-    // moved out of the `&VerificationCase` argument.
+/// Pull `(dt, num_steps)` from a recipe's `SyntheticTimes` reference.
+/// Returns both halves of the cadence so tests can assert that the
+/// `dt` they're stepping at (typically `sim.dt`) matches the cadence
+/// the recipe declared — catches a future recipe edit that updates
+/// the builder dt but forgets the `SyntheticTimes` dt (or vice versa).
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
     match &case.reference {
-        CsvReference::SyntheticTimes { num_steps, .. } => *num_steps,
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
         _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
     }
 }
@@ -72,12 +73,19 @@ fn tier3_solar_beta_equatorial_at_equinox() {
     // Sun in the equatorial (x–y) plane → ŝ ⊥ ĥ → β = 0.
     let case = sim_solar_beta_extended::equatorial_at_equinox();
     let mut sim = build_sim(&case);
-    let dt = sim.dt;
 
-    // Scan one full period — same cadence the recipe's SyntheticTimes
-    // generates, so the runner and the parity-wrapped Bevy traversal
-    // step in lockstep.
-    let n_steps = synthetic_num_steps(&case);
+    // Drive the scan from the recipe's `SyntheticTimes` cadence — the
+    // same `(dt, num_steps)` the parity wrapper uses on the Bevy side,
+    // so this loop and the bit-identity assertion step in lockstep.
+    // Cross-check `dt` against the built `Simulation`'s integrator dt
+    // to catch a future recipe edit that updates one half of the
+    // cadence but not the other.
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
+    );
 
     let mut max_beta = 0.0_f64;
     for step in 1..=n_steps {
@@ -223,8 +231,15 @@ fn tier3_solar_beta_bounded() {
     // the mathematical limit |β| ≤ π/2.)
     let case = sim_solar_beta_extended::bounded();
     let mut sim = build_sim(&case);
-    let dt = sim.dt;
-    let n_steps = synthetic_num_steps(&case);
+
+    // Same recipe-cadence + drift-check pattern as the
+    // equatorial-at-equinox scan above.
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
+    );
 
     let pi_2 = std::f64::consts::FRAC_PI_2;
     let mut max_abs_beta = 0.0_f64;
