@@ -18,123 +18,78 @@
 //! * `tier3_solar_beta_bounded` — for every propagated checkpoint of a mid-
 //!   inclination orbit with a fixed Sun position, |β| ≤ 90°.
 //!
-//! No Docker reference data required.
+//! No Docker reference data required. The `Simulation` construction lives
+//! in the `sim_solar_beta_extended` recipe module so the parity wrapper
+//! (`bevy_parity_solar_beta_extended.rs`) can drive the same scenarios
+//! through the Bevy adapter for the `runner ↔ bevy` half of the
+//! transitivity argument.
 
-use astrodyn::Vec3Ext;
-use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
-use astrodyn_runner::{RotationModel, Simulation};
-use glam::DVec3;
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_solar_beta_extended;
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
-fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
+/// Build the recipe's `Simulation` exactly the way the parity trait does
+/// — call the scenario factory with a default `InitialConditions`, then
+/// `.build()` — so the runner-side propagation here and the Bevy-side
+/// propagation in `bevy_parity_solar_beta_extended.rs` see the same
+/// initial state bit-pattern.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
 }
 
-/// Sun at a cartoon distance in the +X direction produces `sun_direction = +X`
-/// for any body near the origin; at this scale the relative-Sun vector from
-/// any LEO body is effectively parallel to the Sun position vector.
-const SUN_DISTANCE_M: f64 = 1.495_978_707e11; // 1 AU
+/// Read the body's `solar_beta` after the most recent propagation step,
+/// panicking with the case name if it's not populated. Shared by every
+/// test in this file so the per-case bodies stay focused on the
+/// closed-form assertion.
+fn read_beta(sim: &Simulation, case_name: &str) -> f64 {
+    sim.body(0)
+        .solar_beta
+        .unwrap_or_else(|| panic!("`{case_name}`: solar_beta not computed"))
+}
 
-/// Build a Simulation with:
-///   * central-body Earth at origin (point-mass gravity),
-///   * a "Sun" source at `sun_position` with mu = 0 (kinematic only),
-///   * a single vehicle configured with `solar_beta: true`.
-///
-/// Returns the simulation ready to be `validate`d and stepped.
-fn build_solar_beta_sim(
-    mu_earth: f64,
-    dt: f64,
-    sun_position: DVec3,
-    body_state: TranslationalState,
-) -> Simulation {
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
-
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    );
-
-    let sun = sim.add_source(
-        "Sun",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: 0.0,
-                model: GravityModel::PointMass,
-            },
-            position: sun_position.m_at::<astrodyn::RootInertial>(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: false,
-            marker_only: false,
-        },
-    );
-    sim.sun_source = Some(sun);
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&body_state),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        derived: DerivedStateConfig {
-            solar_beta: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-
-    sim
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_solar_beta_extended` uses this
+/// variant because the family is analytical-only; panicking on any
+/// other variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (typically `sim.dt`) matches the cadence the recipe declared —
+/// catches a future edit that updates the builder dt but forgets the
+/// `SyntheticTimes` dt (or vice versa).
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
 }
 
 #[test]
 fn tier3_solar_beta_equatorial_at_equinox() {
     // Equatorial circular orbit → orbit normal = +Z.
     // Sun in the equatorial (x–y) plane → ŝ ⊥ ĥ → β = 0.
-    let mu_earth = load_mu_earth();
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
+    let case = sim_solar_beta_extended::equatorial_at_equinox();
+    let mut sim = build_sim(&case);
 
-    let mut sim = build_solar_beta_sim(
-        mu_earth,
-        10.0,
-        DVec3::new(SUN_DISTANCE_M, 0.0, 0.0),
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
+    // Drive the scan from the recipe's `SyntheticTimes` cadence — the
+    // same `(dt, num_steps)` the parity wrapper uses on the Bevy side,
+    // so this loop and the bit-identity assertion step in lockstep.
+    // Cross-check `dt` against the built `Simulation`'s integrator dt
+    // to catch a future recipe edit that updates one half of the
+    // cadence but not the other.
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
-    sim.validate().unwrap();
-
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    let n_steps = (period / 10.0) as usize;
 
     let mut max_beta = 0.0_f64;
     for step in 1..=n_steps {
-        sim.step_until(step as f64 * 10.0)
-            .expect("step_until failed");
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
-        max_beta = max_beta.max(beta.abs());
+        sim.step_until(step as f64 * dt).expect("step_until failed");
+        max_beta = max_beta.max(read_beta(&sim, case.name).abs());
     }
 
     // The Sun-direction deviates slightly from +X as the body orbits (since
@@ -156,31 +111,21 @@ fn tier3_solar_beta_polar_orbit() {
     //   (1) Sun along +X (equinox-like):   ĥ·ŝ = 0 → β = 0
     //   (2) Sun along +Y:                  β = ±90° if orbit normal = ±Y
     //   (3) Sun along +Z:                  Sun is in the orbital plane → β = 0
-    let mu_earth = load_mu_earth();
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
-
-    // Polar orbit: position +X, velocity +Z → h = r × v = r v (+Y)
-    let body = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, 0.0, v),
-    };
-
     let cases = [
-        (DVec3::new(SUN_DISTANCE_M, 0.0, 0.0), 0.0_f64), // Sun along +X
-        (DVec3::new(0.0, SUN_DISTANCE_M, 0.0), 90.0_f64), // Sun along +Y
-        (DVec3::new(0.0, 0.0, SUN_DISTANCE_M), 0.0_f64), // Sun along +Z
+        (sim_solar_beta_extended::polar_sun_x(), 0.0_f64),
+        (sim_solar_beta_extended::polar_sun_y(), 90.0_f64),
+        (sim_solar_beta_extended::polar_sun_z(), 0.0_f64),
     ];
 
-    for (sun_pos, expected_deg) in cases {
-        let mut sim = build_solar_beta_sim(mu_earth, 10.0, sun_pos, body);
-        sim.validate().unwrap();
-        sim.step_until(10.0).expect("step_until failed"); // derived state is populated after first step
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+    for (case, expected_deg) in cases {
+        let mut sim = build_sim(&case);
+        sim.step_until(sim.dt).expect("step_until failed"); // derived state is populated after first step
+        let beta = read_beta(&sim, case.name);
         let expected = expected_deg.to_radians();
         assert!(
             (beta.abs() - expected).abs() < 1e-4,
-            "polar orbit, Sun at {sun_pos:?}: |beta| = {} rad, expected {}",
+            "`{}`: |beta| = {} rad, expected {}",
+            case.name,
             beta.abs(),
             expected
         );
@@ -199,23 +144,14 @@ fn tier3_solar_beta_iss_orbit() {
     // For Sun along −Y:    ĥ·(−ŷ) = sin i →  β = asin(sin i) = i
     //
     // We verify all three cases.
-    let mu_earth = load_mu_earth();
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
     let inc = 51.6_f64.to_radians();
-
-    let body = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    };
 
     // Case 1: Sun in the equatorial plane (+X). β ≈ 0.
     {
-        let mut sim =
-            build_solar_beta_sim(mu_earth, 10.0, DVec3::new(SUN_DISTANCE_M, 0.0, 0.0), body);
-        sim.validate().unwrap();
-        sim.step_until(10.0).expect("step_until failed");
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+        let case = sim_solar_beta_extended::iss_sun_x();
+        let mut sim = build_sim(&case);
+        sim.step_until(sim.dt).expect("step_until failed");
+        let beta = read_beta(&sim, case.name);
         assert!(
             beta.abs() < 1e-4,
             "ISS orbit + Sun in equatorial plane: |beta| = {beta} rad (expected ≈0)"
@@ -224,11 +160,10 @@ fn tier3_solar_beta_iss_orbit() {
 
     // Case 2: Sun along +Z → β = π/2 − i.
     {
-        let mut sim =
-            build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, 0.0, SUN_DISTANCE_M), body);
-        sim.validate().unwrap();
-        sim.step_until(10.0).expect("step_until failed");
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+        let case = sim_solar_beta_extended::iss_sun_z();
+        let mut sim = build_sim(&case);
+        sim.step_until(sim.dt).expect("step_until failed");
+        let beta = read_beta(&sim, case.name);
         let expected = std::f64::consts::FRAC_PI_2 - inc;
         assert!(
             (beta - expected).abs() < 1e-4,
@@ -239,11 +174,10 @@ fn tier3_solar_beta_iss_orbit() {
     // Case 3: Sun along −Y → β = i. This exercises the bound that β can
     // reach the full inclination angle at a favorable Sun direction.
     {
-        let mut sim =
-            build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, -SUN_DISTANCE_M, 0.0), body);
-        sim.validate().unwrap();
-        sim.step_until(10.0).expect("step_until failed");
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+        let case = sim_solar_beta_extended::iss_sun_neg_y();
+        let mut sim = build_sim(&case);
+        sim.step_until(sim.dt).expect("step_until failed");
+        let beta = read_beta(&sim, case.name);
         assert!(
             (beta - inc).abs() < 1e-4,
             "ISS orbit + Sun along −Y: beta = {beta} rad (expected {inc} = inclination)"
@@ -256,24 +190,10 @@ fn tier3_solar_beta_sun_in_orbital_plane() {
     // Sun direction exactly in the orbital plane → ĥ · ŝ = 0 → β = 0.
     // Check this for a 30° inclination orbit where the Sun sits exactly at
     // the ascending node direction (in the equatorial plane the node is +X).
-    let mu_earth = load_mu_earth();
-    let r = 7_000_000.0;
-    let v = (mu_earth / r).sqrt();
-    let inc = 30.0_f64.to_radians();
-
-    // Position along +X (ascending node), velocity tipped into the orbit plane.
-    let body = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    };
-    // Orbit normal: h = r × v = (r, 0, 0) × (0, v cos i, v sin i)
-    //              = (0·v sin i − 0·v cos i, 0·0 − r·v sin i, r·v cos i − 0·0)
-    //              = (0, −r v sin i, r v cos i). Direction = (0, −sin i, cos i).
-    // Sun along +X lies in the plane since +X · (orbit normal) = 0.
-    let mut sim = build_solar_beta_sim(mu_earth, 10.0, DVec3::new(SUN_DISTANCE_M, 0.0, 0.0), body);
-    sim.validate().unwrap();
-    sim.step_until(10.0).expect("step_until failed");
-    let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+    let case = sim_solar_beta_extended::sun_in_orbital_plane();
+    let mut sim = build_sim(&case);
+    sim.step_until(sim.dt).expect("step_until failed");
+    let beta = read_beta(&sim, case.name);
     assert!(
         beta.abs() < 1e-4,
         "Sun in orbital plane: |beta| = {beta} rad exceeds 1e-4"
@@ -284,19 +204,10 @@ fn tier3_solar_beta_sun_in_orbital_plane() {
 fn tier3_solar_beta_sun_perpendicular_to_plane() {
     // Sun along the orbit normal → ĥ · ŝ = ±1 → |β| = π/2.
     // Construct an equatorial orbit (normal = +Z) and place Sun along +Z.
-    let mu_earth = load_mu_earth();
-    let r = 7_000_000.0;
-    let v = (mu_earth / r).sqrt();
-
-    let body = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v, 0.0),
-    };
-
-    let mut sim = build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, 0.0, SUN_DISTANCE_M), body);
-    sim.validate().unwrap();
-    sim.step_until(10.0).expect("step_until failed");
-    let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+    let case = sim_solar_beta_extended::sun_perpendicular_to_plane();
+    let mut sim = build_sim(&case);
+    sim.step_until(sim.dt).expect("step_until failed");
+    let beta = read_beta(&sim, case.name);
 
     let pi_2 = std::f64::consts::FRAC_PI_2;
     // Tolerance accounts for the small LEO offset from the origin vs the Sun
@@ -317,38 +228,23 @@ fn tier3_solar_beta_bounded() {
     // π/2 + inclination — does not apply to β itself, which is always a
     // signed angle in [-π/2, +π/2] by construction; our asserted bound is
     // the mathematical limit |β| ≤ π/2.)
-    let mu_earth = load_mu_earth();
-    let r = 7_000_000.0;
-    let v = (mu_earth / r).sqrt();
-    let inc = 45.0_f64.to_radians();
+    let case = sim_solar_beta_extended::bounded();
+    let mut sim = build_sim(&case);
 
-    let body = TranslationalState {
-        position: DVec3::new(r, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    };
-
-    let mut sim = build_solar_beta_sim(
-        mu_earth,
-        10.0,
-        // Arbitrary Sun direction with components in all three axes.
-        DVec3::new(
-            0.7 * SUN_DISTANCE_M,
-            0.5 * SUN_DISTANCE_M,
-            0.2 * SUN_DISTANCE_M,
-        ),
-        body,
+    // Same recipe-cadence + drift-check pattern as the
+    // equatorial-at-equinox scan above.
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
-    sim.validate().unwrap();
-
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    let n_steps = (3.0 * period / 10.0) as usize;
 
     let pi_2 = std::f64::consts::FRAC_PI_2;
     let mut max_abs_beta = 0.0_f64;
     for step in 1..=n_steps {
-        sim.step_until(step as f64 * 10.0)
-            .expect("step_until failed");
-        let beta = sim.body(0).solar_beta.expect("solar beta not computed");
+        sim.step_until(step as f64 * dt).expect("step_until failed");
+        let beta = read_beta(&sim, case.name);
         // Absolute bound from the asin definition.
         assert!(
             beta.abs() <= pi_2 + 1e-12,
