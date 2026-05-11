@@ -5,9 +5,11 @@
 //! and emits a single JSON object with mean / stdev / per-step µs / peak
 //! RSS. Used by the `xtask perf-baseline` wrapper and CI's
 //! `perf-baseline-track` job. Designed for stability across runs — one
-//! cold setup per repeat (catches setup-time regressions), explicit
-//! warmup window (absorbs first-step transients), no shared mutable
-//! state across repeats.
+//! cold setup per repeat (no shared mutable state across repeats), then
+//! an explicit warmup window (absorbs first-step transients). Only the
+//! post-warmup steady-state loop is timed; `build()` and warmup wall
+//! time are intentionally excluded from `elapsed` / `mean_secs` so the
+//! per-step µs metric reflects the hot path, not amortized setup.
 //!
 //! ## CLI
 //!
