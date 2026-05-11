@@ -3,13 +3,23 @@
 //!
 //! These cases exercise the `Simulation` pipeline from the t=0 row of
 //! each `orbelem_verif_tXX_orbelem.csv` (JEOD's verification output for
-//! the orbital-elements derived state across seven orbit families:
-//! circular, eccentric, hyperbolic, near-parabolic, retrograde,
-//! equatorial, polar). The per-RUN initial inertial position/velocity
-//! is fed to a point-mass-Earth `Simulation` configured with the
-//! `OrbitalElementsConfigC`-equivalent `DerivedStateConfig`, propagated
-//! a single step at a tiny `dt`, and the resulting orbital elements
-//! are compared against the JEOD-logged columns by the tier3 sibling.
+//! the orbital-elements derived state). The per-RUN initial inertial
+//! position/velocity is fed to a point-mass-Earth `Simulation`
+//! configured with the `OrbitalElementsConfigC`-equivalent
+//! `DerivedStateConfig`, propagated a single step at a tiny `dt`, and
+//! the resulting orbital elements are compared against the JEOD-logged
+//! columns by the tier3 sibling.
+//!
+//! The seven RUN labels (T01, T10, T20, T30, T40, T50, T55) come from
+//! JEOD's SIM_orbital_elements regression suite; the original design
+//! intent (circular / eccentric / hyperbolic / near-parabolic /
+//! retrograde / equatorial / polar) does *not* match what the
+//! committed fixture CSVs actually contain — see the per-case notes
+//! near `t01_state` etc. for the elements each fixture truly carries
+//! (e.g. T20 is e=0.2 elliptic, T55 is ISS-like LEO, T30/T40 are
+//! degenerate `sma=0` extraction edge cases). The fixture is the
+//! ground truth; the labels are kept as JEOD RUN identifiers, not
+//! orbit-family descriptors.
 //!
 //! The integrator step size is intentionally tiny (`DT_S = 1e-9`):
 //! one step barely moves the state, but it does drive the full pipeline
