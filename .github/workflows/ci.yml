@@ -276,7 +276,15 @@ jobs:
     name: Perf baseline (main-only)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # `permissions:` overrides the workflow default, so every scope the
+    # job's steps need must be listed explicitly. `contents: read` lets
+    # `actions/checkout` fetch the repo; `actions: read` lets the
+    # artifact-download step pull the previous perf-history artifact;
+    # `statuses: write` lets the final step post the commit-status
+    # baseline-delta.
     permissions:
+      contents: read
+      actions: read
       statuses: write
     steps:
       - uses: actions/checkout@v4

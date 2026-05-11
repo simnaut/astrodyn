@@ -79,10 +79,10 @@ fn bench_accumulate_gravity(c: &mut Criterion) {
         ("d60", &moon_src, moon_pos, 60),
     ];
 
-    for (label, src, pos, deg) in configs {
+    for &(label, src, pos, deg) in configs {
         group.bench_with_input(
             BenchmarkId::from_parameter(label),
-            &(*src, *pos, *deg),
+            &(src, pos, deg),
             |b, &(src, pos, deg)| {
                 b.iter(|| {
                     let acc = gravitation_with_scratch(

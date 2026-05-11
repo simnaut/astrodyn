@@ -5,7 +5,7 @@
 //! perturbations with per-step DE421 ephemeris updates, cannonball SRP
 //! against the Sun. Matches the `SIM_Earth_Moon RUN_clem` JEOD
 //! reference configuration that
-//! [`tests::tier3_simulation_earth_moon_clem`](../../../tests/tier3_sim_earth_moon.rs)
+//! [`tests::tier3_simulation_earth_moon_clem`](../../tests/tier3_sim_earth_moon.rs)
 //! cross-validates against.
 //!
 //! Callers:
