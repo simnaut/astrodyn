@@ -171,18 +171,8 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "lvlh_edge",
-        "pre-recipe edge-case sibling — recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "lvlh_extended",
         "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
-    ),
-    (
-        "ned_edge",
-        "pre-recipe edge-case sibling — recipe factory not yet defined \
-         (#389 follow-up)",
     ),
     (
         "orbelem_comprehensive",
@@ -218,11 +208,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "relative_extended",
         "pre-recipe sibling (same family as `relative`) — needs new \
          CsvReference variant; follow-up to #389",
-    ),
-    (
-        "solar_beta_edge",
-        "pre-recipe edge-case sibling — recipe factory not yet defined \
-         (#389 follow-up)",
     ),
     (
         "solar_beta_extended",
