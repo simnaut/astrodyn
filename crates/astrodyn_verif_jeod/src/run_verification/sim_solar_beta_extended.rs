@@ -58,7 +58,15 @@ const R_LEO_M: f64 = 6_778_137.0;
 const R_MID_M: f64 = 7_000_000.0;
 
 fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
+    // Cache the decoded `mu` for the lifetime of the test process.
+    // The fixture decode parses the entire GGM05C coefficient table
+    // (≈12 KiB serialized) just to read a single scalar; without
+    // caching, every `*_num_steps()` and every `build_*` call would
+    // pay that cost again, noticeably inflating the parity/tier3
+    // suite. The decoded `mu` is a pure function of the embedded
+    // bytes, so caching is sound.
+    static MU_EARTH: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *MU_EARTH.get_or_init(|| astrodyn::gravity_fixtures::load_ggm05c().mu)
 }
 
 /// Shared scenario builder for every recipe. Parameterised by:
@@ -475,9 +483,11 @@ pub fn sun_perpendicular_to_plane() -> VerificationCase {
 
 // ── Bounded scan (multi-period, |β| ≤ π/2 at every record) ───────────
 
-/// Cadence for the bounded scan: three orbital periods at `DT_S`.
+/// Cadence for the bounded scan: at least three orbital periods at
+/// `DT_S` (`.ceil()` so bare-truncation never stops the scan short of
+/// the third period boundary).
 fn bounded_num_steps() -> usize {
-    (3.0 * period_s(load_mu_earth(), R_MID_M) / DT_S) as usize
+    (3.0 * period_s(load_mu_earth(), R_MID_M) / DT_S).ceil() as usize
 }
 
 fn build_bounded(_init: &InitialConditions) -> SimulationBuilder {
