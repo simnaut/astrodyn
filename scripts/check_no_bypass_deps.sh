@@ -3,8 +3,8 @@
 # depends on `astrodyn` and only `astrodyn` for physics.
 #
 # Specifically, none of `astrodyn_runner`, `astrodyn_bevy`,
-# `astrodyn_verif_jeod`, or `astrodyn_verif_parity` may declare a
-# direct dependency on any `astrodyn_*` *physics* crate
+# `astrodyn_verif_jeod`, `astrodyn_verif_nesc`, or `astrodyn_verif_parity`
+# may declare a direct dependency on any `astrodyn_*` *physics* crate
 # (`astrodyn_dynamics`, `astrodyn_gravity`, `astrodyn_time`,
 # `astrodyn_frames`, `astrodyn_interactions`, `astrodyn_math`,
 # `astrodyn_quantities`, `astrodyn_atmosphere`, `astrodyn_ephemeris`,
@@ -31,6 +31,7 @@ for crate_toml in \
     crates/astrodyn_runner/Cargo.toml \
     crates/astrodyn_bevy/Cargo.toml \
     crates/astrodyn_verif_jeod/Cargo.toml \
+    crates/astrodyn_verif_nesc/Cargo.toml \
     crates/astrodyn_verif_parity/Cargo.toml; do
     bad=$(grep -E "^${physics_crate_re}[[:space:]]*=" "$crate_toml" || true)
     if [ -n "$bad" ]; then

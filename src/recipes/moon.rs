@@ -40,6 +40,32 @@ pub fn grail150() -> GravitySourceEntry {
     GravitySourceEntry::central_body_sh(&MOON, fixtures::load_moon_grail150())
 }
 
+/// Moon with GRAIL150 spherical-harmonics gravity **and** the DE421 BPC
+/// libration rotation model (per-step `t_inertial_pfix` updates from the
+/// committed `moon_pa_de421_*.bpc` kernel).
+///
+/// Equivalent to [`grail150`] with `rotation_model` overridden from
+/// `MoonIAU` (analytic IAU-2009 mean orientation) to
+/// [`MoonDE421`](crate::RotationModel::MoonDE421) (high-fidelity
+/// libration). The initial `t_inertial_pfix` is left as identity — the
+/// per-step ephemeris stage rewrites it from BPC data before any gravity
+/// evaluation. Mission code is responsible for wiring the BPC-loaded
+/// ephemeris on the simulation builder
+/// ([`recipes::ephemeris::de421_with_moon_pa`](super::ephemeris::de421_with_moon_pa)
+/// — DE440 once that asset lands).
+///
+/// Used by `astrodyn_verif_nesc::cc8` and any future Moon-central
+/// scenario that needs sub-arcsecond libration accuracy. The truncation
+/// degree/order is selected at the call site via
+/// [`GravityControl::new_nonspherical`](astrodyn_gravity::GravityControl::new_nonspherical),
+/// so the same recipe serves both 8×8 (NESC CC8) and 150×150
+/// (high-fidelity research) callers from one fixture.
+pub fn grail150_with_libration() -> GravitySourceEntry {
+    let mut entry = GravitySourceEntry::central_body_sh(&MOON, fixtures::load_moon_grail150());
+    entry.rotation_model = crate::RotationModel::MoonDE421;
+    entry
+}
+
 /// Moon as a third-body perturbation source (point-mass, no rotation)
 /// at the given inertial position.
 pub fn third_body(

@@ -15,6 +15,7 @@ astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_bevy = { path = "../astrodyn_bevy", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
 astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.1.0" }
+astrodyn_verif_nesc = { path = "../astrodyn_verif_nesc", version = "0.1.0" }
 bevy = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }

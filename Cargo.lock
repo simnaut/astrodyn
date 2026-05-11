@@ -388,6 +388,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "astrodyn_verif_nesc"
+version = "0.1.0"
+dependencies = [
+ "astrodyn",
+ "astrodyn_runner",
+ "astrodyn_verif_jeod_fixtures",
+ "glam 0.30.10",
+]
+
+[[package]]
 name = "astrodyn_verif_parity"
 version = "0.1.0"
 dependencies = [
@@ -395,6 +405,7 @@ dependencies = [
  "astrodyn_bevy",
  "astrodyn_runner",
  "astrodyn_verif_jeod",
+ "astrodyn_verif_nesc",
  "bevy",
  "glam 0.30.10",
  "log",
