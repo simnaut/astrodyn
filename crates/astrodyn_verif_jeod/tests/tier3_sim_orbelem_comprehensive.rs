@@ -85,13 +85,21 @@ fn load_verif_record(csv_name: &str) -> VerifRecord {
     }
 }
 
-/// Build the recipe's `Simulation` exactly the way the parity trait does
-/// — call the scenario factory with a default `InitialConditions` (the
-/// recipes don't read it — initial state is baked in from each case's
-/// JEOD-output t=0 row), then `.build()` — so the runner-side
+/// Build the recipe's `Simulation`.
+///
+/// Calls the scenario factory with a default `InitialConditions` and
+/// then `.build()`. Note: `VerificationCaseParityExt::run_and_assert_parity`
+/// derives `init` from `ref_states[0]` via `initial_conditions_from`
+/// (for `CsvReference::SyntheticTimes` that resolves to all-defaults
+/// anyway, so the two paths coincide today). Every recipe in this
+/// module ignores the passed `InitialConditions` — initial state is
+/// baked in from each case's JEOD-output t=0 row — so the runner-side
 /// propagation here and the Bevy-side propagation in
 /// `bevy_parity_orbelem_comprehensive.rs` see the same initial state
-/// bit-pattern.
+/// bit-pattern regardless of which `InitialConditions` is threaded in.
+/// If a future recipe in this module starts reading `init`, this
+/// helper would need to match what the parity trait does to keep the
+/// two sides in lockstep.
 fn build_sim(case: &VerificationCase) -> Simulation {
     (case.scenario)(&InitialConditions::default())
         .build()
