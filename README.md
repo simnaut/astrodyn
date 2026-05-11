@@ -96,9 +96,9 @@ Three criterion microbenches measure the hot path under `cargo bench`:
 
 - `cargo bench -p astrodyn_gravity --bench accumulate` — spherical-harmonics
   kernel at degree 4 / 20 / 60.
-- `cargo bench -p astrodyn_dynamics --bench integration` — RK4 6-DOF
+- `cargo bench -p astrodyn_gravity --bench integration` — RK4 6-DOF
   step, with and without realistic Moon LP150Q gravity.
-- `cargo bench -p astrodyn_runner --bench step` — full `Simulation::step`
+- `cargo bench -p astrodyn_verif_jeod --bench step` — full `Simulation::step`
   for the Earth–Moon Clementine scenario.
 
 Flamegraph SVGs land under `target/criterion/<group>/<bench>/profile/`
