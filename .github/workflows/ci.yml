@@ -276,7 +276,15 @@ jobs:
     name: Perf baseline (main-only)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Setting any `permissions:` block at the job level overrides the
+    # workflow defaults, so the read scopes have to be listed
+    # explicitly. `contents: read` lets `actions/checkout` clone;
+    # `actions: read` lets `dawidd6/action-download-artifact` pull the
+    # prior `perf-history` artifact across workflow runs; `statuses:
+    # write` lets the final step post the informational commit status.
     permissions:
+      contents: read
+      actions: read
       statuses: write
     steps:
       - uses: actions/checkout@v4
