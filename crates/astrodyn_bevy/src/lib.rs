@@ -85,8 +85,9 @@ impl Default for SimulationTimeR {
 /// `AstrodynPlugin::build` does not install it; callers must do so
 /// explicitly. The four pipeline systems take it as a non-`Option`
 /// `Res<IntegrationDtR>`, so Bevy panics on schedule run if the
-/// resource is missing — the message names the resource and lists the
-/// supported installers.
+/// resource is missing — the scheduler diagnostic names
+/// `IntegrationDtR` as the missing resource. See the installers
+/// listed below.
 ///
 /// Installed by [`crate::AstrodynAppExt::add_astrodyn`],
 /// [`crate::AstrodynAppExt::step_fixed_dt`], and by
