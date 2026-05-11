@@ -50,16 +50,15 @@ fn read_beta(sim: &Simulation, case_name: &str) -> f64 {
         .unwrap_or_else(|| panic!("`{case_name}`: solar_beta not computed"))
 }
 
-/// Pull the SyntheticTimes step count off a recipe's reference field.
-/// Every recipe in `sim_solar_beta_extended` uses [`CsvReference::SyntheticTimes`]
-/// because the family is analytical-only; panicking on any other variant
-/// makes a future recipe-shape drift surface here rather than producing
-/// a silently-truncated propagation.
-/// Pull `(dt, num_steps)` from a recipe's `SyntheticTimes` reference.
-/// Returns both halves of the cadence so tests can assert that the
-/// `dt` they're stepping at (typically `sim.dt`) matches the cadence
-/// the recipe declared — catches a future recipe edit that updates
-/// the builder dt but forgets the `SyntheticTimes` dt (or vice versa).
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_solar_beta_extended` uses this
+/// variant because the family is analytical-only; panicking on any
+/// other variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (typically `sim.dt`) matches the cadence the recipe declared —
+/// catches a future edit that updates the builder dt but forgets the
+/// `SyntheticTimes` dt (or vice versa).
 fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
     match &case.reference {
         CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
