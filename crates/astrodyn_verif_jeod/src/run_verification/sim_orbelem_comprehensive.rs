@@ -122,17 +122,23 @@ fn synthetic_tolerances() -> Tolerances {
 //
 // Values are copied verbatim from the t=0 row of each
 // `orbelem_verif_tXX_orbelem.csv` (the JEOD verification output).
-// Distinct case labels exercise different orbital-element extraction
-// branches:
+// The case IDs (T01, T10, ...) are JEOD's RUN labels; the
+// per-case descriptors below summarise the actual orbital elements
+// JEOD wrote for that row (rather than the family the RUN was
+// originally designed for, which sometimes diverges from the
+// committed fixture — see #389 thread).
 //
-//   * T01 — circular orbit (e ≈ 0);
-//   * T10 — eccentric orbit (0 < e < 1);
-//   * T20 — hyperbolic orbit (e > 1);
-//   * T30 — near-parabolic orbit (e ≈ 1, separate branch in JEOD's
-//           orbital-element extraction);
-//   * T40 — retrograde orbit (i > 90°);
-//   * T50 — equatorial orbit (i ≈ 0, RAAN degenerate);
-//   * T55 — polar orbit (i ≈ 90°).
+//   * T01 — equatorial circular (e=0, i=0, sma≈7378 km);
+//   * T10 — inclined near-circular (i≈30°, e≈0, sma≈7378 km);
+//   * T20 — eccentric inclined (e=0.2, i≈45°, sma≈9223 km);
+//   * T30 — orb_elem edge case (sma=0 in JEOD output despite a
+//           valid 7.2 Mm Cartesian state; exercises a degenerate
+//           branch of the orbital-element extraction);
+//   * T40 — orb_elem edge case with eccentricity (sma=0 in
+//           JEOD output, e=0.2, i≈45°);
+//   * T50 — equatorial circular with extended log (matches T01
+//           initial state, but the fixture spans t=0..5000s);
+//   * T55 — ISS-like LEO (i≈51.7°, e≈0.0025, sma≈6733 km).
 
 fn t01_state() -> TranslationalState {
     TranslationalState {
@@ -231,7 +237,7 @@ fn build_t55(_init: &InitialConditions) -> SimulationBuilder {
     build_orbelem_comprehensive(load_mu_earth(), t55_state())
 }
 
-/// T01 — circular orbit (e ≈ 0).
+/// T01 — equatorial circular (e=0, i=0, sma≈7378 km).
 pub fn t01() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t01",
@@ -247,7 +253,7 @@ pub fn t01() -> VerificationCase {
     }
 }
 
-/// T10 — eccentric orbit (0 < e < 1).
+/// T10 — inclined near-circular (i≈30°, e≈0, sma≈7378 km).
 pub fn t10() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t10",
@@ -263,7 +269,7 @@ pub fn t10() -> VerificationCase {
     }
 }
 
-/// T20 — hyperbolic orbit (e > 1).
+/// T20 — eccentric inclined (e=0.2, i≈45°, sma≈9223 km).
 pub fn t20() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t20",
@@ -279,7 +285,9 @@ pub fn t20() -> VerificationCase {
     }
 }
 
-/// T30 — near-parabolic orbit (e ≈ 1).
+/// T30 — orb_elem edge case (JEOD logs sma=0 with a valid 7.2 Mm
+/// Cartesian state; exercises a degenerate branch of the
+/// orbital-element extraction).
 pub fn t30() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t30",
@@ -295,7 +303,8 @@ pub fn t30() -> VerificationCase {
     }
 }
 
-/// T40 — retrograde orbit (i > 90°).
+/// T40 — orb_elem edge case with eccentricity (JEOD logs sma=0,
+/// e=0.2, i≈45°).
 pub fn t40() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t40",
@@ -311,7 +320,8 @@ pub fn t40() -> VerificationCase {
     }
 }
 
-/// T50 — equatorial orbit (i ≈ 0, RAAN degenerate).
+/// T50 — equatorial circular, extended log (same initial state as
+/// T01; fixture spans t=0..5000s).
 pub fn t50() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t50",
@@ -327,7 +337,7 @@ pub fn t50() -> VerificationCase {
     }
 }
 
-/// T55 — polar orbit (i ≈ 90°).
+/// T55 — ISS-like LEO (i≈51.7°, e≈0.0025, sma≈6733 km).
 pub fn t55() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbelem_comprehensive_t55",

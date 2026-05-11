@@ -351,7 +351,7 @@ fn tier3_simulation_orbelem_t01() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t01(),
         "orbelem_verif_t01_orbelem.csv",
-        "T01 circular (e~0)",
+        "T01 equatorial circular (e=0, i=0)",
         false,
     );
 }
@@ -361,7 +361,7 @@ fn tier3_simulation_orbelem_t10() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t10(),
         "orbelem_verif_t10_orbelem.csv",
-        "T10 eccentric (0<e<1)",
+        "T10 inclined near-circular (i=30deg, e~0)",
         false,
     );
 }
@@ -371,7 +371,7 @@ fn tier3_simulation_orbelem_t20() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t20(),
         "orbelem_verif_t20_orbelem.csv",
-        "T20 hyperbolic (e>1)",
+        "T20 eccentric inclined (e=0.2, i=45deg)",
         false,
     );
 }
@@ -381,7 +381,7 @@ fn tier3_simulation_orbelem_t30() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t30(),
         "orbelem_verif_t30_orbelem.csv",
-        "T30 near-parabolic (e~1)",
+        "T30 orb_elem edge case (sma=0 output, i=30deg)",
         true,
     );
 }
@@ -391,7 +391,7 @@ fn tier3_simulation_orbelem_t40() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t40(),
         "orbelem_verif_t40_orbelem.csv",
-        "T40 retrograde (i>90deg)",
+        "T40 orb_elem edge case (sma=0 output, e=0.2, i=45deg)",
         true,
     );
 }
@@ -401,7 +401,7 @@ fn tier3_simulation_orbelem_t50() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t50(),
         "orbelem_verif_t50_orbelem.csv",
-        "T50 equatorial (i~0)",
+        "T50 equatorial circular extended log (same as T01, fixture spans 5000s)",
         false,
     );
 }
@@ -411,7 +411,7 @@ fn tier3_simulation_orbelem_t55() {
     verify_orbit_family(
         sim_orbelem_comprehensive::t55(),
         "orbelem_verif_t55_orbelem.csv",
-        "T55 polar (i~90deg)",
+        "T55 ISS-like LEO (i=51.7deg, e=0.0025)",
         false,
     );
 }
