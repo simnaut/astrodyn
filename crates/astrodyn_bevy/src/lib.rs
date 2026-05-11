@@ -67,29 +67,32 @@ impl Default for SimulationTimeR {
     }
 }
 
-/// Optional bit-exact f64 override for the pipeline integration
-/// timestep.
+/// Bit-exact f64 pipeline integration timestep.
 ///
 /// The runner stores `dt` as a plain `f64` and feeds it through
 /// `Simulation::step_internal(self.dt)` unchanged. The Bevy adapter
-/// normally reads `dt` from `Time::<Fixed>::delta_secs_f64()`, which
-/// round-trips through `Duration` and rounds to integer nanoseconds —
-/// fine for whole-second timesteps but lossy whenever `dt` is
-/// irrational in seconds (e.g. `period / 560 ≈ 9.917 s` in the LVLH-
-/// periodicity recipe). The rounding broke `runner ↔ bevy` bit-identity
-/// on those scenarios.
+/// reads `dt` from this resource for the four pipeline systems that
+/// consume it (time advance, SRP integration, state integration,
+/// detached-subtree ballistic drift), so the Bevy side mirrors the
+/// runner's raw-f64 cadence and `runner ↔ bevy` parity holds
+/// bit-identically even when `dt` is irrational in seconds (e.g.
+/// `period / 560 ≈ 9.917 s` in the LVLH-periodicity recipe).
+/// `Time<Fixed>::delta_secs_f64()` round-trips through `Duration` and
+/// rounds to integer nanoseconds, which is unsuitable as a physics
+/// source.
 ///
-/// When this resource is present, the four pipeline systems that read
-/// `dt` (time advance, SRP integration, state integration, detached-
-/// subtree ballistic drift) consume the contained `f64` directly,
-/// bypassing the `Duration` round-trip. When the resource is absent the
-/// systems fall back to `Time<Fixed>::delta_secs_f64()`, preserving
-/// the historical behavior for tests and mission code that never opted
-/// into bit-exact dt.
+/// **Required for any app that runs the `FixedUpdate` pipeline.**
+/// `AstrodynPlugin::build` does not install it; callers must do so
+/// explicitly. The four pipeline systems take it as a non-`Option`
+/// `Res<IntegrationDtR>`, so Bevy panics on schedule run if the
+/// resource is missing — the message names the resource and lists the
+/// supported installers.
 ///
-/// Installed automatically by [`crate::AstrodynAppExt::add_astrodyn`],
+/// Installed by [`crate::AstrodynAppExt::add_astrodyn`],
 /// [`crate::AstrodynAppExt::step_fixed_dt`], and by
-/// [`crate::SimulationBuilderBevyExt::populate_app`].
+/// [`crate::SimulationBuilderBevyExt::populate_app`]. Mission code that
+/// bypasses those entry points must call
+/// `app.insert_resource(IntegrationDtR(dt))` itself.
 #[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct IntegrationDtR(pub f64);
 
@@ -225,15 +228,17 @@ impl Plugin for AstrodynPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
-        // `IntegrationDtR` is an *optional* bit-exact f64 override for
-        // the pipeline `dt`; see the type's doc. Plugin does not
-        // install it — when absent, the four pipeline systems fall
-        // back to `Time<Fixed>::delta_secs_f64()` and tests that drive
-        // the schedule via `Time<Fixed>::advance_by` see the same
-        // behavior as before. `add_astrodyn`, `populate_app`, and
-        // `step_fixed_dt` install the override explicitly for callers
-        // that need bit-identity (parity tests, irrational-in-seconds
-        // timesteps like `period / 560`).
+        // `IntegrationDtR` is the mandatory bit-exact f64 source of
+        // pipeline `dt`; see the type's doc. The plugin does not
+        // install it — callers must, either through one of the
+        // canonical installers (`AstrodynAppExt::add_astrodyn`,
+        // `AstrodynAppExt::step_fixed_dt`, or
+        // `SimulationBuilderBevyExt::populate_app`) or by
+        // `app.insert_resource(IntegrationDtR(dt))` directly. The four
+        // pipeline systems that consume `dt` take it as
+        // `Res<IntegrationDtR>` (non-`Option`), so Bevy panics on the
+        // first FixedUpdate run if it's missing — naming the resource
+        // and pointing the caller at the installers.
 
         // ── ECS-native root frame entity ──
         // Spawn the root frame entity. Source / body registration

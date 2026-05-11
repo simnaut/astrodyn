@@ -24,8 +24,8 @@ use astrodyn::{
     RotationalState, TranslationalStateTyped, Vec3Ext, VehicleBuilder, EARTH,
 };
 use astrodyn_bevy::{
-    AstrodynPlugin, FrameEntityC, FrameRotC, FrameTransC, PfixFrameEntityC, PlanetBundle,
-    RotationModelC, VehicleConfigBevyExt,
+    AstrodynPlugin, FrameEntityC, FrameRotC, FrameTransC, IntegrationDtR, PfixFrameEntityC,
+    PlanetBundle, RotationModelC, VehicleConfigBevyExt,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -47,6 +47,7 @@ fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app
 }

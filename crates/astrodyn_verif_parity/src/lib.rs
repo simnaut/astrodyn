@@ -203,14 +203,12 @@ impl VerificationCaseParityExt for VerificationCase {
                 .step_n(dt_steps)
                 .unwrap_or_else(|e| panic!("`{}`: runner step_n failed: {e}", self.name));
             // Advance bevy. Pipeline systems read the bit-exact f64
-            // `dt` from `IntegrationDtR` (set by `populate_app`), not
-            // from `Time<Fixed>::delta_secs_f64()` — the latter rounds
-            // through `Duration::from_secs_f64` to integer nanoseconds
-            // and broke parity on scenarios whose `dt` is irrational in
-            // seconds (e.g. `period / 560 ≈ 9.917 s`). `Time<Fixed>` is
-            // still advanced so any consumer that observes it sees a
-            // matching simulated wall-clock; the physics path is now
-            // independent of the rounding.
+            // `dt` from `IntegrationDtR` (installed by `populate_app`).
+            // `Time<Fixed>` is still advanced so any consumer that
+            // observes it sees a matching simulated wall-clock; the
+            // physics path is independent of `Duration` rounding so
+            // parity holds bit-identically even when `dt` is
+            // irrational in seconds (e.g. `period / 560 ≈ 9.917 s`).
             for _ in 0..dt_steps {
                 app.world_mut()
                     .resource_mut::<Time<Fixed>>()

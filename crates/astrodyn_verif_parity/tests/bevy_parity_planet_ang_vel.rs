@@ -18,7 +18,7 @@ use astrodyn::{
     Ephemeris, GravityModel, GravitySource, GravitySourceEntry, PlanetConfig, EARTH, MARS, MOON,
 };
 use astrodyn_bevy::{
-    AstrodynPlugin, EphemerisR, FrameAngVelC, GravitySourceC, PfixFrameEntityC,
+    AstrodynPlugin, EphemerisR, FrameAngVelC, GravitySourceC, IntegrationDtR, PfixFrameEntityC,
     PlanetAngularVelocityC, PlanetBundle, PlanetFixedRotationC, PlanetOmegaC, RotationModelC,
     SourceInertialPositionC,
 };
@@ -41,6 +41,7 @@ fn build_planet_app(name: &str, config: &PlanetConfig) -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let planet = app
         .world_mut()
@@ -194,6 +195,7 @@ fn bevy_parity_planet_ang_vel_rotation_none_leaves_default() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     // Spawn a manually-configured planet with RotationModel::None.
@@ -391,6 +393,7 @@ fn bevy_parity_planet_ang_vel_moon_de421() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     let mut eph = Ephemeris::from_bsp(&bsp).expect("DE421 BSP load");
     eph.load_bpc(&bpc).expect("Moon DE421 BPC load");

@@ -10,7 +10,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AtmosphereModelR, DragConfigC, DynamicsConfigC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, PlanetFixedRotationC, RotationModelC, RotationalStateC,
+    IntegrationDtR, MassPropertiesC, PlanetFixedRotationC, RotationModelC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -35,6 +35,7 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     // Identity `PlanetFixedRotationC` + `RotationModelC::None` reproduce
@@ -146,6 +147,7 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     // Identity `PlanetFixedRotationC` + `RotationModelC::None` reproduce
@@ -255,6 +257,7 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app

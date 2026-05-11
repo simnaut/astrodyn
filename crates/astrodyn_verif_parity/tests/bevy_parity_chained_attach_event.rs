@@ -73,7 +73,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC,
-    FrameDerivativesC, GravityControlsC, KinematicChildC, MassBodyIdC, MassChildOf,
+    FrameDerivativesC, GravityControlsC, IntegrationDtR, KinematicChildC, MassBodyIdC, MassChildOf,
     MassPropertiesC, MassTreeR, RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
@@ -261,6 +261,7 @@ fn build_bevy_app() -> (
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();

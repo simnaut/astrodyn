@@ -25,8 +25,8 @@ use std::time::Duration;
 use astrodyn::{init_rot_from_lvlh, LvlhAngularVelocityFrame as KernelLvlhFrame};
 use astrodyn::{BodyAction, DynamicsConfig, JeodQuat, LvlhAngularVelocityFrame, RotationalState};
 use astrodyn_bevy::{
-    AstrodynPlugin, BodyActionEvent, GravitySourceC, MassPropertiesC, RotationalStateC,
-    SourceInertialPositionC, TranslationalStateC,
+    AstrodynPlugin, BodyActionEvent, GravitySourceC, IntegrationDtR, MassPropertiesC,
+    RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::DVec3;
@@ -58,6 +58,7 @@ fn build_app() -> (App, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
     let earth = app

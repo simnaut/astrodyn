@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use astrodyn::{DynamicsConfig, MassProperties, RotationalState, TranslationalState};
 use astrodyn_bevy::{
-    AstrodynPlugin, DynamicsConfigC, FrameEntityC, MassPointRef, MassPropertiesC, RotationalStateC,
-    TranslationalStateC,
+    AstrodynPlugin, DynamicsConfigC, FrameEntityC, IntegrationDtR, MassPointRef, MassPropertiesC,
+    RotationalStateC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -31,6 +31,7 @@ fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
     app
 }

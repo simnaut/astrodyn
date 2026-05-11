@@ -34,8 +34,8 @@ use astrodyn_bevy::frame_param::RelativeFrameState;
 use astrodyn_bevy::{
     AstrodynPlugin, AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
     FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GravityAccelerationC,
-    GravityControlsC, GravitySourceC, IntegSourceC, MassBodyIdC, MassPropertiesC, MassTreeR,
-    RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    GravityControlsC, GravitySourceC, IntegSourceC, IntegrationDtR, MassBodyIdC, MassPropertiesC,
+    MassTreeR, RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -63,6 +63,7 @@ fn build_two_body_world(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -1213,6 +1214,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -1583,6 +1585,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -1837,6 +1840,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -2047,6 +2051,7 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     // Mass tree (required for attach/detach).
@@ -2748,6 +2753,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.insert_resource(IntegrationDtR(dt));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3050,6 +3056,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3204,6 +3211,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3313,6 +3321,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_pani
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3448,6 +3457,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_p
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3571,6 +3581,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_no_frame_entity_succ
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3686,6 +3697,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3801,6 +3813,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_ent
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -3911,6 +3924,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -4017,6 +4031,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translati
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -4124,6 +4139,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     // Crucially: NO `app.add_plugins(AstrodynPlugin);` — this regression
     // pins the fence's behaviour when `RootFrameEntityR` is absent.
     // Register the AttachEvent / DetachEvent message resources by
@@ -4249,6 +4265,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_succeeds_without_jeo
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.insert_resource(IntegrationDtR(1.0));
     // No `add_plugins(AstrodynPlugin)` — the fence must not depend on
     // `RootFrameEntityR` for the mass-only carve-out path. Register
     // the AttachEvent / DetachEvent message resources by hand

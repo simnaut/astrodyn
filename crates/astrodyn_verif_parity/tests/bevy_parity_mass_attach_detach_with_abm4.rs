@@ -14,7 +14,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     Abm4StateC, AstrodynPlugin, AttachEvent, DetachEvent, DynamicsConfigC, GravityControlsC,
-    GravitySourceC, IntegratorTypeC, MassBodyIdC, MassPropertiesC, MassTreeR,
+    GravitySourceC, IntegrationDtR, IntegratorTypeC, MassBodyIdC, MassPropertiesC, MassTreeR,
     SourceInertialPositionC, TranslationalStateC,
 };
 use bevy::prelude::*;
@@ -62,6 +62,7 @@ fn build_two_body_app(
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();
@@ -233,6 +234,7 @@ fn bevy_parity_mass_attach_detach_with_abm4_mass_attach_resets_full_ancestor_cha
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.insert_resource(IntegrationDtR(sim_dt));
     app.add_plugins(AstrodynPlugin);
 
     let mut tree = MassTree::new();

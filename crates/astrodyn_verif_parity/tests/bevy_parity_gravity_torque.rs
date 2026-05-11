@@ -10,7 +10,7 @@ use astrodyn::{
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
     DynamicsConfigC, ExternalForceC, ExternalTorqueC, GravityControlsC, GravityTorqueC,
-    MassPropertiesC, RotationalStateC, TranslationalStateC,
+    IntegrationDtR, MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -27,6 +27,7 @@ fn bevy_parity_gravity_torque_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
     let planet = app
