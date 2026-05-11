@@ -1,7 +1,8 @@
 # astrodyn_runner
 
-Standalone simulation runner and Tier 3 verification harness for the
-[`astrodyn_bevy`](https://github.com/simnaut/astrodyn) workspace.
+Standalone arena-state simulation harness for the
+[`astrodyn`](https://github.com/simnaut/astrodyn) orbital-dynamics
+pipeline.
 
 `astrodyn_runner` is a parallel non-Bevy consumer of `astrodyn`. It owns
 its own state and drives the same pipeline functions the Bevy adapter

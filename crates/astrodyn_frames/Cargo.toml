@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_frames"
-description = "Reference frame tree and Earth rotation (RNP, nutation, precession) for astrodyn_bevy"
+description = "Reference frame tree and Earth rotation (RNP, nutation, precession) for the astrodyn orbital-dynamics pipeline"
 readme = "README.md"
 keywords = ["reference-frame", "earth-rotation", "orbital-mechanics", "aerospace", "geodesy"]
 categories = ["science", "aerospace"]
