@@ -399,4 +399,67 @@ mod tests {
             );
         }
     }
+
+    /// Multi-revolution accumulation: chained small-step
+    /// `advance_under_body_rate` must match the analytic closed form
+    /// `dq_total ⊗ q_init` over at least 6 full revolutions.
+    ///
+    /// Regression lock for [issue #454](https://github.com/simnaut/astrodyn/issues/454).
+    /// `small_steps_match_one_shot` above covers ~0.06° of total spin and
+    /// compares against the one-shot `advance_under_body_rate(ω, T)` —
+    /// which shares operand order with the small-step path, so a sign /
+    /// hemisphere bug shared between the two would not be detected. This
+    /// test compares against an **inline-constructed** ground-truth
+    /// `dq_total ⊗ q_init` so the operand order is independently witnessed
+    /// at multi-revolution scale.
+    ///
+    /// `|ω| = 0.1 rad/s` over `T = 12π/0.1 ≈ 377 s` = 6 revolutions.
+    /// `dt = 0.01 s` ⇒ 37 700 small steps; floating-point accumulation is
+    /// the only error source so `1e-12 rad` is a comfortable bound.
+    #[test]
+    fn advance_multi_revolution_matches_closed_form() {
+        let q_init =
+            JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::new(0.3, -0.4, 0.5).normalize());
+        let omega_vec = DVec3::new(0.040, -0.060, 0.069).normalize() * 0.1;
+        let total_t: f64 = 12.0 * core::f64::consts::PI / 0.1; // 6 revs
+        let small_dt = 0.01_f64;
+        let n = (total_t / small_dt).round() as usize;
+
+        // Chained small steps via the typed integrator.
+        let mut q_iter: BodyAttitude<SelfRef> =
+            BodyAttitude::from_witness(NormalizedQuat::new(q_init).unwrap());
+        let omega: AngularVelocity<BodyFrame<SelfRef>> = Qty3::from_raw_si(omega_vec);
+        for _ in 0..n {
+            q_iter = q_iter.advance_under_body_rate(omega, small_dt);
+        }
+        let q_out = q_iter.to_jeod_quat();
+
+        // Closed form: `dq_total = (cos(|ω|T/2), -ω̂ · sin(|ω|T/2))`,
+        // `q_expected = dq_total ⊗ q_init`. Built inline (not via
+        // `advance_under_body_rate`) so a shared operand-order bug
+        // cannot mask itself.
+        let actual_total_t = small_dt * n as f64;
+        let omega_norm = omega_vec.length();
+        let half = omega_norm * actual_total_t * 0.5;
+        let s = half.sin() / omega_norm;
+        let c = half.cos();
+        let dq_total = JeodQuat::new(c, -omega_vec.x * s, -omega_vec.y * s, -omega_vec.z * s);
+        let q_expected = dq_total.multiply(&q_init);
+
+        // Antipode-folded angle, same shape as the cross-validation
+        // metric in `crossval.rs`.
+        let dot: f64 = q_out
+            .data
+            .iter()
+            .zip(q_expected.data.iter())
+            .map(|(a, b)| a * b)
+            .sum();
+        let drift = 2.0 * dot.abs().clamp(0.0, 1.0).acos();
+
+        assert!(
+            drift < 1e-12,
+            "advance_under_body_rate accumulation over 6 revs: drift = {} rad",
+            drift,
+        );
+    }
 }

@@ -604,4 +604,126 @@ mod tests {
             q.vector(),
         );
     }
+
+    /// Multi-revolution open-loop spin under constant body-frame ω must
+    /// match the closed-form `q(T) = exp(-½ ω · T) ⊗ q₀` to RK4 truncation
+    /// tolerance.
+    ///
+    /// Regression lock for [issue #454](https://github.com/simnaut/astrodyn/issues/454)
+    /// — the CC8 (NESC NRHO) Tier 3 test propagates ~605° of open-loop
+    /// spin and observes a ~π rad drift against the NESC reference. The
+    /// closest existing test (`small_steps_match_one_shot` in
+    /// `body_attitude.rs`) covers ~0.06° of total spin, three orders of
+    /// magnitude short of exposing any multi-revolution kernel bug.
+    ///
+    /// This test propagates ≥3 full revolutions about a non-axis-aligned
+    /// ω from a non-axis-aligned initial attitude so a sign / operand-
+    /// order error or hemisphere-crossing bug in `compute_left_quat_deriv`,
+    /// `step_q`, or `normalize_integ` cannot hide in trivial-axis symmetry
+    /// or sub-revolution accumulation.
+    ///
+    /// Sphere inertia is used so that `ω × Iω = 0` and ω is constant in
+    /// both body and inertial frames, making the closed-form propagator
+    /// `dq_total ⊗ q₀` exact.
+    #[test]
+    fn rk4_constant_body_rate_matches_closed_form_over_three_revolutions() {
+        let mass_props = mass_with_inertia(1.0, 1.0, 1.0, 1.0);
+
+        // (initial axis, initial angle, ω vector). |ω| = 0.1 rad/s so
+        // 3 full revolutions fit in T = 6π/0.1 ≈ 188.5 s. Three cases
+        // exercise different axis / ω alignments so cross-product terms
+        // in the kernel see varied operands.
+        let cases: &[(DVec3, f64, DVec3)] = &[
+            (
+                DVec3::new(0.3, -0.4, 0.5).normalize(),
+                0.7,
+                DVec3::new(0.040, -0.060, 0.069).normalize() * 0.1,
+            ),
+            (
+                DVec3::Y,
+                1.5,
+                DVec3::new(0.080, 0.000, 0.060).normalize() * 0.1,
+            ),
+            (
+                DVec3::new(1.0, 1.0, 1.0).normalize(),
+                2.9,
+                DVec3::new(0.030, 0.060, -0.080).normalize() * 0.1,
+            ),
+        ];
+
+        let dt: f64 = 0.1;
+        let t_final: f64 = 6.0 * std::f64::consts::PI / 0.1; // 3 revs at |ω|=0.1
+        let steps = (t_final / dt).round() as usize;
+
+        let zero_accel = |_: &SixDofState, _t: f64| -> DVec3 { DVec3::ZERO };
+        let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+
+        for (axis, angle, omega) in cases {
+            let q_init = JeodQuat::left_quat_from_eigen_rotation(*angle, *axis);
+            let mut state = SixDofState {
+                trans: TranslationalState {
+                    position: DVec3::ZERO,
+                    velocity: DVec3::ZERO,
+                },
+                rot: RotationalState {
+                    quaternion: q_init,
+                    ang_vel_body: *omega,
+                },
+            };
+
+            for _ in 0..steps {
+                state = rk4_sixdof_step(&state, zero_accel, zero_torque, &mass_props, dt);
+            }
+
+            // Closed form for constant body-frame ω over total time T:
+            //   q(T) = dq_total ⊗ q_init
+            //   dq_total = (cos(|ω|·T/2), -ω̂ · sin(|ω|·T/2))
+            // Same algebra as `BodyAttitude::advance_under_body_rate`, but
+            // constructed inline so a bug shared with that function does
+            // not mask itself.
+            let total_t = dt * steps as f64;
+            let omega_norm = omega.length();
+            let half = omega_norm * total_t * 0.5;
+            let s = half.sin() / omega_norm;
+            let c = half.cos();
+            let dq_total = JeodQuat::new(c, -omega.x * s, -omega.y * s, -omega.z * s);
+            let q_expected = dq_total.multiply(&q_init);
+
+            // Antipode-folded quaternion angle: `2 · arccos(|q · q_ref|)`.
+            // Mirrors the cross-validation metric in
+            // `crates/astrodyn_verif_jeod_fixtures/src/crossval.rs` so a
+            // pass here corresponds directly to a pass in the Tier 3
+            // attitude assertions.
+            let q_num = state.rot.quaternion;
+            let dot: f64 = q_num
+                .data
+                .iter()
+                .zip(q_expected.data.iter())
+                .map(|(a, b)| a * b)
+                .sum();
+            let drift = 2.0 * dot.abs().clamp(0.0, 1.0).acos();
+
+            // RK4 global truncation at dt=0.1, |ω|=0.1 over ~1885 steps
+            // is empirically ≲ 1e-10 rad; 1e-8 leaves ample headroom for
+            // platform-specific math-library variance while still failing
+            // any sign / operand-order bug (which produces O(π) drift).
+            assert!(
+                drift < 1e-8,
+                "Constant-rate RK4 drift over 3 revs: axis={:?} angle={} ω={:?} ⇒ quat_angle = {} rad",
+                axis,
+                angle,
+                omega,
+                drift,
+            );
+
+            // ω must remain constant (sphere inertia, zero torque).
+            let omega_err = (state.rot.ang_vel_body - *omega).length();
+            assert!(
+                omega_err < 1e-12,
+                "ω drift over 3 revs: |Δω| = {} rad/s (axis={:?})",
+                omega_err,
+                axis,
+            );
+        }
+    }
 }
