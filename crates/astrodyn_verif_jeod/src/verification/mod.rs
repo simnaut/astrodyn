@@ -183,6 +183,35 @@ pub trait SimContext {
              surface (e.g. ExternalTorqueC on the Bevy body entity)"
         );
     }
+
+    /// Return body `body_idx`'s current inertial-to-body attitude
+    /// quaternion as a `glam::DQuat` (layout `(x, y, z, w)` with `w`
+    /// the scalar; JEOD's scalar-first `[q0, q1, q2, q3]` maps to
+    /// `DQuat { x: q1, y: q2, z: q3, w: q0 }`). Returned by value
+    /// because the underlying typed storage is `Copy` and the closure
+    /// needs an owned value to convert / rotate / inspect.
+    ///
+    /// Read accessor (not a setter) so that `pre_step` closures that
+    /// inject body-frame loads can read the body's current attitude
+    /// (to rotate a body-frame vector into the inertial frame, for
+    /// example) without needing concrete-type access to the adapter.
+    /// The runner forwards to
+    /// `Simulation::body(body_idx).rot.as_ref().unwrap().q_inertial_body`;
+    /// the Bevy adapter reads `RotationalStateC` off the body entity.
+    ///
+    /// Panics if `body_idx` is out of range, or if the body has no
+    /// rotational state (3-DOF). The default implementation panics
+    /// unconditionally so existing `SimContext` implementors stay
+    /// source-compatible — adapters that own a body-rotational-state
+    /// surface override this.
+    fn body_q_inertial_body(&mut self, body_idx: usize) -> glam::DQuat {
+        let _ = body_idx;
+        panic!(
+            "body_q_inertial_body not supported by this SimContext implementation; \
+             provide a SimContext impl that reads the adapter's body-rotational-state \
+             surface (e.g. RotationalStateC on the Bevy body entity)"
+        );
+    }
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked once per

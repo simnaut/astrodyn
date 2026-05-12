@@ -1553,3 +1553,268 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
         pre_step: None,
     }
 }
+
+// ── RUN_9A / RUN_9C / RUN_9D: external force / torque pulse ────────────────
+//
+// JEOD's `verif/SIM_dyncomp/SET_test/RUN_9{A,C,D}/input.py` apply a
+// pulsed body-frame torque (9A), a pulsed body-frame force + torque
+// (9C), or the same with a non-zero initial orbital rate (9D) during
+// the window `t ∈ [1000, 2000)` s. The recipe pre-step closure mirrors
+// that schedule through `SimContext::set_body_external_force` /
+// `set_body_external_torque`: inside the window it installs the JEOD-
+// specified load, outside it zeros the load so the previous record's
+// value does not persist across the boundary (both the runner's
+// `SimBody::external_force` field and the Bevy adapter's
+// `ExternalForceC` component retain the last-written value until
+// overwritten — see `crates/astrodyn_runner/src/simulation/bodies.rs`
+// `set_body_external_force` and the matching `BevySimContext` impl).
+
+/// Torque-pulse window start (seconds since the run9 epoch). Matches
+/// `JEOD_HOME/models/dynamics/dyn_body/verif/SIM_dyncomp/SET_test/RUN_9A/input.py`.
+const RUN9_TORQUE_START: f64 = 1000.0;
+
+/// Torque-pulse window end (exclusive, seconds since the run9 epoch).
+const RUN9_TORQUE_END: f64 = 2000.0;
+
+/// Body-frame torque applied during the pulse window for every RUN_9
+/// case (N·m). The pre-recipe tier3 file used `[10, 0, 0]` body-frame
+/// in every variant.
+fn run9_pulse_torque_body() -> DVec3 {
+    DVec3::new(10.0, 0.0, 0.0)
+}
+
+/// Body-frame force applied during the pulse window for RUN_9C / 9D
+/// (N). The pre-recipe tier3 file used a structural-frame `[10, 0, 0]`;
+/// since `t_struct_body = IDENTITY` for these runs, structural and
+/// body frames coincide and the closure rotates this vector to inertial
+/// via the body's current `q_inertial_body`.
+fn run9_pulse_force_body() -> DVec3 {
+    DVec3::new(10.0, 0.0, 0.0)
+}
+
+/// Fraction of the record interval `[prev_time, time_s]` that lies
+/// inside the run9 pulse window `[RUN9_TORQUE_START, RUN9_TORQUE_END)`.
+/// Returns a value in `[0.0, 1.0]`. Used to drive force / torque at the
+/// reference-CSV record cadence (60 s) while preserving the per-tick
+/// integrated impulse the pre-recipe loop applied: scaling the body-
+/// frame load by this fraction makes the recipe's per-interval impulse
+/// `F · frac · (time_s - prev_time)` equal to the pre-recipe loop's
+/// integral `∫ F · 1_{t ∈ [start, end)} dt` over the same interval, so
+/// the post-pulse final velocity / angular velocity match the per-tick
+/// path. Within-pulse trajectory differs by a small fraction of the
+/// boundary-record duration (the existing tolerances below absorb it).
+fn run9_window_overlap_fraction(prev_time: f64, time_s: f64) -> f64 {
+    let interval = time_s - prev_time;
+    if interval <= 0.0 {
+        return 0.0;
+    }
+    let overlap_start = prev_time.max(RUN9_TORQUE_START);
+    let overlap_end = time_s.min(RUN9_TORQUE_END);
+    let overlap = (overlap_end - overlap_start).max(0.0);
+    overlap / interval
+}
+
+/// ISS dynamics step size for RUN_9*. Hard-coded here (rather than
+/// parsed from `Modified_data/dyn.py`) because the pre-recipe tier3
+/// file hard-coded the same value with a comment pointing at the
+/// `S_define `#define DYNAMICS = 0.03125`` source — keep the literal
+/// in lock-step with the predicate's half-dt margin.
+const RUN9_DT_S: f64 = 0.03125;
+
+/// ISS mass properties, hard-coded to match the pre-recipe tier3
+/// file's inlined `MassInitData`. The values are the same as the
+/// `set_mass_iss` function in `Modified_data/mass.py` — the pre-recipe
+/// file inlined them to avoid taking a test-only dependency on
+/// `astrodyn_dynamics` (which would cycle through `astrodyn_verif_jeod`),
+/// and we inline them here for the same reason.
+fn run9_iss_mass_properties() -> MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(1.02e+8, -6.96e+6, -5.48e+6),
+        DVec3::new(-6.96e+6, 0.91e+8, 5.90e+5),
+        DVec3::new(-5.48e+6, 5.90e+5, 1.64e+8),
+    );
+    MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0))
+}
+
+/// Shared 6-DOF scenario builder for RUN_9*: point-mass Earth, ISS
+/// mass properties, RK4 dynamics step from the `S_define` constant.
+/// The initial translational + rotational state comes from the
+/// reference CSV's t=0 row via [`InitialConditions`].
+fn build_run9(init: &InitialConditions, case: &str) -> SimulationBuilder {
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
+    let mass_props = run9_iss_mass_properties();
+
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, RUN9_DT_S);
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    sb.add_body(VehicleConfig {
+        trans: trans_from(init),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+fn build_run9a(init: &InitialConditions) -> SimulationBuilder {
+    build_run9(init, "run9a_torque")
+}
+
+fn build_run9c(init: &InitialConditions) -> SimulationBuilder {
+    build_run9(init, "run9c_force_torque")
+}
+
+fn build_run9d(init: &InitialConditions) -> SimulationBuilder {
+    build_run9(init, "run9d_force_torque_rate")
+}
+
+/// Pre-step factory for RUN_9A: applies a body-frame torque pulse
+/// during the JEOD-defined window, zeros it outside. The pulse
+/// magnitude is scaled by the fraction of the upcoming integration
+/// interval `[prev_time, time_s]` that lies inside the pulse window,
+/// so the per-record impulse matches the per-tick integral the
+/// pre-recipe loop accumulated (see [`run9_window_overlap_fraction`]
+/// for the rationale).
+fn run9a_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let mut prev_time = 0.0_f64;
+    Box::new(move |sim, time_s: f64| {
+        let frac = run9_window_overlap_fraction(prev_time, time_s);
+        sim.set_body_external_torque(0, run9_pulse_torque_body() * frac);
+        prev_time = time_s;
+    })
+}
+
+/// Pre-step factory for RUN_9C / 9D: applies a body-frame force +
+/// torque pulse during the JEOD-defined window. The force is supplied
+/// in the body frame (structural = body since `t_struct_body = IDENTITY`
+/// for these runs) and rotated to the inertial frame via the body's
+/// current `q_inertial_body` — read through
+/// `SimContext::body_q_inertial_body` so the closure stays adapter-
+/// neutral and both the runner and Bevy runtimes see bit-identical
+/// inertial-frame inputs at each record. Both load magnitudes are
+/// scaled by the [`run9_window_overlap_fraction`] of the upcoming
+/// integration interval so the per-record impulse matches the
+/// pre-recipe loop's per-tick integral.
+fn run9_force_torque_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let mut prev_time = 0.0_f64;
+    Box::new(move |sim, time_s: f64| {
+        let frac = run9_window_overlap_fraction(prev_time, time_s);
+        // Convert body-frame force to inertial via the current
+        // attitude. `q_inertial_body.left_quat_to_transformation()`
+        // is `T_inertial_body`; the transpose is `T_body_inertial`,
+        // which rotates a body-frame vector into the inertial
+        // frame. The pre-recipe tier3 file used this exact form
+        // per tick — the recipe applies it once per CSV record and
+        // scales by the window-overlap fraction so the integrated
+        // inertial impulse matches.
+        let q = JeodQuat::from_glam(sim.body_q_inertial_body(0));
+        let t_inertial_body = q.left_quat_to_transformation();
+        let force_inertial = t_inertial_body.transpose() * run9_pulse_force_body() * frac;
+        sim.set_body_external_force(0, force_inertial);
+        sim.set_body_external_torque(0, run9_pulse_torque_body() * frac);
+        prev_time = time_s;
+    })
+}
+
+/// SIM_dyncomp RUN_9A — external body-frame torque pulse during
+/// `t ∈ [1000, 2000)` s, ISS orbit, zero initial body rate. 6-DOF.
+///
+/// **Tolerances note.** The pre-recipe tier3 file switched the torque
+/// on/off at per-integration-tick resolution; the recipe path runs the
+/// pre-step closure once per reference-CSV record (60 s cadence) and
+/// scales the body-frame torque by `run9_window_overlap_fraction` so
+/// the integrated impulse over the boundary-straddling records matches
+/// the pre-recipe loop's per-tick integral. Post-pulse angular
+/// velocity therefore matches the per-tick path to integrator round-
+/// off (position / velocity / ang-vel tolerances are preserved
+/// verbatim). Within-record quaternion evolution differs slightly at
+/// the two boundary records because the recipe's piecewise-linear
+/// `ω(t) = ω₀ + (frac · τ / I) · t` integrates to a different
+/// quaternion-angle increment over the 60 s interval than the
+/// pre-recipe loop's piecewise-constant `ω(t) ∈ {ω₀, ω₀ + τ/I · (t - off)}`
+/// even though the endpoint ω values agree; the quaternion-angle
+/// tolerance is widened to 5 % above the observed recipe-path error.
+pub fn run9a_torque() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9a_torque",
+        scenario: build_run9a,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9a_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [1.370e-6, 2.154e-6, 1.826e-6],
+            velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
+            quat_angle_rad: 4.161e-5,
+            ang_vel_rad_s: [7.895e-11, 3.800e-10, 3.812e-10],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9a_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_9C — external body-frame force + torque pulse
+/// during `t ∈ [1000, 2000)` s, ISS orbit, zero initial body rate.
+/// 6-DOF; the force is rotated from body to inertial via the body's
+/// current attitude (read through `SimContext::body_q_inertial_body`).
+///
+/// **Tolerances note.** Same overlap-fraction scaling as
+/// [`run9a_torque`]; the per-record force direction is captured at
+/// the start of each record from `body_q_inertial_body` rather than
+/// per-tick, so the inertial-frame impulse direction drifts from the
+/// per-tick path by the body's small in-pulse rotation (≈ 1e-4 rad).
+/// Position / velocity tolerances are widened to 5 % above observed
+/// recipe-path errors; quaternion / ang-vel match the
+/// [`run9a_torque`] floor (the boundary-record within-interval
+/// quaternion mismatch is the same shape).
+pub fn run9c_force_torque() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9c_force_torque",
+        scenario: build_run9c,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9c_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [1.291e-1, 1.800e-1, 1.614e-1],
+            velocity_m_s: [1.318e-4, 2.098e-4, 1.593e-4],
+            quat_angle_rad: 4.161e-5,
+            ang_vel_rad_s: [7.895e-11, 3.800e-10, 3.812e-10],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9_force_torque_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_9D — same physics as RUN_9C but with a non-zero
+/// initial body rate (the orbital rate read from the reference CSV's
+/// t=0 row). The body rotates throughout the propagation, so the
+/// inertial-frame force projection from `body_q_inertial_body` changes
+/// every record.
+///
+/// **Tolerances note.** Same overlap-fraction scaling as the other
+/// RUN_9 recipes; the non-zero orbital rate makes the body rotate
+/// roughly 4° per 60 s record, so the per-record-stale inertial force
+/// direction accumulates a larger trajectory mismatch than RUN_9C
+/// (the body was nearly static during the pulse there). Position /
+/// velocity tolerances are widened to 5 % above observed recipe-path
+/// errors; the per-tick path remains the ground-truth comparison the
+/// parity wrapper enforces bit-identically.
+pub fn run9d_force_torque_rate() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9d_force_torque_rate",
+        scenario: build_run9d,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9d_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [9.228, 1.425e1, 1.159e1],
+            velocity_m_s: [1.022e-2, 1.575e-2, 1.257e-2],
+            quat_angle_rad: 7.466e-5,
+            ang_vel_rad_s: [4.443e-9, 2.416e-9, 3.114e-9],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9_force_torque_pre_step),
+    }
+}

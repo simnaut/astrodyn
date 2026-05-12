@@ -51,8 +51,8 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameEntityC, FrameTransC,
-    KinematicChildC, MassChildOf, SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC,
-    TranslationalStateC,
+    KinematicChildC, MassChildOf, RotationalStateC, SourceInertialPositionC,
+    SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::SimContext;
 use bevy::ecs::message::Messages;
@@ -434,6 +434,29 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         } else {
             self.world.entity_mut(entity).insert(ExternalTorqueC(typed));
         }
+    }
+
+    fn body_q_inertial_body(&mut self, body_idx: usize) -> glam::DQuat {
+        // Mirror the runner's `body_q_inertial_body`: read the body's
+        // typed `RotationalStateC` and drop into raw `glam::DQuat` at
+        // the trait boundary. The component is inserted by
+        // `populate_app` whenever `VehicleConfig.rot` is `Some`, so a
+        // 6-DOF recipe's `pre_step` always finds it. Panics with the
+        // same shape as the runner side if the body is 3-DOF.
+        let entity = self.body_entity(body_idx);
+        self.world
+            .get::<RotationalStateC>(entity)
+            .unwrap_or_else(|| {
+                panic!(
+                    "body_q_inertial_body: body {body_idx} (entity {entity:?}) has no \
+                     RotationalStateC; wire `rot: Some(...)` on the VehicleConfig"
+                )
+            })
+            .0
+            .q_inertial_body
+            .as_witness()
+            .inner()
+            .to_glam()
     }
 }
 

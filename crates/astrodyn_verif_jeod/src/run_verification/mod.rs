@@ -158,6 +158,28 @@ impl SimContext for Simulation {
     fn set_body_external_torque(&mut self, body_idx: usize, torque: DVec3) {
         Simulation::set_body_external_torque(self, body_idx, torque);
     }
+
+    fn body_q_inertial_body(&mut self, body_idx: usize) -> glam::DQuat {
+        // VehicleOutput::rot carries the typed inertial-to-body
+        // attitude; drop into raw `glam::DQuat` at the trait boundary
+        // so the closure stays adapter-neutral. Panics if the body is
+        // 3-DOF (no rotational state) — recipes that read attitude
+        // must configure a `rot:` component, the same shape the
+        // tier3 pre-recipe loop assumed.
+        Simulation::body(self, body_idx)
+            .rot
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "body_q_inertial_body: body {body_idx} has no rotational state; \
+                     wire `rot: Some(...)` on the VehicleConfig"
+                )
+            })
+            .q_inertial_body
+            .as_witness()
+            .inner()
+            .to_glam()
+    }
 }
 
 /// Per-family typed records held alongside the [`StateLog`] vec so
