@@ -628,13 +628,18 @@ fn publish(argv: Vec<String>) {
 // version (not just the name) is critical: on every publish after the
 // first, the crate name is already on the registry from a prior
 // version, so a name-only check would short-circuit while the index
-// is still serving stale metadata. Cap at 5 minutes — anything
-// longer is almost certainly a registry incident worth a human eye.
+// is still serving stale metadata. Cap at 15 minutes — both the
+// v0.1.0 and v0.1.1 releases hit the previous 5-min cap on the
+// first-crate poll, so the longer window covers the observed
+// sparse-index propagation tail. Anything beyond that is a registry
+// incident worth a human eye.
+const WAIT_FOR_INDEX_SECS: u64 = 900;
+
 fn wait_for_index(crate_name: &str, expected_version: &str) {
     use std::thread::sleep;
     use std::time::{Duration, Instant};
 
-    let deadline = Instant::now() + Duration::from_secs(300);
+    let deadline = Instant::now() + Duration::from_secs(WAIT_FOR_INDEX_SECS);
     let mut attempt = 0u32;
     eprintln!("publish: waiting for crates.io index to serve {crate_name} {expected_version}...");
     // `cargo search foo --limit 1` prints `foo = "x.y.z" # ...` for
@@ -654,8 +659,9 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
             }
         }
         if Instant::now() >= deadline {
+            let mins = WAIT_FOR_INDEX_SECS / 60;
             eprintln!(
-                "publish: timed out after 5 min waiting for {crate_name} {expected_version} \
+                "publish: timed out after {mins} min waiting for {crate_name} {expected_version} \
                  on the index. If `cargo publish` succeeded, you can resume with:\n\
                  \n    cargo xtask publish --from <next crate> --no-wait\n"
             );
