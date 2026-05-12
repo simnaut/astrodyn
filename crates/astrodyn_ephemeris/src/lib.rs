@@ -28,23 +28,24 @@
 //!
 //! ## Example
 //!
-//! Load DE421 from the bundled bytes, then query the Sun's position
-//! relative to the solar-system barycenter at J2000.0 (TDB Julian Day
-//! `2_451_545.0`):
+//! Resolve DE421 via [`data::load`] (in-workspace `assets/` during dev,
+//! cached fetch from the `kernels-v1` GitHub Release for downstream
+//! consumers), then query the Sun's position relative to the
+//! solar-system barycenter at J2000.0 (TDB Julian Day `2_451_545.0`):
 //!
-//! ```
-//! use astrodyn_ephemeris::{data::DE421_BSP, Ephemeris, EphemerisBody};
+//! ```ignore
+//! use astrodyn_ephemeris::{data, Ephemeris, EphemerisBody};
 //!
-//! let eph = Ephemeris::from_bsp_bytes(DE421_BSP).unwrap();
-//! let (pos, _vel) = eph
-//!     .get_state_typed(
-//!         EphemerisBody::Sun,
-//!         EphemerisBody::SolarSystemBarycenter,
-//!         2_451_545.0,
-//!     )
-//!     .unwrap();
+//! let bytes = data::load(&data::DE421)?;
+//! let eph = Ephemeris::from_bsp_bytes(&bytes)?;
+//! let (pos, _vel) = eph.get_state_typed(
+//!     EphemerisBody::Sun,
+//!     EphemerisBody::SolarSystemBarycenter,
+//!     2_451_545.0,
+//! )?;
 //! // The Sun is close to the barycenter (~1 solar radius offset).
 //! assert!(pos.raw_si().length() < 2.0e9);
+//! # Ok::<(), astrodyn_ephemeris::EphemerisError>(())
 //! ```
 
 #![forbid(unsafe_code)]
