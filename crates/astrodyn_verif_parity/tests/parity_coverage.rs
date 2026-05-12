@@ -137,11 +137,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          not yet defined; needs `pre_step` Bevy support too (#389 follow-up)",
     ),
     (
-        "drag_6dof",
-        "pre-recipe sibling — drag-family recipe factories not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "drag_analytical",
         "analytical drag verification — out of trait scope (no propagation)",
     ),
