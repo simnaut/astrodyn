@@ -6,8 +6,8 @@
 //! [`astrodyn_verif_jeod::run_verification::sim_dyncomp::run9{a,c,d}_*`]
 //! and share a single `pre_step` factory per family. The closure
 //! observes only the [`astrodyn_verif_jeod::verification::SimContext`]
-//! trait surface — `set_body_external_force` and
-//! `set_body_external_torque` for the writes (`#477`), plus
+//! trait surface — `set_body_external_force` /
+//! `set_body_external_torque` for the writes, plus
 //! `body_q_inertial_body` for reading the current attitude that
 //! rotates the body-frame force into inertial. Identical numeric
 //! inputs flow into both `astrodyn_runner::Simulation` and the Bevy
