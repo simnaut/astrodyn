@@ -20,103 +20,62 @@
 //!   reference frame is inertial (no rotational state), confirming the
 //!   symmetry of the relative-state operator.
 //!
-//! No Docker reference data required. Earth mu is read from JEOD source.
+//! No Docker reference data required. The `Simulation` construction lives
+//! in the `sim_relative_extended` recipe module so the parity wrapper
+//! (`bevy_parity_relative_extended.rs`) can drive the same scenarios
+//! through the Bevy adapter for the `runner ↔ bevy` half of the
+//! transitivity argument.
 
 use astrodyn::{
-    compute_lvlh_relative_state_typed, compute_relative_state, Earth, GravityControl,
-    GravityControls, GravityGradient, GravityModel, GravitySource, PlanetInertial,
-    RelativeTranslation, SelfRef, SimulationTime, TranslationalState, Vec3Ext,
+    compute_lvlh_relative_state_typed, compute_relative_state, Earth, PlanetInertial,
+    RelativeTranslation, SelfRef, Vec3Ext,
 };
-use astrodyn::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
-use astrodyn_runner::{RotationModel, Simulation};
-use glam::DVec3;
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_relative_extended;
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
-fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
+/// Build the recipe's `Simulation` exactly the way the parity trait does
+/// — call the scenario factory with a default `InitialConditions`, then
+/// `.build()` — so the runner-side propagation here and the Bevy-side
+/// propagation in `bevy_parity_relative_extended.rs` see the same
+/// initial state bit-pattern.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
 }
 
-/// Construct a Simulation with a single point-mass Earth at the origin and
-/// return `(sim, earth_source_idx)` for the caller to populate with bodies.
-fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    );
-    (sim, earth)
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_relative_extended` uses this variant
+/// because the family is analytical-only; panicking on any other
+/// variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation. Returning both halves
+/// of the cadence lets callers assert that the `dt` they're stepping
+/// at (typically `sim.dt`) matches the cadence the recipe declared —
+/// catches a future edit that updates the builder dt but forgets the
+/// `SyntheticTimes` dt (or vice versa).
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
 }
 
-fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalState) {
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        derived: DerivedStateConfig {
-            lvlh: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-}
-
-// non-recipe: bespoke geometry — two vehicles on the same circular orbit
-// with a small along-track Δν offset. No recipe preset captures this pair.
 #[test]
 fn tier3_relative_two_coorbiting_vehicles() {
     // Two vehicles on the same 400 km circular equatorial orbit, separated by
     // a small along-track phase. In the chief's LVLH frame the deputy should
     // remain at an almost-constant along-track offset, up to truncation error
     // from the RK4 integrator at a 10 s step.
-    let mu_earth = load_mu_earth();
-    let dt = 10.0;
-    let (mut sim, earth) = make_earth_sim(dt, mu_earth);
-
-    let r = 6_778_137.0; // ~400 km altitude
-    let v = (mu_earth / r).sqrt();
-
-    // Chief at (r, 0, 0), velocity +y
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
+    let case = sim_relative_extended::two_coorbiting_vehicles();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
-
-    // Deputy 100 m "ahead" — i.e., offset by a tiny true anomaly Δν
-    // so that Δs ≈ r * Δν = 100 m, Δν = 100/r rad.
-    let dnu = 100.0 / r;
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r * dnu.cos(), r * dnu.sin(), 0.0),
-            velocity: DVec3::new(-v * dnu.sin(), v * dnu.cos(), 0.0),
-        },
-    );
-
-    sim.validate().unwrap();
-
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    let end_time = 3.0 * period;
-    let n_steps = (end_time / dt) as usize;
 
     let mut max_sep = 0.0_f64;
     let mut min_sep = f64::INFINITY;
@@ -204,47 +163,20 @@ fn tier3_relative_two_coorbiting_vehicles() {
     );
 }
 
-// non-recipe: chief circular + deputy ellipse with apoapsis at 1.05·r_chief;
-// hand-crafted Hohmann-shape geometry not in `recipes::orbital_elements`.
 #[test]
 fn tier3_relative_hohmann_transfer_geometry() {
     // Chief in circular orbit at 400 km; deputy in a coplanar ellipse whose
     // periapsis coincides with the chief's orbit (same r, same direction of
     // motion). The separation |r_deputy - r_chief| must oscillate because the
     // deputy climbs to apoapsis and falls back.
-    let mu_earth = load_mu_earth();
-    let dt = 10.0;
-    let (mut sim, earth) = make_earth_sim(dt, mu_earth);
-
-    let r_chief = 6_778_137.0;
-    let v_chief = (mu_earth / r_chief).sqrt();
-
-    // Chief: circular
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r_chief, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v_chief, 0.0),
-        },
+    let case = sim_relative_extended::hohmann_transfer_geometry();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
-
-    // Deputy: periapsis at (r_chief, 0, 0), same direction of motion,
-    // apoapsis at r_apo = 1.05 * r_chief.
-    let r_apo = 1.05 * r_chief;
-    let a_d = 0.5 * (r_chief + r_apo);
-    let e_d = (r_apo - r_chief) / (r_apo + r_chief);
-    let v_peri = (mu_earth * (1.0 + e_d) / (a_d * (1.0 - e_d))).sqrt();
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r_chief, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v_peri, 0.0),
-        },
-    );
-
-    sim.validate().unwrap();
 
     // Initial separation: both bodies at the same point → 0.
     let body0 = sim.body(0);
@@ -258,10 +190,6 @@ fn tier3_relative_hohmann_transfer_geometry() {
         init_sep < 1e-9,
         "Hohmann setup: initial separation {init_sep} m should be 0"
     );
-
-    // Propagate for one deputy period so the deputy returns to its periapsis.
-    let period_d = 2.0 * std::f64::consts::PI * (a_d * a_d * a_d / mu_earth).sqrt();
-    let n_steps = (period_d / dt) as usize;
 
     let mut max_sep = 0.0_f64;
     // Track separation near apoapsis: at T_d/2, deputy is at (-r_apo, ..., 0).
@@ -290,6 +218,11 @@ fn tier3_relative_hohmann_transfer_geometry() {
         max_sep = max_sep.max(sep);
     }
 
+    // The recipe-encoded chief/apoapsis geometry: r_chief = 6_778_137 m,
+    // r_apo = 1.05 * r_chief. Reconstruct the bounds locally so the
+    // assertions match the recipe-driven initial state exactly.
+    let r_chief = 6_778_137.0_f64;
+    let r_apo = 1.05 * r_chief;
     // Upper bound: r_apo + r_chief (deputy-apoapsis, chief-antipode).
     // Lower bound on achievable max separation: r_apo - r_chief when they
     // happen to be co-radial at opposite points.
@@ -304,44 +237,26 @@ fn tier3_relative_hohmann_transfer_geometry() {
     );
 }
 
-// non-recipe: two-body 90° phase-difference geometry; setup is the assertion.
 #[test]
 fn tier3_relative_same_orbit_phase_difference() {
     // Two vehicles in the same circular orbit, 90° apart in true anomaly.
     // At t=0 their positions are on the same circle of radius r, subtending
     // 90° at Earth, so the chord length is r * sqrt(2). Because they share
     // the orbital period, this separation is preserved forever.
-    let mu_earth = load_mu_earth();
-    let dt = 10.0;
-    let (mut sim, earth) = make_earth_sim(dt, mu_earth);
-
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
-
-    // Body A: at (r, 0, 0), velocity (0, v, 0)
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
+    let case = sim_relative_extended::same_orbit_phase_difference();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
 
-    // Body B: at (0, r, 0) [90° ahead], velocity (-v, 0, 0)
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(0.0, r, 0.0),
-            velocity: DVec3::new(-v, 0.0, 0.0),
-        },
-    );
-
-    sim.validate().unwrap();
-
+    // Recipe places both bodies on a 6_778_137 m circle 90° apart, so
+    // the expected chord is r * sqrt(2). Reconstruct locally so the
+    // assertion matches the recipe-encoded initial state exactly.
+    let r = 6_778_137.0_f64;
     let expected_sep = r * std::f64::consts::SQRT_2;
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
 
     let mut max_dev = 0.0_f64;
 
@@ -364,8 +279,6 @@ fn tier3_relative_same_orbit_phase_difference() {
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
 
-    // Check every dt seconds over 2 orbits
-    let n_steps = (2.0 * period / dt) as usize;
     for step in 1..=n_steps {
         let t = step as f64 * dt;
         sim.step_until(t).expect("step_until failed");
@@ -393,47 +306,27 @@ fn tier3_relative_same_orbit_phase_difference() {
     );
 }
 
-// non-recipe: chief equatorial vs deputy at +1° inclination — bespoke
-// cross-track geometry test.
 #[test]
 fn tier3_relative_different_inclinations() {
     // Chief on equatorial circular orbit; deputy on the same circular orbit
     // inclined by +1° about the +X axis (i.e., node on the +X axis, AOL 0).
     // Both start at (r, 0, 0). Cross-track excursion (out-of-plane in chief's
     // frame) oscillates at the orbital period with amplitude r * sin(1°).
-    let mu_earth = load_mu_earth();
-    let dt = 5.0;
-    let (mut sim, earth) = make_earth_sim(dt, mu_earth);
+    let case = sim_relative_extended::different_inclinations();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
+    );
 
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
+    // Recipe places both bodies at (r, 0, 0) with the deputy's velocity
+    // tipped by +1° about +X. The expected cross-track amplitude is
+    // r * sin(i). Reconstruct locally so the assertion matches the
+    // recipe-encoded initial state exactly.
+    let r = 6_778_137.0_f64;
     let inc = 1.0_f64.to_radians();
-
-    // Chief: equatorial
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
-    );
-
-    // Deputy: inclined, same initial position, velocity tipped into +Z
-    // by inc. Rotation about +X by +inc sends (0, v, 0) → (0, v cos i, v sin i).
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-        },
-    );
-
-    sim.validate().unwrap();
-
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    let n_steps = (2.0 * period / dt) as usize;
     let expected_amplitude = r * inc.sin();
 
     let mut max_abs_z = 0.0_f64; // inertial Z separation (cross-track)
@@ -458,44 +351,19 @@ fn tier3_relative_different_inclinations() {
     );
 }
 
-// non-recipe: two orbits at different radii to verify r_AB = -r_BA symmetry;
-// the geometry is the test.
 #[test]
 fn tier3_relative_round_trip_frames() {
     // When neither body has a rotational state, the relative-state operator
     // has a clean symmetry: r_AB = -r_BA and v_AB = -v_BA. We verify this on
     // the propagated trajectory at several checkpoints.
-    let mu_earth = load_mu_earth();
-    let dt = 10.0;
-    let (mut sim, earth) = make_earth_sim(dt, mu_earth);
-
-    let r = 6_778_137.0;
-    let v = (mu_earth / r).sqrt();
-
-    // Body 0 at (r, 0, 0); Body 1 in a different coplanar circular orbit.
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v, 0.0),
-        },
+    let case = sim_relative_extended::round_trip_frames();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
     );
-    let r2 = r + 500_000.0;
-    let v2 = (mu_earth / r2).sqrt();
-    add_orbital_body(
-        &mut sim,
-        earth,
-        TranslationalState {
-            position: DVec3::new(r2, 0.0, 0.0),
-            velocity: DVec3::new(0.0, v2, 0.0),
-        },
-    );
-
-    sim.validate().unwrap();
-
-    let period = 2.0 * std::f64::consts::PI * (r * r * r / mu_earth).sqrt();
-    let n_steps = (period / dt) as usize;
 
     let mut max_sum_pos = 0.0_f64;
     let mut max_sum_vel = 0.0_f64;

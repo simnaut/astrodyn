@@ -40,6 +40,7 @@ pub mod sim_orbinit_roundtrip;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
 pub mod sim_relative;
+pub mod sim_relative_extended;
 pub mod sim_solar_beta;
 pub mod sim_solar_beta_extended;
 pub mod sim_srp;
