@@ -77,9 +77,14 @@ fn period_s(mu_earth: f64, r: f64) -> f64 {
 ///     `DT_INCLINATION_S` in this family);
 ///   * `trans_chief` / `trans_deputy` — the two bodies' initial
 ///     translational states;
-///   * `lvlh` — whether to enable the LVLH derived state on body 0
-///     (only the co-orbiting recipe consumes it; the others read raw
-///     inertial positions for their analytical assertions).
+///   * `lvlh_chief` — whether to enable the LVLH derived state on the
+///     chief (body 0). Only the co-orbiting recipe sets this; the
+///     others read raw inertial positions for their analytical
+///     assertions and leave the chief's LVLH unrequested. The deputy
+///     never carries an LVLH request because the LVLH frame in this
+///     family is always the chief's: `compute_lvlh_relative_state_typed`
+///     takes the chief as the reference body, and no test reads the
+///     deputy's own LVLH derived field.
 ///
 /// Both bodies are spawned point-mass-only (no rotation, no mass) under
 /// the same Earth source so the integration frame is
@@ -90,7 +95,7 @@ fn build_relative_extended(
     dt: f64,
     trans_chief: TranslationalState,
     trans_deputy: TranslationalState,
-    lvlh: bool,
+    lvlh_chief: bool,
 ) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -118,7 +123,7 @@ fn build_relative_extended(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig {
-            lvlh,
+            lvlh: lvlh_chief,
             ..Default::default()
         },
         ..Default::default()
@@ -128,10 +133,7 @@ fn build_relative_extended(
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        derived: DerivedStateConfig {
-            lvlh,
-            ..Default::default()
-        },
+        derived: DerivedStateConfig::default(),
         ..Default::default()
     });
     sb
