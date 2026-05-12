@@ -177,11 +177,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          not yet defined (#389 follow-up)",
     ),
     (
-        "relative_extended",
-        "pre-recipe sibling (same family as `relative`) — needs new \
-         CsvReference variant; follow-up to #389",
-    ),
-    (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",
