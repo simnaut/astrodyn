@@ -41,11 +41,12 @@ impl Ephemeris {
         })
     }
 
-    /// Load an ephemeris from raw .bsp bytes (e.g. an `include_bytes!` blob).
+    /// Load an ephemeris from raw .bsp bytes (e.g. a `Vec<u8>` returned
+    /// by [`crate::data::load`]).
     ///
     /// Equivalent to [`from_bsp`](Self::from_bsp) but skips the filesystem
-    /// lookup. Use this with [`crate::data::DE421_BSP`] to load the
-    /// embedded DE421 kernel without any path resolution.
+    /// lookup. Pair with `data::load(&data::DE421)` (or `DE440`) to keep
+    /// the kernel-resolution policy in one place.
     pub fn from_bsp_bytes(bytes: &[u8]) -> Result<Self, EphemerisError> {
         let spk = SPK::parse(bytes).map_err(|e| EphemerisError::LoadError(e.to_string()))?;
         Ok(Self {
@@ -67,12 +68,12 @@ impl Ephemeris {
         Ok(())
     }
 
-    /// Load a Binary PCK (orientation) kernel from raw bytes
-    /// (e.g. an `include_bytes!` blob).
+    /// Load a Binary PCK (orientation) kernel from raw bytes (e.g. a
+    /// `Vec<u8>` returned by [`crate::data::load`]).
     ///
     /// Equivalent to [`load_bpc`](Self::load_bpc) but skips the filesystem
-    /// lookup. Use this with [`crate::data::MOON_PA_BPC`] to merge the
-    /// embedded Moon principal-axes orientation kernel.
+    /// lookup. Pair with `data::load(&data::MOON_PA)` to merge the Moon
+    /// principal-axes orientation kernel.
     pub fn load_bpc_bytes(&mut self, bytes: &[u8]) -> Result<(), EphemerisError> {
         let bpc = BPC::parse(bytes).map_err(|e| EphemerisError::LoadError(e.to_string()))?;
         let almanac = std::mem::take(&mut self.almanac);

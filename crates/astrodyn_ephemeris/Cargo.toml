@@ -8,18 +8,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# The DE421 SPK (~17 MB) and Moon PA BPC (~1.7 MB) are bundled into the
-# published .crate so downstream consumers can call
-# `Ephemeris::from_bsp_bytes(astrodyn_ephemeris::data::DE421_BSP)` (and
-# the higher-level `astrodyn::recipes::ephemeris::de421()`) without
-# vendoring kernels themselves. Cargo's default packager already ships
-# `assets/`; we only need to be explicit about the `Cargo.toml`-listed
-# include set so future additions to `assets/` don't accidentally bloat
-# every release.
+# The kernel assets are NOT bundled into the .crate. `data::load()`
+# resolves a `KernelSpec` against (1) `$ASTRODYN_EPHEMERIS_KERNELS_DIR`,
+# (2) `$CARGO_MANIFEST_DIR/assets/` (workspace builds only), (3) the user
+# cache dir, then (4) — with the default-on `fetch` feature — downloads
+# the asset from the project's `kernels-v1` GitHub Release. See
+# `src/data.rs` for the full lookup contract.
 include = [
     "src/**",
-    "assets/de421.bsp",
-    "assets/moon_pa_de421_1900-2050.bpc",
     "README.md",
     "Cargo.toml",
     "LICENSE-APACHE",
@@ -29,11 +25,21 @@ include = [
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+default = ["fetch"]
+# Pull missing kernels from the project's GitHub Release over HTTPS.
+# Disable for air-gapped builds (`default-features = false`); the
+# caller is then responsible for populating
+# `$ASTRODYN_EPHEMERIS_KERNELS_DIR` or the user cache dir.
+fetch = ["dep:ureq", "dep:sha2"]
+
 [dependencies]
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 anise = "0.9"
 glam = { workspace = true }
 thiserror = { workspace = true }
+ureq = { version = "2", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [lints]
 workspace = true

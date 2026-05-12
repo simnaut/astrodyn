@@ -1,12 +1,13 @@
-//! Planetary ephemeris recipes backed by the bundled JPL kernels.
+//! Planetary ephemeris recipes backed by JPL kernel assets.
 //!
-//! Each recipe wraps an embedded SPK / BPC byte blob from
-//! [`astrodyn_ephemeris::data`] and returns an [`Ephemeris`] ready to
-//! plug into a [`SimulationBuilder`](crate::SimulationBuilder) via
-//! `.ephemeris(...)`. Because the kernels are pulled in with
-//! `include_bytes!`, these recipes work identically inside the
-//! workspace and from the published `.crate` — no filesystem lookups,
-//! no `JEOD_HOME`.
+//! Each recipe pulls a kernel via [`astrodyn_ephemeris::data::load`] and
+//! returns an [`Ephemeris`] ready to plug into a
+//! [`SimulationBuilder`](crate::SimulationBuilder) via `.ephemeris(...)`.
+//! Kernels resolve from the in-workspace `assets/` dir during dev/test
+//! and from the project's `kernels-v1` GitHub Release (cached in
+//! `~/.cache/astrodyn-ephemeris/`) for downstream consumers. See the
+//! [`astrodyn_ephemeris::data`] module docs for the full lookup order
+//! and offline-build instructions.
 //!
 //! ```ignore
 //! use astrodyn::recipes::ephemeris;
@@ -19,9 +20,10 @@ use crate::{Ephemeris, EphemerisError};
 /// JPL DE421 planetary ephemeris (Sun, Moon, planets, 1900–2050).
 ///
 /// Equivalent to `Ephemeris::from_bsp("de421.bsp")` against the JEOD-
-/// vendored kernel, but the bytes are embedded at compile time.
+/// vendored kernel.
 pub fn de421() -> Result<Ephemeris, EphemerisError> {
-    Ephemeris::from_bsp_bytes(astrodyn_ephemeris::data::DE421_BSP)
+    let bytes = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::DE421)?;
+    Ephemeris::from_bsp_bytes(&bytes)
 }
 
 /// DE421 ephemeris plus the Moon principal-axes orientation kernel.
@@ -32,7 +34,8 @@ pub fn de421() -> Result<Ephemeris, EphemerisError> {
 /// suffices when only Moon position/velocity are needed.
 pub fn de421_with_moon_pa() -> Result<Ephemeris, EphemerisError> {
     let mut eph = de421()?;
-    eph.load_bpc_bytes(astrodyn_ephemeris::data::MOON_PA_BPC)?;
+    let bpc = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::MOON_PA)?;
+    eph.load_bpc_bytes(&bpc)?;
     Ok(eph)
 }
 
@@ -43,11 +46,9 @@ pub fn de421_with_moon_pa() -> Result<Ephemeris, EphemerisError> {
 /// We ship the `de440s` short-subset (~32 MB) — sufficient for the
 /// 2026-class epochs we currently target and two orders of magnitude
 /// smaller than the full DE440 archive.
-///
-/// Equivalent to `Ephemeris::from_bsp("de440s.bsp")` against the NAIF-
-/// vendored kernel, but the bytes are embedded at compile time.
 pub fn de440() -> Result<Ephemeris, EphemerisError> {
-    Ephemeris::from_bsp_bytes(astrodyn_ephemeris::data::DE440_BSP)
+    let bytes = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::DE440)?;
+    Ephemeris::from_bsp_bytes(&bytes)
 }
 
 /// DE440 ephemeris plus the Moon principal-axes orientation kernel.
@@ -65,6 +66,7 @@ pub fn de440() -> Result<Ephemeris, EphemerisError> {
 /// switching to the DE440-aligned `moon_pa_de440_*.bpc` kernel.
 pub fn de440_with_moon_pa() -> Result<Ephemeris, EphemerisError> {
     let mut eph = de440()?;
-    eph.load_bpc_bytes(astrodyn_ephemeris::data::MOON_PA_BPC)?;
+    let bpc = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::MOON_PA)?;
+    eph.load_bpc_bytes(&bpc)?;
     Ok(eph)
 }
