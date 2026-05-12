@@ -144,6 +144,45 @@ pub trait SimContext {
              (e.g. inserts KinematicChildC on the Bevy entity)"
         );
     }
+
+    /// Set body `body_idx`'s root-inertial external force, replacing
+    /// any previous value. Mirrors the runner's
+    /// `Simulation::set_body_external_force` — invoked from a
+    /// `pre_step` closure to schedule time-stamped external load
+    /// changes (impulse pairs, on/off pulses) without dropping out of
+    /// the recipe path.
+    ///
+    /// The default implementation panics with an explicit
+    /// "set_body_external_force not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters
+    /// that own a body-force injection surface (runner's `SimBody`,
+    /// the Bevy adapter's `ExternalForceC` component) override this.
+    fn set_body_external_force(&mut self, body_idx: usize, force: DVec3) {
+        let _ = (body_idx, force);
+        panic!(
+            "set_body_external_force not supported by this SimContext implementation; \
+             provide a SimContext impl that mutates the adapter's external-load \
+             surface (e.g. ExternalForceC on the Bevy body entity)"
+        );
+    }
+
+    /// Set body `body_idx`'s body-frame external torque, replacing any
+    /// previous value. Mirrors the runner's
+    /// `Simulation::set_body_external_torque` — invoked from a
+    /// `pre_step` closure to schedule time-stamped torque changes.
+    ///
+    /// The default implementation panics with an explicit
+    /// "set_body_external_torque not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters
+    /// that own a body-torque injection surface override this.
+    fn set_body_external_torque(&mut self, body_idx: usize, torque: DVec3) {
+        let _ = (body_idx, torque);
+        panic!(
+            "set_body_external_torque not supported by this SimContext implementation; \
+             provide a SimContext impl that mutates the adapter's external-load \
+             surface (e.g. ExternalTorqueC on the Bevy body entity)"
+        );
+    }
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked once per
