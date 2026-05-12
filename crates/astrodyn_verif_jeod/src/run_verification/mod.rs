@@ -29,6 +29,7 @@
 pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_dyncomp;
+pub mod sim_force_torque_response;
 pub mod sim_gj;
 pub mod sim_kinematic_propagation;
 pub mod sim_lvlh_extended;
@@ -148,6 +149,14 @@ impl SimContext for Simulation {
 
     fn mark_kinematic_only(&mut self, child_idx: usize) {
         Simulation::mark_kinematic_only(self, child_idx);
+    }
+
+    fn set_body_external_force(&mut self, body_idx: usize, force: DVec3) {
+        Simulation::set_body_external_force(self, body_idx, force);
+    }
+
+    fn set_body_external_torque(&mut self, body_idx: usize, torque: DVec3) {
+        Simulation::set_body_external_torque(self, body_idx, torque);
     }
 }
 

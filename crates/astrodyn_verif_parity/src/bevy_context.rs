@@ -46,12 +46,13 @@
 //! mid-step reentrant attach is structurally impossible.
 
 use astrodyn::{
-    FrameTransform, Planet, PlanetInertial, Position, RootInertial, SelfRef, StructuralFrame,
-    Vec3Ext,
+    BodyFrame, Force, FrameTransform, Planet, PlanetInertial, Position, RootInertial, SelfRef,
+    StructuralFrame, Torque, Vec3Ext,
 };
 use astrodyn_bevy::{
-    AttachEvent, DetachEvent, FrameEntityC, FrameTransC, KinematicChildC, MassChildOf,
-    SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
+    AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameEntityC, FrameTransC,
+    KinematicChildC, MassChildOf, SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC,
+    TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::SimContext;
 use bevy::ecs::message::Messages;
@@ -395,6 +396,44 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
             },
             KinematicChildC,
         ));
+    }
+
+    fn set_body_external_force(&mut self, body_idx: usize, force: DVec3) {
+        // Match the runner's `Simulation::set_body_external_force`
+        // bit-for-bit: overwrite the body's external-force component
+        // with the new value. The runner's storage frame is
+        // `RootInertial` (the recipe wires `external_force` typed
+        // against root-inertial on `VehicleConfig`), and the Bevy
+        // `ExternalForceC` carries the same phantom — so this is a
+        // direct typed write with no relabel.
+        let entity = self.body_entity(body_idx);
+        let typed = Force::<RootInertial>::from_raw_si(force);
+        // Auto-insert when missing: `populate_app` only inserts
+        // `ExternalForceC` when `VehicleConfig.external_force` is
+        // non-zero, so a scenario that starts with zero force but
+        // schedules a non-zero pulse needs the component installed
+        // here (mirrors the `SourceInertialVelocityC` auto-insert in
+        // `set_source_state` above).
+        if let Some(mut fc) = self.world.get_mut::<ExternalForceC>(entity) {
+            fc.0 = typed;
+        } else {
+            self.world.entity_mut(entity).insert(ExternalForceC(typed));
+        }
+    }
+
+    fn set_body_external_torque(&mut self, body_idx: usize, torque: DVec3) {
+        // Match the runner: overwrite the body's external-torque
+        // component with the new value. The torque carries the
+        // body-frame phantom against the runtime-resolved
+        // `SelfRef` vehicle wildcard (JEOD_INV: TS.01), same as
+        // `VehicleConfig.external_torque` and `ExternalTorqueC`.
+        let entity = self.body_entity(body_idx);
+        let typed = Torque::<BodyFrame<SelfRef>>::from_raw_si(torque);
+        if let Some(mut tc) = self.world.get_mut::<ExternalTorqueC>(entity) {
+            tc.0 = typed;
+        } else {
+            self.world.entity_mut(entity).insert(ExternalTorqueC(typed));
+        }
     }
 }
 
