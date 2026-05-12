@@ -76,6 +76,11 @@ publish options:
                             sequence. Lets you recover from a
                             mid-sequence failure without re-publishing
                             crates the registry has already accepted.
+                            Usually unnecessary: every iteration
+                            pre-checks the registry and skips crates
+                            whose target version is already live, so a
+                            re-run of the same tag picks up where the
+                            previous run left off automatically.
     --token <token>         Pass-through to `cargo publish --token`.
                             If omitted, cargo reads CARGO_REGISTRY_TOKEN
                             from the environment (the path CI uses).
@@ -573,6 +578,21 @@ fn publish(argv: Vec<String>) {
             if args.dry_run { " (dry-run)" } else { "" }
         );
 
+        // Skip-if-already-uploaded: `cargo publish` hard-errors with
+        // `crate <name>@<version> already exists on crates.io index`
+        // when the version is on the registry. Without this pre-check
+        // the tag-triggered workflow can't recover from a mid-sequence
+        // failure — re-running it dies at step 1 because the first
+        // crate is now live. Dry-runs always proceed since they're
+        // meant to exercise the package step.
+        if !args.dry_run && already_published(crate_name, &expected_version) {
+            eprintln!(
+                "publish [{step}/{total}]: {crate_name} {expected_version} \
+                 is already on the registry — skipping."
+            );
+            continue;
+        }
+
         let mut cmd = Command::new("cargo");
         cmd.arg("publish").arg("-p").arg(crate_name);
         if args.dry_run {
@@ -619,6 +639,30 @@ fn publish(argv: Vec<String>) {
             "published"
         }
     );
+}
+
+// One-shot version of the wait_for_index probe: returns true iff the
+// registry is *already* serving `crate_name = "expected_version"`.
+// Used to make the publish loop idempotent — if a previous run of the
+// same tag landed N crates and then died on N+1, re-running has to
+// skip those N rather than re-trying their `cargo publish` (which
+// hard-errors on "already exists"). Returning false on any cargo
+// failure is the safe default: we'd rather attempt a publish and let
+// cargo's own check decide than silently skip on a transient error.
+fn already_published(crate_name: &str, expected_version: &str) -> bool {
+    let needle = format!("{crate_name} = \"{expected_version}\"");
+    let Ok(out) = Command::new("cargo")
+        .args(["search", crate_name, "--limit", "1"])
+        .output()
+    else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.starts_with(&needle))
 }
 
 // Poll `cargo search` until the just-published crate AND VERSION

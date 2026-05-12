@@ -7,7 +7,10 @@ name: publish
 #      `0.1.0`.
 #   2. Walks the 13 publishable crates in topological order via
 #      `cargo xtask publish` (which polls the sparse index between
-#      crates so the next crate's path+version dep resolves).
+#      crates so the next crate's path+version dep resolves, and
+#      pre-checks the registry so already-published crates are
+#      skipped — re-running the same tag picks up where the previous
+#      run left off).
 #
 # Prerequisite: a repo-level `CARGO_REGISTRY_TOKEN` secret with
 # publish scope on each of the 13 `astrodyn*` crates.
