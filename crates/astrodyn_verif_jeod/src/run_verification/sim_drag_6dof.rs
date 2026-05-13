@@ -72,10 +72,12 @@ const AREA_M2: f64 = 10.0;
 /// exponential atmosphere model and drives the assertion content.
 const DENSITY: f64 = 1e-12;
 
-/// Number of integration steps to cover one circular-orbit period at
-/// `R_ORBIT_M`. The pre-recipe tier3 file computed this with bare
-/// `as usize` truncation, so reproduce that convention here for
-/// bit-identical step counts.
+/// Number of integration steps to cover approximately one
+/// circular-orbit period at `R_ORBIT_M`, truncated to an integer number
+/// of `DT_S` ticks so the simulated duration is
+/// `floor(period / DT_S) * DT_S` (always ≤ one period). The pre-recipe
+/// tier3 file computed this with bare `as usize` truncation; reproduce
+/// that convention here for bit-identical step counts.
 fn num_steps_one_period() -> usize {
     let period = 2.0 * std::f64::consts::PI * (R_ORBIT_M.powi(3) / MU_EARTH).sqrt();
     (period / DT_S) as usize
@@ -105,17 +107,20 @@ fn build_drag_6dof(
             },
             position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
             velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            // Identity `t_inertial_pfix` + `RotationModel::None` +
-            // `planet_omega: 0.0` reproduces the previous
-            // `t_inertial_pfix: None` spherical-fallback semantics on
-            // the runner side bit-for-bit (the atmosphere kernel
-            // computes `IDENTITY * position == position` before the
-            // geodetic conversion, and no co-rotation wind is added);
-            // see the matching `PlanetFixedRotationC` spawn the bridge
-            // performs on the Bevy side. The Bevy atmosphere stage
-            // requires *some* `PlanetFixedRotationC` on the planet
-            // entity, so the runner has to publish the identity matrix
-            // for the bridge to lift across.
+            // The atmosphere kernel treats `t_inertial_pfix: None` as
+            // "position is already in planet-fixed coordinates" (it
+            // skips the inertial→pfix rotation and feeds the position
+            // straight into the geodetic conversion). For an
+            // Earth-inertial body that semantics is wrong — but with
+            // `RotationModel::None` + `planet_omega: 0.0` the only
+            // numerical effect of supplying `Some(IDENTITY)` instead
+            // of `None` is to make the kernel run `IDENTITY * position`
+            // (a no-op) before the geodetic conversion, with no
+            // co-rotation wind added either way. The runner therefore
+            // stays bit-identical to the previous `None`-based
+            // configuration on this scenario, while the Bevy atmosphere
+            // stage gets the `PlanetFixedRotationC` it requires on the
+            // planet entity for the bridge to lift across.
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::None,

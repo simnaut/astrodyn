@@ -1,5 +1,5 @@
 //! Bevy ↔ runner parity for the 6-DOF drag analytical scenarios
-//! (`tier3_sim_drag_6dof`). Wrappers land as part of #389.
+//! (`tier3_sim_drag_6dof`).
 //!
 //! The matching tier3 file drives each scenario through the runner and
 //! asserts a closed-form drag property (monotonic specific-orbital-energy
@@ -7,9 +7,12 @@
 //! ballistic-drag translational trajectory). This file pairs each recipe
 //! with the parity trait so the same scenarios also run through the
 //! Bevy adapter and assert `runner ↔ bevy` bit-identity at every
-//! synthetic record — the second half of the
-//! `runner ↔ JEOD ≈ bevy` transitivity argument the issue's matrix
-//! covers.
+//! synthetic record. Bit-identity here plus the analytical assertions in
+//! the sibling tier3 file together imply the Bevy adapter satisfies the
+//! same closed-form drag properties — the analytical analog of the
+//! `runner ↔ bevy` (this file) + `runner ↔ JEOD` (sibling tier3
+//! assertions) ⇒ `bevy ↔ JEOD` transitivity argument the issue's matrix
+//! covers for CSV-backed scenarios, within the runner's tolerance.
 
 use astrodyn_verif_jeod::run_verification::sim_drag_6dof;
 use astrodyn_verif_parity::VerificationCaseParityExt;
