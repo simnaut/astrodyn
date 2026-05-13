@@ -95,7 +95,7 @@ pub(crate) mod typed_helpers {
 use crate::crossval::{CrossvalReport, StateLog};
 use crate::tier3_csv;
 use crate::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, SimContext, VerificationCase,
 };
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
 use glam::{DMat3, DVec3};
@@ -278,8 +278,11 @@ impl VerificationCaseExt for VerificationCase {
         // 2b. If the case carries a pre-step factory, invoke it now so
         //     the resulting closure can capture run-once state (a
         //     loaded DE421 ephemeris, J2000 JD, source indices) the
-        //     per-tick body would otherwise re-derive on every call.
-        let mut pre_step = self.pre_step.map(|builder| builder(&init));
+        //     per-call body would otherwise re-derive on every
+        //     invocation.
+        let mut pre_step_state = self
+            .pre_step
+            .map(|(builder, cadence)| (builder(&init), cadence));
         let dt = sim.dt;
 
         // 3. Propagate, sampling at each non-initial reference time up
@@ -287,23 +290,29 @@ impl VerificationCaseExt for VerificationCase {
         //    "use full CSV"; a value greater than the last record's
         //    time runs to the end without extrapolation).
         //
-        //    Two propagation shapes share the body of this loop:
+        //    Three propagation shapes share the body of this loop:
         //
         //    * **No `pre_step`** — call `sim.step_until(record.time)`
         //      directly so the runner uses its own internal stepping
         //      loop (which can take a fractional final step when the
         //      record cadence isn't an integer multiple of `dt`).
-        //    * **With `pre_step`** — step exactly `(record.time -
-        //      sim.elapsed()) / dt` integration ticks, invoking the
-        //      closure with `t_end = sim.elapsed() + dt` before each
-        //      `sim.step()`. This matches the cadence JEOD's own Trick
-        //      scheduler uses to flip force / torque / ephemeris
-        //      inputs at the dynamics rate (e.g. 32 Hz for SIM_dyncomp
-        //      vs. the 60 s reference-CSV cadence); calling the closure
-        //      only once per record would freeze the closure's
-        //      decision across the entire interval and produce the
-        //      "force direction held constant across 60 s" drift the
-        //      `dyncomp_run9` recipes exposed in #479.
+        //    * **`pre_step` with [`PreStepCadence::PerRecord`]** —
+        //      invoke the closure once with `t_end = record.time`,
+        //      then call `sim.step_until(record.time)`. Matches JEOD's
+        //      Trick-scheduler invocation for third-body / ephemeris
+        //      / tide / SRP source-position updates (which the JEOD
+        //      verification sims sample at the record cadence too).
+        //    * **`pre_step` with [`PreStepCadence::PerTick`]** — step
+        //      exactly `(record.time - sim.elapsed()) / dt`
+        //      integration ticks, invoking the closure with `t_end =
+        //      sim.elapsed() + dt` before each `sim.step()`. Matches
+        //      the cadence JEOD's Trick scheduler uses to flip force /
+        //      torque inputs at the dynamics rate (e.g. 32 Hz for
+        //      SIM_dyncomp vs. the 60 s reference-CSV cadence); a
+        //      per-record closure would freeze the on/off decision
+        //      across the entire interval, producing the "force
+        //      direction held constant across 60 s" drift the
+        //      `dyncomp_run9` recipes exposed.
         let duration_s = self.duration.get::<second>();
         let mut our_states = Vec::with_capacity(ref_states.len() - 1);
         let mut sampled_refs = Vec::with_capacity(ref_states.len() - 1);
@@ -312,37 +321,49 @@ impl VerificationCaseExt for VerificationCase {
             if duration_s > 0.0 && record.time > duration_s {
                 break;
             }
-            if let Some(hook) = pre_step.as_mut() {
-                // Per-tick loop: advance one `dt`-sized step at a time,
-                // invoking the closure with the time at the *end* of
-                // the upcoming tick (`sim.elapsed() + dt`) before each
-                // call. The `+ 0.001` slack mirrors
-                // `Simulation::step_until` so f64 representation jitter
-                // in the record cadence doesn't lose a tick.
-                while sim.elapsed() + dt <= record.time + 0.001 {
-                    let t_end = sim.elapsed() + dt;
-                    hook(&mut sim, t_end);
-                    sim.step()
-                        .unwrap_or_else(|e| panic!("{}: step failed: {e}", self.name));
+            match pre_step_state.as_mut() {
+                Some((hook, PreStepCadence::PerTick)) => {
+                    // Per-tick loop: advance one `dt`-sized step at a
+                    // time, invoking the closure with the time at the
+                    // *end* of the upcoming tick (`sim.elapsed() + dt`)
+                    // before each call. The `+ 0.001` slack mirrors
+                    // `Simulation::step_until` so f64 representation
+                    // jitter in the record cadence doesn't lose a tick.
+                    while sim.elapsed() + dt <= record.time + 0.001 {
+                        let t_end = sim.elapsed() + dt;
+                        hook(&mut sim, t_end);
+                        sim.step()
+                            .unwrap_or_else(|e| panic!("{}: step failed: {e}", self.name));
+                    }
+                    // Per-tick recipes must align the reference cadence
+                    // with an integer multiple of `dt`. Surface a
+                    // mismatch loudly rather than silently dropping the
+                    // remainder — a fractional remainder would skip the
+                    // closure on the partial tick.
+                    let remainder = record.time - sim.elapsed();
+                    assert!(
+                        remainder.abs() <= 0.001,
+                        "{}: PreStepCadence::PerTick expects record cadence to be a multiple of \
+                         dt; record.time={record_time} leaves remainder {remainder} after \
+                         per-tick stepping (dt={dt})",
+                        self.name,
+                        record_time = record.time,
+                    );
                 }
-                // Recipes that drive `pre_step` are expected to align
-                // their reference cadence with an integer multiple of
-                // `dt` (every recipe in-tree today does so). Surface a
-                // mismatch loudly rather than silently dropping the
-                // remainder — a fractional remainder would skip the
-                // closure on the partial tick.
-                let remainder = record.time - sim.elapsed();
-                assert!(
-                    remainder.abs() <= 0.001,
-                    "{}: pre_step recipe expects record cadence to be a multiple of dt; \
-                     record.time={record_time} leaves remainder {remainder} after \
-                     per-tick stepping (dt={dt})",
-                    self.name,
-                    record_time = record.time,
-                );
-            } else {
-                sim.step_until(record.time)
-                    .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
+                Some((hook, PreStepCadence::PerRecord)) => {
+                    // Invoke the closure once with the upcoming record's
+                    // time, then let the runner step to that time via
+                    // its own internal loop (`sim.step_until` can take
+                    // a fractional final step when the record cadence
+                    // is not an integer multiple of `dt`).
+                    hook(&mut sim, record.time);
+                    sim.step_until(record.time)
+                        .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
+                }
+                None => {
+                    sim.step_until(record.time)
+                        .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
+                }
             }
             let body = sim.body(0);
             if let Some(acc) = extras_acc.as_mut() {

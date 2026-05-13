@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::GeoIndexType;
 use astrodyn::{
@@ -672,7 +672,7 @@ pub fn run4_3rd_body() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run4_pre_step),
+        pre_step: Some((run4_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -1001,7 +1001,7 @@ pub fn run7a_sh4x4_3rd_body() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run7_pre_step),
+        pre_step: Some((run7_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -1020,7 +1020,7 @@ pub fn run7b_sh8x8_3rd_body() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run7_pre_step),
+        pre_step: Some((run7_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -1039,7 +1039,7 @@ pub fn run7c_sh4x4_3rd_body_drag() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run7_pre_step),
+        pre_step: Some((run7_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -1058,7 +1058,7 @@ pub fn run7d_sh8x8_3rd_body_drag() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run7_pre_step),
+        pre_step: Some((run7_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -1561,12 +1561,14 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
 // body-frame `[10, 0, 0] N·m`) on the open interval `t ∈ [1000, 2000) s`
 // of an 8-hour ISS orbit. The pulse window switches at the Trick dynamics
 // rate (32 Hz / dt = 0.03125 s) — much faster than the 60 s reference-CSV
-// cadence — so the recipes' `pre_step` closures run per integration tick
-// (the cadence the parity machinery added in this commit) and decide
-// force/torque from the upcoming tick's *start* time. The window
+// cadence — so the recipes opt into `PreStepCadence::PerTick` and their
+// `pre_step` closures run per integration tick, deciding force/torque
+// from the upcoming tick's *midpoint* (`t_end - 0.5 · dt`). The midpoint
 // predicate matches the pre-recipe tier3 test's `in_torque_window(t, dt)`
-// exactly so the runner-vs-JEOD comparison reproduces the same per-axis
-// errors the original test asserted against.
+// exactly so the on/off flip lines up with the same boundary records
+// JEOD's Trick scheduler does, and the runner-vs-JEOD comparison
+// reproduces the same per-axis errors the original test asserted
+// against.
 
 /// JEOD pulse window start (seconds since sim epoch). Matches
 /// `verif/SIM_dyncomp/SET_test/RUN_9{A,C,D}/input.py`.
@@ -1704,7 +1706,7 @@ pub fn run9a_torque() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run9a_pre_step),
+        pre_step: Some((run9a_pre_step, PreStepCadence::PerTick)),
     }
 }
 
@@ -1725,7 +1727,7 @@ pub fn run9c_force_torque() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run9_force_torque_pre_step),
+        pre_step: Some((run9_force_torque_pre_step, PreStepCadence::PerTick)),
     }
 }
 
@@ -1749,6 +1751,6 @@ pub fn run9d_force_torque_rate() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(run9_force_torque_pre_step),
+        pre_step: Some((run9_force_torque_pre_step, PreStepCadence::PerTick)),
     }
 }
