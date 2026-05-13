@@ -122,11 +122,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     //    recipe lands", and the matching follow-up can drop the entry
     //    when the wrapper file is created.
     (
-        "dyncomp_combinations",
-        "pre-recipe family aggregator — multiple sub-cases need recipe \
-         factories before parity can drive them (#389 follow-up)",
-    ),
-    (
         "dyncomp_run9",
         "pre-recipe sibling — recipe factory for run9 not yet defined \
          (#389 follow-up)",
