@@ -23,11 +23,24 @@ use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, Verific
 /// energy `E = v²/2 - μ/r`.
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
-/// Build the recipe's `Simulation` exactly the way the parity trait does
-/// — call the scenario factory with a default `InitialConditions`, then
-/// `.build()` — so the runner-side propagation here and the Bevy-side
-/// propagation in `bevy_parity_drag_6dof.rs` see the same initial state
-/// bit-pattern.
+/// Build the recipe's `Simulation` by calling the scenario factory with
+/// a default `InitialConditions`, then `.build()`.
+///
+/// `VerificationCaseParityExt::run_and_assert_parity` derives its init
+/// via `initial_conditions_from(&ref_states[0])` rather than
+/// `Default::default()`. Every recipe in this file pairs with
+/// `CsvReference::SyntheticTimes`, for which the loader fills each
+/// generated `StateLog` with `time: t, ..Default::default()`; at
+/// `i = 0` that gives `time = 0.0` and `None`/`DVec3::ZERO` for every
+/// other field, so `initial_conditions_from(ref_states[0])` collapses
+/// to `InitialConditions::default()` bit-for-bit. Passing
+/// `Default::default()` here is therefore equivalent to what the parity
+/// wrapper does *for these cases*, which is why the runner-side
+/// propagation here and the Bevy-side propagation in
+/// `bevy_parity_drag_6dof.rs` see the same initial state. If a future
+/// recipe in this file switches off `SyntheticTimes` or starts honoring
+/// `InitialConditions`, switch this call site to derive the init the
+/// same way `run_and_assert_parity` does.
 fn build_sim(case: &VerificationCase) -> Simulation {
     (case.scenario)(&InitialConditions::default())
         .build()
