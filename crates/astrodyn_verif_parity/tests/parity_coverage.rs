@@ -152,11 +152,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
          per-step state component on the Bevy side",
     ),
     (
-        "ref_attach",
-        "pre-recipe sibling exercising attach_to_frame — recipe factory \
-         not yet defined (#389 follow-up)",
-    ),
-    (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",

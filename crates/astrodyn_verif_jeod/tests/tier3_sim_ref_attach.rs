@@ -2,69 +2,53 @@
 //!
 //! Cross-validates the runner's
 //! [`Simulation::attach_to_frame`](astrodyn_runner::Simulation::attach_to_frame)
-//! API (port of JEOD `DynBody::attach_to_frame`) against JEOD's
+//! / [`Simulation::attach_to_frame_aligned`](astrodyn_runner::Simulation::attach_to_frame_aligned)
+//! APIs (ports of JEOD `DynBody::attach_to_frame`) against JEOD's
 //! [`models/dynamics/body_action/verif/SIM_ref_attach`](https://github.com/nasa/jeod/tree/jeod_v5.4.0/models/dynamics/body_action/verif/SIM_ref_attach).
+//!
+//! ### Two RUN_*'s, two driver shapes
+//!
+//! - **RUN_ref_attach_matrix** — direct `(offset, T)` attach to
+//!   `Earth.pfix`. Lives in the
+//!   [`crate::run_verification::sim_ref_attach::run_matrix`] recipe
+//!   so the matrix attach drives both the runner and (via
+//!   [`astrodyn_verif_parity::VerificationCaseParityExt`]) the Bevy
+//!   adapter in lockstep. The test below collapses to a one-liner
+//!   over that recipe.
+//! - **RUN_ref_attach_pt2pt** — same physical attach, but routed
+//!   through [`astrodyn_runner::Simulation::attach_to_frame_aligned`]
+//!   with a named mass-point on the vehicle. Stays hand-rolled
+//!   because the named-point alignment requires mass-point storage
+//!   on the body, which the Bevy adapter does not yet expose.
 //!
 //! ### What JEOD's sim does
 //!
-//! Both runs configure a single 1 kg target vehicle in Earth-inertial
-//! orbit (initial state from `Modified_data/target_state.py`):
+//! A single 1 kg target vehicle in Earth-inertial orbit (initial state
+//! from `Modified_data/target_state.py`):
 //!
 //! - position `[1244540.53, 5655938.85, 3425643.22] m`
 //! - velocity `[-6003.83, -1469.50, 4590.51] m/s`
 //! - attitude YPR `[77.59°, -30.60°, -46.10°]`
 //! - body angular velocity `[0, -0.0656°/s, 0]`
 //!
-//! The vehicle propagates under RK4 integration in Earth-inertial for
-//! the first 50 seconds. At t=50, JEOD's `BodyAttach{Matrix,Aligned}`
-//! body action fires, attaching the vehicle to `Earth.pfix` (both runs
-//! attach to the same rotating planet-fixed frame; matrix runs the
-//! direct `(offset, T)` form while pt2pt routes through the named
-//! mass-point alignment that yields the same pair). The vehicle's
-//! translational + rotational integrators stop running and its state
-//! is derived from the parent frame plus the captured offset on every
+//! The vehicle "propagates" for 50 seconds — SIM_ref_attach is JEOD's
+//! initialization-only verification sim with no `IntegLoop` evaluating
+//! gravity, so the recorded pre-attach trajectory is pure linear
+//! extrapolation. At t=50, the `BodyAttach{Matrix,Aligned}` body
+//! action fires, attaching the vehicle to `Earth.pfix`. The vehicle's
+//! translational + rotational integration stops and its state is
+//! derived from the parent frame plus the captured offset on every
 //! subsequent tick. The simulation runs to t=100.
-//!
-//! ### What this test validates
-//!
-//! Pre-attach (t=0..50): body propagates under our `Simulation` step
-//! pipeline (translational + rotational integration, single-body),
-//! tracking JEOD's recorded composite-body state.
-//!
-//! Post-attach (t=50..100): body's state matches the parent ref-frame
-//! state composed with the captured offset, for both runs:
-//!
-//! - **RUN_ref_attach_matrix**: parent = Earth.pfix, offset
-//!   `[10, 0, 0]`, `T_pstr_cstr = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]`.
-//!   Tests that `Simulation::attach_to_frame` correctly tracks a
-//!   *rotating* parent frame — Earth.pfix moves at the sidereal rate,
-//!   so the body's inertial state evolves continuously after attach.
-//!
-//! - **RUN_ref_attach_pt2pt**: parent = Earth.pfix, attach by
-//!   matching mass-point `attach1` to `Earth.pfix` via JEOD's
-//!   `BodyAttachAligned` (180°-yaw docking convention). Drives
-//!   [`Simulation::attach_to_frame_aligned`](astrodyn_runner::Simulation::attach_to_frame_aligned),
-//!   which ports JEOD's named-point `DynBody::attach_to_frame` algebra
-//!   (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`)
-//!   composed with `BodyAttachAligned`'s ref-parent branch
-//!   (`body_attach_aligned.cc:111-126`). The body's `attach1` point
-//!   is at `(10, 0, 0)` in struct coords with identity orientation,
-//!   so the alignment yields the same `(offset, T_pframe_struct)`
-//!   the matrix run supplies directly — both runs configure the same
-//!   physical attachment to Earth.pfix.
 //!
 //! ### Out of scope here
 //!
-//! - Porting the `BodyAttach{Matrix,Aligned}` BodyAction framework
-//!   (the body-action lifecycle is tracked separately). This test
-//!   exercises the runner-level `attach_to_frame` /
-//!   `attach_to_frame_aligned` APIs directly.
+//! - The `BodyAttach{Matrix,Aligned}` BodyAction framework — the
+//!   body-action lifecycle is tracked separately. This test exercises
+//!   the runner-level `attach_to_frame` / `attach_to_frame_aligned`
+//!   APIs directly.
 //! - The `SIM_dyncomp/RUN_attach_to_ref_frame` 8-hour scenario, which
 //!   chains multiple attach/detach pairs with maneuver and helper
-//!   functions (`attach_to_frame_helper.attach_wrap_*`). That scenario
-//!   requires the multi-attach lifecycle wrapper functions plus the
-//!   complete force/atmosphere/drag/gravity-gradient configuration; it
-//!   is a separate follow-up.
+//!   functions; it is a separate follow-up.
 
 use astrodyn::recipes::{earth, epoch};
 use astrodyn::{
@@ -73,12 +57,12 @@ use astrodyn::{
 };
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
 use astrodyn_verif_jeod::crossval::CrossvalReport;
+use astrodyn_verif_jeod::run_verification::sim_ref_attach;
+use astrodyn_verif_jeod::VerificationCaseExt;
 use glam::{DMat3, DVec3};
 
-const SIM_DURATION_S: f64 = 100.0;
 const ATTACH_TIME_S: f64 = 50.0;
 const DT_S: f64 = 1.0; // SIM_ref_attach S_define: `IntegLoop sim_integ_loop(DYNAMICS) ...` with `#define DYNAMICS 1.0`.
-const LOG_CYCLE_S: f64 = 1.0;
 
 fn test_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -184,17 +168,11 @@ fn load_state_csv(filename: &str) -> Vec<StateRow> {
     rows
 }
 
-/// Build a sim configured to mirror SIM_ref_attach: single Earth source
-/// (`earth::point_mass()` for `mu_ggm05c`-aligned spherical gravity).
-/// `earth::point_mass()` ships with the JEOD `EarthRNP` rotation
-/// model — the same precession/nutation/polar-motion stack JEOD's
-/// SIM_ref_attach exercises — so the planet-fixed frame
-/// `Earth.pfix` rotates each step exactly as JEOD does, which is what
-/// the matrix-attach run requires (its parent reference frame is
-/// `Earth.pfix`). The pt2pt run attaches to `Earth.inertial`, which
-/// does not rotate, so the rotation-model fidelity is not load-bearing
-/// there. RK4 6-DOF body at the JEOD-recorded initial state from
-/// `Modified_data/target_state.py`.
+/// Build a sim configured to mirror SIM_ref_attach. Mirrors
+/// [`sim_ref_attach::run_matrix`]'s `build_ref_attach` exactly — the
+/// pt2pt test below uses the named-point dispatch which is not
+/// recipe-driven (the Bevy adapter does not yet expose mass points),
+/// so we keep the explicit builder here for the pt2pt test only.
 fn build_ref_attach_sim() -> Simulation {
     let position = DVec3::new(1244540.5300, 5655938.8500, 3425643.2200);
     let velocity = DVec3::new(-6003.8330510, -1469.4960440, 4590.5117760);
@@ -215,25 +193,6 @@ fn build_ref_attach_sim() -> Simulation {
     // 1 kg, identity inertia (kg·m²) per `Modified_data/veh_properties.py`.
     let mass = MassProperties::with_inertia(1.0, DMat3::IDENTITY, DVec3::ZERO);
 
-    // Construct the sim explicitly: Earth source (which carries
-    // EarthRNP rotation per `recipes::earth::point_mass`) + 6-DOF body
-    // at the JEOD initial state. `VehicleBuilder` is the typestate
-    // front for building a `VehicleConfig`.
-    //
-    // SIM_ref_attach is JEOD's *initialization-only* verification sim:
-    // its `S_define` comment is explicit — "This simulation has no
-    // dynamics -- other than the Trick executive, is comprised of
-    // initilization [sic] only." Trick's clock advances and the BodyAttach
-    // body action fires at t=50, but no `IntegLoop` evaluates
-    // gravity, so the recorded pre-attach trajectory is pure linear
-    // extrapolation (`pos(t) = pos(0) + velocity * t`). We mirror
-    // that by configuring the body with NO `GravityControl`: the
-    // integrator runs each step but with zero applied force, so
-    // `velocity` stays constant and `position` advances linearly
-    // exactly as JEOD's logged CSV shows. After t=50 the
-    // frame-attach kernel takes over the state entirely (as in
-    // JEOD), so gravity wouldn't affect the post-attach comparison
-    // either way.
     let mut sb = SimulationBuilder::new(epoch::j2000(), DT_S);
     let _earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
@@ -255,7 +214,9 @@ fn build_ref_attach_sim() -> Simulation {
 }
 
 /// Compute the angle (radians) between two unit quaternions, taking the
-/// smaller of the two possible angles (handles double-cover).
+/// smaller of the two possible angles (handles double-cover). Kept for
+/// follow-up attitude validation.
+#[allow(dead_code)]
 fn quat_angle(a: JeodQuat, b: JeodQuat) -> f64 {
     let av = a.vector();
     let bv = b.vector();
@@ -264,128 +225,17 @@ fn quat_angle(a: JeodQuat, b: JeodQuat) -> f64 {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// RUN_ref_attach_matrix — attach to Earth.pfix at t=50 with explicit
-// (offset, rotation matrix) capture.
+// RUN_ref_attach_matrix — recipe-driven path. The
+// `sim_ref_attach::run_matrix()` recipe wires the same scenario the
+// hand-rolled test used and schedules the attach via the
+// `SimContext::attach_to_frame` surface, so the matching parity
+// wrapper (`bevy_parity_ref_attach.rs`) can drive the Bevy runtime in
+// lockstep from the same factory.
 // ════════════════════════════════════════════════════════════════════
 
-/// Tolerances are documented adjacent to the assertions; values
-/// reflect "5% above observed max error" per the CLAUDE.md cross-val
-/// policy. Pre-attach: integration accumulates discretization error
-/// over 50 s of RK4-1/16 propagation. Post-attach: state is derived
-/// purely from frame composition, so the residual is dominated by
-/// JEOD's recorded sidereal rate vs. ours.
 #[test]
 fn tier3_sim_ref_attach_matrix() {
-    let rows = load_state_csv("ref_attach_matrix_ref_attach_state.csv");
-
-    let mut sim = build_ref_attach_sim();
-    // Earth.pfix is the rotating parent frame for this run.
-    let earth_pfix = sim
-        .source_pfix_frame_id(0)
-        .expect("build_ref_attach_sim's Earth source must expose a pfix frame");
-
-    let mut attached = false;
-    let mut max_pre_pos_err = 0.0_f64;
-    let mut max_pre_vel_err = 0.0_f64;
-    let mut max_post_pos_err = 0.0_f64;
-    let mut max_post_vel_err = 0.0_f64;
-
-    for row in &rows {
-        // The CSV samples at 0.5 s but integration runs at dt=1.0 s
-        // (Trick `IntegLoop ... DYNAMICS=1.0`). On half-second rows
-        // Trick logs the *currently held* state — which is the
-        // integrator output at the previous integer second — so
-        // skipping to the integer rows keeps our integration cadence
-        // matched to JEOD's. Including the half-second samples would
-        // compare an integer-second state against the half-second
-        // CSV row at indices that don't correspond to an
-        // integration step.
-        if !CrossvalReport::is_on_integrator_cadence(row.time, DT_S) {
-            continue;
-        }
-        // Step until our sim time matches the row's logged time.
-        sim.step_until(row.time).expect("step_until must not fail");
-
-        // Fire the attach the moment we hit t=50, before the comparison
-        // for that same row. JEOD's `BodyAttach` action runs *after*
-        // the t=50 sample is logged, so the t=50 row in the reference
-        // CSV is still the pre-attach linear-extrapolation state; the
-        // first row that reflects the attached frame composition is
-        // t=51. Our `attach_to_frame` call here only installs the
-        // `FrameAttachState` marker — the body's state is not
-        // overwritten until the next `step_until` (t=51), at which
-        // point our comparison row also flips to the post-attach
-        // values, so the cadences stay aligned.
-        if !attached && row.time >= ATTACH_TIME_S - 1e-9 {
-            // Capture-time offset matches JEOD's `BodyAttachMatrix`:
-            // offset_pstr_cstr_pstr = [10, 0, 0] in pfix coords;
-            // T_pstr_cstr (rotation from pfix to body struct) = the
-            // 180°-yaw-equivalent matrix [[-1,0,0],[0,-1,0],[0,0,1]].
-            let offset_pfix = DVec3::new(10.0, 0.0, 0.0);
-            let t_pfix_struct = DMat3::from_cols(
-                DVec3::new(-1.0, 0.0, 0.0),
-                DVec3::new(0.0, -1.0, 0.0),
-                DVec3::new(0.0, 0.0, 1.0),
-            );
-            sim.attach_to_frame(0, earth_pfix, offset_pfix, t_pfix_struct);
-            attached = true;
-        }
-
-        let out = sim.body(0);
-
-        let pos_err = (out.trans.position.raw_si() - row.position).length();
-        let vel_err = (out.trans.velocity.raw_si() - row.velocity).length();
-        if attached && row.time > ATTACH_TIME_S {
-            max_post_pos_err = max_post_pos_err.max(pos_err);
-            max_post_vel_err = max_post_vel_err.max(vel_err);
-        } else {
-            max_pre_pos_err = max_pre_pos_err.max(pos_err);
-            max_pre_vel_err = max_pre_vel_err.max(vel_err);
-        }
-    }
-
-    println!(
-        "tier3_sim_ref_attach_matrix errors (m, m/s): \
-         pre_pos={max_pre_pos_err:.6}, pre_vel={max_pre_vel_err:.6e}, \
-         post_pos={max_post_pos_err:.6}, post_vel={max_post_vel_err:.6e}"
-    );
-
-    // Pre-attach: SIM_ref_attach is JEOD's initialization-only verif
-    // sim with no integration loop, so JEOD's logged trajectory is
-    // pure linear extrapolation `pos(0) + velocity * t`. We mirror
-    // by configuring no `GravityControl`, so our integrator runs
-    // each step with zero applied force and produces bit-identical
-    // linear extrapolation. The residual is the f64-roundoff
-    // accumulation across 50 s of `position += velocity * dt` —
-    // sub-millimeter.
-    assert!(
-        max_pre_pos_err < 1e-3,
-        "pre-attach position error too large: {max_pre_pos_err:.3e} m"
-    );
-    assert!(
-        max_pre_vel_err < 1e-9,
-        "pre-attach velocity error too large: {max_pre_vel_err:.3e} m/s"
-    );
-    // Post-attach: body state is the parent ref-frame state composed
-    // with the captured offset. The parent is `Earth.pfix`, which
-    // both we and JEOD drive from `RotationModel::EarthRNP` — same
-    // precession / nutation / GAST formulas, same TAI-vs-UT1 input
-    // (we use TAI ≈ UT1 since `EphemerisR` is not loaded; JEOD's
-    // `SIM_ref_attach` likewise omits a UT1 table and `time_ut1` is
-    // initialized from TAI). Residuals come from minor differences
-    // in how the rotation model is sampled at integer-second
-    // boundaries vs. the integration sub-cycle.
-    // Tolerances per the CLAUDE.md "5% above observed max" policy.
-    // Observed (this PR's regen): post_pos ≈ 15.08 m,
-    // post_vel ≈ 1.10e-3 m/s.
-    assert!(
-        max_post_pos_err < 16.0,
-        "post-attach position error too large: {max_post_pos_err:.3} m"
-    );
-    assert!(
-        max_post_vel_err < 1.5e-3,
-        "post-attach velocity error too large: {max_post_vel_err:.3e} m/s"
-    );
+    sim_ref_attach::run_matrix().run_and_assert();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -397,6 +247,14 @@ fn tier3_sim_ref_attach_matrix() {
 // diag(-1, -1, 1) in Earth.pfix coordinates — the same physical
 // attachment as RUN_ref_attach_matrix, just routed through the
 // named-point algebra.
+//
+// Stays hand-rolled because [`Simulation::attach_to_frame_aligned`]
+// requires a mass-point in the body's mass tree (added directly via
+// `sim.mass_tree.add_mass_point`); the Bevy adapter does not yet
+// expose mass-point storage on body entities, so a recipe-driven
+// version would have no Bevy parity counterpart. The matrix run
+// (above) covers the runner ↔ bevy half of the transitivity argument
+// for the same physical attachment.
 // ════════════════════════════════════════════════════════════════════
 
 /// JEOD's `BodyAttachAligned` resolves the parent-to-struct offset
@@ -408,14 +266,6 @@ fn tier3_sim_ref_attach_matrix() {
 /// algebraic port of JEOD's named-point `DynBody::attach_to_frame`
 /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`) to
 /// produce the same `(offset, T_pframe_struct)` pair.
-///
-/// The parent reference frame is `Earth.pfix` (the rotating
-/// planet-fixed frame), per `BodyAttachAligned`'s ref-parent dispatch
-/// — `parent_point_name = "Earth.pfix"` is forwarded through the
-/// named-point overload as the parent reference frame name (cf.
-/// `dyn_body_attach.cc:310`). The body's post-attach inertial
-/// trajectory thus tracks Earth's sidereal rotation, identical to
-/// RUN_ref_attach_matrix at the same offset and rotation.
 #[test]
 fn tier3_sim_ref_attach_pt2pt() {
     let rows = load_state_csv("ref_attach_pt2pt_ref_attach_state.csv");
@@ -452,11 +302,15 @@ fn tier3_sim_ref_attach_pt2pt() {
     let mut max_post_vel_err = 0.0_f64;
 
     for row in &rows {
-        // Same half-second / integer-second filter as the matrix
-        // run; SIM_ref_attach's dt is 1.0 s and the CSV samples at
-        // 0.5 s, so the half-second rows hold the integrator output
-        // from the previous integer second. Comparing only at integer
-        // seconds keeps our integration cadence aligned with JEOD's.
+        // The CSV samples at 0.5 s but integration runs at dt=1.0 s
+        // (Trick `IntegLoop ... DYNAMICS=1.0`). On half-second rows
+        // Trick logs the *currently held* state — which is the
+        // integrator output at the previous integer second — so
+        // skipping to the integer rows keeps our integration cadence
+        // matched to JEOD's. Including the half-second samples would
+        // compare an integer-second state against the half-second
+        // CSV row at indices that don't correspond to an
+        // integration step.
         if !CrossvalReport::is_on_integrator_cadence(row.time, DT_S) {
             continue;
         }
@@ -532,8 +386,4 @@ fn tier3_sim_ref_attach_pt2pt() {
         max_post_vel_err < 1.5e-3,
         "post-attach velocity error too large: {max_post_vel_err:.3e} m/s"
     );
-
-    let _ = quat_angle; // helper kept for follow-up attitude validation
-    let _ = LOG_CYCLE_S;
-    let _ = SIM_DURATION_S;
 }

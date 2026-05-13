@@ -50,11 +50,11 @@ use astrodyn::{
     StructuralFrame, Torque, Vec3Ext,
 };
 use astrodyn_bevy::{
-    AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameEntityC, FrameTransC,
-    KinematicChildC, MassChildOf, SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC,
-    TranslationalStateC,
+    AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameAttachEvent, FrameEntityC,
+    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, SourceInertialPositionC,
+    SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
-use astrodyn_verif_jeod::verification::SimContext;
+use astrodyn_verif_jeod::verification::{SimContext, SourceFrameKind};
 use bevy::ecs::message::Messages;
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -434,6 +434,59 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         } else {
             self.world.entity_mut(entity).insert(ExternalTorqueC(typed));
         }
+    }
+
+    fn attach_to_frame(
+        &mut self,
+        body_idx: usize,
+        source_idx: usize,
+        frame_kind: SourceFrameKind,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        // Resolve the parent reference frame entity for this source +
+        // frame kind. The runner-side analog walks
+        // `source_inertial_frame_id` / `source_pfix_frame_id`; the Bevy
+        // adapter exposes the same pair as components on the source
+        // entity (`FrameEntityC` for the inertial frame,
+        // `PfixFrameEntityC` for the rotating planet-fixed frame). The
+        // pfix entity is only present when the source carries a
+        // rotation model — surface the absence as a fail-loud panic
+        // instead of a silent no-op so the recipe's misconfiguration
+        // is named at the call site.
+        let body = self.body_entity(body_idx);
+        let source = self.source_entity(source_idx);
+        let parent_frame = match frame_kind {
+            SourceFrameKind::Inertial => self.frame_entity(source),
+            SourceFrameKind::Pfix => {
+                self.world
+                    .get::<PfixFrameEntityC>(source)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "BevySimContext::attach_to_frame: source {source_idx} ({source:?}) \
+                             has no PfixFrameEntityC; either the source lacks a rotation model \
+                             (wire `rotation_model: Some(...)` on the GravitySourceEntry) or \
+                             use SourceFrameKind::Inertial to attach to the non-rotating frame."
+                        )
+                    })
+                    .0
+            }
+        };
+        // Match the runner's `Simulation::attach_to_frame`: write a
+        // `FrameAttachEvent` onto the message bus. `frame_attach_system`
+        // drains the queue at the top of the next `FixedUpdate`, before
+        // integration runs — so both runtimes observe the same
+        // pre-attach state and emit the same captured-offset
+        // attachment, and the integrator-reset path lands before that
+        // tick's integration. Bit-identity holds.
+        let event = FrameAttachEvent {
+            body,
+            parent_frame,
+            offset,
+            t_parent_body: t_parent_child,
+        };
+        let mut messages = self.world.resource_mut::<Messages<FrameAttachEvent>>();
+        messages.write(event);
     }
 }
 
