@@ -17,12 +17,11 @@ use astrodyn_verif_jeod::run_verification::sim_drag_6dof;
 use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
 /// Earth gravitational parameter (m³/s²) — JEOD `earth_GGM05C.cc`.
-/// Matches the value the `sim_drag_6dof` recipe uses so the analytical
-/// assertions reconstruct the recipe-encoded initial state exactly.
+/// The recipe encodes the initial position and velocity; the analytical
+/// assertion below pulls those values back off the built `Simulation`
+/// and uses this `mu` only to evaluate the closed-form specific orbital
+/// energy `E = v²/2 - μ/r`.
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
-
-/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
 
 /// Build the recipe's `Simulation` exactly the way the parity trait does
 /// — call the scenario factory with a default `InitialConditions`, then
@@ -64,16 +63,24 @@ fn tier3_drag_with_rotation_energy_loss() {
         case.name, sim.dt
     );
 
-    // Reconstruct the recipe-encoded initial position/velocity locally
-    // so the closed-form initial energy matches the recipe's t=0 state
-    // exactly (the recipe places the body at (R_ORBIT, 0, 0) with the
-    // local circular speed along +Y).
-    let r = R_EARTH + 400_000.0;
-    let v = (MU_EARTH / r).sqrt();
-    let pos = glam::DVec3::new(r, 0.0, 0.0);
-    let vel = glam::DVec3::new(0.0, v, 0.0);
-    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
-    let initial_ang_vel_mag = glam::DVec3::new(0.01, -0.005, 0.003).length();
+    // Read the recipe-encoded initial state directly off the built
+    // `Simulation` so the closed-form initial energy and angular-velocity
+    // magnitude track whatever the recipe sets at t=0. Duplicating the
+    // recipe's literals here would let the assertion silently drift if
+    // the recipe edits the altitude or omega without the test noticing.
+    let initial = sim.body(0);
+    let e_initial = specific_orbital_energy(
+        initial.trans.position.raw_si(),
+        initial.trans.velocity.raw_si(),
+        MU_EARTH,
+    );
+    let initial_ang_vel_mag = initial
+        .rot
+        .as_ref()
+        .expect("6-DOF body should have rotational state")
+        .ang_vel_body
+        .raw_si()
+        .length();
 
     sim.step_n(n_steps).expect("step_n failed");
 
