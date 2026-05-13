@@ -431,7 +431,13 @@ fn tier3_dyncomp_external_torque_impulse_response() {
 
     sim.step_n(n_steps).expect("step_n failed");
 
-    let omega_after = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
+    let omega_after = sim
+        .body(0)
+        .rot
+        .as_ref()
+        .expect("6-DOF body should carry rotational state after torque-impulse propagation")
+        .ang_vel_body
+        .raw_si();
     // Expected: omega_x = tau_x * dt / I_xx (y, z remain ~zero).
     let expected_omega_x = EXTERNAL_TORQUE_IMPULSE_BODY_NM.x * EXTERNAL_TORQUE_IMPULSE_DURATION_S
         / EXTERNAL_TORQUE_IMPULSE_INERTIA_X_KGM2;
