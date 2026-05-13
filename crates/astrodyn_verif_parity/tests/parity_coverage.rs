@@ -122,11 +122,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     //    recipe lands", and the matching follow-up can drop the entry
     //    when the wrapper file is created.
     (
-        "dyncomp_run9",
-        "pre-recipe sibling — recipe factory for run9 not yet defined \
-         (#389 follow-up)",
-    ),
-    (
         "dyncomp_run_attach_to_ref_frame",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined; needs `pre_step` Bevy support too (#389 follow-up)",

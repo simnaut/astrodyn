@@ -183,15 +183,48 @@ pub trait SimContext {
              surface (e.g. ExternalTorqueC on the Bevy body entity)"
         );
     }
+
+    /// Read body `body_idx`'s current inertial-body left-transformation
+    /// quaternion as `glam::DQuat` (xyzw layout). Used by `pre_step`
+    /// closures that need to rotate a body-frame load into the inertial
+    /// frame before calling [`Self::set_body_external_force`] (whose
+    /// argument lives in `RootInertial`). The DQuat is the same value
+    /// the integrator reads via `SimBody.rot.q_inertial_body` — convert
+    /// with [`astrodyn::JeodQuat::from_glam`] when the closure needs the
+    /// scalar-first JEOD layout.
+    ///
+    /// The default implementation panics with an explicit
+    /// "body_q_inertial_body not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters that
+    /// expose a body's rotational state override this.
+    fn body_q_inertial_body(&self, body_idx: usize) -> DQuat {
+        let _ = body_idx;
+        panic!(
+            "body_q_inertial_body not supported by this SimContext implementation; \
+             provide a SimContext impl that reads the adapter's rotational state \
+             (e.g. RotationalStateC on the Bevy body entity)"
+        );
+    }
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked once per
-/// reference-CSV time step, before the simulation propagates.
+/// **integration tick**, before the simulation advances.
 ///
-/// The `time` argument is the reference record's time in seconds since
-/// the simulation epoch. Closures that need a TDB Julian date should
-/// derive it as `j2000_jd + time / 86_400.0` (assuming a J2000 epoch),
-/// or capture the epoch's JD when they're constructed by their
+/// The `time` argument is the simulation time *at the end of the
+/// upcoming tick* (i.e. `sim.elapsed() + dt`) in seconds since the
+/// simulation epoch. Per-tick cadence is what physical-correctness
+/// closures need when JEOD's reference flips a force, torque, or
+/// ephemeris-driven source position at the dynamics rate (32 Hz for
+/// SIM_dyncomp) rather than the much coarser reference-CSV cadence
+/// (typically 1–60 s). Closures whose decisions only depend on the
+/// CSV-record times are tick-idempotent: they fire when their predicate
+/// matches and overwrite the same field with the same value every other
+/// tick, which is cheap and matches what JEOD's per-tick scheduler does
+/// internally.
+///
+/// Closures that need a TDB Julian date should derive it as
+/// `j2000_jd + time / 86_400.0` (assuming a J2000 epoch), or capture
+/// the epoch's JD when they're constructed by their
 /// [`PreStepBuilder`].
 pub type PreStepClosure = Box<dyn FnMut(&mut dyn SimContext, f64) + Send>;
 
@@ -521,12 +554,15 @@ pub struct VerificationCase {
     /// Optional pre-step hook factory. When `Some`, the runner calls the
     /// factory once at the start of `run_and_assert` (with the t=0
     /// [`InitialConditions`]) to obtain a [`PreStepClosure`], then
-    /// invokes that closure before each `sim.step_until(record.time)`
-    /// call. Use this to inject per-step state — most commonly source
-    /// ephemeris updates — into the running simulation.
+    /// invokes that closure before **each integration tick** (i.e.
+    /// before every `sim.step()` call inside the propagation loop, not
+    /// only at reference-CSV record boundaries). Use this to inject
+    /// per-tick state — source ephemeris updates, scheduled external
+    /// force/torque pulses, or runtime mass-tree changes — at the
+    /// dynamics rate JEOD itself drives.
     ///
     /// The factory pattern lets the closure capture run-once state (a
     /// loaded DE421 ephemeris, J2000 JD, source indices) that the
-    /// per-step body would otherwise re-derive on every call.
+    /// per-tick body would otherwise re-derive on every call.
     pub pre_step: Option<PreStepBuilder>,
 }

@@ -160,65 +160,78 @@ impl VerificationCaseParityExt for VerificationCase {
         //    of integration ticks per CSV record. With shared `dt` and
         //    aligned start times, the two paths reach the same sim time
         //    after the same tick count — bit-identity is the contract.
+        //
+        //    When the case carries a `pre_step` factory, both runtimes
+        //    invoke the closure at the *start of every integration
+        //    tick* (i.e. before each `sim.step()` / `App::update()`),
+        //    not only at reference-CSV record boundaries. JEOD's Trick
+        //    scheduler flips force / torque / ephemeris inputs at the
+        //    dynamics rate (e.g. 32 Hz for SIM_dyncomp), so a closure
+        //    that only fires per record would freeze the closure's
+        //    decision across the entire interval and produce drift
+        //    (the original failure mode in #479's first attempt). The
+        //    runner and bevy paths must both step exactly the same
+        //    number of ticks with the same `t_end` time argument
+        //    passed in, or bit-identity breaks. The shared `tick_time`
+        //    accumulator below enforces that contract from a single
+        //    source of truth.
         let duration_s = self.duration.get::<second>();
-        let mut current_time = ref_states[0].time;
+        let mut tick_time = ref_states[0].time;
         for record in ref_states.iter().skip(1) {
             if duration_s > 0.0 && record.time > duration_s {
                 break;
             }
-            // Number of ticks needed to advance from `current_time` to
-            // `record.time`. Reference CSVs sample at integer multiples
-            // of `dt` so the division should be exact; round to absorb
-            // f64 representation jitter (e.g. 60.0 / 10.0 = 5.999…).
-            let dt_steps = ((record.time - current_time) / dt).round() as usize;
+            // Number of ticks needed to advance from the current sim
+            // time to `record.time`. Reference CSVs sample at integer
+            // multiples of `dt` so the division should be exact; round
+            // to absorb f64 representation jitter (e.g.
+            // 60.0 / 10.0 = 5.999…).
+            let dt_steps = ((record.time - tick_time) / dt).round() as usize;
             assert!(
                 dt_steps > 0,
                 "`{}`: reference record at t={} is not strictly after current sim time {} \
                  (scaled by dt={dt}); CSV must sample at strictly increasing times.",
                 self.name,
                 record.time,
-                current_time,
+                tick_time,
             );
-            // Run the pre-step hook on both runtimes before propagation
-            // so each sees up-to-date inputs for this record. The runner
-            // side mirrors `VerificationCaseExt::run_and_assert`'s call
-            // shape; the Bevy side wraps `&mut World` in a
-            // [`BevySimContext`] so the same closure body can mutate
-            // either runtime through the [`SimContext`] surface.
-            if let Some(hook) = runner_pre_step.as_mut() {
-                hook(&mut runner_sim, record.time);
-            }
-            if let Some(hook) = bevy_pre_step.as_mut() {
-                let world = app.world_mut();
-                let mut ctx = BevySimContext::<P>::new(
-                    world,
-                    &handles.source_entities,
-                    &handles.body_entities,
-                );
-                hook(&mut ctx, record.time);
-            }
 
-            // Advance runner.
-            runner_sim
-                .step_n(dt_steps)
-                .unwrap_or_else(|e| panic!("`{}`: runner step_n failed: {e}", self.name));
-            // Advance bevy. Pipeline systems read the bit-exact f64
-            // `dt` from `IntegrationDtR` (installed by `populate_app`).
-            // `Time<Fixed>` is also advanced (ns-quantized via
-            // `Duration::from_secs_f64`) so any consumer that observes
-            // it sees an approximately matching simulated wall-clock —
-            // exact agreement with the runner is not possible here
-            // because `Duration` is integer nanoseconds, but the
-            // physics path is independent of that rounding so parity
-            // holds bit-identically even when `dt` is irrational in
-            // seconds (e.g. `period / 560 ≈ 9.917 s`).
+            // Per-tick lockstep: invoke `pre_step` on both runtimes
+            // (when present), then advance each by exactly one `dt`.
+            // The Bevy adapter advances `Time<Fixed>` ns-quantized via
+            // `Duration::from_secs_f64`, which can diverge from the
+            // runner's exact-f64 wall-clock by sub-nanosecond rounding
+            // — but the physics path is independent of that rounding
+            // (every kernel reads `IntegrationDtR`, which holds the
+            // bit-exact f64 `dt`), so parity holds bit-identically
+            // even when `dt` is irrational in seconds.
             for _ in 0..dt_steps {
+                tick_time += dt;
+                if let Some(hook) = runner_pre_step.as_mut() {
+                    hook(&mut runner_sim, tick_time);
+                }
+                if let Some(hook) = bevy_pre_step.as_mut() {
+                    let world = app.world_mut();
+                    let mut ctx = BevySimContext::<P>::new(
+                        world,
+                        &handles.source_entities,
+                        &handles.body_entities,
+                    );
+                    hook(&mut ctx, tick_time);
+                }
+                runner_sim
+                    .step()
+                    .unwrap_or_else(|e| panic!("`{}`: runner step failed: {e}", self.name));
                 app.world_mut()
                     .resource_mut::<Time<Fixed>>()
                     .advance_by(Duration::from_secs_f64(dt));
                 app.world_mut().run_schedule(FixedUpdate);
             }
-            current_time = record.time;
+            // Pin `tick_time` to the record time at every boundary so
+            // f64 drift from `tick_time += dt` accumulation doesn't
+            // push the next interval's tick count off by one over a
+            // long propagation.
+            tick_time = record.time;
 
             // 4. Assert bit-identity per body, per component. The
             //    bridge `populate_app` keeps `body_entities[i]` parallel

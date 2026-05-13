@@ -1553,3 +1553,202 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
         pre_step: None,
     }
 }
+
+// ── RUN_9A / RUN_9C / RUN_9D: scheduled external force/torque ──────────────
+//
+// JEOD's SIM_dyncomp RUN_9* family applies a piecewise-constant external
+// force (RUN_9C/9D, body-frame `[10, 0, 0] N`) and/or torque (RUN_9A/9C/9D,
+// body-frame `[10, 0, 0] N·m`) on the open interval `t ∈ [1000, 2000) s`
+// of an 8-hour ISS orbit. The pulse window switches at the Trick dynamics
+// rate (32 Hz / dt = 0.03125 s) — much faster than the 60 s reference-CSV
+// cadence — so the recipes' `pre_step` closures run per integration tick
+// (the cadence the parity machinery added in this commit) and decide
+// force/torque from the upcoming tick's *start* time. The window
+// predicate matches the pre-recipe tier3 test's `in_torque_window(t, dt)`
+// exactly so the runner-vs-JEOD comparison reproduces the same per-axis
+// errors the original test asserted against.
+
+/// JEOD pulse window start (seconds since sim epoch). Matches
+/// `verif/SIM_dyncomp/SET_test/RUN_9{A,C,D}/input.py`.
+const RUN9_PULSE_START_S: f64 = 1000.0;
+
+/// JEOD pulse window end (seconds since sim epoch, exclusive).
+const RUN9_PULSE_END_S: f64 = 2000.0;
+
+/// Body-frame external force / torque magnitude applied inside the pulse
+/// window. RUN_9C/9D apply a `[10, 0, 0] N` body-frame force; RUN_9A/9C/9D
+/// apply a `[10, 0, 0] N·m` body-frame torque. Same constants the JEOD
+/// `input.py` files configure on `dyn_body.force_extern` /
+/// `dyn_body.torque_extern`.
+const RUN9_LOAD_X: f64 = 10.0;
+
+/// Per-tick predicate: returns true when the upcoming tick's *midpoint*
+/// (= `t_end - dt*0.5`) lies in the pulse window `[1000, 2000) s`. This
+/// matches `t_start + dt*0.5 ∈ [1000, 2000)` from the pre-recipe tier3
+/// file's `in_torque_window(t_start, dt)` predicate exactly (substituting
+/// `t_start = t_end - dt`), so the per-tick fire/no-fire decision lines
+/// up with JEOD's Trick scheduler at the same boundary records.
+fn in_run9_pulse_window(t_end_s: f64, dt: f64) -> bool {
+    let mid = t_end_s - 0.5 * dt;
+    (RUN9_PULSE_START_S..RUN9_PULSE_END_S).contains(&mid)
+}
+
+/// Build the shared 6-DOF ISS scenario the three RUN_9 cases run.
+/// Differs from `build_run2_6dof` only in that the body's initial
+/// angular velocity is read directly from `InitialConditions` (the
+/// reference CSV's t=0 row), since the JEOD RUN_9D `Modified_data`
+/// configures a non-zero orbital-rate `omega` and reading it here keeps
+/// the recipe agnostic to which RUN_9 variant the case factory wires
+/// for the reference.
+fn build_run9_scenario(init: &InitialConditions, case: &'static str) -> SimulationBuilder {
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
+    let mass_props = iss_mass_properties();
+
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, dt);
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    sb.add_body(VehicleConfig {
+        trans: trans_from(init),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+fn build_run9a(init: &InitialConditions) -> SimulationBuilder {
+    build_run9_scenario(init, "run9a_torque")
+}
+
+fn build_run9c(init: &InitialConditions) -> SimulationBuilder {
+    build_run9_scenario(init, "run9c_force_torque")
+}
+
+fn build_run9d(init: &InitialConditions) -> SimulationBuilder {
+    build_run9_scenario(init, "run9d_force_torque_rate")
+}
+
+/// RUN_9A `pre_step`: pure body-frame torque pulse, no external force.
+///
+/// JEOD applies a constant body-frame `[10, 0, 0] N·m` torque while
+/// `t ∈ [1000, 2000) s` and zero otherwise. The closure overwrites the
+/// body's external torque each tick (cheap — `set_body_external_torque`
+/// is an unconditional field assignment); the on/off decision uses the
+/// per-tick midpoint predicate so the pulse flips at the same boundary
+/// records JEOD's Trick scheduler does.
+fn run9a_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_DYNCOMP).join("S_define"));
+    Box::new(move |ctx, t_end_s: f64| {
+        let torque = if in_run9_pulse_window(t_end_s, dt) {
+            DVec3::new(RUN9_LOAD_X, 0.0, 0.0)
+        } else {
+            DVec3::ZERO
+        };
+        ctx.set_body_external_torque(0, torque);
+    })
+}
+
+/// RUN_9C / RUN_9D shared `pre_step`: body-frame `[10, 0, 0] N` force
+/// (structural origin = body origin since `t_struct_body = IDENTITY`)
+/// plus the same `[10, 0, 0] N·m` torque as RUN_9A. The force is
+/// stored in `Simulation`/`SimBody.external_force` as
+/// `Force<RootInertial>`, so the closure rotates the body-frame load
+/// through the current inertial-body quaternion before injecting it.
+/// JEOD's `dyn_body.force_extern` carries the same root-inertial frame
+/// convention, so the rotation matches what its integrator sees.
+fn run9_force_torque_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_DYNCOMP).join("S_define"));
+    Box::new(move |ctx, t_end_s: f64| {
+        if in_run9_pulse_window(t_end_s, dt) {
+            // Rotate body-frame `[F, 0, 0]` into RootInertial using the
+            // current inertial-body left-quaternion. `JeodQuat::from_glam`
+            // re-tags the xyzw layout into the scalar-first JEOD layout
+            // so `left_quat_to_transformation` returns the
+            // `T_inertial_body` matrix; its transpose maps body→inertial.
+            let q = ctx.body_q_inertial_body(0);
+            let t_inertial_body = JeodQuat::from_glam(q).left_quat_to_transformation();
+            let force_inertial = t_inertial_body.transpose() * DVec3::new(RUN9_LOAD_X, 0.0, 0.0);
+            ctx.set_body_external_force(0, force_inertial);
+            ctx.set_body_external_torque(0, DVec3::new(RUN9_LOAD_X, 0.0, 0.0));
+        } else {
+            ctx.set_body_external_force(0, DVec3::ZERO);
+            ctx.set_body_external_torque(0, DVec3::ZERO);
+        }
+    })
+}
+
+/// SIM_dyncomp RUN_9A — point-mass 6-DOF + scheduled external torque.
+///
+/// Body-frame torque `[10, 0, 0] N·m` is applied during `t ∈ [1000, 2000) s`
+/// and zero outside the window; no external force. Cross-validates against
+/// `dyncomp_run9a_state.csv` over 8 hours. Tolerances mirror the
+/// pre-recipe tier3 test's literals.
+pub fn run9a_torque() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9a_torque",
+        scenario: build_run9a,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9a_state.csv"),
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            position_m: [1.370e-6, 2.154e-6, 1.826e-6],
+            velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [3.558e-20, 4.447e-21, 7.116e-21],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9a_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_9C — point-mass 6-DOF + scheduled external force +
+/// torque, zero initial inertial rate. Cross-validates against
+/// `dyncomp_run9c_state.csv` over 8 hours.
+pub fn run9c_force_torque() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9c_force_torque",
+        scenario: build_run9c,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9c_state.csv"),
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            position_m: [7.679e-5, 1.2e-4, 8.628e-5],
+            velocity_m_s: [8.526e-8, 1.269e-7, 1.062e-7],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [3.558e-20, 4.447e-21, 7.116e-21],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9_force_torque_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_9D — point-mass 6-DOF + scheduled external force +
+/// torque, with a non-zero initial body-frame angular velocity (orbital
+/// rate from the JEOD `Modified_data/state.py:set_orientation_lvlh` LVLH
+/// rate; the t=0 row of `dyncomp_run9d_state.csv` carries the
+/// post-init value). Cross-validates against `dyncomp_run9d_state.csv`
+/// over 8 hours.
+pub fn run9d_force_torque_rate() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9d_force_torque_rate",
+        scenario: build_run9d,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9d_state.csv"),
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            position_m: [5.278e-3, 8.255e-3, 6.635e-3],
+            velocity_m_s: [5.911e-6, 9.056e-6, 7.276e-6],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [1.651e-18, 1.367e-18, 6.262e-19],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run9_force_torque_pre_step),
+    }
+}
