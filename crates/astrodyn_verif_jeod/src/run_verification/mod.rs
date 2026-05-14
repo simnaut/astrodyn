@@ -326,10 +326,16 @@ impl VerificationCaseExt for VerificationCase {
                     // Per-tick loop: advance one `dt`-sized step at a
                     // time, invoking the closure with the time at the
                     // *end* of the upcoming tick (`sim.elapsed() + dt`)
-                    // before each call. The `+ 0.001` slack mirrors
-                    // `Simulation::step_until` so f64 representation
-                    // jitter in the record cadence doesn't lose a tick.
-                    while sim.elapsed() + dt <= record.time + 0.001 {
+                    // before each call. The slack scales with `dt`
+                    // (half a tick) so f64 representation jitter in the
+                    // record cadence cannot lose a tick, while
+                    // sub-millisecond `dt` callers cannot accidentally
+                    // overshoot `record.time` by many extra ticks (a
+                    // fixed millisecond slack would admit up to
+                    // `1e-3 / dt` extra ticks before the remainder
+                    // check fires).
+                    let slack = 0.5 * dt;
+                    while sim.elapsed() + dt <= record.time + slack {
                         let t_end = sim.elapsed() + dt;
                         hook(&mut sim, t_end);
                         sim.step()
@@ -339,10 +345,12 @@ impl VerificationCaseExt for VerificationCase {
                     // with an integer multiple of `dt`. Surface a
                     // mismatch loudly rather than silently dropping the
                     // remainder — a fractional remainder would skip the
-                    // closure on the partial tick.
+                    // closure on the partial tick. The tolerance
+                    // tracks the loop slack so any leftover beyond half
+                    // a tick is reported as a recipe misconfiguration.
                     let remainder = record.time - sim.elapsed();
                     assert!(
-                        remainder.abs() <= 0.001,
+                        remainder.abs() <= slack,
                         "{}: PreStepCadence::PerTick expects record cadence to be a multiple of \
                          dt; record.time={record_time} leaves remainder {remainder} after \
                          per-tick stepping (dt={dt})",

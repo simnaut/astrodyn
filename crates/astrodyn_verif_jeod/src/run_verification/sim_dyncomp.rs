@@ -1558,7 +1558,7 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
 //
 // JEOD's SIM_dyncomp RUN_9* family applies a piecewise-constant external
 // force (RUN_9C/9D, body-frame `[10, 0, 0] N`) and/or torque (RUN_9A/9C/9D,
-// body-frame `[10, 0, 0] N·m`) on the open interval `t ∈ [1000, 2000) s`
+// body-frame `[10, 0, 0] N·m`) on the half-open interval `t ∈ [1000, 2000) s`
 // of an 8-hour ISS orbit. The pulse window switches at the Trick dynamics
 // rate (32 Hz / dt = 0.03125 s) — much faster than the 60 s reference-CSV
 // cadence — so the recipes opt into `PreStepCadence::PerTick` and their
@@ -1658,12 +1658,16 @@ fn run9a_pre_step(_init: &InitialConditions) -> PreStepClosure {
 
 /// RUN_9C / RUN_9D shared `pre_step`: body-frame `[10, 0, 0] N` force
 /// (structural origin = body origin since `t_struct_body = IDENTITY`)
-/// plus the same `[10, 0, 0] N·m` torque as RUN_9A. The force is
-/// stored in `Simulation`/`SimBody.external_force` as
-/// `Force<RootInertial>`, so the closure rotates the body-frame load
-/// through the current inertial-body quaternion before injecting it.
-/// JEOD's `dyn_body.force_extern` carries the same root-inertial frame
-/// convention, so the rotation matches what its integrator sees.
+/// plus the same `[10, 0, 0] N·m` torque as RUN_9A. The runner stores
+/// the external force on `Simulation`/`SimBody.external_force` as
+/// `Force<RootInertial>`, whereas JEOD's `dyn_body.force_extern` is
+/// declared in the body's structural frame (see `jeod::Force` —
+/// "The force vector is expressed in the structural frame of that
+/// DynBody object"). The closure therefore rotates the same
+/// structural-frame load through the current inertial-body quaternion
+/// before injecting it, so the inertial force fed to the runner's
+/// integrator matches the inertial force JEOD's integrator sees after
+/// applying its own structural-to-inertial transform.
 fn run9_force_torque_pre_step(_init: &InitialConditions) -> PreStepClosure {
     let dt =
         crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_DYNCOMP).join("S_define"));

@@ -221,10 +221,16 @@ pub trait SimContext {
 /// positions) naturally line up with the reference-CSV cadence: JEOD's
 /// Trick scheduler invokes those at the record rate, so a per-record
 /// closure here matches bit-for-bit. Closures whose physical decision
-/// flips at the dynamics rate — scheduled external force / torque
-/// pulses, attach/detach events — must opt into
+/// can flip between two reference-CSV records — scheduled external
+/// force / torque pulses, attach/detach events — must opt into
 /// [`PreStepCadence::PerTick`] so the on/off boundary lines up with
-/// JEOD's per-tick scheduler.
+/// JEOD's per-tick scheduler. The exception is recipes whose
+/// reference cadence already equals the integrator `dt` (typically
+/// [`CsvReference::SyntheticTimes`] scenarios such as
+/// `sim_attach_detach_trajectory::simple`): there every record *is* a
+/// tick, so [`PreStepCadence::PerRecord`] and [`PreStepCadence::PerTick`]
+/// produce identical call sequences and the per-record variant is the
+/// conventional choice.
 ///
 /// Closures that need a TDB Julian date should derive it as
 /// `j2000_jd + time / 86_400.0` (assuming a J2000 epoch), or capture
