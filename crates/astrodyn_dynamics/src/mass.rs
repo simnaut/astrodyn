@@ -64,14 +64,25 @@ impl MassProperties {
     /// distinct principal moments (I_xx != I_yy != I_zz) and potentially
     /// non-zero products of inertia. When rotational dynamics are enabled,
     /// callers must specify the actual inertia tensor for their geometry.
+    ///
+    /// `inverse_inertia` is computed via the general 3×3 inverse
+    /// (`(I·m).inverse()`) rather than the element-wise reciprocal
+    /// (`I/m`). This is the same formula [`Self::with_inertia`] and
+    /// [`Self::recompute_derived`] use, so all three sites agree
+    /// byte-for-byte — sub-ULP divergence between constructors integrates
+    /// to multi-kilometre drift on long-arc rotational-dynamics runs.
     // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.04 — inverse_inertia computed from inertia via the same
+    // general 3×3 inverse used by `with_inertia` (byte-identical across
+    // constructors).
     pub fn new(mass: f64) -> Self {
         assert!(mass > 0.0, "mass must be positive, got {mass}");
+        let inertia = DMat3::IDENTITY * mass;
         Self {
             mass,
             inverse_mass: 1.0 / mass,
-            inertia: DMat3::IDENTITY * mass,
-            inverse_inertia: DMat3::IDENTITY / mass,
+            inertia,
+            inverse_inertia: inertia.inverse(),
             position: DVec3::ZERO,
             t_parent_this: DMat3::IDENTITY,
             dirty: false,
@@ -211,15 +222,31 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     /// Point-mass constructor with placeholder spherical inertia
     /// (`I = m · I_{3×3}`) — see [`MassProperties::new`] for the same
     /// caveat about translational-only validity.
+    ///
+    /// `inverse_inertia` is computed via the general 3×3 inverse
+    /// (`(I·m).inverse()`) rather than the algebraically-equivalent
+    /// element-wise reciprocal (`I/m`). The general inverse is the same
+    /// formula [`Self::with_inertia`] and [`Self::recompute_derived`] use,
+    /// so a point mass built through this constructor agrees byte-for-byte
+    /// with one rebuilt through the raw→typed bridge or any
+    /// `recompute_derived` round-trip. The two formulas differ by a few
+    /// ULPs on the diagonal and produce non-zero (~1e-25) off-diagonal
+    /// residues from adjugate cancellations; sub-ULP divergence here
+    /// integrates to multi-kilometre position error on long-arc
+    /// rotational-dynamics runs.
     // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.04 — inverse_inertia computed from inertia via the same
+    // general 3×3 inverse used by `with_inertia` (byte-identical across
+    // constructors).
     pub fn new(mass: Mass) -> Self {
         let m = mass.get::<kilogram>();
         assert!(m > 0.0, "mass must be positive, got {m}");
+        let inertia_dmat = DMat3::IDENTITY * m;
         Self {
             mass,
             inverse_mass: 1.0 / m,
-            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(DMat3::IDENTITY * m),
-            inverse_inertia: DMat3::IDENTITY / m,
+            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(inertia_dmat),
+            inverse_inertia: inertia_dmat.inverse(),
             center_of_mass: Position::<StructuralFrame<V>>::zero(),
             t_parent_this: DMat3::IDENTITY,
             dirty: false,
@@ -344,7 +371,10 @@ mod tests {
         assert_eq!(mp.mass, 10.0);
         assert_eq!(mp.inverse_mass, 0.1);
         assert_eq!(mp.inertia, DMat3::IDENTITY * 10.0);
-        assert_eq!(mp.inverse_inertia, DMat3::IDENTITY / 10.0);
+        // `new` uses the same general 3×3 inverse as `with_inertia` (see
+        // doc-comment on `MassProperties::new`); diagonal entries agree
+        // with `IDENTITY / m` to ~1 ULP but are not bit-identical.
+        assert_eq!(mp.inverse_inertia, (DMat3::IDENTITY * 10.0).inverse());
         assert_eq!(mp.position, DVec3::ZERO);
     }
 
@@ -438,7 +468,11 @@ mod tests {
         assert_eq!(typed.mass.get::<kilogram>(), 10.0);
         assert_eq!(typed.inverse_mass, 0.1);
         assert_eq!(typed.inertia.as_dmat3(), DMat3::IDENTITY * 10.0);
-        assert_eq!(typed.inverse_inertia, DMat3::IDENTITY / 10.0);
+        // `MassPropertiesTyped::new` uses the same general 3×3 inverse as
+        // `with_inertia` and the raw→typed bridge — sub-ULP equivalent to
+        // `IDENTITY / m` on the diagonal but byte-identical across the
+        // three construction paths (closes the ULP-drift gap in #459).
+        assert_eq!(typed.inverse_inertia, (DMat3::IDENTITY * 10.0).inverse());
         assert_eq!(typed.center_of_mass.raw_si(), DVec3::ZERO);
     }
 
