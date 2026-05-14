@@ -194,6 +194,17 @@ impl<V: Vehicle> RotationalStateTyped<V> {
 /// rot_accel = inverse_inertia * torque_body
 /// ```
 /// Components with magnitude below 1e-20 are zeroed (JEOD `zero_small`).
+///
+/// This is the raw kernel — `ang_vel` is a bare `DVec3` and the caller
+/// asserts it lives in the rigid body's body frame (Euler's equation is
+/// frame-relative). Public callers in the integration call graph should
+/// prefer the typed sibling
+/// [`compute_rotational_acceleration_typed`], which makes the body-frame
+/// constraint structural via `AngularVelocity<BodyFrame<V>>`. The raw
+/// kernel remains public so the typed sibling can forward to it and so
+/// out-of-band consumers (`compute_frame_derivatives` in
+/// [`crate::forces`], integrator tests) can continue to call it
+/// directly.
 // JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
 // JEOD_INV: DB.19 — inverse_inertia used for Euler equation
 pub fn compute_rotational_acceleration(
@@ -218,6 +229,29 @@ pub fn compute_rotational_acceleration(
     zero_small(rot_accel)
 }
 
+/// Typed sibling of [`compute_rotational_acceleration`].
+///
+/// Accepts a body-frame [`AngularVelocity<BodyFrame<V>>`] in place of a
+/// bare `DVec3`, making the body-frame requirement structural: passing
+/// an inertial-frame angular velocity is a compile error at the seam
+/// (the diagnostic fires via `AngularVelocity<RootInertial>` vs
+/// `AngularVelocity<BodyFrame<V>>` mismatch on the `Qty3` frame
+/// phantom). Internally drops to `.raw_si()` and forwards to the raw
+/// kernel — arithmetic is byte-identical.
+///
+/// The external torque is still a bare `DVec3`; tightening it to a
+/// `Torque<BodyFrame<V>>` is a larger boundary refactor and out of
+/// scope here.
+#[inline]
+pub fn compute_rotational_acceleration_typed<V: Vehicle>(
+    inertia: &DMat3,
+    inverse_inertia: &DMat3,
+    ang_vel: AngularVelocity<BodyFrame<V>>,
+    extern_torq_body: DVec3,
+) -> DVec3 {
+    compute_rotational_acceleration(inertia, inverse_inertia, ang_vel.raw_si(), extern_torq_body)
+}
+
 /// Zero components with magnitude below 1e-20, matching JEOD `Vector3::zero_small`.
 fn zero_small(v: DVec3) -> DVec3 {
     const THRESHOLD: f64 = 1e-20;
@@ -238,6 +272,14 @@ fn zero_small(v: DVec3) -> DVec3 {
 /// ```
 ///
 /// Returns `[qdot_scalar, qdot_vx, qdot_vy, qdot_vz]` in JEOD scalar-first order.
+///
+/// This is the raw kernel — `ang_vel` is a bare `DVec3` and the caller
+/// asserts it lives in the body frame of the rigid body whose attitude
+/// is `q`. Mixing an inertial-frame ω with a body-frame quaternion
+/// here silently produces the conjugate trajectory (matching ω, π-off
+/// quaternion drift); it is exactly the bypass class that the typed
+/// sibling [`compute_left_quat_deriv_typed`] closes. New callers in
+/// the integration call graph should prefer the typed sibling.
 pub fn compute_left_quat_deriv(q: &JeodQuat, ang_vel: DVec3) -> [f64; 4] {
     let mhang_vel = -0.5 * ang_vel;
     let qv = q.vector();
@@ -250,6 +292,41 @@ pub fn compute_left_quat_deriv(q: &JeodQuat, ang_vel: DVec3) -> [f64; 4] {
     let qdot_v = qs * mhang_vel + mhang_vel.cross(qv);
 
     [qdot_s, qdot_v.x, qdot_v.y, qdot_v.z]
+}
+
+/// Typed sibling of [`compute_left_quat_deriv`].
+///
+/// The body-frame requirement on ω is structural — `ang_vel` is an
+/// [`AngularVelocity<BodyFrame<V>>`], so the compiler refuses any call
+/// that hands in an inertial-frame ω (or another vehicle's body-frame
+/// ω) at the kinematic ODE. That is the bypass class that hid the CC8
+/// attitude-integrator divergence: every legacy caller passed a field
+/// literally named `ang_vel_body` to a function that accepted any
+/// `DVec3`, so a future caller could silently feed an inertial-frame
+/// ω with no compiler complaint.
+///
+/// The quaternion stays a raw `&JeodQuat` rather than a
+/// `BodyAttitude<V>` because the integrator deliberately runs without
+/// renormalizing between RK4 / RKF45 stages — only the final combined
+/// quaternion is renormalized. `BodyAttitude` is a witnessed unit-norm
+/// type and would panic on those intermediate non-unit values; the
+/// kinematic ODE itself does not care about unit-norm-ness and the
+/// renormalization happens downstream of this kernel. The ω side is
+/// where the bypass actually lives, so typing it alone is sufficient
+/// to close the gap.
+///
+/// Internally drops `ang_vel` to `.raw_si()` and forwards to the raw
+/// kernel — arithmetic is byte-identical.
+///
+/// Returns `[qdot_scalar, qdot_vx, qdot_vy, qdot_vz]` in JEOD
+/// scalar-first order, matching the raw kernel exactly so callers can
+/// continue to step a `[f64; 4]` accumulator across stages.
+#[inline]
+pub fn compute_left_quat_deriv_typed<V: Vehicle>(
+    q: &JeodQuat,
+    ang_vel: AngularVelocity<BodyFrame<V>>,
+) -> [f64; 4] {
+    compute_left_quat_deriv(q, ang_vel.raw_si())
 }
 
 /// Normalize a quaternion without forcing scalar non-negative.
@@ -561,6 +638,71 @@ mod tests {
         let s = RotationalStateTyped::<TestVehicle>::default();
         assert_eq!(s.q_inertial_body.to_jeod_quat(), JeodQuat::identity());
         assert_eq!(s.ang_vel_body.raw_si(), DVec3::ZERO);
+    }
+
+    /// The typed sibling [`compute_left_quat_deriv_typed`] must forward
+    /// to the raw kernel with byte-identical arithmetic — the only
+    /// difference is structural type-checking at the seam.
+    #[test]
+    fn typed_left_quat_deriv_matches_raw() {
+        use astrodyn_quantities::aliases::AngularVelocity;
+        use astrodyn_quantities::frame::TestVehicle;
+
+        let q = JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let omega_vec = DVec3::new(0.001, -0.002, 0.0035);
+
+        let typed_omega = AngularVelocity::<BodyFrame<TestVehicle>>::from_raw_si(omega_vec);
+
+        let raw = compute_left_quat_deriv(&q, omega_vec);
+        let typed = compute_left_quat_deriv_typed::<TestVehicle>(&q, typed_omega);
+        assert_eq!(raw, typed);
+    }
+
+    /// The typed sibling tolerates non-unit intermediate quaternions —
+    /// RK4/RKF45 stages accumulate `q + qdot*h` without normalizing
+    /// between stages, so passing a slightly-off-unit JeodQuat through
+    /// the typed seam must not panic and must produce the same `qdot`
+    /// the raw kernel would.
+    #[test]
+    fn typed_left_quat_deriv_accepts_non_unit_intermediate_quat() {
+        use astrodyn_quantities::aliases::AngularVelocity;
+        use astrodyn_quantities::frame::TestVehicle;
+
+        // Synthesize a non-unit intermediate quaternion matching what a
+        // mid-stage RK4 accumulator looks like.
+        let q = JeodQuat::new(1.0 + 1e-4, 1e-3, -2e-3, 3e-3);
+        assert!((q.norm_sq() - 1.0).abs() > 1e-12);
+        let omega_vec = DVec3::new(0.001, -0.002, 0.0035);
+
+        let typed_omega = AngularVelocity::<BodyFrame<TestVehicle>>::from_raw_si(omega_vec);
+
+        let raw = compute_left_quat_deriv(&q, omega_vec);
+        let typed = compute_left_quat_deriv_typed::<TestVehicle>(&q, typed_omega);
+        assert_eq!(raw, typed);
+    }
+
+    /// The typed sibling [`compute_rotational_acceleration_typed`]
+    /// must forward to the raw kernel with byte-identical arithmetic.
+    #[test]
+    fn typed_rot_accel_matches_raw() {
+        use astrodyn_quantities::aliases::AngularVelocity;
+        use astrodyn_quantities::frame::TestVehicle;
+
+        let inertia = DMat3::from_diagonal(DVec3::new(10.0, 20.0, 30.0));
+        let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
+        let omega_vec = DVec3::new(1.0, 2.0, 3.0);
+        let torque = DVec3::new(0.1, 0.2, -0.3);
+
+        let typed_omega = AngularVelocity::<BodyFrame<TestVehicle>>::from_raw_si(omega_vec);
+
+        let raw = compute_rotational_acceleration(&inertia, &inv_inertia, omega_vec, torque);
+        let typed = compute_rotational_acceleration_typed::<TestVehicle>(
+            &inertia,
+            &inv_inertia,
+            typed_omega,
+            torque,
+        );
+        assert_eq!(raw, typed);
     }
 
     // The constant-ω attitude advance helper that used to live here

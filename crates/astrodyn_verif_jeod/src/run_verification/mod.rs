@@ -42,6 +42,7 @@ pub mod sim_orbinit_families;
 pub mod sim_orbinit_roundtrip;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
+pub mod sim_ref_attach;
 pub mod sim_relative;
 pub mod sim_relative_extended;
 pub mod sim_solar_beta;
@@ -95,7 +96,8 @@ pub(crate) mod typed_helpers {
 use crate::crossval::{CrossvalReport, StateLog};
 use crate::tier3_csv;
 use crate::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, SimContext, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, SimContext, SourceFrameKind,
+    VerificationCase,
 };
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
 use glam::{DMat3, DVec3};
@@ -179,6 +181,27 @@ impl SimContext for Simulation {
             .as_witness()
             .inner()
             .to_glam()
+    }
+
+    fn attach_to_frame(
+        &mut self,
+        body_idx: usize,
+        source_idx: usize,
+        frame_kind: SourceFrameKind,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        let frame_id = match frame_kind {
+            SourceFrameKind::Inertial => self.source_inertial_frame_id(source_idx),
+            SourceFrameKind::Pfix => self.source_pfix_frame_id(source_idx).unwrap_or_else(|| {
+                panic!(
+                    "attach_to_frame: source {source_idx} has no planet-fixed frame; \
+                     wire `rotation_model: Some(...)` on the GravitySourceEntry or \
+                     attach to SourceFrameKind::Inertial instead."
+                )
+            }),
+        };
+        Simulation::attach_to_frame(self, body_idx, frame_id, offset, t_parent_child);
     }
 }
 
@@ -793,6 +816,24 @@ fn load_reference(
                 CsvRecords::Times(states.iter().map(|s| s.time).collect())
             };
             (states, typed)
+        }
+        CsvReference::RefAttach { dt, .. } => {
+            // Read all 14 columns but only expose position/velocity to
+            // the cross-validation report. Half-second rows are
+            // filtered out by the loader; the recipe's `dt` matches
+            // the integrator cadence.
+            let records = load_ref_attach_csv(path, *dt);
+            let states = records
+                .iter()
+                .map(|r| StateLog {
+                    time: r.time,
+                    position: Some(r.position),
+                    velocity: Some(r.velocity),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let times = states.iter().map(|s| s.time).collect();
+            (states, CsvRecords::Times(times))
         }
         CsvReference::TimesOnly(_) => {
             // Cadence-only path: read column 0 of each non-header row

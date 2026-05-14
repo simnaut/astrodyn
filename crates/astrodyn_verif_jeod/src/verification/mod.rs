@@ -205,6 +205,62 @@ pub trait SimContext {
              (e.g. RotationalStateC on the Bevy body entity)"
         );
     }
+
+    /// Attach `body_idx` to a non-body reference frame owned by gravity
+    /// source `source_idx`, with a fixed structural-origin `offset`
+    /// (parent-frame coordinates, m) and `t_parent_child` rotation
+    /// (parent-frame axes → body structural axes). `frame_kind` picks
+    /// the source's inertial or planet-fixed frame; mirrors the runner's
+    /// [`Simulation::attach_to_frame`](https://docs.rs/astrodyn_runner/latest/astrodyn_runner/simulation/struct.Simulation.html#method.attach_to_frame)
+    /// when paired with [`Simulation::source_pfix_frame_id`] /
+    /// [`Simulation::source_inertial_frame_id`] for frame lookup.
+    ///
+    /// After the call, the body's translational + rotational integration
+    /// is suppressed and each subsequent step derives state from the
+    /// parent frame composed with the captured offset. Used by ref-frame
+    /// attach scenarios that schedule attach mid-propagation through
+    /// `pre_step`.
+    ///
+    /// The default implementation panics with an explicit
+    /// "attach_to_frame not supported" message so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that own a
+    /// frame-attach surface (the runner's `Simulation`, the Bevy
+    /// adapter's `FrameAttachEvent` bus) override this.
+    fn attach_to_frame(
+        &mut self,
+        body_idx: usize,
+        source_idx: usize,
+        frame_kind: SourceFrameKind,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        let _ = (body_idx, source_idx, frame_kind, offset, t_parent_child);
+        panic!(
+            "attach_to_frame not supported by this SimContext implementation; \
+             provide a SimContext impl that drives the adapter's frame-attach \
+             path (e.g. FrameAttachEvent on the Bevy bus)"
+        );
+    }
+}
+
+/// Which of a gravity source's reference frames to attach to.
+///
+/// Pairs with [`SimContext::attach_to_frame`] to pick between the
+/// non-rotating inertial frame and the rotating planet-fixed frame.
+/// Adapter-neutral so the runner-side impl can resolve to a
+/// `astrodyn_runner::FrameId` and the Bevy-side impl can resolve to the
+/// source entity's `FrameEntityC` / `PfixFrameEntityC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceFrameKind {
+    /// The source's inertial frame (`source_inertial_frame_id` on the
+    /// runner; `FrameEntityC` on the Bevy source entity).
+    Inertial,
+    /// The source's planet-fixed (rotating) frame
+    /// (`source_pfix_frame_id` on the runner; `PfixFrameEntityC` on the
+    /// Bevy source entity). Requires the source to have a rotation
+    /// model — the underlying adapter call panics if the source lacks
+    /// a pfix frame.
+    Pfix,
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked before the
@@ -373,6 +429,22 @@ pub enum CsvReference {
     OrbInit(&'static str),
     /// 8-column SIM_tide_verif CSV (time + pos + vel + dC20).
     Tide(&'static str),
+    /// 14-column SIM_ref_attach state CSV (time + pos + vel + q + ang_vel).
+    /// JEOD's SIM_ref_attach `IntegLoop` runs at `DYNAMICS = 1.0` s but
+    /// Trick logs at 0.5 s; the half-second rows simply repeat the
+    /// previous integer-second integrator output, so the loader drops
+    /// them. Pairs with [`Self::file_name`] for the filename; `dt`
+    /// names the integrator cadence the half-second filter quantizes
+    /// against.
+    RefAttach {
+        /// CSV file name under `test_data/`.
+        file: &'static str,
+        /// Integrator timestep in seconds. Half-second rows that don't
+        /// land on an integer multiple of `dt` are dropped at load
+        /// time so the per-step comparison cadence stays aligned with
+        /// the integration cadence.
+        dt: f64,
+    },
     /// 57-column SIM_Relative two-body CSV (time + interleaved vehA
     /// state[25] + interleaved vehB state[25] + JEOD-logged relative
     /// translational state[6]). Used by the runner-vs-JEOD oracle
@@ -455,6 +527,7 @@ impl CsvReference {
             | CsvReference::Tide(s)
             | CsvReference::Relative(s)
             | CsvReference::TimesOnly(s) => Some(s),
+            CsvReference::RefAttach { file, .. } => Some(file),
             CsvReference::SyntheticTimes { .. } => None,
         }
     }

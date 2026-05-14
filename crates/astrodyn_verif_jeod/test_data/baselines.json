@@ -71,6 +71,11 @@
     "tier3_sim_drag_ver_flatplate_torque": {
       "extras": [{"name":"aero_force_err","value":2.05695899999999998e-12,"unit":"N"},{"name":"aero_torque_err","value":6.18684200000000047e-13,"unit":"N*m"},{"name":"accel_mag_err","value":2.05645099999999996e-12,"unit":"m/s^2"}]
     },
+    "tier3_sim_ref_attach_matrix": {
+      "position_m": [7.68957200000000007e0, 1.29984400000000004e1, 4.12487399999999973e-3],
+      "velocity_m_per_s": [9.47861199999999997e-4, 5.60732500000000046e-4, 8.90951099999999934e-8],
+      "extras": []
+    },
     "tier3_simulation_drag_run6b": {
       "position_m": [7.59087599999999973e-1, 1.06094700000000008e0, 8.51860199999999956e-1],
       "velocity_m_per_s": [7.48629299999999998e-4, 1.19413200000000009e-3, 9.54492300000000030e-4],
