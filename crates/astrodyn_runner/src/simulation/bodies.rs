@@ -915,7 +915,15 @@ mod tests {
     use std::sync::Arc;
 
     fn empty_sim() -> Simulation {
-        let time = SimulationTime::new(0.0, default_leap_second_table());
+        // TAI = 0 is pre-1972, which the leap-second table panics on by
+        // default (#485 H2). Tests using a synthetic zero epoch must opt in
+        // to JEOD-faithful clamp behavior so the table-OOR panic doesn't
+        // pre-empt the contact-pair `has_stepped` assertion these tests
+        // actually want to verify.
+        let time = SimulationTime::new(
+            0.0,
+            default_leap_second_table().with_clamp_out_of_range(true),
+        );
         Simulation::new(time, 1.0)
     }
 

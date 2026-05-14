@@ -754,6 +754,7 @@ pub fn integrate_body(
                     .saturating_mul(tour_count)
                     .clamp(100, 10_000_000) // hard cap: prevent runaway loops
             };
+            let allow_non_convergence = raw_cfg.allow_non_convergence;
             let unconverged_before = gj.bootstrap_unconverged_iterations();
             let mut completed = false;
             for _ in 0..max_stages {
@@ -761,9 +762,26 @@ pub fn integrate_body(
                 let result = gj.integrate(dt, time_scale_factor, acc, trans);
                 if result.time_scale > 0.0 {
                     if !result.passed {
+                        // JEOD_INV: IG.38 — corrector non-convergence policy.
+                        // Default: panic (our fail-loudly divergence from JEOD,
+                        // #485 C1). Opt-in via
+                        // `GaussJacksonConfig::allow_non_convergence` restores
+                        // JEOD's log-and-continue behavior.
+                        assert!(
+                            allow_non_convergence,
+                            "GaussJackson integration step did not converge — \
+                             position would be silently degraded for the rest of \
+                             the trajectory. Set \
+                             `GaussJacksonConfig::allow_non_convergence = true` \
+                             to restore JEOD's log-and-continue behavior, or \
+                             review the integration setup (tolerances, step size, \
+                             order)."
+                        );
+                        // JEOD_INV: IG.38 — JEOD-faithful warn on opt-in path.
                         log::warn!(
                             "GaussJackson integration step did not converge \
-                             (position may be degraded)"
+                             (position may be degraded — JEOD-faithful behavior \
+                             via allow_non_convergence opt-in)."
                         );
                     }
                     completed = true;
@@ -772,11 +790,25 @@ pub fn integrate_body(
             }
             let unconverged_after = gj.bootstrap_unconverged_iterations();
             if unconverged_after > unconverged_before && unconverged_before == 0 {
+                // JEOD_INV: IG.38 — bootstrap non-convergence policy (same as
+                // the corrector path above).
+                assert!(
+                    allow_non_convergence,
+                    "GaussJackson bootstrap edit accepted a non-converged \
+                     correction ({unconverged_after} iteration(s) total) — \
+                     bootstrap error would compound through the remainder of \
+                     the trajectory. Set \
+                     `GaussJacksonConfig::allow_non_convergence = true` to \
+                     restore JEOD's log-and-continue behavior, or review the \
+                     integration setup (tolerances, step size, order)."
+                );
+                // JEOD_INV: IG.38 — JEOD-faithful warn on opt-in path.
                 log::warn!(
                     "GaussJackson bootstrap edit accepted a non-converged correction \
-                     ({unconverged_after} iteration(s) total — JEOD-faithful behavior, \
-                     but long missions where bootstrap error compounds may want to \
-                     review the integration setup)."
+                     ({unconverged_after} iteration(s) total — JEOD-faithful behavior \
+                     via allow_non_convergence opt-in, but long missions where \
+                     bootstrap error compounds may want to review the integration \
+                     setup)."
                 );
             }
             assert!(

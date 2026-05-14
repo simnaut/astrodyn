@@ -99,22 +99,42 @@ fn build_gj_scenario(
 }
 
 fn build_gj_order4(_init: &InitialConditions) -> SimulationBuilder {
-    build_gj_scenario(GaussJacksonConfig::with_order(4), 1.0, 1.0)
+    build_gj_scenario(
+        // JEOD-faithful warn-and-continue on synthetic short-trajectory probes
+        // that occasionally trip the corrector convergence check (#485 C1).
+        // The tier3 reference CSV is the source of truth; matching it requires
+        // the warn-and-continue path that JEOD uses.
+        GaussJacksonConfig::with_order(4).with_allow_non_convergence(true),
+        1.0,
+        1.0,
+    )
 }
 
 fn build_gj_order8(_init: &InitialConditions) -> SimulationBuilder {
-    build_gj_scenario(GaussJacksonConfig::with_order(8), 1.0, 1.0)
+    build_gj_scenario(
+        GaussJacksonConfig::with_order(8).with_allow_non_convergence(true),
+        1.0,
+        1.0,
+    )
 }
 
 fn build_gj_order12(_init: &InitialConditions) -> SimulationBuilder {
-    build_gj_scenario(GaussJacksonConfig::with_order(12), 1.0, 1.0)
+    build_gj_scenario(
+        GaussJacksonConfig::with_order(12).with_allow_non_convergence(true),
+        1.0,
+        1.0,
+    )
 }
 
 fn build_gj_dt10(_init: &InitialConditions) -> SimulationBuilder {
     // sim_dt=1.0, time_scale_factor=10.0 → effective dyn-time dt=10 s
     // per integration step. CSV records every 30 sim-seconds in the
     // dt10 reference, so the parity test asserts at every 30 ticks.
-    build_gj_scenario(GaussJacksonConfig::with_order(8), 1.0, 10.0)
+    build_gj_scenario(
+        GaussJacksonConfig::with_order(8).with_allow_non_convergence(true),
+        1.0,
+        10.0,
+    )
 }
 
 /// SIM_GJ_test baseline: GJ order 8, dt=1 s, tsf=1.0.

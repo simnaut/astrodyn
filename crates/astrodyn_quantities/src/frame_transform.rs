@@ -127,20 +127,36 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
     ///
     /// Prefer [`from_matrix_validated`](Self::from_matrix_validated) when
     /// the input is unverified (e.g. user-supplied YAML, network protocol)
-    /// and you need a typed error rather than a `debug_assert!` panic.
+    /// and you need a typed error rather than a panic.
+    ///
+    /// # Panics
+    ///
+    /// In both debug and release builds, panics if the input matrix is not
+    /// a proper orthonormal rotation:
+    /// - `|det(M) - 1| ≥ 1e-9`, or
+    /// - `max |M · Mᵀ − I| ≥ 1e-9` (any element-wise drift from identity).
+    ///
+    /// Release-mode enforcement is the post-#485 policy: silently caching
+    /// a quaternion derived from a non-orthonormal matrix would propagate
+    /// wrong physics through every subsequent `.apply()` call. The
+    /// per-construction cost (one determinant + one M·Mᵀ multiply) is
+    /// negligible at the typical once-per-step callsites (RNP, Mars,
+    /// Moon, DE421 rotation updates).
     #[inline]
     pub fn from_matrix(matrix: DMat3) -> Self {
-        // Orthonormality checks are debug-only — the cached quaternion is
-        // already an approximation when the input isn't a perfect rotation,
-        // and we'd rather catch the bug in tests than impose a release-mode
-        // cost on every per-step rotation update.
-        debug_assert!(
+        // JEOD_INV: RF.12 — `FrameTransform::from_matrix` orthonormal input
+        // precondition. Release-mode enforced (#485 C3): silently caching a
+        // quaternion derived from a non-orthonormal matrix would propagate
+        // wrong physics through every `.apply()` call. Callers with
+        // untrusted input must use `from_matrix_validated` for the
+        // fallible alternative.
+        assert!(
             (matrix.determinant() - 1.0).abs() < 1.0e-9,
             "FrameTransform::from_matrix: input must have determinant ≈ 1.0 \
-             (got {})",
+             (got {}). Use `from_matrix_validated` for untrusted input.",
             matrix.determinant()
         );
-        debug_assert!(
+        assert!(
             {
                 let drift = (matrix * matrix.transpose() - DMat3::IDENTITY)
                     .to_cols_array()
@@ -149,7 +165,9 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
                     .fold(0.0_f64, f64::max);
                 drift < 1.0e-9
             },
-            "FrameTransform::from_matrix: input must be orthonormal (M·Mᵀ ≈ I)"
+            "FrameTransform::from_matrix: input must be orthonormal \
+             (M·Mᵀ ≈ I within 1e-9). Use `from_matrix_validated` for \
+             untrusted input."
         );
 
         // Derive the JEOD-canonical (scalar-first, left-transform) quaternion

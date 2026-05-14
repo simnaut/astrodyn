@@ -299,6 +299,12 @@ pub fn validate_jeod_invariants<P: Planet>(
 
         for error in &errors {
             if error.is_warning() {
+                // FAIL_LOUD_EXEMPT: operational report path for warning-class
+                // ValidationErrors (see `ValidationError::is_warning`). The
+                // warning category is reserved for suspicious-but-valid
+                // states (uninitialized at origin, non-root integ with proper
+                // IntegOrigin shifts per RF.10) where a panic would
+                // false-positive on legitimate setups.
                 bevy::log::warn!("Entity {entity:?}: {error}");
             } else {
                 panic!("Entity {entity:?}: {error}");
@@ -414,16 +420,26 @@ pub fn validate_jeod_invariants<P: Planet>(
                 || has_solar_beta
                 || has_earth_lighting;
             if has_root_dependent {
+                // FAIL_LOUD_EXEMPT: Bevy-side mirror of the runner-side
+                // `NonRootFrameWithRootDependentFeatures` warning-class
+                // ValidationError. The configuration is supported (see
+                // `tests/integ_frame_translation_invariance.rs` for a
+                // correctly-handled non-root setup with the same feature
+                // set) provided the caller applies the per-step
+                // `IntegOrigin` shift per RF.10. Promoting to panic
+                // would false-positive on legitimate setups.
                 bevy::log::warn!(
                     "Entity {entity:?}: non-root integration frame (or active \
-                     frame switch into a non-root frame) with features that \
-                     assume root-inertial coordinates (drag={has_drag}, \
+                     frame switch into a non-root frame) paired with features \
+                     that consume root-inertial coordinates (drag={has_drag}, \
                      flat_plate_srp={has_flat}, cannonball_srp={has_cannonball}, \
                      orbital_elements={has_orbital}, euler={has_euler}, \
                      geodetic={has_geodetic}, lvlh={has_lvlh}, \
                      solar_beta={has_solar_beta}, earth_lighting={has_earth_lighting}). \
-                     These derived states assume the simulation's central-body inertial \
-                     frame and will produce incorrect results in other frames.",
+                     The consumer must apply the per-step `IntegOrigin` shift \
+                     (RF.10) to convert the body's integration-frame state into \
+                     root-inertial before the consumer runs; without that shift \
+                     the consumer mixes coordinates from different frames.",
                 );
             }
         }

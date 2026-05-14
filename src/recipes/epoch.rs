@@ -99,7 +99,14 @@ pub fn at_utc(
     let frac_day = (hour as f64 * 3600.0 + minute as f64 * 60.0 + second) / SECONDS_PER_DAY;
     // UTC TJT = JD − 2400000.5 (MJD) − 40000 (TJT offset)
     let utc_tjt = jd_at_day_start + frac_day - 2_440_000.5;
-    let leap_table = default_leap_second_table();
+    // Production epoch helpers opt in to JEOD-faithful clamp behavior on the
+    // leap-second table (#485 H2) so post-2017 epochs (no new leap seconds
+    // inserted; IERS extends the table's last value) and pre-1972 epochs do
+    // not panic the construction. Callers needing strict OOR rejection
+    // (asserting a covered epoch) should construct the `LeapSecondTable`
+    // without `.with_clamp_out_of_range(true)` and call `SimulationTime::new`
+    // directly.
+    let leap_table = default_leap_second_table().with_clamp_out_of_range(true);
     let tai_tjt = leap_table.utc_to_tai_tjt(utc_tjt);
     SimulationTime::new(tai_tjt, leap_table)
 }

@@ -293,6 +293,10 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
 // ── Gauss-Jackson parity ──
 
 fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usize) {
+    // Synthetic-state parity probes trip GJ non-convergence; opt in to the
+    // JEOD-faithful warn-and-continue (#485 C1) so the test stays focused on
+    // its actual subject (runner ↔ Bevy bit-identity).
+    let config = config.with_allow_non_convergence(true);
     let gj_trans = TranslationalState {
         position: DVec3::new(9e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 8000.0, 0.0),

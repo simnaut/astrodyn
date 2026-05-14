@@ -1168,6 +1168,12 @@ impl Simulation {
     /// the tree, the subtree has no parent, the parent's root has no
     /// tracked state, or a subtree with the same id is already in the
     /// detached map.
+    ///
+    /// # Diagnostic logging
+    /// Emits a stderr trace (post-detach composite state) when the
+    /// `apollo_trace` log target is enabled at the `debug` level. Enable
+    /// with `RUST_LOG=apollo_trace=debug`. (Diagnostic leftover from the
+    /// #248 attach-bug investigation.)
     pub fn detach_subtree(&mut self, integrated_body_idx: usize, subtree_root_id: MassBodyId) {
         let tree = self
             .mass_tree
@@ -1363,7 +1369,7 @@ impl Simulation {
             self.detached_subtrees.insert(tree_root_id, updated);
         }
 
-        if std::env::var("APOLLO_TRACE").is_ok() {
+        if log::log_enabled!(target: "apollo_trace", log::Level::Debug) {
             eprintln!(
                 "DETACH: subtree {subtree_root_id:?} state stored:\n  pos={:?}\n  vel={:?}\n  ω={:?}",
                 subtree_state.trans.position,
@@ -1453,6 +1459,12 @@ impl Simulation {
     /// tree is configured, the parent or subtree id is not in the tree,
     /// either named mass point is missing on its body, or the subtree
     /// is not in [`Self::detached_subtrees`].
+    ///
+    /// # Diagnostic logging
+    /// Emits a stderr trace (parent + child composite states, mass
+    /// properties, combined output) when the `apollo_trace` log target is
+    /// enabled at the `debug` level. Enable with `RUST_LOG=apollo_trace=debug`.
+    /// (Diagnostic leftover from the #248 attach-bug investigation.)
     pub fn attach_subtree_aligned(
         &mut self,
         integrated_body_idx: usize,
@@ -1539,9 +1551,10 @@ impl Simulation {
         );
 
         // APOLLO_TRACE diagnostic: dump every input to combine_states_at_attach
-        // so we can diff against JEOD ground truth. Gated by env var so the
-        // regular test path is unaffected. (See #248 attach-bug investigation.)
-        if std::env::var("APOLLO_TRACE").is_ok() {
+        // so we can diff against JEOD ground truth. Gated via the `log` crate
+        // target so the regular test path is unaffected — enable with
+        // `RUST_LOG=apollo_trace=debug`. (See #248 attach-bug investigation.)
+        if log::log_enabled!(target: "apollo_trace", log::Level::Debug) {
             eprintln!("=== ATTACH TRACE (integrated body {integrated_body_idx} → subtree {subtree_root_id:?}) ===");
             eprintln!("  PARENT COMPOSITE (= our body.trans/body.rot):");
             eprintln!(
@@ -1705,7 +1718,7 @@ impl Simulation {
             body.abm4_state.as_mut().map(|s| s.inner_mut()),
         );
 
-        if std::env::var("APOLLO_TRACE").is_ok() {
+        if log::log_enabled!(target: "apollo_trace", log::Level::Debug) {
             eprintln!(
                 "  COMBINE OUTPUT: pos=[{:.4e} {:.4e} {:.4e}] ω_body=[{:.6e} {:.6e} {:.6e}]",
                 combined.composite_state.trans.position.x,
@@ -1794,7 +1807,12 @@ mod tests {
             },
         );
 
-        let gj_cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: these unit tests step GJ on synthetic
+        // initial state whose non-physical configuration occasionally triggers
+        // corrector non-convergence. The test asserts attach/detach mechanics,
+        // not numerical correctness, so opting in to the JEOD-faithful path
+        // (#485 C1) keeps the test focus on its actual subject.
+        let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let make_cfg = |trans: TranslationalState| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
@@ -1894,7 +1912,12 @@ mod tests {
             },
         );
 
-        let gj_cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: these unit tests step GJ on synthetic
+        // initial state whose non-physical configuration occasionally triggers
+        // corrector non-convergence. The test asserts attach/detach mechanics,
+        // not numerical correctness, so opting in to the JEOD-faithful path
+        // (#485 C1) keeps the test focus on its actual subject.
+        let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let trans = TranslationalState {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
@@ -2143,7 +2166,12 @@ mod tests {
         // `composite_properties` is recomputed by `MassTree::attach`
         // / `detach` should still see its (otherwise unused) integrator
         // reset.
-        let gj_cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: these unit tests step GJ on synthetic
+        // initial state whose non-physical configuration occasionally triggers
+        // corrector non-convergence. The test asserts attach/detach mechanics,
+        // not numerical correctness, so opting in to the JEOD-faithful path
+        // (#485 C1) keeps the test focus on its actual subject.
+        let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let trans = TranslationalState {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
@@ -2277,7 +2305,12 @@ mod tests {
 
         // One integrated GJ8 body (the only one with integrator
         // state — the rest of the chain is tree-only nodes).
-        let gj_cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: these unit tests step GJ on synthetic
+        // initial state whose non-physical configuration occasionally triggers
+        // corrector non-convergence. The test asserts attach/detach mechanics,
+        // not numerical correctness, so opting in to the JEOD-faithful path
+        // (#485 C1) keeps the test focus on its actual subject.
+        let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let trans = TranslationalState {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
@@ -2553,7 +2586,10 @@ mod tests {
 
         // Splice GJ8 state onto cm post-validate (validate forbids
         // GJ+6DOF; we're exercising the inline reset block defensively).
-        let cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: test setup is synthetic and may
+        // trip corrector non-convergence; opt in to JEOD's log-and-continue
+        // (#485 C1) so the test stays focused on its actual subject.
+        let cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
@@ -2651,7 +2687,10 @@ mod tests {
 
         // Splice GJ8 state onto cm AFTER the detach so
         // attach_subtree_aligned's reset block has something to clear.
-        let cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: test setup is synthetic and may
+        // trip corrector non-convergence; opt in to JEOD's log-and-continue
+        // (#485 C1) so the test stays focused on its actual subject.
+        let cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
         assert!(!gj.is_topology_dirty());
@@ -2724,7 +2763,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "topology")]
     fn dirty_gauss_jackson_state_panics_on_integrate() {
-        let cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: test setup is synthetic and may
+        // trip corrector non-convergence; opt in to JEOD's log-and-continue
+        // (#485 C1) so the test stays focused on its actual subject.
+        let cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let mut gj = GaussJacksonState::new(cfg);
         drive_gj_past_priming(&mut gj);
 
@@ -2799,7 +2841,12 @@ mod tests {
             },
         );
 
-        let gj_cfg = GaussJacksonConfig::with_order(8);
+        // JEOD-faithful warn-and-continue: these unit tests step GJ on synthetic
+        // initial state whose non-physical configuration occasionally triggers
+        // corrector non-convergence. The test asserts attach/detach mechanics,
+        // not numerical correctness, so opting in to the JEOD-faithful path
+        // (#485 C1) keeps the test focus on its actual subject.
+        let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
         let body_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),

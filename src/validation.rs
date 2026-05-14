@@ -331,11 +331,15 @@ impl std::fmt::Display for ValidationError {
             Self::NonRootFrameWithRootDependentFeatures { body_idx } => {
                 write!(
                     f,
-                    "Body {body_idx}: non-root integration frame with features that \
-                     assume root-inertial coordinates (drag, SRP, orbital elements, \
-                     euler angles, LVLH, geodetic, solar beta, or earth lighting). \
-                     These derived states assume the simulation's central-body \
-                     inertial frame and will produce incorrect results in other frames."
+                    "Body {body_idx}: non-root integration frame paired with features \
+                     that consume root-inertial coordinates (drag, SRP, orbital elements, \
+                     euler angles, LVLH, geodetic, solar beta, or earth lighting). The \
+                     consumer must apply the per-step `IntegOrigin` shift (RF.10) to \
+                     convert the body's integration-frame state into root-inertial \
+                     before the consumer runs. Without that shift, the consumer mixes \
+                     coordinates from different frames and produces wrong physics. \
+                     `crates/astrodyn_runner/tests/integ_frame_translation_invariance.rs` \
+                     demonstrates a correctly-configured non-root setup."
                 )
             }
             Self::EphemerisOnRootSource { source_idx } => {
@@ -435,8 +439,19 @@ impl ValidationError {
     /// Whether this is a warning rather than a fatal error.
     ///
     /// Warnings indicate suspicious-but-valid state (e.g., a body at the origin
-    /// might be intentional). Both the Bevy adapter and `Simulation::validate()`
-    /// should use this to decide severity.
+    /// might be intentional, or a body in a non-root integration frame that has
+    /// correctly set up the [RF.10] `IntegOrigin` shifts). Both the Bevy
+    /// adapter and `Simulation::validate()` should use this to decide severity.
+    ///
+    /// #485 C2 considered reclassifying `NonRootFrameWithRootDependentFeatures`
+    /// as fatal, but `tests/integ_frame_translation_invariance.rs` demonstrates
+    /// that the configuration IS handled correctly via the `IntegOrigin` shift
+    /// machinery — the diagnostic's "will produce incorrect results" was an
+    /// overstatement. The diagnostic prose has been rewritten to be accurate
+    /// (it warns that the *caller* must apply RF.10 shifts), and the warning
+    /// stays a warning.
+    ///
+    /// [RF.10]: ../../../docs/JEOD_invariants.md
     pub fn is_warning(&self) -> bool {
         matches!(
             self,

@@ -24,28 +24,22 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-/// Topics whose Tier 3 sibling exists but whose parity counterpart is
-/// deliberately absent (or `#[ignore]`d) for a documented structural
-/// reason. The entries here are the "intentional gap" set the
-/// `parity_coverage` test exempts.
+/// Tier 3 topics whose parity wrapper is *expected to land* once a
+/// concrete blocker lifts (recipe factory, multi-planet dispatch, etc.).
+/// Each entry should link to the tracking issue (#389 + follow-ups) so
+/// the entry can be dropped when the wrapper file is created. Split out
+/// from the umbrella `KNOWN_PARITY_GAPS` (#485 L2) so the "this should
+/// eventually go away" set is auditable distinct from the structurally-
+/// permanent set below.
 ///
-/// Two flavors of gap live in this list:
-///
-/// 1. **Deferred** — the bridge or recipe layer doesn't cover the
-///    topic *yet*, but a parity wrapper is expected once the blocker
-///    lifts. These entries MUST link to the tracking issue (typically
-///    `#389` or a follow-up) so the gap can be closed and the entry
-///    dropped when the issue lands.
-/// 2. **Permanent** — the topic is structurally out of scope for the
-///    `VerificationCaseParityExt` trait (no trajectory CSV, pure
-///    analytical/solver test, structural mass-tree composition). The
-///    reason field states *why* the topic doesn't fit; no issue link
-///    is required because there is no follow-up planned.
-///
-/// The set is intentionally small. Issue #389 closes the bulk of the
-/// deferred cluster; entries that remain are either narrowly-scoped
-/// follow-ups or permanent out-of-scope cases.
-const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
+/// **Note** (#485 M4): the gap-count is one entry larger than the count
+/// of orphaned parity wrappers because some entries here have *no*
+/// corresponding parity wrapper at all (they are pure-deferred); others
+/// document a recipe-factory follow-up rather than a missing wrapper.
+/// The `is_covered_by_parity` prefix rule lets a single wrapper file
+/// satisfy multiple closely-related tier3 topics, which is why the
+/// raw file counts do not need to match 1:1.
+const DEFERRED_GAPS: &[(&str, &str)] = &[
     // ── Multi-planet scenarios: the bridge spawns all bodies under a
     //    single `<P>` today, so cases that integrate in two
     //    planet-inertial frames need a non-generic dispatch (#389
@@ -83,44 +77,10 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "planetary",
         "Multi-planet planetary integration sim — bridge gap (#389 risk)",
     ),
-    // ── Mass-tree-only structural tests with no JEOD CSV.
-    (
-        "attach_mass",
-        "structural mass-tree composition test — no trajectory CSV, \
-         doesn't fit VerificationCase shape",
-    ),
-    (
-        "complex_attach_detach",
-        "structural mass-tree composition test — no trajectory CSV",
-    ),
-    (
-        "contact",
-        "structural contact-pair test — no trajectory CSV",
-    ),
-    // ── Pure analytical / math-comparison tests with no propagation.
-    (
-        "battin",
-        "Battin/Lambert solver test — analytical, not a propagation scenario",
-    ),
-    (
-        "integ_analytical",
-        "analytical integrator-comparison test — no Bevy parity counterpart",
-    ),
-    (
-        "integ_comparison",
-        "analytical integrator-comparison test — no Bevy parity counterpart",
-    ),
-    (
-        "integ_gj_orders",
-        "GJ-order sweep — analytical, depends on pre-recipe `gj` factory",
-    ),
     // ── Pre-recipe tier3 siblings: the `VerificationCase` factory
     //    doesn't exist yet, so the parity trait has nothing to drive.
-    //    Recipe migration is tracked as a follow-up to #389. The
-    //    long tail below covers every pre-recipe topic in the
-    //    workspace today; each entry collapses to "wrap once the
-    //    recipe lands", and the matching follow-up can drop the entry
-    //    when the wrapper file is created.
+    //    Recipe migration is tracked as a follow-up to #389. Each
+    //    entry can be dropped when the wrapper file is created.
     (
         "dyncomp_run9",
         "pre-recipe sibling — recipe factory for run9 not yet defined \
@@ -130,10 +90,6 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
         "dyncomp_run_attach_to_ref_frame",
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined; needs `pre_step` Bevy support too (#389 follow-up)",
-    ),
-    (
-        "drag_analytical",
-        "analytical drag verification — out of trait scope (no propagation)",
     ),
     (
         "drag_ver",
@@ -180,6 +136,59 @@ const KNOWN_PARITY_GAPS: &[(&str, &str)] = &[
     // run6b_drag_rotated_struct, run6b_drag_aero_traj).
 ];
 
+/// Tier 3 topics that are structurally out of scope for the
+/// `VerificationCaseParityExt` trait — no JEOD trajectory CSV to compare
+/// against, pure analytical/solver test, structural mass-tree composition.
+/// No follow-up is planned: the topic exists in tier3 because it
+/// exercises owner-crate logic the parity trait was never meant to cover.
+const PERMANENT_GAPS: &[(&str, &str)] = &[
+    // ── Mass-tree-only structural tests with no JEOD CSV.
+    (
+        "attach_mass",
+        "structural mass-tree composition test — no trajectory CSV, \
+         doesn't fit VerificationCase shape",
+    ),
+    (
+        "complex_attach_detach",
+        "structural mass-tree composition test — no trajectory CSV",
+    ),
+    (
+        "contact",
+        "structural contact-pair test — no trajectory CSV",
+    ),
+    // ── Pure analytical / math-comparison tests with no propagation.
+    (
+        "battin",
+        "Battin/Lambert solver test — analytical, not a propagation scenario",
+    ),
+    (
+        "integ_analytical",
+        "analytical integrator-comparison test — no Bevy parity counterpart",
+    ),
+    (
+        "integ_comparison",
+        "analytical integrator-comparison test — no Bevy parity counterpart",
+    ),
+    (
+        "integ_gj_orders",
+        "GJ-order sweep — analytical, depends on pre-recipe `gj` factory",
+    ),
+    (
+        "drag_analytical",
+        "analytical drag verification — out of trait scope (no propagation)",
+    ),
+];
+
+/// Union of the two gap arrays. The coverage check unions both into the
+/// `allowed` set, then sweeps each separately for stale / redundant
+/// entries; deferred entries that have been wrapped (or whose tier3
+/// topic was deleted) must be dropped from `DEFERRED_GAPS`, and similarly
+/// for `PERMANENT_GAPS`. Splitting the arrays preserves the audit story
+/// while keeping the lint behavior identical.
+fn known_parity_gaps() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    DEFERRED_GAPS.iter().chain(PERMANENT_GAPS.iter())
+}
+
 #[test]
 fn parity_topics_are_a_superset_of_tier3_topics() {
     let workspace_root = workspace_root();
@@ -210,7 +219,7 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         "bevy_parity_",
     );
 
-    let allowed: BTreeSet<&'static str> = KNOWN_PARITY_GAPS.iter().map(|(t, _)| *t).collect();
+    let allowed: BTreeSet<&'static str> = known_parity_gaps().map(|(t, _)| *t).collect();
 
     let mut uncovered: Vec<String> = Vec::new();
     for topic in &tier3_topics {
@@ -227,7 +236,7 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         let mut msg = String::new();
         msg.push_str(
             "tier3 topics without a matching bevy_parity_* sibling (and not in \
-             KNOWN_PARITY_GAPS):\n",
+             DEFERRED_GAPS or PERMANENT_GAPS):\n",
         );
         for t in &uncovered {
             msg.push_str(&format!("  - {t}\n"));
@@ -235,42 +244,71 @@ fn parity_topics_are_a_superset_of_tier3_topics() {
         msg.push_str(
             "\nFix by either:\n  \
              1. Adding `crates/astrodyn_verif_parity/tests/bevy_parity_<topic>.rs`, or\n  \
-             2. Documenting the gap in `KNOWN_PARITY_GAPS` (parity_coverage.rs) with a reason.\n",
+             2. Documenting the gap in `DEFERRED_GAPS` (wrapper expected to land) \
+             or `PERMANENT_GAPS` (structurally out of scope) in parity_coverage.rs \
+             with a reason.\n",
         );
         panic!("{msg}");
     }
 
-    // Surface stale `KNOWN_PARITY_GAPS` entries so a topic that has
-    // since been covered (or removed from tier3) doesn't sit in the
-    // exemption list forever.
-    let mut stale: Vec<&str> = Vec::new();
-    for (topic, _reason) in KNOWN_PARITY_GAPS {
+    // Surface stale gap entries so a topic that has since been covered
+    // (or removed from tier3) doesn't sit in the exemption list
+    // forever. Both arrays are swept independently so the diagnostic
+    // names which array carried the stale entry.
+    let mut stale_deferred: Vec<&str> = Vec::new();
+    for (topic, _reason) in DEFERRED_GAPS {
         if !tier3_topics.contains(*topic) {
-            stale.push(topic);
+            stale_deferred.push(topic);
         }
     }
     assert!(
-        stale.is_empty(),
-        "KNOWN_PARITY_GAPS contains topics that no longer exist in tier3_*.rs: {stale:?}\n  \
+        stale_deferred.is_empty(),
+        "DEFERRED_GAPS contains topics that no longer exist in tier3_*.rs: \
+         {stale_deferred:?}\n  \
+         Either restore the missing tier3 test or drop the exemption.",
+    );
+    let mut stale_permanent: Vec<&str> = Vec::new();
+    for (topic, _reason) in PERMANENT_GAPS {
+        if !tier3_topics.contains(*topic) {
+            stale_permanent.push(topic);
+        }
+    }
+    assert!(
+        stale_permanent.is_empty(),
+        "PERMANENT_GAPS contains topics that no longer exist in tier3_*.rs: \
+         {stale_permanent:?}\n  \
          Either restore the missing tier3 test or drop the exemption.",
     );
 
-    // Surface redundant `KNOWN_PARITY_GAPS` entries: a topic listed
-    // here that already has a `bevy_parity_*.rs` wrapper is one whose
-    // gap should be dropped entirely — the wrapper file satisfies the
-    // superset invariant on its own, and leaving the entry in place
-    // gives a false impression that the topic is still a known gap.
-    let mut redundant: Vec<&str> = Vec::new();
-    for (topic, _reason) in KNOWN_PARITY_GAPS {
+    // Surface redundant gap entries: a topic listed here that already
+    // has a `bevy_parity_*.rs` wrapper should drop the exemption — the
+    // wrapper satisfies the superset invariant on its own. Deferred
+    // entries that get covered are the natural close-out path; a
+    // permanent entry that gets covered indicates the entry was
+    // misclassified and the wrapper is real coverage.
+    let mut redundant_deferred: Vec<&str> = Vec::new();
+    for (topic, _reason) in DEFERRED_GAPS {
         if is_covered_by_parity(topic, &parity_topics) {
-            redundant.push(topic);
+            redundant_deferred.push(topic);
         }
     }
     assert!(
-        redundant.is_empty(),
-        "KNOWN_PARITY_GAPS contains topics that already have a bevy_parity_*.rs wrapper: \
-         {redundant:?}\n  \
+        redundant_deferred.is_empty(),
+        "DEFERRED_GAPS contains topics that already have a bevy_parity_*.rs wrapper: \
+         {redundant_deferred:?}\n  \
          Drop the exemption — the wrapper file covers the topic.",
+    );
+    let mut redundant_permanent: Vec<&str> = Vec::new();
+    for (topic, _reason) in PERMANENT_GAPS {
+        if is_covered_by_parity(topic, &parity_topics) {
+            redundant_permanent.push(topic);
+        }
+    }
+    assert!(
+        redundant_permanent.is_empty(),
+        "PERMANENT_GAPS contains topics that already have a bevy_parity_*.rs wrapper: \
+         {redundant_permanent:?}\n  \
+         Drop the exemption — the topic was misclassified; the wrapper file is real coverage.",
     );
 }
 
