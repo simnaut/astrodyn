@@ -121,8 +121,9 @@ pub use rkf45::{
     rkf45_translational_step, AdaptiveConfig, AdaptiveResult,
 };
 pub use rotational::{
-    compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
-    RotationalStateTyped, SixDofState, SixDofStateTyped,
+    compute_left_quat_deriv, compute_left_quat_deriv_typed, compute_rotational_acceleration,
+    compute_rotational_acceleration_typed, normalize_integ, RotationalState, RotationalStateTyped,
+    SixDofState, SixDofStateTyped,
 };
 pub use state::TranslationalState;
 pub use subtree::DetachedSubtreeState;

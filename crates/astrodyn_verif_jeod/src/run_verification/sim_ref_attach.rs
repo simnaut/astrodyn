@@ -31,7 +31,8 @@
 //! `SimContext`-friendly path through the same physics.
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, SourceFrameKind, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, SourceFrameKind, Tolerances,
+    VerificationCase,
 };
 use astrodyn::recipes::{earth, epoch};
 use astrodyn::{
@@ -208,6 +209,6 @@ pub fn run_matrix() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(matrix_pre_step),
+        pre_step: Some((matrix_pre_step, PreStepCadence::PerRecord)),
     }
 }

@@ -31,7 +31,7 @@
 //! decelerates the body back to rest.
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, Force, GravityControls, GravityModel, GravitySource,
@@ -441,6 +441,6 @@ pub fn force_symmetric_impulse() -> VerificationCase {
         duration: Time::new::<second>(0.0),
         tolerances: analytical_tolerances(),
         extras: None,
-        pre_step: Some(impulse_pre_step),
+        pre_step: Some((impulse_pre_step, PreStepCadence::PerRecord)),
     }
 }

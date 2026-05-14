@@ -19,7 +19,8 @@ use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
 use crate::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, PreStepClosure, Tolerances,
+    VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
@@ -244,6 +245,6 @@ pub fn run01() -> VerificationCase {
         extras: Some(ExtrasComparator::TideDc20 {
             earth_source_idx: EARTH_IDX,
         }),
-        pre_step: Some(tide_pre_step),
+        pre_step: Some((tide_pre_step, PreStepCadence::PerRecord)),
     }
 }
