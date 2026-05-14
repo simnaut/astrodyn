@@ -132,10 +132,7 @@ impl SphericalHarmonicsData {
         assert!(degree > 0, "degree must be > 0");
         assert!(
             degree <= MAX_SH_DEGREE,
-            "degree ({degree}) exceeds MAX_SH_DEGREE ({MAX_SH_DEGREE}): \
-             the triangular index `n*(n+1)/2 + m` and slot count \
-             `(degree+1)*(degree+2)/2` must fit in `usize`. Raise \
-             MAX_SH_DEGREE if a legitimate gravity model needs it."
+            "degree ({degree}) exceeds MAX_SH_DEGREE ({MAX_SH_DEGREE}): the triangular index `n*(n+1)/2 + m` and slot count `(degree+1)*(degree+2)/2` must fit in `usize`. Raise MAX_SH_DEGREE if a legitimate gravity model needs it.",
         );
         assert!(order <= degree, "order must be <= degree");
         assert_eq!(cnm.len(), degree + 1);

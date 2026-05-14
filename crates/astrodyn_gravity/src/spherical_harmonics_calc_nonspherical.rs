@@ -337,10 +337,12 @@ pub fn calc_nonspherical_with_scratch(
             data.cnm_row(ii)
         };
         let s_ii: &[f64] = data.snm_row(ii);
-        let xi_ii: &[f64] = &data.xi[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
-        let eta_ii: &[f64] = &data.eta[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
-        let zeta_ii: &[f64] = &data.zeta[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
-        let upsilon_ii: &[f64] = &data.upsilon[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
+        let row_start = tri_idx(ii, 0);
+        let row_end = row_start + ii + 1;
+        let xi_ii: &[f64] = &data.xi[row_start..row_end];
+        let eta_ii: &[f64] = &data.eta[row_start..row_end];
+        let zeta_ii: &[f64] = &data.zeta[row_start..row_end];
+        let upsilon_ii: &[f64] = &data.upsilon[row_start..row_end];
 
         rad_div_r_nth *= rad_div_r;
 
