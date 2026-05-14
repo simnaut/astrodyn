@@ -302,7 +302,7 @@ pub use astrodyn_frames::{
 
 // astrodyn_ephemeris: ephemeris data
 pub use astrodyn_ephemeris::{
-    assets as ephemeris_assets, Ephemeris, EphemerisBody, EphemerisError,
+    assets as ephemeris_assets, Ephemeris, EphemerisBody, EphemerisError, Epoch,
 };
 
 // astrodyn_gravity: relativistic-correction submodule consumed by mission

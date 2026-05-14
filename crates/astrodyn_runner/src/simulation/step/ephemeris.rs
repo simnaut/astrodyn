@@ -47,6 +47,18 @@ impl Simulation {
         } else {
             None
         };
+
+        // Build the ANISE `Epoch` for the current TDB instant once. The
+        // BPC libration query (MoonDE421 branch below) and the DE4xx
+        // source-position queries in the 2b loop all evaluate at the
+        // same instant, so hoisting `Epoch::from_tdb_seconds` (and the
+        // internal `hifitime::Epoch::to_time_scale` it forces inside
+        // anise) out of each query is a strict reduction in work with
+        // no effect on the f64 outputs. The lazy initialisation keeps
+        // configurations without any ephemeris source from paying for
+        // an unused conversion.
+        let tdb_jd = self.time.tdb_julian_date();
+        let mut tdb_epoch: Option<astrodyn::Epoch> = None;
         for (i, grav) in self.gravity_data.iter_mut().enumerate() {
             match grav.rotation_model {
                 RotationModel::None => {}
@@ -78,7 +90,6 @@ impl Simulation {
                     }
                 }
                 RotationModel::MoonIAU => {
-                    let tdb_jd = self.time.tdb_julian_date();
                     let tdb_s_since_j2000 =
                         (tdb_jd - astrodyn::J2000_TT_JD) * astrodyn::SECONDS_PER_DAY;
                     let rotation =
@@ -97,9 +108,10 @@ impl Simulation {
                         "MoonDE421 rotation requires ephemeris with BPC. \
                          Set sim.ephemeris = Some(eph) after calling eph.load_bpc().",
                     );
-                    let tdb_jd = self.time.tdb_julian_date();
+                    let epoch = *tdb_epoch
+                        .get_or_insert_with(|| astrodyn::Ephemeris::tdb_jd_to_epoch(tdb_jd));
                     let rotation = eph
-                        .get_body_rotation(astrodyn::EphemerisBody::Moon, tdb_jd)
+                        .get_body_rotation_epoch(astrodyn::EphemerisBody::Moon, epoch)
                         .expect("Moon DE421 BPC rotation query failed");
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
                         sync_pfix_rotation(
@@ -126,11 +138,15 @@ impl Simulation {
         // ── 2b. Ephemeris update — source positions from DE4xx ──
         // Update source positions from ephemeris each step and sync to frame tree.
         if let Some(ref eph) = self.ephemeris {
-            let tdb_jd = self.time.tdb_julian_date();
+            // Reuse the epoch built lazily above (or build it now if no
+            // rotation branch needed it) so all 2b source queries share
+            // a single `Epoch` value with the MoonDE421 query above.
+            let epoch =
+                *tdb_epoch.get_or_insert_with(|| astrodyn::Ephemeris::tdb_jd_to_epoch(tdb_jd));
             for i in 0..self.source_ephem_bodies.len() {
                 if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
                     let (pos_typed, vel_typed) = eph
-                        .get_state_typed(*target, *observer, tdb_jd)
+                        .get_state_typed_epoch(*target, *observer, epoch)
                         .map_err(|e| StepError::EphemerisLookup {
                             source_idx: i,
                             target: *target,
