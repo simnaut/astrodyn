@@ -87,11 +87,10 @@ fn bench_accumulate_gravity(c: &mut Criterion) {
                 b.iter(|| {
                     // Apply the inverse rotation here (matching what
                     // the production caller does on every kernel
-                    // call). After hoisting, this is the work the
-                    // caller can amortize across multiple substages
-                    // sharing the same `t_parent_this`; including it
-                    // in the bench keeps the timed region comparable
-                    // to the pre-hoist combined kernel cost.
+                    // call). After hoisting this is a separate step
+                    // the caller controls, so including it in the
+                    // bench keeps the timed region comparable to the
+                    // pre-hoist combined kernel cost.
                     let kernel_out = gravitation_with_scratch(
                         black_box(src),
                         black_box(pos),

@@ -20,19 +20,34 @@ use crate::gravity_source::{GravityModel, GravitySource};
 /// Decomposed output of the gravity kernel.
 ///
 /// Splitting the contribution into a planet-fixed spherical-harmonics
-/// piece and an inertial point-mass piece lets the caller apply the
-/// inverse rotation (`t_parent_this^T`) exactly once across the four
-/// RK4 substages + one environment evaluation per step, instead of once
-/// per kernel entry. The `t_parent_this` matrix is updated once per
-/// step in the ephemeris phase (e.g. via `MoonDE421` BPC libration);
-/// hoisting the inverse rotation to the caller amortizes the transpose
-/// across all kernel calls that share the same rotation.
+/// piece and an inertial point-mass piece moves the inverse rotation
+/// (`t_parent_this^T`) out of the kernel boundary and into a separate
+/// step the caller controls via [`Self::into_inertial`]. This buys two
+/// concrete things:
+///
+/// 1. **Gradient-skip when the caller doesn't want it.** The kernel
+///    previously applied `matrix3x3_transpose_transform_matrix` on
+///    every call, regardless of whether the gradient was consumed.
+///    [`Self::into_inertial`] now gates that 9-mul/9-add transform on
+///    a `compute_gradient` flag, so the RK4 inner-loop call site
+///    (`evaluate_accel_only`) pays only for the accel transform.
+/// 2. **Point-mass short-circuit.** Point-mass sources leave
+///    `sh_pfix` as `None`, and [`Self::into_inertial`] then skips the
+///    accel and gradient transforms entirely. The pre-hoist kernel
+///    already returned point-mass in inertial coordinates, but the
+///    branch shape is clearer at the call site now.
+///
+/// Per-substage rotation is still applied: `position` changes between
+/// RK4 substages, so the resulting inertial-frame `acc` and `grad`
+/// differ per call and cannot be hoisted across substages. The
+/// decomposition surfaces the planet-fixed pieces in case a future
+/// caller wants to combine multiple kernel outputs in pfix before
+/// applying one shared rotation; no production caller does this today.
 ///
 /// Bit-identity: the f64 operations at the kernel boundary are the
 /// same — only the *site* of the `vector3_transform_transpose` and
 /// `matrix3x3_transpose_transform_matrix` calls moved. The point-mass
-/// piece never needed the rotation in the first place and is returned
-/// in inertial coordinates unchanged.
+/// piece is returned in inertial coordinates unchanged.
 #[derive(Debug, Clone, Default)]
 pub struct GravityKernelOutput {
     /// Spherical-harmonics contribution in the planet-fixed frame
@@ -138,8 +153,10 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
 /// Matching JEOD's `GravityControls::gravitation`, the kernel internally
 /// transforms position to planet-fixed and runs the SH recurrence
 /// there. The inverse transform on the SH output is hoisted to the
-/// caller so it can amortize the `t_parent_this^T` work across the four
-/// RK4 substages + one environment evaluation per step.
+/// caller (see [`GravityKernelOutput::into_inertial`]), which lets the
+/// caller gate the gradient transform on whether the gradient is
+/// consumed and skip both transforms entirely when the kernel produced
+/// no SH piece (point-mass).
 ///
 /// When `perturbing_only` is false, both pieces are populated (the
 /// caller combines them into point-mass + nonspherical). When true,
@@ -271,10 +288,12 @@ pub fn gravitation_with_scratch(
                 );
 
             // SH stays in planet-fixed; the caller applies the inverse
-            // rotation. Same f64 ops at the boundary as the in-kernel
-            // form — `vector3_transform_transpose` and
+            // rotation via `GravityKernelOutput::into_inertial`, where
+            // the gradient transform is gated on `compute_gradient`.
+            // Same f64 ops as the pre-hoist in-kernel form —
+            // `vector3_transform_transpose` and
             // `matrix3x3_transpose_transform_matrix` just moved one
-            // frame up the stack so the caller can amortize the work.
+            // frame up the stack.
             let pm_inertial = if perturbing_only {
                 None
             } else {

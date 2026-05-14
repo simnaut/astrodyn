@@ -530,14 +530,21 @@ impl<SourceId> GravityControl<SourceId> {
                 has_delta_coeffs,
             );
             // The kernel returns SH in planet-fixed; apply the inverse
-            // rotation here so the kernel can amortize the transform
-            // across the four RK4 substages and one environment eval
-            // per step that share the same `t_parent_this`.
+            // rotation here. `into_inertial` is gated on
+            // `compute_gradient`, so the 9-mul/9-add matrix transform
+            // on the gradient tensor is skipped when the caller asked
+            // for accel-only (the RK4 inner loop via
+            // `evaluate_accel_only`). The accel transform itself still
+            // runs once per kernel call — `position` differs per
+            // substage, so the resulting inertial-frame vector cannot
+            // be hoisted across substages even though `t_parent_this`
+            // is.
             kernel_out.into_inertial(rot, compute_gradient)
         } else {
             // Point-mass path: the kernel returns the inertial-frame
-            // piece directly. No rotation is involved, so the
-            // `into_inertial` call is a free no-op on the SH branch.
+            // piece directly (`sh_pfix` is `None`), so the
+            // `into_inertial` call below short-circuits the rotation
+            // entirely — no matrix-vector ops run on this branch.
             let kernel_out = crate::gravitation(
                 source,
                 position,
