@@ -831,6 +831,105 @@ pub fn load_tide_csv(path: &Path) -> Vec<TideRecord> {
     records
 }
 
+// ── SIM_ref_attach CSV (14 columns) ────────────────────────────────────────
+
+/// One row from a SIM_ref_attach `ref_attach_*_ref_attach_state.csv`
+/// reference (14 columns: time, `pos[3]`, `vel[3]`, `q_scalar`,
+/// `q_vec[3]`, `ang_vel[3]`).
+#[derive(Debug, Clone)]
+pub struct RefAttachRecord {
+    /// Sample time in seconds since simulation t=0.
+    pub time: f64,
+    /// Composite-body inertial position in metres.
+    pub position: DVec3,
+    /// Composite-body inertial velocity in m/s.
+    pub velocity: DVec3,
+    /// Composite-body left-quaternion scalar component (JEOD's `[q0,
+    /// q1, q2, q3]` layout, scalar-first). Kept for follow-up attitude
+    /// validation; the SIM_ref_attach scenarios have no rotational
+    /// dynamics pre-attach and the post-attach attitude is derived from
+    /// the parent frame composed with the captured `t_pframe_struct`,
+    /// so attitude drift already manifests as position / velocity error
+    /// through the rigid-body composition.
+    #[allow(dead_code)]
+    pub quat_scalar: f64,
+    /// Composite-body left-quaternion vector component (`[q1, q2, q3]`).
+    #[allow(dead_code)]
+    pub quat_vec: DVec3,
+    /// Body-frame angular velocity (rad/s).
+    #[allow(dead_code)]
+    pub ang_vel_body: DVec3,
+}
+
+/// Parse a SIM_ref_attach `ref_attach_*_ref_attach_state.csv` at `path`.
+///
+/// `keep_only_integer_seconds_for_dt` filters out fractional-second
+/// rows: SIM_ref_attach's `IntegLoop` runs at `DYNAMICS = 1.0` s but
+/// Trick's logger samples at 0.5 s, so the half-second rows simply
+/// repeat the previous integer-second integrator output. Comparing
+/// against those would mix an integer-second state (our `step_until`
+/// integration cadence) with a half-second CSV index that doesn't
+/// correspond to an integration step — keep only rows where
+/// `time / dt` is integer (within an epsilon).
+pub fn load_ref_attach_csv(
+    path: &Path,
+    keep_only_integer_seconds_for_dt: f64,
+) -> Vec<RefAttachRecord> {
+    let content = read_csv(path, "SIM_ref_attach");
+    assert!(
+        keep_only_integer_seconds_for_dt > 0.0,
+        "load_ref_attach_csv: filter dt must be positive, got {keep_only_integer_seconds_for_dt}"
+    );
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if i == 0 || trimmed.is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = trimmed.split(',').collect();
+        assert!(
+            f.len() == 14,
+            "line {}: SIM_ref_attach CSV expected 14 columns, got {} ({:?})",
+            i + 1,
+            f.len(),
+            trimmed,
+        );
+        let p = |idx: usize| -> f64 {
+            f[idx].trim().parse().unwrap_or_else(|e| {
+                panic!(
+                    "line {}: SIM_ref_attach CSV column {idx} parse failed for {:?}: {e}",
+                    i + 1,
+                    f[idx]
+                )
+            })
+        };
+        let time = p(0);
+        // Drop fractional-second rows: the integrator runs at integer
+        // seconds and the half-second rows hold the previous tick's
+        // state. `time / dt - (time / dt).round()` is the f64-rounding
+        // distance from the nearest integer multiple; 1e-9 absorbs CSV
+        // formatting jitter.
+        let n = time / keep_only_integer_seconds_for_dt;
+        if (n - n.round()).abs() > 1e-9 {
+            continue;
+        }
+        records.push(RefAttachRecord {
+            time,
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            quat_scalar: p(7),
+            quat_vec: DVec3::new(p(8), p(9), p(10)),
+            ang_vel_body: DVec3::new(p(11), p(12), p(13)),
+        });
+    }
+    assert!(
+        !records.is_empty(),
+        "SIM_ref_attach CSV at {} contained no integer-second data rows",
+        path.display(),
+    );
+    records
+}
+
 // ── Dyncomp helpers ────────────────────────────────────────────────────────
 
 /// Convert a [`DyncompRecord`] into a [`StateLog`] using its `composite_body`

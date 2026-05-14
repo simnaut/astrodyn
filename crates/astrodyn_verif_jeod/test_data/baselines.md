@@ -147,6 +147,13 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | aero_torque_err | 6.18684200000000047e-13 |  |  | N*m |
 | accel_mag_err | 2.05645099999999996e-12 |  |  | m/s^2 |
 
+## `tier3_sim_ref_attach_matrix`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 7.68957200000000007e0 | 1.29984400000000004e1 | 4.12487399999999973e-3 | m |
+| velocity | 9.47861199999999997e-4 | 5.60732500000000046e-4 | 8.90951099999999934e-8 | m/s |
+
 ## `tier3_simulation_drag_run6b`
 
 | Metric | X / value | Y | Z | Unit |
