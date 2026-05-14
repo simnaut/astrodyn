@@ -156,7 +156,7 @@ jobs:
         run: |
           cargo nextest run --workspace -E '
             test(bevy_parity) and not (
-              binary(/^bevy_parity_dyncomp_/)
+              binary(/^bevy_parity_dyncomp_run/)
               or binary(/^bevy_parity_solar_beta/)
               or binary(=bevy_parity_torque_simple)
               or binary(=bevy_parity_srp_1st_order)

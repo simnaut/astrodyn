@@ -30,6 +30,7 @@ pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_drag_6dof;
 pub mod sim_dyncomp;
+pub mod sim_dyncomp_combinations;
 pub mod sim_force_torque_response;
 pub mod sim_gj;
 pub mod sim_kinematic_propagation;

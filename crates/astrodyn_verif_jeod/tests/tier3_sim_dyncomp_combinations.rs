@@ -7,6 +7,15 @@
 //! exercised by those RUNs but which admit closed-form / conservation-law
 //! verification without a JEOD reference CSV.
 //!
+//! The `Simulation` construction lives in the `sim_dyncomp_combinations`
+//! recipe module so the parity wrapper
+//! (`bevy_parity_dyncomp_combinations.rs`) can drive the same scenarios
+//! through the Bevy adapter for the `runner ↔ bevy` half of the
+//! transitivity argument. Each test reads recipe-encoded values back
+//! off the built `Simulation` (rather than duplicating literals) so
+//! recipe edits stay locally consistent with their analytical
+//! assertions.
+//!
 //! JEOD scenario mapping:
 //! - tier3_dyncomp_point_mass_3dof_conservation:
 //!   RUN_2 family (point-mass gravity): energy + angular momentum
@@ -32,81 +41,48 @@
 //!   major principal axis is stable (intermediate-axis theorem).
 
 use astrodyn::recipes::helpers::energy_conservation::specific_orbital_energy;
-use astrodyn::{
-    GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource, JeodQuat,
-    MassProperties, RotationalState, SimulationTime, TranslationalState,
-};
-use astrodyn::{GravitySourceEntry, VehicleConfig};
-use astrodyn_runner::{RotationModel, Simulation};
-use glam::{DMat3, DVec3};
+use astrodyn_runner::builder::SimulationBuilderExt;
+use astrodyn_runner::Simulation;
+use astrodyn_verif_jeod::run_verification::sim_dyncomp_combinations;
+use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
-/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+/// Earth gravitational parameter (m³/s²) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
-/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
-/// Sun gravitational parameter (m^3/s^2) — JEOD `sun_spherical.cc`.
-const MU_SUN: f64 = astrodyn::SUN.shape.mu;
-/// Moon gravitational parameter (m^3/s^2) — JEOD `moon_GRAIL150.cc`.
-const MU_MOON: f64 = astrodyn::MOON.shape.mu;
-/// Typical Earth–Sun distance (m, ~1 AU).
-const R_EARTH_SUN: f64 = 1.495_978_707e11;
-/// Typical Earth–Moon distance (m).
-const R_EARTH_MOON: f64 = 3.844_0e8;
 
-/// Add a central Earth gravity source (point-mass).
-fn add_earth_point_mass(sim: &mut Simulation) -> usize {
-    sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::None,
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-            marker_only: false,
-        },
-    )
+/// Build the recipe's `Simulation` by calling the scenario factory with
+/// a default `InitialConditions`, then `.build()`.
+///
+/// `VerificationCaseParityExt::run_and_assert_parity` derives its init
+/// via `initial_conditions_from(&ref_states[0])` rather than
+/// `Default::default()`. Every recipe in this file pairs with
+/// `CsvReference::SyntheticTimes`, for which the loader fills each
+/// generated `StateLog` with `time: t, ..Default::default()`; at
+/// `i = 0` that gives `time = 0.0` and `None`/`DVec3::ZERO` for every
+/// other field, so `initial_conditions_from(ref_states[0])` collapses
+/// to `InitialConditions::default()` bit-for-bit. Passing
+/// `Default::default()` here is therefore equivalent to what the
+/// parity wrapper does *for these cases*, which is why the runner-side
+/// propagation here and the Bevy-side propagation in
+/// `bevy_parity_dyncomp_combinations.rs` see the same initial state.
+/// If a future recipe in this file switches off `SyntheticTimes` or
+/// starts honoring `InitialConditions`, switch this call site to
+/// derive the init the same way `run_and_assert_parity` does.
+fn build_sim(case: &VerificationCase) -> Simulation {
+    (case.scenario)(&InitialConditions::default())
+        .build()
+        .unwrap_or_else(|e| panic!("scenario `{}` build failed: {e:?}", case.name))
 }
 
-/// Circular orbit at 400 km altitude (ISS-like) in the equatorial plane.
-fn iss_circular_state() -> (DVec3, DVec3) {
-    let r = R_EARTH + 400_000.0;
-    let v = (MU_EARTH / r).sqrt();
-    (DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0))
-}
-
-/// Build a 3-DOF point-mass orbit simulation (pure Kepler).
-fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
-    let mut sim = Simulation::new(
-        SimulationTime::at_j2000(astrodyn::default_leap_second_table()),
-        dt,
-    );
-    let earth = add_earth_point_mass(&mut sim);
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        rot: None,
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(MassProperties::new(mass)),
-        )),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-    sim
+/// Pull `(dt, num_steps)` off a recipe's [`CsvReference::SyntheticTimes`]
+/// reference. Every recipe in `sim_dyncomp_combinations` uses this
+/// variant because the family is analytical-only; panicking on any
+/// other variant surfaces a future recipe-shape drift here rather than
+/// producing a silently-truncated propagation.
+fn synthetic_cadence(case: &VerificationCase) -> (f64, usize) {
+    match &case.reference {
+        CsvReference::SyntheticTimes { dt, num_steps } => (*dt, *num_steps),
+        _ => panic!("`{}`: expected SyntheticTimes reference", case.name),
+    }
 }
 
 // ─── Test 1: Point-mass Kepler conservation ───
@@ -116,16 +92,21 @@ fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
 /// dynamics. Any drift is numerical integrator error.
 #[test]
 fn tier3_dyncomp_point_mass_3dof_conservation() {
-    let (pos, vel) = iss_circular_state();
-    let dt = 10.0;
-    let mut sim = make_kepler_sim(pos, vel, 1000.0, dt);
+    let case = sim_dyncomp_combinations::point_mass_3dof_conservation();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    assert_eq!(
+        dt, sim.dt,
+        "`{}`: recipe SyntheticTimes dt ({dt}) and Simulation dt ({}) drifted apart",
+        case.name, sim.dt
+    );
 
-    let e0 = specific_orbital_energy(pos, vel, MU_EARTH);
-    let h0 = pos.cross(vel);
+    let body0 = sim.body(0);
+    let pos0 = body0.trans.position.raw_si();
+    let vel0 = body0.trans.velocity.raw_si();
+    let e0 = specific_orbital_energy(pos0, vel0, MU_EARTH);
+    let h0 = pos0.cross(vel0);
 
-    // Propagate for 3 orbits.
-    let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
-    let n_steps = (3.0 * period / dt) as usize;
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
@@ -165,93 +146,16 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
 /// required to demonstrate the third-body torque effect checked here.
 #[test]
 fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
-    let (pos, vel) = iss_circular_state();
-    let dt = 10.0;
+    let case = sim_dyncomp_combinations::point_mass_plus_thirdbody_conservation();
+    let mut sim = build_sim(&case);
+    let (_dt, n_steps) = synthetic_cadence(&case);
 
-    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
+    let body0 = sim.body(0);
+    let pos0 = body0.trans.position.raw_si();
+    let vel0 = body0.trans.velocity.raw_si();
+    let e0 = specific_orbital_energy(pos0, vel0, MU_EARTH);
+    let h0 = pos0.cross(vel0);
 
-    let earth = add_earth_point_mass(&mut sim);
-
-    // Sun/Moon placed off the orbital (X-Y) plane so their differential
-    // accelerations produce a torque on the orbit about axes in the plane
-    // (nodal regression / inclination wobble).  A purely in-plane third body
-    // only perturbs the energy and periapsis — it does not tilt the orbital
-    // plane.
-    let sun = sim.add_source(
-        "Sun",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: MU_SUN,
-                model: GravityModel::PointMass,
-            },
-            // Sun ~23.4° out of the equator (ecliptic obliquity).
-            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
-                R_EARTH_SUN * 0.9175,
-                0.0,
-                R_EARTH_SUN * 0.3977,
-            )),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::None,
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: false,
-            marker_only: false,
-        },
-    );
-    let moon = sim.add_source(
-        "Moon",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: MU_MOON,
-                model: GravityModel::PointMass,
-            },
-            // Moon ~5° off the ecliptic — put it off the XY plane too.
-            position: astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(DVec3::new(
-                0.0,
-                R_EARTH_MOON * 0.9063,
-                R_EARTH_MOON * 0.4226,
-            )),
-            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::None,
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: false,
-            marker_only: false,
-        },
-    );
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        rot: None,
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(MassProperties::new(1000.0)),
-        )),
-        gravity_controls: GravityControls {
-            controls: vec![
-                GravityControl::new_spherical(earth, GravityGradient::Skip),
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
-            ],
-        },
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-
-    let e0 = specific_orbital_energy(pos, vel, MU_EARTH);
-    let h0 = pos.cross(vel);
-
-    // Integrate for one orbit.
-    let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
-    let n_steps = (period / dt) as usize;
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
@@ -303,61 +207,20 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
 /// not required to demonstrate monotonic SMA decay under drag.
 #[test]
 fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
-    use astrodyn::{AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere};
+    let case = sim_dyncomp_combinations::drag_point_mass_monotonic_decay();
+    let mut sim = build_sim(&case);
+    let (_dt, n_total_steps) = synthetic_cadence(&case);
 
-    let (pos, vel) = iss_circular_state();
-    let dt = 10.0;
-    let mass = 1000.0;
-
-    let mut sim = Simulation::new(
-        SimulationTime::at_j2000(astrodyn::default_leap_second_table()),
-        dt,
+    // The recipe's `num_steps` covers five orbital periods. Recover
+    // the per-orbit tick count by dividing — both sides are integer-
+    // truncated identically, so this matches the recipe's
+    // `steps_per_orbit(dt)` helper without re-importing it.
+    let steps_per_orbit = n_total_steps / 5;
+    assert!(
+        steps_per_orbit > 0 && steps_per_orbit * 5 == n_total_steps,
+        "`{}`: SyntheticTimes count {n_total_steps} not a clean 5×steps_per_orbit",
+        case.name,
     );
-    let earth = add_earth_point_mass(&mut sim);
-
-    // Constant-density drag atmosphere so we have repeatable per-orbit decay.
-    sim.atmosphere = Some(AtmosphereConfig {
-        model: AtmosphereModel::Exponential(ExponentialAtmosphere {
-            rho_0: 1e-11,
-            h_0: 400_000.0,
-            scale_height: 50_000.0,
-        }),
-        r_eq: R_EARTH,
-        r_pol: R_EARTH * (1.0 - 1.0 / 298.257_223_563),
-        planet_omega: 0.0,
-    });
-    sim.atmosphere_planet_source = Some(earth);
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &(MassProperties::new(mass)),
-        )),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        drag: Some(DragConfig {
-            cd: 2.2,
-            area: 20.0,
-            constant_density: Some(1e-11), // boosted density for clear decay
-        }),
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-
-    // Sample SMA at orbital-period intervals for several orbits.
-    let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
-    let steps_per_orbit = (period / dt) as usize;
 
     let mut sma_samples = Vec::new();
     for _ in 0..5 {
@@ -400,63 +263,41 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
 /// momentum vector is rigorously conserved.
 #[test]
 fn tier3_dyncomp_6dof_rigid_body_invariance() {
-    let (pos, vel) = iss_circular_state();
-    let dt = 0.5;
+    let case = sim_dyncomp_combinations::rigid_body_invariance_6dof();
+    let mut sim = build_sim(&case);
+    let (_dt, n_steps) = synthetic_cadence(&case);
 
-    // Asymmetric diagonal inertia (principal axes aligned with body frame).
-    let i_x = 1000.0;
-    let i_y = 2500.0;
-    let i_z = 2500.0;
-    let inertia = DMat3::from_cols(
-        DVec3::new(i_x, 0.0, 0.0),
-        DVec3::new(0.0, i_y, 0.0),
-        DVec3::new(0.0, 0.0, i_z),
-    );
-    let mass_props = MassProperties::with_inertia(1000.0, inertia, DVec3::ZERO);
-
-    let mut sim = Simulation::new(
-        SimulationTime::at_j2000(astrodyn::default_leap_second_table()),
-        dt,
-    );
-    let earth = add_earth_point_mass(&mut sim);
-
-    // Initial omega tipped off the major axis to exercise all three Euler eqs.
-    let omega0_body = DVec3::new(0.1, 0.02, 0.0); // rad/s
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: omega0_body,
-            }),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        // Gravity gradient torque OFF (RUN_8 has it off).
-        compute_gravity_gradient: false,
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-
-    // H_inertial(0) = T^T * I * omega_body
-    let body = sim.body(0);
-    let q0 = body.rot.as_ref().unwrap().q_inertial_body.to_jeod_quat();
+    // Recover the recipe's inertia + initial omega from the built body
+    // so the closed-form initial angular momentum tracks whatever the
+    // recipe sets at t=0. Duplicating the recipe literals here would
+    // let the assertion silently drift if the recipe edits the inertia
+    // without the test noticing. `Simulation::body_mass` returns the
+    // typed `MassPropertiesTyped<SelfRef>`; demote through the kernel-
+    // boundary helper because `VehicleOutput` doesn't carry mass.
+    let mass0_typed = sim
+        .body_mass(0)
+        .expect("6-DOF body must have mass properties");
+    let inertia = astrodyn::typed_bridge::mass_typed_to_raw(mass0_typed).inertia;
+    let body0 = sim.body(0);
+    let rot0 = body0
+        .rot
+        .as_ref()
+        .expect("6-DOF body must have rotational state");
+    let omega0_body = rot0.ang_vel_body.raw_si();
+    let q0 = rot0.q_inertial_body.to_jeod_quat();
     let t0 = q0.left_quat_to_transformation(); // inertial→body
     let h_body0 = inertia * omega0_body;
     let h_inertial_0 = t0.transpose() * h_body0;
 
-    // Propagate for 60 seconds.
-    sim.step_n((60.0 / dt) as usize).expect("step_n failed");
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    let q1 = body.rot.as_ref().unwrap().q_inertial_body.to_jeod_quat();
-    let omega1_body = body.rot.as_ref().unwrap().ang_vel_body.raw_si();
+    let rot = body
+        .rot
+        .as_ref()
+        .expect("6-DOF body must have rotational state");
+    let q1 = rot.q_inertial_body.to_jeod_quat();
+    let omega1_body = rot.ang_vel_body.raw_si();
     let t1 = q1.left_quat_to_transformation();
     let h_body1 = inertia * omega1_body;
     let h_inertial_1 = t1.transpose() * h_body1;
@@ -492,39 +333,44 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
 /// the body's velocity increment equals F*dt/m along the force direction.
 #[test]
 fn tier3_dyncomp_external_force_impulse_response() {
-    let (pos, vel0) = iss_circular_state();
-    let dt = 1.0;
-    let mass = 1000.0;
-    let mut sim = make_kepler_sim(pos, vel0, mass, dt);
+    use sim_dyncomp_combinations::{
+        EXTERNAL_FORCE_IMPULSE_DURATION_S, EXTERNAL_FORCE_IMPULSE_INERTIAL_N,
+        EXTERNAL_FORCE_IMPULSE_MASS_KG,
+    };
+    let case = sim_dyncomp_combinations::external_force_impulse_response();
+    let case_ref = sim_dyncomp_combinations::external_force_impulse_kepler_reference();
+    let mut sim = build_sim(&case);
+    let mut ref_sim = build_sim(&case_ref);
+    let (dt, n_steps) = synthetic_cadence(&case);
+    let (dt_ref, n_steps_ref) = synthetic_cadence(&case_ref);
+    assert_eq!(
+        (dt, n_steps),
+        (dt_ref, n_steps_ref),
+        "force-impulse and reference cadences must agree: \
+         forced=({dt}, {n_steps}), reference=({dt_ref}, {n_steps_ref})"
+    );
+    // Cross-check that the SyntheticTimes horizon exactly covers the
+    // exposed force-window duration. Catches silent drift if a future
+    // recipe edit changes one but not the other.
+    let computed_duration = (n_steps as f64) * dt;
+    assert!(
+        (computed_duration - EXTERNAL_FORCE_IMPULSE_DURATION_S).abs() < 1e-12,
+        "force-impulse SyntheticTimes horizon ({computed_duration} s) drifted from \
+         exposed EXTERNAL_FORCE_IMPULSE_DURATION_S ({EXTERNAL_FORCE_IMPULSE_DURATION_S} s)"
+    );
 
-    let force_inertial = DVec3::new(50.0, 0.0, 0.0); // 50 N along +X inertial
-    let force_duration = 10.0;
-
-    // Record velocity immediately before force window.
     let v_before = sim.body(0).trans.velocity.raw_si();
 
-    // Apply force for force_duration seconds.
-    sim.set_body_external_force(0, force_inertial);
-    sim.step_n((force_duration / dt) as usize)
-        .expect("step_n failed");
-    sim.set_body_external_force(0, DVec3::ZERO);
+    // Propagate both sims through the force window.
+    sim.step_n(n_steps).expect("step_n failed");
+    ref_sim.step_n(n_steps_ref).expect("step_n failed");
 
     let v_after = sim.body(0).trans.velocity.raw_si();
-    let delta_v = v_after - v_before;
-
-    // Expected delta-v components from impulse: F*dt/m
-    // The orbital motion contributes extra delta-v from gravity during the
-    // window, so we subtract the no-force reference to isolate the force.
-    let mut ref_sim = make_kepler_sim(pos, vel0, mass, dt);
-    // Advance the reference simulation by the same elapsed time as the force
-    // window started at t=0 and lasted `force_duration`.
-    ref_sim
-        .step_n((force_duration / dt) as usize)
-        .expect("step_n failed");
     let v_reference = ref_sim.body(0).trans.velocity.raw_si();
 
     let force_delta_v = v_after - v_reference;
-    let expected_dv = force_inertial * force_duration / mass;
+    let expected_dv = EXTERNAL_FORCE_IMPULSE_INERTIAL_N * EXTERNAL_FORCE_IMPULSE_DURATION_S
+        / EXTERNAL_FORCE_IMPULSE_MASS_KG;
 
     let err = (force_delta_v - expected_dv).length();
     let rel_err = err / expected_dv.length();
@@ -542,14 +388,20 @@ fn tier3_dyncomp_external_force_impulse_response() {
     );
 
     // Delta-v direction should match force direction.
-    let cos_align = force_delta_v.normalize().dot(force_inertial.normalize());
+    let cos_align = force_delta_v
+        .normalize()
+        .dot(EXTERNAL_FORCE_IMPULSE_INERTIAL_N.normalize());
     assert!(
         cos_align > 0.9999,
-        "delta-v direction {force_delta_v:?} not aligned with force {force_inertial:?}: cos={cos_align}"
+        "delta-v direction {force_delta_v:?} not aligned with force {EXTERNAL_FORCE_IMPULSE_INERTIAL_N:?}: cos={cos_align}"
     );
 
-    // Use delta_v to suppress unused-variable warning (it's informational).
-    let _ = delta_v;
+    // Sanity that the forced sim did pick up the force in the first place.
+    let total_delta_v = v_after - v_before;
+    assert!(
+        (total_delta_v - force_delta_v).length() > 0.0,
+        "forced sim must include gravity contribution; total dv = {total_delta_v:?}"
+    );
 }
 
 // ─── Test 6: external torque delta-omega ───
@@ -559,59 +411,36 @@ fn tier3_dyncomp_external_force_impulse_response() {
 /// equals tau*dt/I.
 #[test]
 fn tier3_dyncomp_external_torque_impulse_response() {
-    let (pos, vel0) = iss_circular_state();
-    let dt = 1.0;
-    let mass = 1000.0;
+    use sim_dyncomp_combinations::{
+        EXTERNAL_TORQUE_IMPULSE_BODY_NM, EXTERNAL_TORQUE_IMPULSE_DURATION_S,
+        EXTERNAL_TORQUE_IMPULSE_INERTIA_X_KGM2,
+    };
+    let case = sim_dyncomp_combinations::external_torque_impulse_response();
+    let mut sim = build_sim(&case);
+    let (dt, n_steps) = synthetic_cadence(&case);
 
-    // Diagonal inertia — apply torque along the body x-axis (principal axis).
-    let i_x = 1000.0;
-    let i_y = 2500.0;
-    let i_z = 2500.0;
-    let inertia = DMat3::from_cols(
-        DVec3::new(i_x, 0.0, 0.0),
-        DVec3::new(0.0, i_y, 0.0),
-        DVec3::new(0.0, 0.0, i_z),
+    // Cross-check the SyntheticTimes horizon against the exposed
+    // torque-window duration. Catches silent drift if a future recipe
+    // edit changes one but not the other.
+    let computed_duration = (n_steps as f64) * dt;
+    assert!(
+        (computed_duration - EXTERNAL_TORQUE_IMPULSE_DURATION_S).abs() < 1e-12,
+        "torque-impulse SyntheticTimes horizon ({computed_duration} s) drifted from \
+         exposed EXTERNAL_TORQUE_IMPULSE_DURATION_S ({EXTERNAL_TORQUE_IMPULSE_DURATION_S} s)"
     );
-    let mass_props = MassProperties::with_inertia(mass, inertia, DVec3::ZERO);
 
-    let mut sim = Simulation::new(
-        SimulationTime::at_j2000(astrodyn::default_leap_second_table()),
-        dt,
-    );
-    let earth = add_earth_point_mass(&mut sim);
+    sim.step_n(n_steps).expect("step_n failed");
 
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel0,
-        }),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            }),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        compute_gravity_gradient: false,
-        ..Default::default()
-    });
-    sim.validate().unwrap();
-
-    let torque_body = DVec3::new(10.0, 0.0, 0.0); // 10 N·m about x
-    let torque_duration = 10.0;
-
-    // Apply torque window.
-    sim.set_body_external_torque(0, torque_body);
-    sim.step_n((torque_duration / dt) as usize)
-        .expect("step_n failed");
-    sim.set_body_external_torque(0, DVec3::ZERO);
-
-    let omega_after = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
+    let omega_after = sim
+        .body(0)
+        .rot
+        .as_ref()
+        .expect("6-DOF body should carry rotational state after torque-impulse propagation")
+        .ang_vel_body
+        .raw_si();
     // Expected: omega_x = tau_x * dt / I_xx (y, z remain ~zero).
-    let expected_omega_x = torque_body.x * torque_duration / i_x;
+    let expected_omega_x = EXTERNAL_TORQUE_IMPULSE_BODY_NM.x * EXTERNAL_TORQUE_IMPULSE_DURATION_S
+        / EXTERNAL_TORQUE_IMPULSE_INERTIA_X_KGM2;
 
     let err_x = (omega_after.x - expected_omega_x).abs();
     let rel_err = err_x / expected_omega_x.abs();
@@ -647,53 +476,13 @@ fn tier3_dyncomp_external_torque_impulse_response() {
 /// nearly all its angular momentum along that axis.
 #[test]
 fn tier3_dyncomp_attitude_stability_major_axis() {
-    let (pos, vel) = iss_circular_state();
-    let dt = 0.1;
+    let case = sim_dyncomp_combinations::attitude_stability_major_axis();
+    let mut sim = build_sim(&case);
+    let (_dt, n_steps) = synthetic_cadence(&case);
 
-    // I_z is the largest principal moment (major axis).
-    let i_x = 500.0;
-    let i_y = 1000.0;
-    let i_z = 2500.0; // major axis
-    let inertia = DMat3::from_cols(
-        DVec3::new(i_x, 0.0, 0.0),
-        DVec3::new(0.0, i_y, 0.0),
-        DVec3::new(0.0, 0.0, i_z),
-    );
-    let mass_props = MassProperties::with_inertia(1000.0, inertia, DVec3::ZERO);
-
-    // Spin about z with 1% perturbation on x and y.
-    let omega0 = DVec3::new(0.01, 0.01, 1.0); // rad/s
-
-    let mut sim = Simulation::new(
-        SimulationTime::at_j2000(astrodyn::default_leap_second_table()),
-        dt,
-    );
-    let earth = add_earth_point_mass(&mut sim);
-
-    sim.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
-            &(RotationalState {
-                quaternion: JeodQuat::identity(),
-                ang_vel_body: omega0,
-            }),
-        )),
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        },
-        compute_gravity_gradient: false,
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-
-    // Propagate 60 s and sample omega regularly.
+    // Propagate one step at a time and track the maximum |omega_perp|.
     let mut max_perp = 0.0_f64;
-    for _ in 0..600 {
+    for _ in 0..n_steps {
         sim.step_n(1).expect("step_n failed");
         let omega = sim.body(0).rot.as_ref().unwrap().ang_vel_body.raw_si();
         let perp = (omega.x.powi(2) + omega.y.powi(2)).sqrt();
