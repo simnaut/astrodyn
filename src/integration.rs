@@ -12,8 +12,10 @@ use glam::DVec3;
 
 use crate::integrator::IntegratorType;
 use astrodyn_math::JeodQuat;
-use astrodyn_quantities::aliases::{Acceleration, Force, Position, Torque, Velocity};
-use astrodyn_quantities::frame::{BodyFrame, Frame, Vehicle};
+use astrodyn_quantities::aliases::{
+    Acceleration, AngularVelocity, Force, Position, Torque, Velocity,
+};
+use astrodyn_quantities::frame::{BodyFrame, Frame, SelfRef, Vehicle};
 use uom::si::f64::Time;
 
 use crate::integrable::IntegrableObject;
@@ -537,13 +539,20 @@ fn eval_stage(
         // qdot is computed from the *raw* stage quaternion (not the
         // normalized copy in `stage_rot_buf`) to match the rest of the
         // RK4 integration paths: intermediate stages are not
-        // renormalized — only the final combined quaternion is.
+        // renormalized — only the final combined quaternion is. The ω
+        // is lifted into the typed seam so the body-frame discipline
+        // is structural — `compute_left_quat_deriv_typed` rejects an
+        // inertial-frame ω at compile time.
         let raw_quat = JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
-        let qdot = astrodyn_dynamics::compute_left_quat_deriv(&raw_quat, stage_omega[i]);
-        let alpha = astrodyn_dynamics::compute_rotational_acceleration(
+        // allowed: typed-integrator seam — lifts the per-stage `DVec3` body rate into the
+        // typed kernel so `compute_left_quat_deriv_typed` rejects an inertial ω at compile time.
+        let typed_omega = AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(stage_omega[i]);
+        let qdot =
+            astrodyn_dynamics::compute_left_quat_deriv_typed::<SelfRef>(&raw_quat, typed_omega);
+        let alpha = astrodyn_dynamics::compute_rotational_acceleration_typed::<SelfRef>(
             &body.mass.inertia,
             &body.mass.inverse_inertia,
-            stage_omega[i],
+            typed_omega,
             total_torque,
         );
         k_v[i] = stage_vel[i];
@@ -1075,19 +1084,32 @@ fn integrate_coupled_sixdof<V: astrodyn_quantities::frame::Vehicle>(
     };
 
     // Helper: compute orbital + rotational derivatives from eval
-    let eval_rot_derivs =
-        |eval: &CoupledStageEval, rot_s: &RotationalState| -> (DVec3, [f64; 4], DVec3) {
-            let accel = compute_total_accel(eval, Some(mass_props));
-            let k_qdot =
-                astrodyn_dynamics::compute_left_quat_deriv(&rot_s.quaternion, rot_s.ang_vel_body);
-            let k_alpha = astrodyn_dynamics::compute_rotational_acceleration(
-                &mass_props.inertia,
-                &mass_props.inverse_inertia,
-                rot_s.ang_vel_body,
-                eval.torque,
-            );
-            (accel, k_qdot, k_alpha)
-        };
+    let eval_rot_derivs = |eval: &CoupledStageEval,
+                           rot_s: &RotationalState|
+     -> (DVec3, [f64; 4], DVec3) {
+        let accel = compute_total_accel(eval, Some(mass_props));
+        // Typed seam — same lift pattern as the
+        // `integrate_bodies_contact_coupled` stage above. The
+        // body-frame discipline on ω is structural through
+        // `compute_left_quat_deriv_typed` /
+        // `compute_rotational_acceleration_typed`; the intermediate
+        // quaternion stays raw because RK4 stages do not renormalize
+        // between evaluations.
+        // allowed: typed-integrator seam — lifts the per-stage `DVec3` body rate into the
+        // typed kernel so `compute_left_quat_deriv_typed` rejects an inertial ω at compile time.
+        let typed_omega = AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(rot_s.ang_vel_body);
+        let k_qdot = astrodyn_dynamics::compute_left_quat_deriv_typed::<SelfRef>(
+            &rot_s.quaternion,
+            typed_omega,
+        );
+        let k_alpha = astrodyn_dynamics::compute_rotational_acceleration_typed::<SelfRef>(
+            &mass_props.inertia,
+            &mass_props.inverse_inertia,
+            typed_omega,
+            eval.torque,
+        );
+        (accel, k_qdot, k_alpha)
+    };
 
     // Stage 1 (time_frac = 0.0)
     let eval1 = stage_fn(trans, Some(rot), thermal, 0.0);

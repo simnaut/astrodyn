@@ -202,12 +202,14 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 // astrodyn_dynamics: state types, force types, mass, config, frame utilities
 pub use astrodyn_dynamics::{
     abm4_translational_step, combine_states_at_attach, compute_frame_derivatives,
-    compute_kinematic_child_state, compute_t_inertial_struct, compute_translational_derivatives,
-    derive_frame_attached_state, propagate_forward, recompute_composites_via_storage,
-    shift_wrench_to_parent, AttachCombineInputs, DetachedSubtreeState, DynamicsConfig,
-    FrameAttachInputs, FrameDerivatives, GravityAcceleration, MassBodyId, MassNodeOutputs,
-    MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
-    SixDofState, SixDofStateTyped, TotalForce, TranslationalState, Wrench,
+    compute_kinematic_child_state, compute_left_quat_deriv_typed,
+    compute_rotational_acceleration_typed, compute_t_inertial_struct,
+    compute_translational_derivatives, derive_frame_attached_state, propagate_forward,
+    recompute_composites_via_storage, shift_wrench_to_parent, AttachCombineInputs,
+    DetachedSubtreeState, DynamicsConfig, FrameAttachInputs, FrameDerivatives, GravityAcceleration,
+    MassBodyId, MassNodeOutputs, MassNodeView, MassPointState, MassProperties, MassStorage,
+    MassTree, RotationalState, SixDofState, SixDofStateTyped, TotalForce, TranslationalState,
+    Wrench,
 };
 
 // astrodyn_dynamics::body_init: typed orbital-element initializer

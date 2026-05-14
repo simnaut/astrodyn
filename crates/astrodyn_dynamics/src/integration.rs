@@ -1,3 +1,9 @@
+// JEOD_INV: TS.01 — the integrator stage kernels operate on the raw
+// `SixDofState` storage shape (one anonymous vehicle per call), so the
+// typed-seam lifts to `BodyAttitude<SelfRef>` /
+// `AngularVelocity<BodyFrame<SelfRef>>` here use the per-entity
+// storage-boundary wildcard; see `docs/JEOD_invariants.md` row TS.01
+// and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Integration-method dispatch and the per-method translational /
 //! rotational step kernels.
 //!
@@ -12,6 +18,8 @@ use crate::mass::MassProperties;
 use crate::rotational::*;
 use crate::state::TranslationalState;
 use astrodyn_math::JeodQuat;
+use astrodyn_quantities::aliases::AngularVelocity;
+use astrodyn_quantities::frame::{BodyFrame, SelfRef};
 use glam::DVec3;
 
 /// Integration method selection.
@@ -173,11 +181,19 @@ pub fn rk4_sixdof_step(
     let eval_derivs = |s: &SixDofState, time_frac: f64| -> (DVec3, DVec3, [f64; 4], DVec3) {
         let k_v = s.trans.velocity;
         let k_a = accel_fn(s, time_frac);
-        let k_qdot = compute_left_quat_deriv(&s.rot.quaternion, s.rot.ang_vel_body);
-        let k_alpha = compute_rotational_acceleration(
+        // Lift the body-rate into the typed seam so
+        // `compute_left_quat_deriv_typed` /
+        // `compute_rotational_acceleration_typed` reject an
+        // inertial-frame ω at compile time. The quaternion stays raw —
+        // intermediate RK4 stages are not unit-norm by design.
+        // allowed: typed-integrator seam — lifts the per-stage `DVec3` body rate into the
+        // typed kernel so `compute_left_quat_deriv_typed` rejects an inertial ω at compile time.
+        let typed_omega = AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(s.rot.ang_vel_body);
+        let k_qdot = compute_left_quat_deriv_typed::<SelfRef>(&s.rot.quaternion, typed_omega);
+        let k_alpha = compute_rotational_acceleration_typed::<SelfRef>(
             &mass_props.inertia,
             &mass_props.inverse_inertia,
-            s.rot.ang_vel_body,
+            typed_omega,
             torque_fn(s),
         );
         (k_v, k_a, k_qdot, k_alpha)
