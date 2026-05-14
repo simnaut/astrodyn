@@ -50,6 +50,12 @@ pub fn planet_fixed_rotation_system<P: Planet>(
     type PlanetRot<P> = astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>;
     let mut earth_rotation: Option<PlanetRot<P>> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
+    // Lazy-build the ANISE `Epoch` for the current TDB instant once.
+    // The MoonDE421 branch below is the only consumer; hoisting the
+    // `Epoch::from_tdb_seconds` + `hifitime::Epoch::to_time_scale` cost
+    // out of the per-entity match keeps multi-Moon scenarios honest and
+    // mirrors the runner's `update_ephemeris` epoch-cache pattern.
+    let mut tdb_epoch: Option<astrodyn::Epoch> = Option::None;
     for (entity, mut rot, model, omega, ang_vel, pfix_frame_entity) in &mut query {
         let default_model = astrodyn::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
@@ -106,8 +112,10 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                      body to RotationModel::MoonIAU.",
                 );
                 let tdb_jd = sim_time.tdb_julian_date();
+                let epoch =
+                    *tdb_epoch.get_or_insert_with(|| astrodyn::Ephemeris::tdb_jd_to_epoch(tdb_jd));
                 let mat = eph
-                    .get_body_rotation(astrodyn::EphemerisBody::Moon, tdb_jd)
+                    .get_body_rotation_epoch(astrodyn::EphemerisBody::Moon, epoch)
                     .unwrap_or_else(|err| {
                         panic!(
                             "Moon DE421 BPC rotation query failed at TDB JD {tdb_jd}: {err:?}. \
@@ -335,13 +343,19 @@ pub fn ephemeris_update_system<P: Planet>(
         return;
     };
     let tdb_jd = sim_time.tdb_julian_date();
+    // Build the ANISE `Epoch` once per system run and reuse across all
+    // matched entities — every query in the loop evaluates at the same
+    // instant, so the `Epoch::from_tdb_seconds` +
+    // `hifitime::Epoch::to_time_scale` work only needs to happen once.
+    // Mirrors the runner's `update_ephemeris` per-step epoch cache.
+    let epoch = astrodyn::Ephemeris::tdb_jd_to_epoch(tdb_jd);
     for (ephem_body, mut source_pos, source_vel, trans_state) in &mut query {
         // Typed sibling: returns `(Position<RootInertial>, Velocity<RootInertial>)`
         // directly, matching the typed component storage. Bit-identical to
         // the deprecated f64 path — the kernel itself extracts SI base
         // values from ANISE and re-wraps them.
         let (pos_typed, vel_typed) = eph
-            .get_state_typed(ephem_body.target, ephem_body.observer, tdb_jd)
+            .get_state_typed_epoch(ephem_body.target, ephem_body.observer, epoch)
             .unwrap_or_else(|e| {
                 panic!(
                     "Ephemeris lookup failed for {:?} wrt {:?} at TDB JD {tdb_jd}: {e}",
