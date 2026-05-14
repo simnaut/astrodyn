@@ -76,7 +76,7 @@ pub use accumulate::{
     accumulate_relativistic_corrections_typed, evaluate_body_gravity_typed, run_gravity_stage,
     GravityBodyInputs, ResolvedRelativisticSource, ResolvedSource,
 };
-pub use compute::{calc_spherical, gravitation, gravitation_with_scratch};
+pub use compute::{calc_spherical, gravitation, gravitation_with_scratch, GravityKernelOutput};
 pub use gravity_controls::*;
 pub use gravity_source::*;
 pub use spherical_harmonics_calc_nonspherical::{
