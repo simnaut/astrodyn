@@ -56,7 +56,7 @@ pub const MIN_SAFE_MASS_KG: f64 = 1e-100;
 /// point-mass placeholder path.
 pub const SAFE_MAX_MASS_KG: f64 = 1e100;
 
-/// Invert `inertia` and assert the inverse is finite.
+/// Invert `inertia` and assert the inverse is finite and well-defined.
 ///
 /// Used by every site that recomputes `inverse_inertia` from `inertia`
 /// — both untyped and typed `with_inertia`/`recompute_derived` —
@@ -66,20 +66,37 @@ pub const SAFE_MAX_MASS_KG: f64 = 1e100;
 /// determinant against an absolute threshold (which rejects
 /// well-conditioned but small-magnitude tensors, e.g. the placeholder
 /// `m·I_{3×3}` at `m = MIN_SAFE_MASS_KG` where `det = m³ = 1e-300`),
-/// we accept the inertia iff `inverse()` produces a finite result.
-/// A genuinely singular matrix (`det = 0`, near-zero in subnormal
-/// range, or any tensor with linearly dependent columns) produces an
-/// inverse with `inf`/`NaN` entries and is rejected. The determinant
-/// is included in the diagnostic message for debugging.
+/// we accept the inertia iff
+///   1. the determinant is finite and non-zero (rejects the
+///      overflow case where `glam::inverse()` divides finite
+///      cofactors by `det = +inf` and silently returns the all-zero
+///      matrix, which would pass the post-`is_finite()` check but
+///      be physically useless — `I · I⁻¹ = 0`, not the identity), and
+///   2. the inverse itself is finite (rejects genuinely singular
+///      matrices with `det = 0`, near-zero subnormals, or linearly
+///      dependent columns — `inverse()` returns `inf`/`NaN` entries
+///      in those cases).
+///
+/// The determinant is included in the diagnostic message for debugging.
 #[inline]
 fn checked_inertia_inverse(inertia: DMat3) -> DMat3 {
+    let det = inertia.determinant();
+    assert!(
+        det.is_finite() && det != 0.0,
+        "inertia tensor has a non-finite or zero determinant \
+         (det={det:.2e}); the inverse would be all zeros (det=±inf, \
+         where finite cofactors divided by ±inf round to 0) or contain \
+         inf/NaN entries (det=0). Supply a non-singular inertia tensor \
+         whose entries stay within the f64 dynamic range — \
+         e.g. diag(1e103, 1e103, 1e103) overflows `det = m³` to +inf \
+         even though every entry is a normal-range f64."
+    );
     let inverse = inertia.inverse();
     assert!(
         inverse.is_finite(),
         "inertia tensor is singular or ill-conditioned \
-         (det={:.2e}); inverse contains inf/NaN entries. \
-         Supply a non-singular inertia tensor.",
-        inertia.determinant()
+         (det={det:.2e}); inverse contains inf/NaN entries. \
+         Supply a non-singular inertia tensor."
     );
     inverse
 }
@@ -133,6 +150,13 @@ impl MassProperties {
     /// [`Self::recompute_derived`] use, so all three sites agree
     /// byte-for-byte — sub-ULP divergence between constructors integrates
     /// to multi-kilometre drift on long-arc rotational-dynamics runs.
+    ///
+    /// # Panics
+    /// Panics if `mass` is `NaN`, infinite, zero, negative, or outside
+    /// the safe range `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`. The
+    /// placeholder inertia `m·I_{3×3}` is always non-singular within
+    /// that range, so the inertia-inverse guard cannot panic from this
+    /// entry point — only the mass guard can.
     // JEOD_INV: MA.02 — mass > 0, finite, and within
     // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] for the general 3×3 inverse
     // to remain finite (see `MIN_SAFE_MASS_KG` doc-comment).
@@ -168,6 +192,16 @@ impl MassProperties {
     ///
     /// The inertia tensor is about the body frame axes through the center of mass.
     /// The position is the center of mass in the structural frame.
+    ///
+    /// # Panics
+    /// Panics (with a diagnostic that names the broken assumption) if:
+    /// - `mass` is `NaN`, infinite, zero, or negative;
+    /// - `mass` is outside `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`;
+    /// - `inertia` has a non-finite or zero determinant (overflowed
+    ///   `±inf` from entry magnitudes, `NaN` from non-finite inputs,
+    ///   or `0` from a singular matrix);
+    /// - `inertia.inverse()` produces `inf`/`NaN` entries (numerically
+    ///   singular even though `det != 0`).
     // JEOD_INV: MA.02 — mass > 0, finite, and within
     // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (same bound as `new` so
     // `inverse_mass = 1/mass` stays finite and the inertia inverse is
@@ -211,7 +245,18 @@ impl MassProperties {
     /// Constructors (`new`, `with_inertia`) call this implicitly.
     ///
     /// # Panics
-    /// Panics if `mass <= 0` or `inertia` is singular.
+    /// Panics (with a diagnostic that names the broken assumption) if any
+    /// of the following hold after the in-place mutation:
+    /// - `mass` is `NaN`, infinite, zero, or negative;
+    /// - `mass < MIN_SAFE_MASS_KG` (`1e-100 kg`) — the placeholder
+    ///   inertia's `m³` term underflows;
+    /// - `mass > SAFE_MAX_MASS_KG` (`1e100 kg`) — the placeholder
+    ///   inertia's `m³` term overflows;
+    /// - `inertia` has a non-finite determinant (i.e. `±inf` from
+    ///   per-entry overflow, or `NaN` from non-finite inputs);
+    /// - `inertia` has a zero determinant (singular matrix);
+    /// - `inertia.inverse()` returns a matrix with `inf`/`NaN`
+    ///   entries (numerically singular even though `det != 0`).
     // JEOD_INV: MA.03 — inverse_mass consistent with mass (recomputed as 1/mass)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed from inertia)
     // JEOD_INV: MA.07 — derived quantities recomputed after mutation
@@ -310,6 +355,13 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     /// residues from adjugate cancellations; sub-ULP divergence here
     /// integrates to multi-kilometre position error on long-arc
     /// rotational-dynamics runs.
+    ///
+    /// # Panics
+    /// Panics if `mass` is `NaN`, infinite, zero, negative, or outside
+    /// the safe range `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`. The
+    /// placeholder inertia `m·I_{3×3}` is always non-singular within
+    /// that range, so the inertia-inverse guard cannot panic from this
+    /// entry point — only the mass guard can.
     // JEOD_INV: MA.02 — mass > 0, finite, and within
     // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (mirrors the untyped
     // `MassProperties::new` guard, so both construction paths reject the
@@ -346,6 +398,16 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     }
 
     /// Constructor with explicit inertia and center-of-mass position.
+    ///
+    /// # Panics
+    /// Panics (with a diagnostic that names the broken assumption) if:
+    /// - `mass` is `NaN`, infinite, zero, or negative;
+    /// - `mass` is outside `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`;
+    /// - `inertia` has a non-finite or zero determinant (overflowed
+    ///   `±inf` from entry magnitudes, `NaN` from non-finite inputs,
+    ///   or `0` from a singular matrix);
+    /// - `inertia.inverse()` produces `inf`/`NaN` entries (numerically
+    ///   singular even though `det != 0`).
     // JEOD_INV: MA.02 — mass > 0, finite, and within
     // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (same bound as `new`).
     // JEOD_INV: MA.04 — inverse_inertia computed from inertia
@@ -382,6 +444,23 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     }
 
     /// Recompute `inverse_mass` and `inverse_inertia`.
+    ///
+    /// Call after mutating `mass` or `inertia` directly. No-op when
+    /// `dirty == false`. Mirrors [`MassProperties::recompute_derived`].
+    ///
+    /// # Panics
+    /// Panics (with a diagnostic that names the broken assumption) if any
+    /// of the following hold after the in-place mutation:
+    /// - `mass` is `NaN`, infinite, zero, or negative;
+    /// - `mass < MIN_SAFE_MASS_KG` (`1e-100 kg`) — the placeholder
+    ///   inertia's `m³` term underflows;
+    /// - `mass > SAFE_MAX_MASS_KG` (`1e100 kg`) — the placeholder
+    ///   inertia's `m³` term overflows;
+    /// - `inertia` has a non-finite determinant (i.e. `±inf` from
+    ///   per-entry overflow, or `NaN` from non-finite inputs);
+    /// - `inertia` has a zero determinant (singular matrix);
+    /// - `inertia.inverse()` returns a matrix with `inf`/`NaN`
+    ///   entries (numerically singular even though `det != 0`).
     // JEOD_INV: MA.03 — inverse_mass = 1/mass (recomputed)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed)
     // JEOD_INV: MA.07 — derived quantities recomputed after mutation
@@ -623,9 +702,14 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "out of safe range")]
-    fn untyped_new_panics_on_subnormal_mass() {
-        // 1e-150 < MIN_SAFE_MASS_KG (1e-100); `m³` here is 1e-450
-        // which underflows to subnormal/zero.
+    fn untyped_new_panics_on_mass_below_safe_floor_cubic_underflow() {
+        // `1e-150` is itself a normal-range f64 (well above
+        // `f64::MIN_POSITIVE ≈ 2.2e-308`) — the failure mode is that
+        // it is below `MIN_SAFE_MASS_KG = 1e-100`, and the placeholder
+        // inertia's determinant `m³ = 1e-450` underflows to
+        // subnormal/zero, which the inertia-inverse guard would reject
+        // downstream. The safe-range guard rejects it up-front before
+        // the cache fields are touched.
         let _ = MassProperties::new(1e-150);
     }
 
@@ -687,10 +771,29 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "singular or ill-conditioned")]
+    #[should_panic(expected = "non-finite or zero determinant")]
     fn singular_inertia_rejected_by_with_inertia() {
-        // Zero matrix has det = 0 and produces a non-finite inverse.
+        // Zero matrix has det = 0; the pre-inverse determinant guard
+        // catches this without ever calling `inverse()`.
         let _ = MassProperties::with_inertia(1.0, DMat3::ZERO, DVec3::ZERO);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite or zero determinant")]
+    fn det_overflow_inertia_rejected_by_with_inertia() {
+        // `diag(1e103, 1e103, 1e103)` has every entry within the f64
+        // dynamic range, but `det = 1e309` overflows to `+inf`.
+        // `glam::DMat3::inverse()` then divides each finite cofactor by
+        // `+inf` and returns the all-zero matrix, which would pass a
+        // post-inverse `is_finite()` check despite being physically
+        // useless (`I · I⁻¹ = 0`, not the identity). The pre-inverse
+        // determinant guard rejects it before that pathological
+        // all-zero "inverse" can be cached.
+        let _ = MassProperties::with_inertia(
+            1.0,
+            DMat3::from_diagonal(DVec3::new(1e103, 1e103, 1e103)),
+            DVec3::ZERO,
+        );
     }
 
     #[test]

@@ -158,22 +158,30 @@ mod tests {
     /// to ~91 km position error over a 7-day Clementine rotational-
     /// dynamics integration.
     ///
-    /// The assertions below cover every field on the typed sibling that
-    /// is present in both construction paths — `mass`, `inverse_mass`,
-    /// `inertia`, `inverse_inertia`, `center_of_mass`, `t_parent_this`,
-    /// and `dirty`. A single dropped field in either path would have
-    /// reintroduced the divergence-class bug, so the assertions are
-    /// stated explicitly per-field rather than via a struct-level
-    /// `PartialEq` comparison. `MassPropertiesTyped<V>` does derive
-    /// `PartialEq`, but the derive synthesizes a `V: PartialEq` bound on
-    /// the impl, and the `SelfRef` vehicle marker used here only derives
-    /// `Debug + Clone + Copy` (`PartialEq` is intentionally omitted
-    /// because the type is a zero-sized phantom tag with no
-    /// distinguishing state). Direct `assert_eq!(a, b)` on
-    /// `MassPropertiesTyped<SelfRef>` therefore does not compile; the
-    /// field-by-field projection sidesteps that without losing any
-    /// coverage — see the `to_untyped()` projection assertion below
-    /// which exercises the untyped sibling's struct-level `PartialEq`.
+    /// Coverage scope: this test exercises the *default* configuration
+    /// of `MassProperties::new(mass)`, where `center_of_mass = ZERO`
+    /// and `t_parent_this = IDENTITY`. The field-by-field assertions
+    /// would therefore not catch a regression that drops one of those
+    /// trivially-zero / trivially-identity fields from the bridge —
+    /// `assert_eq!(ZERO, ZERO)` and `assert_eq!(IDENTITY, IDENTITY)`
+    /// trivially pass even if either side never read the field at all.
+    /// The companion test
+    /// `non_default_mass_props_round_trip_across_construction_paths`
+    /// closes that gap with a non-zero CoM, a non-identity
+    /// `t_parent_this`, and a non-diagonal inertia tensor.
+    ///
+    /// The assertions below are stated explicitly per-field rather than
+    /// via a struct-level `PartialEq` comparison. `MassPropertiesTyped<V>`
+    /// does derive `PartialEq`, but the derive synthesizes a
+    /// `V: PartialEq` bound on the impl, and the `SelfRef` vehicle
+    /// marker used here only derives `Debug + Clone + Copy` (`PartialEq`
+    /// is intentionally omitted because the type is a zero-sized
+    /// phantom tag with no distinguishing state). Direct
+    /// `assert_eq!(a, b)` on `MassPropertiesTyped<SelfRef>` therefore
+    /// does not compile; the field-by-field projection sidesteps that
+    /// without losing any coverage — see the `to_untyped()` projection
+    /// assertion below which exercises the untyped sibling's
+    /// struct-level `PartialEq`.
     #[test]
     fn point_mass_inverse_inertia_matches_across_construction_paths() {
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
@@ -199,5 +207,74 @@ mod tests {
             MassPropertiesTyped::<SelfRef>::to_untyped(&a),
             MassPropertiesTyped::<SelfRef>::to_untyped(&b),
         );
+    }
+
+    /// Companion to
+    /// `point_mass_inverse_inertia_matches_across_construction_paths`
+    /// that exercises a **non-default** configuration: non-zero
+    /// centre-of-mass offset, non-identity `t_parent_this`, and a
+    /// non-diagonal inertia tensor. The point-mass test above only
+    /// covers `center_of_mass = ZERO` and `t_parent_this = IDENTITY`,
+    /// so dropping either of those fields from the raw→typed bridge
+    /// would still let it pass (`assert_eq!(ZERO, ZERO)` and
+    /// `assert_eq!(IDENTITY, IDENTITY)` are vacuous). This test
+    /// constructs a raw `MassProperties` whose fields each carry a
+    /// distinct, distinguishable value, then asserts the
+    /// `mass_raw_to_self_ref` bridge propagates every one of them
+    /// verbatim — the field-by-field assertions are the field-drop
+    /// regression fence.
+    #[test]
+    fn non_default_mass_props_round_trip_across_construction_paths() {
+        use glam::{DMat3, DVec3};
+
+        let mass = 424.0_f64;
+        // Non-diagonal, well-conditioned inertia: diag conjugated by a
+        // small rotation so off-diagonal entries are non-zero but
+        // det != 0 and the inverse is well-defined.
+        let diag = DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0));
+        let rot = DMat3::from_axis_angle(DVec3::new(1.0, 2.0, 3.0).normalize(), 0.5_f64);
+        let inertia = rot.transpose() * diag * rot;
+        let com = DVec3::new(0.1, -0.2, 0.3);
+        // Non-identity `t_parent_this` — Apollo regression class
+        // (#393): a 180° rotation about Z, the same eigen-rotation
+        // SIM_Apollo's modules declare.
+        let t_parent_this = DMat3::from_axis_angle(DVec3::Z, std::f64::consts::PI);
+
+        // `MassProperties::with_inertia` doesn't set `t_parent_this`
+        // (it stays at `IDENTITY`), so populate the raw struct
+        // directly — the bridge has to carry every field through
+        // regardless of which constructor produced the raw form.
+        let raw = MassProperties {
+            mass,
+            inverse_mass: 1.0 / mass,
+            inertia,
+            inverse_inertia: inertia.inverse(),
+            position: com,
+            t_parent_this,
+            dirty: false,
+        };
+
+        let typed = mass_raw_to_self_ref(&raw);
+
+        // Every non-trivial field is asserted distinctly so a dropped
+        // field can't slide through with a default value.
+        assert_eq!(typed.mass.get::<kilogram>(), raw.mass);
+        assert_eq!(typed.inverse_mass, raw.inverse_mass);
+        assert_eq!(typed.inertia.as_dmat3(), raw.inertia);
+        assert_eq!(typed.inverse_inertia, raw.inverse_inertia);
+        assert_eq!(typed.center_of_mass.raw_si(), raw.position);
+        assert_eq!(typed.t_parent_this, raw.t_parent_this);
+        assert_eq!(typed.dirty, raw.dirty);
+
+        // Negative controls: confirm the values are actually
+        // distinguishable from the defaults so the assertions above
+        // can't pass vacuously.
+        assert_ne!(raw.position, DVec3::ZERO);
+        assert_ne!(raw.t_parent_this, DMat3::IDENTITY);
+
+        // Round-trip via the untyped projection exercises the
+        // struct-level `PartialEq` and catches any future field added
+        // to one side but not the other.
+        assert_eq!(MassPropertiesTyped::<SelfRef>::to_untyped(&typed), raw);
     }
 }
