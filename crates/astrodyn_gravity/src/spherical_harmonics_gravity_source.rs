@@ -247,20 +247,31 @@ impl SphericalHarmonicsData {
 
     /// Read a Cnm coefficient: `cnm[n][m]` in the original
     /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
-    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (i.e. out of
-    /// triangle).
+    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (out of
+    /// triangle): the triangular invariant must hold in release
+    /// builds, since a stray `m > n` access would otherwise read a
+    /// neighbouring `(n+1, …)` coefficient and silently return a
+    /// physically wrong gravity-field value.
     #[inline]
     pub fn cnm(&self, n: usize, m: usize) -> f64 {
-        debug_assert!(m <= n, "cnm({n}, {m}): m must be <= n");
+        assert!(
+            m <= n,
+            "cnm({n}, {m}): order m must be <= degree n (triangular index)"
+        );
         self.cnm[tri_idx(n, m)]
     }
 
     /// Read an Snm coefficient: `snm[n][m]` in the original
     /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
-    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n`.
+    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (out of
+    /// triangle): see [`Self::cnm`] for why this is a release-build
+    /// `assert!` rather than `debug_assert!`.
     #[inline]
     pub fn snm(&self, n: usize, m: usize) -> f64 {
-        debug_assert!(m <= n, "snm({n}, {m}): m must be <= n");
+        assert!(
+            m <= n,
+            "snm({n}, {m}): order m must be <= degree n (triangular index)"
+        );
         self.snm[tri_idx(n, m)]
     }
 
