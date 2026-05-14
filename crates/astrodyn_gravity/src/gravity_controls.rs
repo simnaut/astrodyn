@@ -516,7 +516,7 @@ impl<SourceId> GravityControl<SourceId> {
                     eff_degree, eff_order
                 )
             });
-            crate::gravitation(
+            let kernel_out = crate::gravitation(
                 source,
                 position,
                 rot,
@@ -528,9 +528,24 @@ impl<SourceId> GravityControl<SourceId> {
                 eff_grad_order,
                 delta_c20,
                 has_delta_coeffs,
-            )
+            );
+            // The kernel returns SH in planet-fixed; apply the inverse
+            // rotation here. `into_inertial` is gated on
+            // `compute_gradient`, so the 9-mul/9-add matrix transform
+            // on the gradient tensor is skipped when the caller asked
+            // for accel-only (the RK4 inner loop via
+            // `evaluate_accel_only`). The accel transform itself still
+            // runs once per kernel call — `position` differs per
+            // substage, so the resulting inertial-frame vector cannot
+            // be hoisted across substages even though `t_parent_this`
+            // is.
+            kernel_out.into_inertial(rot, compute_gradient)
         } else {
-            crate::gravitation(
+            // Point-mass path: the kernel returns the inertial-frame
+            // piece directly (`sh_pfix` is `None`), so the
+            // `into_inertial` call below short-circuits the rotation
+            // entirely — no matrix-vector ops run on this branch.
+            let kernel_out = crate::gravitation(
                 source,
                 position,
                 &DMat3::IDENTITY,
@@ -542,7 +557,12 @@ impl<SourceId> GravityControl<SourceId> {
                 eff_grad_order,
                 0.0,   // point-mass: no SH coefficients to modify
                 false, // point-mass: no delta coefficients
-            )
+            );
+            // `sh_pfix` is None on this branch; `into_inertial` short-
+            // circuits the rotation and returns the point-mass piece
+            // unchanged (or `GravityAcceleration::default()` when
+            // `perturbing_only` skips the point-mass term).
+            kernel_out.into_inertial(&DMat3::IDENTITY, compute_gradient)
         }
     }
 }
