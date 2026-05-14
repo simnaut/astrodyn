@@ -162,10 +162,18 @@ mod tests {
     /// is present in both construction paths — `mass`, `inverse_mass`,
     /// `inertia`, `inverse_inertia`, `center_of_mass`, `t_parent_this`,
     /// and `dirty`. A single dropped field in either path would have
-    /// reintroduced the divergence-class bug fixed by this PR, so the
-    /// assertions are stated explicitly per-field rather than via a
-    /// struct-level `PartialEq` (which `MassPropertiesTyped` does not
-    /// derive because its `V` phantom parameter is not `PartialEq`).
+    /// reintroduced the divergence-class bug, so the assertions are
+    /// stated explicitly per-field rather than via a struct-level
+    /// `PartialEq` comparison. `MassPropertiesTyped<V>` does derive
+    /// `PartialEq`, but the derive synthesizes a `V: PartialEq` bound on
+    /// the impl, and the `SelfRef` vehicle marker used here only derives
+    /// `Debug + Clone + Copy` (`PartialEq` is intentionally omitted
+    /// because the type is a zero-sized phantom tag with no
+    /// distinguishing state). Direct `assert_eq!(a, b)` on
+    /// `MassPropertiesTyped<SelfRef>` therefore does not compile; the
+    /// field-by-field projection sidesteps that without losing any
+    /// coverage — see the `to_untyped()` projection assertion below
+    /// which exercises the untyped sibling's struct-level `PartialEq`.
     #[test]
     fn point_mass_inverse_inertia_matches_across_construction_paths() {
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));

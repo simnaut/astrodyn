@@ -35,6 +35,13 @@ pub const INERTIA_CONSISTENCY_TOL: f64 = 1e-6;
 /// A floor of `1e-100` keeps `m³ ≥ 1e-300`, well above the subnormal
 /// threshold, while remaining far below any realistic spacecraft mass
 /// (a 1 g cubesat is `1e-3 kg`).
+///
+/// The inertia-tensor singularity check shared by `with_inertia` /
+/// `recompute_derived` is scale-invariant — it rejects only matrices
+/// that produce a non-finite inverse, so the placeholder inertia at
+/// `m = MIN_SAFE_MASS_KG` (`det = 1e-300`, well-conditioned but tiny)
+/// is accepted by every construction path, including the raw→typed
+/// bridge and `recompute_derived`.
 pub const MIN_SAFE_MASS_KG: f64 = 1e-100;
 
 /// Upper bound on mass (kg) accepted by the typed and untyped constructors.
@@ -48,6 +55,34 @@ pub const MIN_SAFE_MASS_KG: f64 = 1e-100;
 /// own magnitudes and the same guard catches mass-driven overflow at the
 /// point-mass placeholder path.
 pub const SAFE_MAX_MASS_KG: f64 = 1e100;
+
+/// Invert `inertia` and assert the inverse is finite.
+///
+/// Used by every site that recomputes `inverse_inertia` from `inertia`
+/// — both untyped and typed `with_inertia`/`recompute_derived` —
+/// so all four entry points apply the same singularity check.
+///
+/// The check is **scale-invariant**: instead of comparing the
+/// determinant against an absolute threshold (which rejects
+/// well-conditioned but small-magnitude tensors, e.g. the placeholder
+/// `m·I_{3×3}` at `m = MIN_SAFE_MASS_KG` where `det = m³ = 1e-300`),
+/// we accept the inertia iff `inverse()` produces a finite result.
+/// A genuinely singular matrix (`det = 0`, near-zero in subnormal
+/// range, or any tensor with linearly dependent columns) produces an
+/// inverse with `inf`/`NaN` entries and is rejected. The determinant
+/// is included in the diagnostic message for debugging.
+#[inline]
+fn checked_inertia_inverse(inertia: DMat3) -> DMat3 {
+    let inverse = inertia.inverse();
+    assert!(
+        inverse.is_finite(),
+        "inertia tensor is singular or ill-conditioned \
+         (det={:.2e}); inverse contains inf/NaN entries. \
+         Supply a non-singular inertia tensor.",
+        inertia.determinant()
+    );
+    inverse
+}
 
 /// Rigid-body mass / inertia / CoM-offset block.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -108,18 +143,21 @@ impl MassProperties {
         assert!(
             (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&mass),
             "MassProperties: mass {mass} kg out of safe range \
-             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg; the \
-             point-mass placeholder inertia `m·I_{{3×3}}` has determinant \
-             m³, and the general 3×3 inverse produces non-finite cache \
-             values outside this range. If you need an extreme mass, supply \
-             a well-conditioned inertia tensor via `with_inertia` instead."
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg. \
+             This is a hard numerical limit shared by every constructor \
+             (`new`, `with_inertia`, `recompute_derived`): the inverse-mass \
+             cache `1/mass` and the inertia-inverse cofactors all derive \
+             from `mass`, so the guard applies regardless of how the \
+             inertia tensor is supplied. Rescale your physical model into \
+             this range, or contact maintainers if a real scenario \
+             genuinely requires masses outside it."
         );
         let inertia = DMat3::IDENTITY * mass;
         Self {
             mass,
             inverse_mass: 1.0 / mass,
             inertia,
-            inverse_inertia: inertia.inverse(),
+            inverse_inertia: checked_inertia_inverse(inertia),
             position: DVec3::ZERO,
             t_parent_this: DMat3::IDENTITY,
             dirty: false,
@@ -143,13 +181,7 @@ impl MassProperties {
             "MassProperties: mass {mass} kg out of safe range \
              [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
         );
-        let det = inertia.determinant();
-        assert!(
-            det.is_finite() && det.abs() > 1e-30,
-            "inertia tensor is singular, non-finite, or near-singular \
-             (det={det:.2e}); inverse will produce inf/NaN"
-        );
-        let inverse_inertia = inertia.inverse();
+        let inverse_inertia = checked_inertia_inverse(inertia);
         Self {
             mass,
             inverse_mass: 1.0 / mass,
@@ -198,14 +230,7 @@ impl MassProperties {
             SAFE_MAX_MASS_KG,
         );
         self.inverse_mass = 1.0 / self.mass;
-
-        let det = self.inertia.determinant();
-        assert!(
-            det.is_finite() && det.abs() > 1e-30,
-            "inertia tensor is singular, non-finite, or near-singular \
-             (det={det:.2e}); inverse will produce inf/NaN"
-        );
-        self.inverse_inertia = self.inertia.inverse();
+        self.inverse_inertia = checked_inertia_inverse(self.inertia);
     }
 
     /// Validate that `inertia` and `inverse_inertia` are consistent.
@@ -298,18 +323,21 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         assert!(
             (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&m),
             "MassPropertiesTyped: mass {m} kg out of safe range \
-             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg; the \
-             point-mass placeholder inertia `m·I_{{3×3}}` has determinant \
-             m³, and the general 3×3 inverse produces non-finite cache \
-             values outside this range. If you need an extreme mass, supply \
-             a well-conditioned inertia tensor via `with_inertia` instead."
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg. \
+             This is a hard numerical limit shared by every constructor \
+             (`new`, `with_inertia`, `recompute_derived`): the inverse-mass \
+             cache `1/mass` and the inertia-inverse cofactors all derive \
+             from `mass`, so the guard applies regardless of how the \
+             inertia tensor is supplied. Rescale your physical model into \
+             this range, or contact maintainers if a real scenario \
+             genuinely requires masses outside it."
         );
         let inertia_dmat = DMat3::IDENTITY * m;
         Self {
             mass,
             inverse_mass: 1.0 / m,
             inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(inertia_dmat),
-            inverse_inertia: inertia_dmat.inverse(),
+            inverse_inertia: checked_inertia_inverse(inertia_dmat),
             center_of_mass: Position::<StructuralFrame<V>>::zero(),
             t_parent_this: DMat3::IDENTITY,
             dirty: false,
@@ -333,18 +361,12 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             "MassPropertiesTyped: mass {m} kg out of safe range \
              [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
         );
-        let inertia_dmat = inertia.as_dmat3();
-        let det = inertia_dmat.determinant();
-        assert!(
-            det.is_finite() && det.abs() > 1e-30,
-            "inertia tensor is singular, non-finite, or near-singular \
-             (det={det:.2e}); inverse will produce inf/NaN"
-        );
+        let inverse_inertia = checked_inertia_inverse(inertia.as_dmat3());
         Self {
             mass,
             inverse_mass: 1.0 / m,
             inertia,
-            inverse_inertia: inertia_dmat.inverse(),
+            inverse_inertia,
             center_of_mass,
             t_parent_this: DMat3::IDENTITY,
             dirty: false,
@@ -375,14 +397,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
              [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
         );
         self.inverse_mass = 1.0 / m;
-        let inertia_dmat = self.inertia.as_dmat3();
-        let det = inertia_dmat.determinant();
-        assert!(
-            det.is_finite() && det.abs() > 1e-30,
-            "inertia tensor is singular, non-finite, or near-singular \
-             (det={det:.2e}); inverse will produce inf/NaN"
-        );
-        self.inverse_inertia = inertia_dmat.inverse();
+        self.inverse_inertia = checked_inertia_inverse(self.inertia.as_dmat3());
     }
 
     /// JEOD MA.04 invariant check: `inertia · inverse_inertia ≈ I`.
@@ -645,6 +660,37 @@ mod tests {
     #[should_panic(expected = "out of safe range")]
     fn untyped_with_inertia_panics_on_zero_mass() {
         let _ = MassProperties::with_inertia(0.0, DMat3::IDENTITY, DVec3::ZERO);
+    }
+
+    #[test]
+    fn safe_extremes_round_trip_through_with_inertia_and_recompute() {
+        // The mass-range guard and the inertia-singularity guard must
+        // agree on what they accept: any mass in
+        // `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]` paired with the
+        // placeholder inertia `m·I_{3×3}` (well-conditioned at every
+        // mass) must round-trip through both `with_inertia` and a
+        // `recompute_derived` cycle without the inertia-inverse check
+        // rejecting it. At `m = MIN_SAFE_MASS_KG`, `det = 1e-300` — a
+        // normal-range f64 with a finite inverse, so the
+        // scale-invariant `is_finite()` check passes even though an
+        // absolute threshold like `det > 1e-30` would not.
+        for &m in &[MIN_SAFE_MASS_KG, 1.0_f64, SAFE_MAX_MASS_KG] {
+            let inertia = DMat3::IDENTITY * m;
+            let via_with_inertia = MassProperties::with_inertia(m, inertia, DVec3::ZERO);
+            assert!(via_with_inertia.inverse_inertia.is_finite());
+
+            let mut mp = MassProperties::new(m);
+            mp.dirty = true;
+            mp.recompute_derived();
+            assert!(mp.inverse_inertia.is_finite());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "singular or ill-conditioned")]
+    fn singular_inertia_rejected_by_with_inertia() {
+        // Zero matrix has det = 0 and produces a non-finite inverse.
+        let _ = MassProperties::with_inertia(1.0, DMat3::ZERO, DVec3::ZERO);
     }
 
     #[test]
