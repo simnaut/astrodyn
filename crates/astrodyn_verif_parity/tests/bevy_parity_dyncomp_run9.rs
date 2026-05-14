@@ -9,9 +9,11 @@
 //! argument, and each side overwrites its external-force /
 //! external-torque field with the same value before stepping. Bit-
 //! identity is the contract — if a tick fires the pulse on the runner
-//! but not on the Bevy side (or vice versa), the assertion in
-//! `run_and_assert_parity` flags the offending body / component /
-//! tick.
+//! but not on the Bevy side (or vice versa), the divergence accumulates
+//! through subsequent ticks and `run_and_assert_parity` flags it at the
+//! next reference-CSV checkpoint, naming the offending body, component,
+//! and record time (not the originating tick — assertions sample at
+//! the CSV cadence, not per integration step).
 //!
 //! Companion runner-vs-JEOD tests live in
 //! `crates/astrodyn_verif_jeod/tests/tier3_sim_dyncomp_run9.rs`.
