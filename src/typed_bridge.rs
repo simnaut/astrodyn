@@ -150,21 +150,46 @@ mod tests {
     /// `MassPropertiesTyped::<V>::new(mass)` and the raw→typed bridge
     /// (`MassProperties::new(mass)` → `mass_raw_to_self_ref`, which routes
     /// through `MassPropertiesTyped::with_inertia`) must produce
-    /// byte-identical `inverse_inertia` for the same input mass. Both
+    /// byte-identical structs for the same input mass. Both
     /// constructors now compute the inverse via glam's general 3×3
     /// inverse formula; the previous element-wise `IDENTITY / m` form
     /// in `new` differed by sub-ULP amounts on the diagonal and ~1e-25
     /// on the off-diagonals from adjugate cancellations, which amplified
     /// to ~91 km position error over a 7-day Clementine rotational-
     /// dynamics integration.
+    ///
+    /// The assertions below cover every field on the typed sibling that
+    /// is present in both construction paths — `mass`, `inverse_mass`,
+    /// `inertia`, `inverse_inertia`, `center_of_mass`, `t_parent_this`,
+    /// and `dirty`. A single dropped field in either path would have
+    /// reintroduced the divergence-class bug fixed by this PR, so the
+    /// assertions are stated explicitly per-field rather than via a
+    /// struct-level `PartialEq` (which `MassPropertiesTyped` does not
+    /// derive because its `V` phantom parameter is not `PartialEq`).
     #[test]
     fn point_mass_inverse_inertia_matches_across_construction_paths() {
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
         let b = mass_raw_to_self_ref(&MassProperties::new(424.0));
+        // Cache fields — the primary regression class.
         assert_eq!(a.inverse_inertia, b.inverse_inertia);
-        // Sanity: the other derived caches and the inertia tensor also
-        // agree, so the full struct round-trips bit-for-bit.
         assert_eq!(a.inverse_mass, b.inverse_mass);
+        // Stored inputs and derived storage fields.
+        assert_eq!(a.mass, b.mass);
         assert_eq!(a.inertia.as_dmat3(), b.inertia.as_dmat3());
+        assert_eq!(a.center_of_mass.raw_si(), b.center_of_mass.raw_si());
+        assert_eq!(a.t_parent_this, b.t_parent_this);
+        // Bookkeeping flag — constructors leave caches consistent, so
+        // `dirty` is `false` on both sides.
+        assert_eq!(a.dirty, b.dirty);
+        assert!(!a.dirty);
+        // Untyped projection equality closes the field coverage: any
+        // future field added to `MassPropertiesTyped` that is also
+        // exported into the untyped `MassProperties` will be compared
+        // here verbatim, which catches the same dropped-field class as
+        // the proptest round-trips in `crates/astrodyn_dynamics/src/mass.rs`.
+        assert_eq!(
+            MassPropertiesTyped::<SelfRef>::to_untyped(&a),
+            MassPropertiesTyped::<SelfRef>::to_untyped(&b),
+        );
     }
 }

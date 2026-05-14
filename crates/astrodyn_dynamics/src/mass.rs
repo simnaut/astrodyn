@@ -22,6 +22,33 @@ use uom::si::mass::kilogram;
 /// spacecraft inertia tensors (principal moments ~1–10000 kg*m^2).
 pub const INERTIA_CONSISTENCY_TOL: f64 = 1e-6;
 
+/// Lower bound on mass (kg) accepted by the typed and untyped constructors.
+///
+/// Rationale: the point-mass placeholder inertia `I = m·I_{3×3}` has
+/// determinant `m³`, and `DMat3::inverse()` divides each cofactor by that
+/// determinant. The cofactors of a diagonal `m·I_{3×3}` are themselves
+/// `O(m²)`, so the full inverse formula propagates `m³` through both
+/// numerator and denominator before a final division. Once `m³` underflows
+/// to subnormal range (`< f64::MIN_POSITIVE ≈ 2.2e-308`), the intermediate
+/// products lose precision catastrophically and the cached `inverse_inertia`
+/// becomes non-finite even though `1/m` would still round to a finite f64.
+/// A floor of `1e-100` keeps `m³ ≥ 1e-300`, well above the subnormal
+/// threshold, while remaining far below any realistic spacecraft mass
+/// (a 1 g cubesat is `1e-3 kg`).
+pub const MIN_SAFE_MASS_KG: f64 = 1e-100;
+
+/// Upper bound on mass (kg) accepted by the typed and untyped constructors.
+///
+/// Rationale: symmetric to [`MIN_SAFE_MASS_KG`]. The point-mass placeholder
+/// determinant `m³` must stay finite, i.e. below `f64::MAX ≈ 1.8e308`. A
+/// ceiling of `1e100` keeps `m³ ≤ 1e300`, well below overflow, while
+/// remaining far above any plausible simulated body (the Sun is `~2e30 kg`).
+/// The bound is numerical, not physical: `with_inertia` uses the same
+/// general 3×3 inverse, so its cofactors scale with the inertia tensor's
+/// own magnitudes and the same guard catches mass-driven overflow at the
+/// point-mass placeholder path.
+pub const SAFE_MAX_MASS_KG: f64 = 1e100;
+
 /// Rigid-body mass / inertia / CoM-offset block.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MassProperties {
@@ -71,12 +98,22 @@ impl MassProperties {
     /// [`Self::recompute_derived`] use, so all three sites agree
     /// byte-for-byte — sub-ULP divergence between constructors integrates
     /// to multi-kilometre drift on long-arc rotational-dynamics runs.
-    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.02 — mass > 0, finite, and within
+    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] for the general 3×3 inverse
+    // to remain finite (see `MIN_SAFE_MASS_KG` doc-comment).
     // JEOD_INV: MA.04 — inverse_inertia computed from inertia via the same
     // general 3×3 inverse used by `with_inertia` (byte-identical across
     // constructors).
     pub fn new(mass: f64) -> Self {
-        assert!(mass > 0.0, "mass must be positive, got {mass}");
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&mass),
+            "MassProperties: mass {mass} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg; the \
+             point-mass placeholder inertia `m·I_{{3×3}}` has determinant \
+             m³, and the general 3×3 inverse produces non-finite cache \
+             values outside this range. If you need an extreme mass, supply \
+             a well-conditioned inertia tensor via `with_inertia` instead."
+        );
         let inertia = DMat3::IDENTITY * mass;
         Self {
             mass,
@@ -93,17 +130,24 @@ impl MassProperties {
     ///
     /// The inertia tensor is about the body frame axes through the center of mass.
     /// The position is the center of mass in the structural frame.
-    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.02 — mass > 0, finite, and within
+    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (same bound as `new` so
+    // `inverse_mass = 1/mass` stays finite and the inertia inverse is
+    // guarded by the explicit singularity check below).
     // JEOD_INV: MA.05 — JEOD computes inverse inertia only for root bodies; we compute for all (structural divergence)
     // JEOD_INV: DB.23 — compute_inverse_inertia enabled (always computed here)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (computed from inertia)
     pub fn with_inertia(mass: f64, inertia: DMat3, position: DVec3) -> Self {
-        assert!(mass > 0.0, "mass must be positive, got {mass}");
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&mass),
+            "MassProperties: mass {mass} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
+        );
         let det = inertia.determinant();
         assert!(
-            det.abs() > 1e-30,
-            "inertia tensor is singular or near-singular (det={det:.2e}); \
-             inverse will produce inf/NaN"
+            det.is_finite() && det.abs() > 1e-30,
+            "inertia tensor is singular, non-finite, or near-singular \
+             (det={det:.2e}); inverse will produce inf/NaN"
         );
         let inverse_inertia = inertia.inverse();
         Self {
@@ -145,14 +189,21 @@ impl MassProperties {
         }
         self.dirty = false;
 
-        assert!(self.mass > 0.0, "mass must be positive, got {}", self.mass);
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&self.mass),
+            "MassProperties: mass {} kg out of safe range \
+             [{:.0e}, {:.0e}] kg",
+            self.mass,
+            MIN_SAFE_MASS_KG,
+            SAFE_MAX_MASS_KG,
+        );
         self.inverse_mass = 1.0 / self.mass;
 
         let det = self.inertia.determinant();
         assert!(
-            det.abs() > 1e-30,
-            "inertia tensor is singular or near-singular (det={det:.2e}); \
-             inverse will produce inf/NaN"
+            det.is_finite() && det.abs() > 1e-30,
+            "inertia tensor is singular, non-finite, or near-singular \
+             (det={det:.2e}); inverse will produce inf/NaN"
         );
         self.inverse_inertia = self.inertia.inverse();
     }
@@ -234,13 +285,25 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     /// residues from adjugate cancellations; sub-ULP divergence here
     /// integrates to multi-kilometre position error on long-arc
     /// rotational-dynamics runs.
-    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.02 — mass > 0, finite, and within
+    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (mirrors the untyped
+    // `MassProperties::new` guard, so both construction paths reject the
+    // same set of inputs and the rebuilt typed sibling never carries
+    // non-finite cache values).
     // JEOD_INV: MA.04 — inverse_inertia computed from inertia via the same
     // general 3×3 inverse used by `with_inertia` (byte-identical across
     // constructors).
     pub fn new(mass: Mass) -> Self {
         let m = mass.get::<kilogram>();
-        assert!(m > 0.0, "mass must be positive, got {m}");
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&m),
+            "MassPropertiesTyped: mass {m} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg; the \
+             point-mass placeholder inertia `m·I_{{3×3}}` has determinant \
+             m³, and the general 3×3 inverse produces non-finite cache \
+             values outside this range. If you need an extreme mass, supply \
+             a well-conditioned inertia tensor via `with_inertia` instead."
+        );
         let inertia_dmat = DMat3::IDENTITY * m;
         Self {
             mass,
@@ -255,7 +318,8 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     }
 
     /// Constructor with explicit inertia and center-of-mass position.
-    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.02 — mass > 0, finite, and within
+    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (same bound as `new`).
     // JEOD_INV: MA.04 — inverse_inertia computed from inertia
     // JEOD_INV: DB.23 — inverse_inertia always computed
     pub fn with_inertia(
@@ -264,13 +328,17 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         center_of_mass: Position<StructuralFrame<V>>,
     ) -> Self {
         let m = mass.get::<kilogram>();
-        assert!(m > 0.0, "mass must be positive, got {m}");
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&m),
+            "MassPropertiesTyped: mass {m} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
+        );
         let inertia_dmat = inertia.as_dmat3();
         let det = inertia_dmat.determinant();
         assert!(
-            det.abs() > 1e-30,
-            "inertia tensor is singular or near-singular (det={det:.2e}); \
-             inverse will produce inf/NaN"
+            det.is_finite() && det.abs() > 1e-30,
+            "inertia tensor is singular, non-finite, or near-singular \
+             (det={det:.2e}); inverse will produce inf/NaN"
         );
         Self {
             mass,
@@ -301,14 +369,18 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         }
         self.dirty = false;
         let m = self.mass.get::<kilogram>();
-        assert!(m > 0.0, "mass must be positive, got {m}");
+        assert!(
+            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&m),
+            "MassPropertiesTyped: mass {m} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg"
+        );
         self.inverse_mass = 1.0 / m;
         let inertia_dmat = self.inertia.as_dmat3();
         let det = inertia_dmat.determinant();
         assert!(
-            det.abs() > 1e-30,
-            "inertia tensor is singular or near-singular (det={det:.2e}); \
-             inverse will produce inf/NaN"
+            det.is_finite() && det.abs() > 1e-30,
+            "inertia tensor is singular, non-finite, or near-singular \
+             (det={det:.2e}); inverse will produce inf/NaN"
         );
         self.inverse_inertia = inertia_dmat.inverse();
     }
@@ -498,6 +570,125 @@ mod tests {
         assert_eq!(typed.center_of_mass.raw_si(), untyped.position);
         assert_eq!(typed.t_parent_this, untyped.t_parent_this);
         assert_eq!(typed.dirty, untyped.dirty);
+    }
+
+    // ---- safe-range guards (#506) -------------------------------------
+    //
+    // Both untyped and typed point-mass constructors reject masses
+    // outside `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]` because the general
+    // 3×3 inverse of the placeholder inertia `m·I_{3×3}` involves `m³`
+    // and goes non-finite at the f64 dynamic-range extremes. Same guard
+    // applies to `with_inertia` and `recompute_derived`. NaN/infinity
+    // and zero/negative masses are rejected by the same composite
+    // `is_finite() && in [min, max]` predicate.
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_zero_mass() {
+        let _ = MassProperties::new(0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_negative_mass() {
+        let _ = MassProperties::new(-1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_nan_mass() {
+        let _ = MassProperties::new(f64::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_infinite_mass() {
+        let _ = MassProperties::new(f64::INFINITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_subnormal_mass() {
+        // 1e-150 < MIN_SAFE_MASS_KG (1e-100); `m³` here is 1e-450
+        // which underflows to subnormal/zero.
+        let _ = MassProperties::new(1e-150);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_new_panics_on_huge_mass() {
+        // 1e150 > SAFE_MAX_MASS_KG (1e100); `m³` here is 1e450
+        // which overflows to +inf.
+        let _ = MassProperties::new(1e150);
+    }
+
+    #[test]
+    fn untyped_new_accepts_safe_extremes() {
+        // Both endpoints inclusive — finite caches.
+        let lo = MassProperties::new(MIN_SAFE_MASS_KG);
+        let hi = MassProperties::new(SAFE_MAX_MASS_KG);
+        assert!(lo.inverse_mass.is_finite());
+        assert!(hi.inverse_mass.is_finite());
+        for v in [
+            lo.inverse_inertia.x_axis,
+            lo.inverse_inertia.y_axis,
+            lo.inverse_inertia.z_axis,
+            hi.inverse_inertia.x_axis,
+            hi.inverse_inertia.y_axis,
+            hi.inverse_inertia.z_axis,
+        ] {
+            assert!(v.x.is_finite() && v.y.is_finite() && v.z.is_finite());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_with_inertia_panics_on_zero_mass() {
+        let _ = MassProperties::with_inertia(0.0, DMat3::IDENTITY, DVec3::ZERO);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_zero_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(0.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_nan_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(f64::NAN));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_with_inertia_panics_on_huge_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(1e200),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(DMat3::IDENTITY),
+            Position::<StructuralFrame<TestVehicle>>::zero(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn untyped_recompute_derived_panics_on_out_of_range_mass() {
+        let mut mp = MassProperties::new(10.0);
+        mp.mass = 1e200; // outside safe range
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_recompute_derived_panics_on_out_of_range_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let mut mp = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
+        mp.mass = Mass::new::<kilogram>(1e200);
+        mp.dirty = true;
+        mp.recompute_derived();
     }
 
     #[test]
