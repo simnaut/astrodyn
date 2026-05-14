@@ -12,23 +12,43 @@
 //!
 //! The six triangular arrays (`cnm`, `snm`, `xi`, `eta`, `zeta`,
 //! `upsilon`) are stored as flat `Vec<f64>` indexed by
-//! `(n, m) -> n*(n+1)/2 + m`. This packs each row contiguously and
-//! removes the row-pointer indirection of a `Vec<Vec<f64>>` so the
-//! Gottlieb inner loop hits one cache-line per row instead of one
-//! per `(n, m)` access. Bit-identity is preserved: the same `f64`
-//! values are written in the same order — only the storage layout
-//! differs.
+//! `(n, m) -> n*(n+1)/2 + m`. Rows are packed contiguously, removing
+//! the row-pointer indirection of a `Vec<Vec<f64>>` so the Gottlieb
+//! inner loop traverses sequential memory — better prefetcher
+//! behavior and cache utilization than chasing a row pointer per
+//! `(n, m)` access. Bit-identity is preserved: the same `f64` values
+//! are written in the same order — only the storage layout differs.
 
 use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::frame::SelfPlanet;
 use uom::si::f64::Length;
 
+/// Maximum spherical-harmonic degree this storage layout supports.
+///
+/// Picked to comfortably exceed the largest published Earth gravity
+/// model (EGM2008 at degree/order 2190) while keeping the triangular
+/// index `n*(n+1)/2 + m` and slot count `(degree+1)*(degree+2)/2` far
+/// below `usize::MAX` on any platform with `usize >= 32 bits`.
+/// `SphericalHarmonicsData::new` asserts `degree <= MAX_SH_DEGREE` at
+/// construction, so every `tri_idx` call in this module is reached
+/// with `n <= MAX_SH_DEGREE` by construction and the multiplication
+/// cannot wrap.
+pub const MAX_SH_DEGREE: usize = 4096;
+
 /// Flat-storage triangular index: `(n, m) -> n*(n+1)/2 + m`.
 ///
 /// Maps the `(degree, order)` pair to a flat `Vec<f64>` slot. The
 /// formula equals the count of slots in rows `0..n` plus the offset
-/// `m` within row `n`. Rows are therefore stored contiguously, which
-/// keeps the Gottlieb inner loop on a single cache line per row.
+/// `m` within row `n`. Rows are therefore stored contiguously, so the
+/// Gottlieb inner loop walks sequential memory and benefits from
+/// hardware prefetch.
+///
+/// `n` is assumed to satisfy `n <= MAX_SH_DEGREE`. This precondition
+/// is established once at [`SphericalHarmonicsData::new`] (which
+/// asserts the bound on the caller-supplied `degree`); every internal
+/// `tri_idx` call site here drives `n` from a loop bounded by
+/// `self.degree`, so the `n * (n + 1)` multiplication cannot wrap a
+/// 64-bit `usize` in release builds.
 #[inline]
 pub(crate) const fn tri_idx(n: usize, m: usize) -> usize {
     n * (n + 1) / 2 + m
@@ -36,6 +56,7 @@ pub(crate) const fn tri_idx(n: usize, m: usize) -> usize {
 
 /// Number of slots needed for a flat triangular array up to and
 /// including row `degree`. Equal to `(degree + 1) * (degree + 2) / 2`.
+/// Same `degree <= MAX_SH_DEGREE` precondition as [`tri_idx`].
 #[inline]
 const fn tri_len(degree: usize) -> usize {
     (degree + 1) * (degree + 2) / 2
@@ -103,6 +124,13 @@ impl SphericalHarmonicsData {
         tide_free_delta: f64,
     ) -> Self {
         assert!(degree > 0, "degree must be > 0");
+        assert!(
+            degree <= MAX_SH_DEGREE,
+            "degree ({degree}) exceeds MAX_SH_DEGREE ({MAX_SH_DEGREE}): \
+             the triangular index `n*(n+1)/2 + m` and slot count \
+             `(degree+1)*(degree+2)/2` must fit in `usize`. Raise \
+             MAX_SH_DEGREE if a legitimate gravity model needs it."
+        );
         assert!(order <= degree, "order must be <= degree");
         assert_eq!(cnm.len(), degree + 1);
         assert_eq!(snm.len(), degree + 1);
