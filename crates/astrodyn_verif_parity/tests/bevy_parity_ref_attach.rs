@@ -61,14 +61,16 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// post-integration kinematic walk vs. the post-integration
 /// frame-attach propagation, or the order in which `FrameTransC` /
 /// `FrameRotC` writes land on the pfix entity at those records).
-/// Tracked as a `KNOWN_PARITY_GAPS` entry in
-/// `parity_coverage.rs`; re-enable this test once the Bevy
-/// schedule order is pinned to produce bit-identical pfix state at
-/// every record the runner observes.
+/// The presence of this wrapper file (with `#[ignore]`) is itself
+/// the structural marker that `parity_coverage.rs` uses to satisfy
+/// the superset invariant, so no `KNOWN_PARITY_GAPS` entry is
+/// needed — re-enable the test once the Bevy schedule order is
+/// pinned to produce bit-identical pfix state at every record the
+/// runner observes.
 #[test]
 #[ignore = "Bevy adapter produces sub-ULP-of-Earth-radius f64 drift in \
-            Earth.pfix at 3-of-50 post-attach records; tracked in \
-            KNOWN_PARITY_GAPS"]
+            Earth.pfix at 3-of-50 post-attach records; Bevy-side \
+            schedule investigation pending"]
 fn bevy_parity_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert_parity::<astrodyn::Earth>();
 }
