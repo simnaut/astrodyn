@@ -326,34 +326,43 @@ impl VerificationCaseExt for VerificationCase {
                     // Per-tick loop: advance one `dt`-sized step at a
                     // time, invoking the closure with the time at the
                     // *end* of the upcoming tick (`sim.elapsed() + dt`)
-                    // before each call. The slack scales with `dt`
-                    // (half a tick) so f64 representation jitter in the
-                    // record cadence cannot lose a tick, while
+                    // before each call. The loop-exit slack scales with
+                    // `dt` (half a tick) so f64 representation jitter
+                    // in the record cadence cannot lose a tick, while
                     // sub-millisecond `dt` callers cannot accidentally
                     // overshoot `record.time` by many extra ticks (a
                     // fixed millisecond slack would admit up to
                     // `1e-3 / dt` extra ticks before the remainder
                     // check fires).
-                    let slack = 0.5 * dt;
-                    while sim.elapsed() + dt <= record.time + slack {
+                    let loop_slack = 0.5 * dt;
+                    while sim.elapsed() + dt <= record.time + loop_slack {
                         let t_end = sim.elapsed() + dt;
                         hook(&mut sim, t_end);
                         sim.step()
                             .unwrap_or_else(|e| panic!("{}: step failed: {e}", self.name));
                     }
                     // Per-tick recipes must align the reference cadence
-                    // with an integer multiple of `dt`. Surface a
-                    // mismatch loudly rather than silently dropping the
-                    // remainder — a fractional remainder would skip the
-                    // closure on the partial tick. The tolerance
-                    // tracks the loop slack so any leftover beyond half
-                    // a tick is reported as a recipe misconfiguration.
+                    // with an integer multiple of `dt`. Surface any
+                    // misalignment loudly rather than silently dropping
+                    // a fractional remainder — that would skip the
+                    // closure on the partial tick. The post-loop
+                    // tolerance is *much* tighter than the loop slack
+                    // because it has a different job: the loop slack
+                    // (`0.5 * dt`) absorbs comparison jitter at the
+                    // exit boundary, but here we already know an
+                    // integer number of ticks have run, so the only
+                    // legitimate remainder is f64 accumulation noise.
+                    // A few ULPs of `record.time` (plus a tiny absolute
+                    // floor for the t=0 case) bounds that noise and
+                    // still rejects a 0.6-tick misalignment by ~17
+                    // orders of magnitude.
+                    let align_tol = record.time.abs() * (4.0 * f64::EPSILON) + 1e-12;
                     let remainder = record.time - sim.elapsed();
                     assert!(
-                        remainder.abs() <= slack,
-                        "{}: PreStepCadence::PerTick expects record cadence to be a multiple of \
-                         dt; record.time={record_time} leaves remainder {remainder} after \
-                         per-tick stepping (dt={dt})",
+                        remainder.abs() <= align_tol,
+                        "{}: PreStepCadence::PerTick expects record cadence to be an integer \
+                         multiple of dt; record.time={record_time} leaves remainder {remainder} \
+                         after per-tick stepping (dt={dt}, tolerance={align_tol:e})",
                         self.name,
                         record_time = record.time,
                     );
