@@ -59,7 +59,7 @@ pub const MIN_SAFE_MASS_KG: f64 = 1e-100;
 /// `recompute_derived` accept a caller-supplied inertia tensor whose
 /// magnitude is independent of `mass`, so the cubic-mass bound does
 /// not apply there.
-pub const SAFE_MAX_MASS_KG: f64 = 1e100;
+pub const MAX_SAFE_MASS_KG: f64 = 1e100;
 
 /// Tolerance for the post-inverse consistency check `I · I⁻¹ ≈ I_{3×3}`.
 ///
@@ -136,7 +136,29 @@ fn checked_inertia_inverse(inertia: DMat3) -> DMat3 {
     // physics integrator would silently propagate as a zero-acceleration
     // torque axis. Compare against the identity to catch this.
     let product = inertia * inverse;
-    let max_deviation = (product - DMat3::IDENTITY)
+    let deviation = product - DMat3::IDENTITY;
+    // The post-inverse `is_finite` check above guarantees every entry
+    // of `inverse` is finite, and `det.is_finite()` plus the inertia
+    // entries being finite (a precondition of `det.is_finite()`)
+    // implies `inertia` is finite too. The matrix product of two
+    // finite matrices is finite. We assert that here explicitly
+    // because the deviation reduction below uses `f64::max`, and
+    // `f64::max` is *not* NaN-propagating — `NaN.max(x) == x` for any
+    // non-NaN `x`. A NaN entry in `deviation` would therefore be
+    // silently dropped by the fold and let an ill-conditioned inverse
+    // slip past the post-inverse identity check. The assertion below
+    // catches the NaN before the fold sees it.
+    assert!(
+        deviation.is_finite(),
+        "inertia tensor's `I · I⁻¹ − I_{{3×3}}` contains a non-finite \
+         entry (NaN or ±inf) even though `det` and `inverse` are \
+         individually finite (det={det:.2e}). This indicates a \
+         cancellation/overflow inside the matrix product that the \
+         per-entry finite-cofactor check could not detect. Rescale \
+         the inertia tensor so the product `I · I⁻¹` stays within \
+         the f64 dynamic range. Deviation matrix: {deviation:?}"
+    );
+    let max_deviation = deviation
         .to_cols_array()
         .iter()
         .map(|x: &f64| x.abs())
@@ -209,28 +231,32 @@ impl MassProperties {
     ///
     /// # Panics
     /// Panics if `mass` is `NaN`, infinite, zero, negative, or outside
-    /// the safe range `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`. The
+    /// the safe range `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]`. The
     /// placeholder inertia `m·I_{3×3}` is always non-singular within
     /// that range, so the inertia-inverse guard cannot panic from this
     /// entry point — only the mass guard can.
     // JEOD_INV: MA.02 — mass > 0, finite, and within
-    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] for the general 3×3 inverse
+    // [MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG] for the general 3×3 inverse
     // to remain finite (see `MIN_SAFE_MASS_KG` doc-comment).
     // JEOD_INV: MA.04 — inverse_inertia computed from inertia via the same
     // general 3×3 inverse used by `with_inertia` (byte-identical across
     // constructors).
     pub fn new(mass: f64) -> Self {
         assert!(
-            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&mass),
-            "MassProperties: mass {mass} kg out of safe range \
-             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg. \
-             This is a hard numerical limit shared by every constructor \
-             (`new`, `with_inertia`, `recompute_derived`): the inverse-mass \
-             cache `1/mass` and the inertia-inverse cofactors all derive \
-             from `mass`, so the guard applies regardless of how the \
-             inertia tensor is supplied. Rescale your physical model into \
-             this range, or contact maintainers if a real scenario \
-             genuinely requires masses outside it."
+            (MIN_SAFE_MASS_KG..=MAX_SAFE_MASS_KG).contains(&mass),
+            "MassProperties::new: mass {mass} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {MAX_SAFE_MASS_KG:.0e}] kg for the \
+             point-mass constructor. This guard applies only to `new`, \
+             which synthesises the placeholder inertia `I = m·I_{{3×3}}` \
+             from `mass` (so the inverse formula propagates `m³` through \
+             both numerator and denominator and must stay within the f64 \
+             dynamic range). The explicit-inertia paths (`with_inertia`, \
+             `recompute_derived`) accept a caller-supplied inertia whose \
+             magnitude is decoupled from `mass`, and require only `mass > \
+             0 && mass.is_finite()`. If your scenario genuinely needs a \
+             mass outside this range, supply an explicit inertia via \
+             `MassProperties::with_inertia(mass, inertia, position)` \
+             instead of `new`."
         );
         let inertia = DMat3::IDENTITY * mass;
         Self {
@@ -251,7 +277,7 @@ impl MassProperties {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [`MIN_SAFE_MASS_KG`, `SAFE_MAX_MASS_KG`] does
+    /// safe-range bound [`MIN_SAFE_MASS_KG`, `MAX_SAFE_MASS_KG`] does
     /// not apply. The only requirement on `mass` is that `1/mass` stays
     /// finite — i.e. `mass > 0 && mass.is_finite()`. The inertia tensor
     /// is guarded separately by the scale-invariant inertia-inverse check
@@ -430,12 +456,12 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     ///
     /// # Panics
     /// Panics if `mass` is `NaN`, infinite, zero, negative, or outside
-    /// the safe range `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]`. The
+    /// the safe range `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]`. The
     /// placeholder inertia `m·I_{3×3}` is always non-singular within
     /// that range, so the inertia-inverse guard cannot panic from this
     /// entry point — only the mass guard can.
     // JEOD_INV: MA.02 — mass > 0, finite, and within
-    // [MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG] (mirrors the untyped
+    // [MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG] (mirrors the untyped
     // `MassProperties::new` guard, so both construction paths reject the
     // same set of inputs and the rebuilt typed sibling never carries
     // non-finite cache values).
@@ -445,16 +471,20 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     pub fn new(mass: Mass) -> Self {
         let m = mass.get::<kilogram>();
         assert!(
-            (MIN_SAFE_MASS_KG..=SAFE_MAX_MASS_KG).contains(&m),
-            "MassPropertiesTyped: mass {m} kg out of safe range \
-             [{MIN_SAFE_MASS_KG:.0e}, {SAFE_MAX_MASS_KG:.0e}] kg. \
-             This is a hard numerical limit shared by every constructor \
-             (`new`, `with_inertia`, `recompute_derived`): the inverse-mass \
-             cache `1/mass` and the inertia-inverse cofactors all derive \
-             from `mass`, so the guard applies regardless of how the \
-             inertia tensor is supplied. Rescale your physical model into \
-             this range, or contact maintainers if a real scenario \
-             genuinely requires masses outside it."
+            (MIN_SAFE_MASS_KG..=MAX_SAFE_MASS_KG).contains(&m),
+            "MassPropertiesTyped::new: mass {m} kg out of safe range \
+             [{MIN_SAFE_MASS_KG:.0e}, {MAX_SAFE_MASS_KG:.0e}] kg for the \
+             point-mass constructor. This guard applies only to `new`, \
+             which synthesises the placeholder inertia `I = m·I_{{3×3}}` \
+             from `mass` (so the inverse formula propagates `m³` through \
+             both numerator and denominator and must stay within the f64 \
+             dynamic range). The explicit-inertia paths (`with_inertia`, \
+             `recompute_derived`) accept a caller-supplied inertia whose \
+             magnitude is decoupled from `mass`, and require only `mass > \
+             0 && mass.is_finite()`. If your scenario genuinely needs a \
+             mass outside this range, supply an explicit inertia via \
+             `MassPropertiesTyped::with_inertia(mass, inertia, com)` \
+             instead of `new`."
         );
         let inertia_dmat = DMat3::IDENTITY * m;
         Self {
@@ -473,7 +503,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [`MIN_SAFE_MASS_KG`, `SAFE_MAX_MASS_KG`] does
+    /// safe-range bound [`MIN_SAFE_MASS_KG`, `MAX_SAFE_MASS_KG`] does
     /// not apply. Only `mass > 0 && mass.is_finite()` is required.
     ///
     /// # Panics
@@ -761,7 +791,7 @@ mod tests {
     //   build `inertia = m·I_{3×3}` themselves, so the inverse formula
     //   propagates `m³` through both numerator and denominator before a
     //   final divide. Mass must lie in
-    //   `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]` to keep `m³` away from
+    //   `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]` to keep `m³` away from
     //   the f64 underflow/overflow boundary.
     //
     // * Explicit-inertia constructors (`with_inertia`,
@@ -811,7 +841,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "out of safe range")]
     fn untyped_new_panics_on_huge_mass() {
-        // 1e150 > SAFE_MAX_MASS_KG (1e100); `m³` here is 1e450
+        // 1e150 > MAX_SAFE_MASS_KG (1e100); `m³` here is 1e450
         // which overflows to +inf.
         let _ = MassProperties::new(1e150);
     }
@@ -820,7 +850,7 @@ mod tests {
     fn untyped_new_accepts_safe_extremes() {
         // Both endpoints inclusive — finite caches.
         let lo = MassProperties::new(MIN_SAFE_MASS_KG);
-        let hi = MassProperties::new(SAFE_MAX_MASS_KG);
+        let hi = MassProperties::new(MAX_SAFE_MASS_KG);
         assert!(lo.inverse_mass.is_finite());
         assert!(hi.inverse_mass.is_finite());
         for v in [
@@ -911,7 +941,7 @@ mod tests {
     fn safe_extremes_round_trip_through_with_inertia_and_recompute() {
         // The mass-range guard and the inertia-singularity guard must
         // agree on what they accept: any mass in
-        // `[MIN_SAFE_MASS_KG, SAFE_MAX_MASS_KG]` paired with the
+        // `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]` paired with the
         // placeholder inertia `m·I_{3×3}` (well-conditioned at every
         // mass) must round-trip through both `with_inertia` and a
         // `recompute_derived` cycle without the inertia-inverse check
@@ -919,7 +949,7 @@ mod tests {
         // normal-range f64 with a finite inverse, so the
         // scale-invariant `is_finite()` check passes even though an
         // absolute threshold like `det > 1e-30` would not.
-        for &m in &[MIN_SAFE_MASS_KG, 1.0_f64, SAFE_MAX_MASS_KG] {
+        for &m in &[MIN_SAFE_MASS_KG, 1.0_f64, MAX_SAFE_MASS_KG] {
             let inertia = DMat3::IDENTITY * m;
             let via_with_inertia = MassProperties::with_inertia(m, inertia, DVec3::ZERO);
             assert!(via_with_inertia.inverse_inertia.is_finite());

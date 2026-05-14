@@ -148,12 +148,16 @@ mod tests {
     use super::*;
     use glam::DMat3;
 
-    /// Bit-exact comparison for `DMat3` — the regression class the
-    /// byte-identity tests below guard against is sub-ULP divergence,
-    /// which standard `f64 ==` flattens by treating `0.0 == -0.0` and
-    /// (more relevantly) by ignoring the lowest mantissa bits that
-    /// integrate to multi-kilometre position drift on long-arc runs.
-    /// Compare each lane's underlying bit pattern via `f64::to_bits`.
+    /// Bit-exact comparison for `DMat3`. `f64 ==` compares **values**,
+    /// not bit patterns: `0.0 == -0.0` (different bits, equal value) and
+    /// `NaN != NaN` (same bits, unequal value). Either case lets a
+    /// regression sneak through the byte-identity assertions below — a
+    /// raw→typed bridge that silently rebuilt a `+0.0` lane as `-0.0`,
+    /// or replaced a deterministic `NaN` with another `NaN`, would pass
+    /// a `==` check while still corrupting the lowest-mantissa-bit
+    /// agreement that integrates to multi-kilometre position drift on
+    /// long-arc rotational runs. Compare each lane's underlying bit
+    /// pattern via `f64::to_bits` to assert byte identity.
     fn dmat3_byte_eq(a: DMat3, b: DMat3) -> bool {
         a.to_cols_array()
             .iter()
@@ -341,5 +345,52 @@ mod tests {
         // struct-level `PartialEq` and catches any future field added
         // to one side but not the other.
         assert_eq!(MassPropertiesTyped::<SelfRef>::to_untyped(&typed), raw);
+    }
+
+    /// `mass_raw_to_typed` routes through `MassPropertiesTyped::with_inertia`,
+    /// whose contract is to recompute `inverse_mass` / `inverse_inertia`
+    /// from the freshly-supplied inputs and emit `dirty = false`. The
+    /// companion test above seeds the raw input with `dirty = false` and
+    /// asserts equality, which a bridge that just **copied** `dirty`
+    /// verbatim would also pass — leaving the `true → false`
+    /// canonicalisation half of the contract untested. This test seeds
+    /// `dirty = true` and asserts the typed sibling lands on `dirty =
+    /// false`, which only a bridge that actually re-derives the cache
+    /// (via `with_inertia` or equivalent) can satisfy.
+    #[test]
+    fn raw_to_typed_canonicalises_dirty_flag() {
+        use glam::DVec3;
+
+        let mass = 424.0_f64;
+        let inertia = DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0));
+        let raw_dirty = MassProperties {
+            mass,
+            inverse_mass: 1.0 / mass,
+            inertia,
+            inverse_inertia: inertia.inverse(),
+            position: DVec3::new(0.1, -0.2, 0.3),
+            t_parent_this: DMat3::IDENTITY,
+            // The contract under test: an input that advertises stale
+            // caches must come out canonicalised on the typed side.
+            dirty: true,
+        };
+        let typed = mass_raw_to_self_ref(&raw_dirty);
+        assert!(
+            !typed.dirty,
+            "raw→typed bridge must canonicalise dirty to false \
+             (with_inertia re-derives the cache); got dirty=true"
+        );
+
+        // Sanity: the rebuilt caches still agree byte-for-byte with the
+        // raw input's self-consistent values, so the canonicalisation
+        // doesn't come at the cost of cache divergence.
+        assert_eq!(
+            typed.inverse_mass.to_bits(),
+            raw_dirty.inverse_mass.to_bits()
+        );
+        assert!(dmat3_byte_eq(
+            typed.inverse_inertia,
+            raw_dirty.inverse_inertia
+        ));
     }
 }
