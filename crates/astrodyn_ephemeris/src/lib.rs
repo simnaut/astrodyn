@@ -60,3 +60,10 @@ pub mod ephemeris;
 
 pub use bodies::EphemerisBody;
 pub use ephemeris::{Ephemeris, EphemerisError};
+
+// Re-export ANISE's `Epoch` so callers that hoist epoch construction out
+// of per-query paths (`Ephemeris::get_state_typed_epoch`,
+// `Ephemeris::get_body_rotation_epoch`) can name the type without
+// reaching into `anise` directly. ANISE's `Epoch` is `hifitime::Epoch`
+// re-exported through `anise::prelude`.
+pub use anise::prelude::Epoch;

@@ -87,6 +87,23 @@ impl Ephemeris {
             .describe(Some(true), Some(true), None, None, None, None, None, None);
     }
 
+    /// Build the ANISE [`Epoch`] for a TDB Julian Date.
+    ///
+    /// Hoisting this construction out of the per-query path lets callers
+    /// that issue multiple queries at the same instant (e.g. the per-step
+    /// ephemeris update which fetches Earth, Sun, and Moon-libration in
+    /// one go) pay the `Epoch::from_tdb_seconds` +
+    /// `hifitime::Epoch::to_time_scale` cost once instead of once per
+    /// query. The byte-identity guarantee follows from `Epoch` being a
+    /// plain value with no internal allocations: constructing once vs.
+    /// three times yields the same bits.
+    #[inline]
+    pub fn tdb_jd_to_epoch(tdb_jd: f64) -> Epoch {
+        // Convert JD to seconds since J2000.0 TDB: (jd - 2451545.0) * 86400.0
+        let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
+        Epoch::from_tdb_seconds(tdb_s_since_j2000)
+    }
+
     /// Get state of `target` relative to `observer` at a given TDB Julian Date,
     /// returning frame-tagged, dimensioned quantities in the J2000 (ICRF-aligned)
     /// inertial frame.
@@ -95,15 +112,32 @@ impl Ephemeris {
     /// entry point wraps as `Position<RootInertial>` / `Velocity<RootInertial>`. The
     /// pre-Phase-10 bare-`f64` `get_state` was removed; use `.raw_si()` on
     /// the returned values when an unwrapped `DVec3` is needed.
+    ///
+    /// When issuing multiple queries at the same instant, prefer
+    /// [`Self::get_state_typed_epoch`] paired with [`Self::tdb_jd_to_epoch`]
+    /// to avoid rebuilding the [`Epoch`] (which internally calls
+    /// `hifitime::Epoch::to_time_scale`) on every call.
     pub fn get_state_typed(
         &self,
         target: EphemerisBody,
         observer: EphemerisBody,
         tdb_jd: f64,
     ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
-        // Convert JD to seconds since J2000.0 TDB: (jd - 2451545.0) * 86400.0
-        let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
-        let epoch = Epoch::from_tdb_seconds(tdb_s_since_j2000);
+        self.get_state_typed_epoch(target, observer, Self::tdb_jd_to_epoch(tdb_jd))
+    }
+
+    /// [`Self::get_state_typed`] variant that takes a pre-built [`Epoch`].
+    ///
+    /// Use this when a single step issues multiple ephemeris queries at
+    /// the same instant: build the [`Epoch`] once with
+    /// [`Self::tdb_jd_to_epoch`] and pass it to each query, amortising
+    /// the `hifitime::Epoch::to_time_scale` cost across all queries.
+    pub fn get_state_typed_epoch(
+        &self,
+        target: EphemerisBody,
+        observer: EphemerisBody,
+        epoch: Epoch,
+    ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
         let target_frame = body_to_frame(target);
         let observer_frame = body_to_frame(observer);
 
@@ -150,14 +184,28 @@ impl Ephemeris {
     /// For Moon: uses the DE421 Principal Axes (PA) frame from a BPC kernel,
     /// which must already be loaded via `load_bpc()`.
     /// For Mars: uses IAU_MARS built-in constants.
+    ///
+    /// When issuing multiple queries at the same instant, prefer
+    /// [`Self::get_body_rotation_epoch`] paired with
+    /// [`Self::tdb_jd_to_epoch`] to avoid rebuilding the [`Epoch`].
     pub fn get_body_rotation(
         &self,
         body: EphemerisBody,
         tdb_jd: f64,
     ) -> Result<glam::DMat3, EphemerisError> {
-        let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
-        let epoch = Epoch::from_tdb_seconds(tdb_s_since_j2000);
+        self.get_body_rotation_epoch(body, Self::tdb_jd_to_epoch(tdb_jd))
+    }
 
+    /// [`Self::get_body_rotation`] variant that takes a pre-built [`Epoch`].
+    ///
+    /// Use this when a single step issues multiple ephemeris queries at
+    /// the same instant (see [`Self::get_state_typed_epoch`] for the
+    /// amortisation rationale).
+    pub fn get_body_rotation_epoch(
+        &self,
+        body: EphemerisBody,
+        epoch: Epoch,
+    ) -> Result<glam::DMat3, EphemerisError> {
         // Use DE421 PA frame for Moon (high fidelity libration from BPC),
         // IAU built-in for other bodies.
         let orient = match body {
