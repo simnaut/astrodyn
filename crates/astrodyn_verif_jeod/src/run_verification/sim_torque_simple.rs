@@ -26,7 +26,7 @@ use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
@@ -321,7 +321,7 @@ pub fn run01() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -340,7 +340,7 @@ pub fn run02() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -361,7 +361,7 @@ pub fn run03() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -380,7 +380,7 @@ pub fn run04() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -399,7 +399,7 @@ pub fn run05() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }
 
@@ -418,6 +418,6 @@ pub fn run06() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(torque_simple_pre_step),
+        pre_step: Some((torque_simple_pre_step, PreStepCadence::PerRecord)),
     }
 }

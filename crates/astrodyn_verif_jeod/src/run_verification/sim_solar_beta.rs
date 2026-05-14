@@ -27,7 +27,8 @@ use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
 use crate::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, PreStepClosure, Tolerances,
+    VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, Ephemeris, EphemerisBody, GravityControl,
@@ -186,7 +187,7 @@ pub fn solar_beta_run2() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(solar_beta_pre_step),
+        pre_step: Some((solar_beta_pre_step, PreStepCadence::PerRecord)),
     }
 }
 

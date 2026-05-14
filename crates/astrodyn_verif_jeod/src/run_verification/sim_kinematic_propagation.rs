@@ -38,7 +38,7 @@
 //! installed pre-attach.
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, GravityControls, IntegratorType, JeodQuat, MassProperties,
@@ -162,6 +162,6 @@ pub fn simple_chain() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(kinematic_propagation_pre_step),
+        pre_step: Some((kinematic_propagation_pre_step, PreStepCadence::PerRecord)),
     }
 }

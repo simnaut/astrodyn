@@ -51,13 +51,13 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameAttachEvent, FrameEntityC,
-    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, SourceInertialPositionC,
-    SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
+    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, RotationalStateC,
+    SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::{SimContext, SourceFrameKind};
 use bevy::ecs::message::Messages;
 use bevy::prelude::*;
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 
 /// `SimContext` adapter over a Bevy [`World`].
 ///
@@ -434,6 +434,27 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         } else {
             self.world.entity_mut(entity).insert(ExternalTorqueC(typed));
         }
+    }
+
+    fn body_q_inertial_body(&self, body_idx: usize) -> DQuat {
+        // Mirror the runner: panic with a descriptive message rather
+        // than returning identity when the body has no rotational
+        // state. The closure must rotate body→inertial via the same
+        // quaternion the integrator reads, so a 3-DOF misuse is a
+        // programmer error caught here.
+        let entity = self.body_entity(body_idx);
+        let rot = self
+            .world
+            .get::<RotationalStateC>(entity)
+            .unwrap_or_else(|| {
+                panic!(
+                    "BevySimContext::body_q_inertial_body: body {body_idx} ({entity:?}) \
+                 has no RotationalStateC (3-DOF body). Add `rot: Some(...)` to its \
+                 VehicleConfig if the pre_step closure needs an inertial-body \
+                 quaternion."
+                )
+            });
+        rot.0.q_inertial_body.as_witness().inner().to_glam()
     }
 
     fn attach_to_frame(

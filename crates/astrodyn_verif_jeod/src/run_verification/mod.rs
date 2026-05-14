@@ -96,7 +96,7 @@ pub(crate) mod typed_helpers {
 use crate::crossval::{CrossvalReport, StateLog};
 use crate::tier3_csv;
 use crate::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, SimContext, SourceFrameKind,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, SimContext, SourceFrameKind,
     VerificationCase,
 };
 use astrodyn::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
@@ -161,6 +161,26 @@ impl SimContext for Simulation {
 
     fn set_body_external_torque(&mut self, body_idx: usize, torque: DVec3) {
         Simulation::set_body_external_torque(self, body_idx, torque);
+    }
+
+    fn body_q_inertial_body(&self, body_idx: usize) -> glam::DQuat {
+        // `VehicleOutput.rot` is `Option<RotationalStateTyped<SelfRef>>`;
+        // panic with a descriptive message rather than returning identity
+        // so a 3-DOF body misuse fails loudly per the Fail Loudly rule.
+        let body = Simulation::body(self, body_idx);
+        body.rot
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "body_q_inertial_body: body {body_idx} has no rotational state \
+                     (3-DOF body). Add `rot: Some(...)` to its VehicleConfig if the \
+                     pre_step closure needs an inertial-body quaternion."
+                )
+            })
+            .q_inertial_body
+            .as_witness()
+            .inner()
+            .to_glam()
     }
 
     fn attach_to_frame(
@@ -281,13 +301,41 @@ impl VerificationCaseExt for VerificationCase {
         // 2b. If the case carries a pre-step factory, invoke it now so
         //     the resulting closure can capture run-once state (a
         //     loaded DE421 ephemeris, J2000 JD, source indices) the
-        //     per-step body would otherwise re-derive on every call.
-        let mut pre_step = self.pre_step.map(|builder| builder(&init));
+        //     per-call body would otherwise re-derive on every
+        //     invocation.
+        let mut pre_step_state = self
+            .pre_step
+            .map(|(builder, cadence)| (builder(&init), cadence));
+        let dt = sim.dt;
 
         // 3. Propagate, sampling at each non-initial reference time up
         //    to the case's `duration` (a value of 0.0 or negative means
         //    "use full CSV"; a value greater than the last record's
         //    time runs to the end without extrapolation).
+        //
+        //    Three propagation shapes share the body of this loop:
+        //
+        //    * **No `pre_step`** — call `sim.step_until(record.time)`
+        //      directly so the runner uses its own internal stepping
+        //      loop (which can take a fractional final step when the
+        //      record cadence isn't an integer multiple of `dt`).
+        //    * **`pre_step` with [`PreStepCadence::PerRecord`]** —
+        //      invoke the closure once with `t_end = record.time`,
+        //      then call `sim.step_until(record.time)`. Matches JEOD's
+        //      Trick-scheduler invocation for third-body / ephemeris
+        //      / tide / SRP source-position updates (which the JEOD
+        //      verification sims sample at the record cadence too).
+        //    * **`pre_step` with [`PreStepCadence::PerTick`]** — step
+        //      exactly `(record.time - sim.elapsed()) / dt`
+        //      integration ticks, invoking the closure with `t_end =
+        //      sim.elapsed() + dt` before each `sim.step()`. Matches
+        //      the cadence JEOD's Trick scheduler uses to flip force /
+        //      torque inputs at the dynamics rate (e.g. 32 Hz for
+        //      SIM_dyncomp vs. the 60 s reference-CSV cadence); a
+        //      per-record closure would freeze the on/off decision
+        //      across the entire interval, producing the "force
+        //      direction held constant across 60 s" drift the
+        //      `dyncomp_run9` recipes exposed.
         let duration_s = self.duration.get::<second>();
         let mut our_states = Vec::with_capacity(ref_states.len() - 1);
         let mut sampled_refs = Vec::with_capacity(ref_states.len() - 1);
@@ -296,14 +344,83 @@ impl VerificationCaseExt for VerificationCase {
             if duration_s > 0.0 && record.time > duration_s {
                 break;
             }
-            // Run the pre-step hook (e.g. ephemeris source-position
-            // update) before propagation, so the simulation sees
-            // up-to-date inputs for this step.
-            if let Some(hook) = pre_step.as_mut() {
-                hook(&mut sim, record.time);
+            match pre_step_state.as_mut() {
+                Some((hook, PreStepCadence::PerTick)) => {
+                    // Per-tick loop: advance one `dt`-sized step at a
+                    // time, invoking the closure with the time at the
+                    // *end* of the upcoming tick (`sim.elapsed() + dt`)
+                    // before each call. The loop-exit slack scales with
+                    // `dt` (half a tick) so f64 representation jitter
+                    // in the record cadence cannot lose a tick, while
+                    // sub-millisecond `dt` callers cannot accidentally
+                    // overshoot `record.time` by many extra ticks (a
+                    // fixed millisecond slack would admit up to
+                    // `1e-3 / dt` extra ticks before the remainder
+                    // check fires).
+                    let loop_slack = 0.5 * dt;
+                    while sim.elapsed() + dt <= record.time + loop_slack {
+                        let t_end = sim.elapsed() + dt;
+                        hook(&mut sim, t_end);
+                        sim.step()
+                            .unwrap_or_else(|e| panic!("{}: step failed: {e}", self.name));
+                    }
+                    // Per-tick recipes must align the reference cadence
+                    // with an integer multiple of `dt`. Surface any
+                    // misalignment loudly rather than silently dropping
+                    // a fractional remainder — that would skip the
+                    // closure on the partial tick. The post-loop
+                    // tolerance is *much* tighter than the loop slack
+                    // because it has a different job: the loop slack
+                    // (`0.5 * dt`) absorbs comparison jitter at the
+                    // exit boundary, but here we already know an
+                    // integer number of ticks have run, so the only
+                    // legitimate remainder is f64 accumulation noise.
+                    //
+                    // `sim.elapsed()` is produced by `n_ticks` repeated
+                    // `simtime += dt` increments inside
+                    // `SimulationTime::advance`. Each `+=` introduces
+                    // up to ~0.5 ULP of rounding, so the worst-case
+                    // accumulated drift is roughly `n_ticks · eps · dt`
+                    // — bounded by tick count, not by absolute time.
+                    // For exact-power-of-two `dt` (e.g. `dt = 1/32 s`
+                    // in SIM_dyncomp's S_define) this is identically
+                    // zero, but for inexact f64 values (e.g. `dt = 0.1`)
+                    // accumulation grows linearly with `n_ticks`. Bound
+                    // the tolerance by that per-tick model with a ×4
+                    // safety factor, plus a small absolute floor for
+                    // the `record.time = 0` case. The bound still
+                    // rejects a 0.6-tick misalignment by many orders
+                    // of magnitude (0.6·dt versus ~n·eps·dt·4).
+                    let n_ticks = (record.time.abs() / dt).round();
+                    let align_tol = (n_ticks + 1.0) * (4.0 * f64::EPSILON) * dt + 1e-12;
+                    let remainder = record.time - sim.elapsed();
+                    assert!(
+                        remainder.abs() <= align_tol,
+                        "{}: PreStepCadence::PerTick expects record cadence to be an integer \
+                         multiple of dt; record.time={record_time} leaves remainder {remainder} \
+                         after {n_ticks_int} per-tick steps (sim.elapsed()={elapsed}, dt={dt}, \
+                         tolerance={align_tol:e})",
+                        self.name,
+                        record_time = record.time,
+                        n_ticks_int = n_ticks as u64,
+                        elapsed = sim.elapsed(),
+                    );
+                }
+                Some((hook, PreStepCadence::PerRecord)) => {
+                    // Invoke the closure once with the upcoming record's
+                    // time, then let the runner step to that time via
+                    // its own internal loop (`sim.step_until` can take
+                    // a fractional final step when the record cadence
+                    // is not an integer multiple of `dt`).
+                    hook(&mut sim, record.time);
+                    sim.step_until(record.time)
+                        .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
+                }
+                None => {
+                    sim.step_until(record.time)
+                        .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
+                }
             }
-            sim.step_until(record.time)
-                .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
             let body = sim.body(0);
             if let Some(acc) = extras_acc.as_mut() {
                 acc.observe(&body, &sim, &typed_records, idx, self.name);

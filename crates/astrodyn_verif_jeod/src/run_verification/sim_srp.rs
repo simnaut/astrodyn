@@ -21,7 +21,7 @@ use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams,
@@ -326,7 +326,7 @@ pub fn srp_1st_order_trajectory() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(srp_1st_order_pre_step),
+        pre_step: Some((srp_1st_order_pre_step, PreStepCadence::PerRecord)),
     }
 }
 

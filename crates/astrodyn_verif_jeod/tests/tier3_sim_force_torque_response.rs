@@ -53,7 +53,7 @@ fn run_recipe(case: &VerificationCase) -> Simulation {
     let mut sim = sb
         .build()
         .unwrap_or_else(|e| panic!("scenario `{}` failed validation: {e:?}", case.name));
-    let mut pre_step = case.pre_step.map(|builder| builder(&init));
+    let mut pre_step = case.pre_step.map(|(builder, _cadence)| builder(&init));
 
     let (sync_dt, num_steps) = match case.reference {
         astrodyn_verif_jeod::verification::CsvReference::SyntheticTimes { dt, num_steps } => {

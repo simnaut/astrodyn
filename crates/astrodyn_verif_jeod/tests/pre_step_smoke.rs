@@ -34,7 +34,8 @@ use astrodyn::{
 };
 use astrodyn_verif_jeod::run_verification::sim_dyncomp;
 use astrodyn_verif_jeod::verification::{
-    CsvReference, InitialConditions, PreStepClosure, SimContext, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, SimContext, Tolerances,
+    VerificationCase,
 };
 use astrodyn_verif_jeod::VerificationCaseExt;
 use glam::DVec3;
@@ -198,7 +199,7 @@ fn tier3_pre_step_smoke_drives_source_position_through_simcontext() {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(build_pre_step),
+        pre_step: Some((build_pre_step, PreStepCadence::PerRecord)),
     };
 
     case.run_and_assert();

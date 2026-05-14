@@ -44,7 +44,7 @@ use astrodyn_bevy::{RotationalStateC, SimulationBuilderBevyExt, TranslationalSta
 use astrodyn_runner::builder::SimulationBuilderExt;
 use astrodyn_verif_jeod::run_verification::{initial_conditions_from, load_reference_states};
 use astrodyn_verif_jeod::tier3_csv;
-use astrodyn_verif_jeod::verification::VerificationCase;
+use astrodyn_verif_jeod::verification::{PreStepCadence, VerificationCase};
 use bevy::prelude::*;
 use uom::si::time::second;
 
@@ -151,8 +151,9 @@ impl VerificationCaseParityExt for VerificationCase {
         //     is reloaded for each side, which is fine: load is
         //     deterministic and the per-step closure body sees the same
         //     numeric inputs regardless.
-        let mut runner_pre_step = self.pre_step.map(|builder| builder(&init));
-        let mut bevy_pre_step = self.pre_step.map(|builder| builder(&init));
+        let cadence = self.pre_step.map(|(_, c)| c);
+        let mut runner_pre_step = self.pre_step.map(|(builder, _)| builder(&init));
+        let mut bevy_pre_step = self.pre_step.map(|(builder, _)| builder(&init));
 
         // 3. Propagate in lockstep. Rather than mirror runner's
         //    `step_until` (which would require a separate Bevy-side
@@ -160,65 +161,132 @@ impl VerificationCaseParityExt for VerificationCase {
         //    of integration ticks per CSV record. With shared `dt` and
         //    aligned start times, the two paths reach the same sim time
         //    after the same tick count — bit-identity is the contract.
+        //
+        //    When the case carries a `pre_step` factory, the cadence
+        //    (set per recipe on [`VerificationCase::pre_step`]) selects
+        //    which sub-shape both runtimes use:
+        //
+        //    * [`PreStepCadence::PerRecord`] — invoke each closure once
+        //      with `t_end = record.time` before stepping the full
+        //      interval. Matches JEOD's per-record scheduler invocation
+        //      for third-body / ephemeris / tide / SRP updates.
+        //    * [`PreStepCadence::PerTick`] — invoke each closure before
+        //      every integration tick with `t_end = sim.elapsed() + dt`.
+        //      Matches JEOD's per-tick scheduler invocation for
+        //      scheduled external force / torque pulses whose on/off
+        //      boundary lives between record cadences.
+        //
+        //    In both shapes the runner and bevy paths must step exactly
+        //    the same number of ticks with the same `t_end` time
+        //    argument passed in, or bit-identity breaks. The per-record
+        //    branch reads `t_end = record.time` directly; the per-tick
+        //    branch derives it from `runner_sim.elapsed() + dt` and
+        //    asserts post-loop that the two runtimes landed on
+        //    `record.time` cleanly (no half-tick drift).
         let duration_s = self.duration.get::<second>();
-        let mut current_time = ref_states[0].time;
         for record in ref_states.iter().skip(1) {
             if duration_s > 0.0 && record.time > duration_s {
                 break;
             }
-            // Number of ticks needed to advance from `current_time` to
-            // `record.time`. Reference CSVs sample at integer multiples
-            // of `dt` so the division should be exact; round to absorb
-            // f64 representation jitter (e.g. 60.0 / 10.0 = 5.999…).
-            let dt_steps = ((record.time - current_time) / dt).round() as usize;
+            // Number of ticks needed to advance from the runner's
+            // current elapsed time to `record.time`. Reference CSVs
+            // sample at integer multiples of `dt` so the division
+            // should be exact; round to absorb f64 representation
+            // jitter (e.g. 60.0 / 10.0 = 5.999…).
+            let dt_steps = ((record.time - runner_sim.elapsed()) / dt).round() as usize;
             assert!(
                 dt_steps > 0,
                 "`{}`: reference record at t={} is not strictly after current sim time {} \
                  (scaled by dt={dt}); CSV must sample at strictly increasing times.",
                 self.name,
                 record.time,
-                current_time,
+                runner_sim.elapsed(),
             );
-            // Run the pre-step hook on both runtimes before propagation
-            // so each sees up-to-date inputs for this record. The runner
-            // side mirrors `VerificationCaseExt::run_and_assert`'s call
-            // shape; the Bevy side wraps `&mut World` in a
-            // [`BevySimContext`] so the same closure body can mutate
-            // either runtime through the [`SimContext`] surface.
-            if let Some(hook) = runner_pre_step.as_mut() {
-                hook(&mut runner_sim, record.time);
-            }
-            if let Some(hook) = bevy_pre_step.as_mut() {
-                let world = app.world_mut();
-                let mut ctx = BevySimContext::<P>::new(
-                    world,
-                    &handles.source_entities,
-                    &handles.body_entities,
-                );
-                hook(&mut ctx, record.time);
+
+            // Per-record cadence: fire each closure once before
+            // stepping. The closure sees `t_end = record.time` matching
+            // the time the runner / bevy paths will reach after the
+            // `dt_steps`-tick loop below.
+            if matches!(cadence, Some(PreStepCadence::PerRecord)) {
+                if let Some(hook) = runner_pre_step.as_mut() {
+                    hook(&mut runner_sim, record.time);
+                }
+                if let Some(hook) = bevy_pre_step.as_mut() {
+                    let world = app.world_mut();
+                    let mut ctx = BevySimContext::<P>::new(
+                        world,
+                        &handles.source_entities,
+                        &handles.body_entities,
+                    );
+                    hook(&mut ctx, record.time);
+                }
             }
 
-            // Advance runner.
-            runner_sim
-                .step_n(dt_steps)
-                .unwrap_or_else(|e| panic!("`{}`: runner step_n failed: {e}", self.name));
-            // Advance bevy. Pipeline systems read the bit-exact f64
-            // `dt` from `IntegrationDtR` (installed by `populate_app`).
-            // `Time<Fixed>` is also advanced (ns-quantized via
-            // `Duration::from_secs_f64`) so any consumer that observes
-            // it sees an approximately matching simulated wall-clock —
-            // exact agreement with the runner is not possible here
-            // because `Duration` is integer nanoseconds, but the
-            // physics path is independent of that rounding so parity
-            // holds bit-identically even when `dt` is irrational in
-            // seconds (e.g. `period / 560 ≈ 9.917 s`).
+            // Per-tick lockstep: advance each runtime by exactly one
+            // `dt`. When the cadence is `PerTick` the closures fire
+            // before each step with `t_end` derived from the runner's
+            // own elapsed time (the authoritative source of truth —
+            // the Bevy adapter reads bit-exact `dt` from
+            // `IntegrationDtR`, so its tick count matches by
+            // construction). When the cadence is `PerRecord` the
+            // closures already fired above; the inner loop is pure
+            // integration.
+            //
+            // The Bevy adapter advances `Time<Fixed>` ns-quantized via
+            // `Duration::from_secs_f64`, which can diverge from the
+            // runner's exact-f64 wall-clock by sub-nanosecond
+            // rounding — but the physics path is independent of that
+            // rounding (every kernel reads `IntegrationDtR`, which
+            // holds the bit-exact f64 `dt`), so parity holds
+            // bit-identically even when `dt` is irrational in seconds.
             for _ in 0..dt_steps {
+                if matches!(cadence, Some(PreStepCadence::PerTick)) {
+                    let t_end = runner_sim.elapsed() + dt;
+                    if let Some(hook) = runner_pre_step.as_mut() {
+                        hook(&mut runner_sim, t_end);
+                    }
+                    if let Some(hook) = bevy_pre_step.as_mut() {
+                        let world = app.world_mut();
+                        let mut ctx = BevySimContext::<P>::new(
+                            world,
+                            &handles.source_entities,
+                            &handles.body_entities,
+                        );
+                        hook(&mut ctx, t_end);
+                    }
+                }
+                runner_sim
+                    .step()
+                    .unwrap_or_else(|e| panic!("`{}`: runner step failed: {e}", self.name));
                 app.world_mut()
                     .resource_mut::<Time<Fixed>>()
                     .advance_by(Duration::from_secs_f64(dt));
                 app.world_mut().run_schedule(FixedUpdate);
             }
-            current_time = record.time;
+            // Witness assertion: rather than forcibly pinning a
+            // separate `tick_time` accumulator to `record.time` —
+            // which would mask a tick-count off-by-one by overwriting
+            // the discrepancy — assert that the runner's own
+            // `elapsed()` lands within a fraction of a tick of
+            // `record.time`. f64 accumulation of `n × dt` can drift by
+            // a few ULPs over a long propagation, so the bound is one
+            // milli-dt; anything larger means
+            // `(record.time - prior_elapsed) / dt` rounded to the
+            // wrong tick count, which is a recipe-construction bug
+            // (CSV record times must align with the integrator's
+            // `dt`).
+            let elapsed_err = (runner_sim.elapsed() - record.time).abs();
+            assert!(
+                elapsed_err <= 1e-3 * dt,
+                "`{}`: runner elapsed time {:.9}s drifted from reference record \
+                 time {:.9}s by {:.3e}s after {} ticks of dt={dt}; CSV record \
+                 times must align with integrator dt for parity to hold.",
+                self.name,
+                runner_sim.elapsed(),
+                record.time,
+                elapsed_err,
+                dt_steps,
+            );
 
             // 4. Assert bit-identity per body, per component. The
             //    bridge `populate_app` keeps `body_entities[i]` parallel
