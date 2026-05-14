@@ -26,13 +26,14 @@ pub fn at_tai_tjt(tai_tjt: f64) -> SimulationTime {
     SimulationTime::new(tai_tjt, default_leap_second_table())
 }
 
-/// Clementine lunar mission epoch: 1994-02-19 00:00:00 UTC.
+/// Clementine lunar mission epoch: 1994-03-01 00:00:00 UTC.
 ///
-/// Anchors `crates/astrodyn_runner/examples/earth_moon.rs` and the
-/// `tier3_sim_earth_moon` Tier 3 case.
+/// Matches the JEOD `SIM_Earth_Moon RUN_clem` reference scenario
+/// (`JD = 2449412.5`, `MJD = 49412`, `TJT = MJD - 40000 = 9412`).
+/// TAI-UTC at this instant is 28 s (the 29th leap second was added
+/// 1994-07-01), so TAI TJT = 9412 + 28/86400.
 pub fn clementine_1994() -> SimulationTime {
-    // TAI-UTC = 28s in 1994. tai_tjt encodes the offset internally.
-    at_tai_tjt(8_815.000_324_074_073)
+    at_tai_tjt(9_412.0 + 28.0 / 86_400.0)
 }
 
 /// Dawn-at-Mars epoch: 2009-02-17 23:00:00 UTC (TAI-UTC = 34s).
@@ -209,5 +210,26 @@ mod tests {
             "at_utc(CC8) tai_tjt = {}, expected {expected_tai_tjt}, err = {err}",
             t.tai_tjt_at_epoch
         );
+    }
+
+    /// [`clementine_1994`] must anchor at the JEOD `SIM_Earth_Moon RUN_clem`
+    /// epoch (1994-03-01 00:00:00 UTC, TAI-UTC = 28 s). The recipe and the
+    /// hand-rolled `SimulationTime::new(9412.0 + 28.0/86400.0, …)` in
+    /// `astrodyn_verif_jeod::setups::earth_moon_clem` must yield identical
+    /// TAI TJTs so the recipe can serve as the canonical entry point.
+    #[test]
+    fn clementine_1994_matches_run_clem_epoch() {
+        let from_recipe = clementine_1994();
+        let expected_tai_tjt = 9_412.0 + 28.0 / 86_400.0;
+        let err = (from_recipe.tai_tjt_at_epoch - expected_tai_tjt).abs();
+        assert!(
+            err < 1e-12,
+            "clementine_1994 tai_tjt = {}, expected {expected_tai_tjt}, err = {err}",
+            from_recipe.tai_tjt_at_epoch
+        );
+        // Cross-check against the calendar form. UTC -> TAI adds 28 s,
+        // which `at_utc` looks up from the default leap-second table.
+        let from_utc = at_utc(1994, 3, 1, 0, 0, 0.0);
+        assert_eq!(from_recipe.tai_tjt_at_epoch, from_utc.tai_tjt_at_epoch);
     }
 }

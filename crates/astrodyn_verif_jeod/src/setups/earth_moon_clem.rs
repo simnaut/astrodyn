@@ -87,8 +87,9 @@ pub fn earth_moon_clem(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Simula
     // JEOD `SIM_Earth_Moon RUN_clem` epoch: 1994-03-01 00:00:00 UTC.
     //   JD = 2449412.5; MJD = 49412.0; TJT = MJD - 40000 = 9412.0
     //   TAI-UTC = 28 s at 1994-03-01 (29th leap second added 1994-07-01)
-    // NOT `epoch::clementine_1994()` — that recipe is 1994-02-19 and its
-    // doc comment incorrectly claims to anchor this Tier 3 case. See #458.
+    // Kept as an explicit literal so this setup module is self-documenting
+    // for future JEOD-reference regens — it matches
+    // [`astrodyn::recipes::epoch::clementine_1994`] bit-for-bit.
     let clem_tai_tjt = 9412.0 + 28.0 / 86400.0;
     let time = SimulationTime::new(clem_tai_tjt, astrodyn::default_leap_second_table());
     let epoch_tdb_jd = time.tdb_julian_date();
@@ -168,4 +169,20 @@ pub fn earth_moon_clem(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Simula
         ..Default::default()
     });
     sb
+}
+
+#[cfg(test)]
+mod tests {
+    use astrodyn::recipes::epoch;
+
+    /// The explicit `SimulationTime::new(9412.0 + 28.0/86400.0, …)`
+    /// literal in [`earth_moon_clem`] must agree bit-for-bit with the
+    /// recipe-layer entry [`epoch::clementine_1994`]. If a future edit
+    /// drifts one of them, this guard fails before any Tier 3 run.
+    #[test]
+    fn epoch_literal_matches_recipe_clementine_1994() {
+        let literal_tai_tjt = 9412.0 + 28.0 / 86400.0;
+        let recipe_tai_tjt = epoch::clementine_1994().tai_tjt_at_epoch;
+        assert_eq!(literal_tai_tjt, recipe_tai_tjt);
+    }
 }
