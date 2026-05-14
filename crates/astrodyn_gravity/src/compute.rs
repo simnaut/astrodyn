@@ -17,6 +17,65 @@ use glam::{DMat3, DVec3};
 
 use crate::gravity_source::{GravityModel, GravitySource};
 
+/// Decomposed output of the gravity kernel.
+///
+/// Splitting the contribution into a planet-fixed spherical-harmonics
+/// piece and an inertial point-mass piece lets the caller apply the
+/// inverse rotation (`t_parent_this^T`) exactly once across the four
+/// RK4 substages + one environment evaluation per step, instead of once
+/// per kernel entry. The `t_parent_this` matrix is updated once per
+/// step in the ephemeris phase (e.g. via `MoonDE421` BPC libration);
+/// hoisting the inverse rotation to the caller amortizes the transpose
+/// across all kernel calls that share the same rotation.
+///
+/// Bit-identity: the f64 operations at the kernel boundary are the
+/// same — only the *site* of the `vector3_transform_transpose` and
+/// `matrix3x3_transpose_transform_matrix` calls moved. The point-mass
+/// piece never needed the rotation in the first place and is returned
+/// in inertial coordinates unchanged.
+#[derive(Debug, Clone, Default)]
+pub struct GravityKernelOutput {
+    /// Spherical-harmonics contribution in the planet-fixed frame
+    /// (`acc_pf`, `grad_pf`, `pot`). `None` for point-mass sources or
+    /// when the SH path is bypassed (e.g. effective degree 0).
+    pub sh_pfix: Option<GravityAcceleration>,
+    /// Point-mass contribution already in the inertial frame. `None`
+    /// when `perturbing_only` is true (which skips point-mass) or when
+    /// the SH path was selected but produced no point-mass piece.
+    pub pm_inertial: Option<GravityAcceleration>,
+}
+
+impl GravityKernelOutput {
+    /// Apply the inverse rotation to the SH piece (if any) and combine
+    /// with the point-mass piece (if any) to produce a single
+    /// inertial-frame [`GravityAcceleration`].
+    ///
+    /// This is the inverse of the decomposition the kernel produces:
+    /// callers that don't want to hoist the inverse rotation themselves
+    /// can call this to recover the pre-hoist combined form. The
+    /// `compute_gradient` flag mirrors the kernel's gradient gate so
+    /// the caller doesn't pay for the matrix transform when the
+    /// gradient is unused.
+    #[inline]
+    pub fn into_inertial(
+        self,
+        t_parent_this: &DMat3,
+        compute_gradient: bool,
+    ) -> GravityAcceleration {
+        let mut out = self.pm_inertial.unwrap_or_default();
+        if let Some(sh) = self.sh_pfix {
+            // Vector3::transform_transpose(T_parent_this, sh.grav_accel)
+            out.grav_accel += vector3_transform_transpose(t_parent_this, sh.grav_accel);
+            if compute_gradient {
+                // Matrix3x3::transpose_transform_matrix(T_parent_this, sh.grav_grad)
+                out.grav_grad += matrix3x3_transpose_transform_matrix(t_parent_this, &sh.grav_grad);
+            }
+            out.grav_pot += sh.grav_pot;
+        }
+        out
+    }
+}
+
 /// Compute point-mass gravitational acceleration, gradient, and potential.
 /// Position is the body's position relative to the gravity source center.
 pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
@@ -65,19 +124,26 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
 
 /// Dispatch gravity computation based on model type.
 ///
-/// Returns the gravitational acceleration, gradient, and potential.
+/// Returns the spherical-harmonics piece in the planet-fixed frame and
+/// the point-mass piece in the inertial frame, decomposed in a
+/// [`GravityKernelOutput`]. Callers apply the inverse rotation via
+/// [`GravityKernelOutput::into_inertial`] (or hoist it across multiple
+/// kernel calls that share the same `t_parent_this`).
 ///
 /// For `PointMass`, `position` is relative to the source center in any frame;
 /// `t_parent_this`, truncation, and gradient parameters are ignored.
 ///
 /// For `SphericalHarmonics`, `position` is in inertial coordinates and
 /// `t_parent_this` is the inertial-to-planet-fixed rotation matrix.
-/// Matching JEOD's `GravityControls::gravitation`, this function internally
-/// transforms position to planet-fixed, computes gravity, and transforms the
-/// result back to inertial. Result is in the inertial frame.
+/// Matching JEOD's `GravityControls::gravitation`, the kernel internally
+/// transforms position to planet-fixed and runs the SH recurrence
+/// there. The inverse transform on the SH output is hoisted to the
+/// caller so it can amortize the `t_parent_this^T` work across the four
+/// RK4 substages + one environment evaluation per step.
 ///
-/// When `perturbing_only` is false, the result includes point-mass + nonspherical.
-/// When true, only the nonspherical perturbation is returned (matching JEOD's
+/// When `perturbing_only` is false, both pieces are populated (the
+/// caller combines them into point-mass + nonspherical). When true,
+/// only the nonspherical perturbation is returned (matching JEOD's
 /// `perturbation_only` mode for third-body differential acceleration).
 ///
 /// `degree`/`order` truncate the harmonics evaluation.
@@ -100,13 +166,16 @@ pub fn gravitation(
     gradient_order: usize,
     delta_c20: f64,
     has_delta_coeffs: bool,
-) -> GravityAcceleration {
+) -> GravityKernelOutput {
     match &source.model {
         GravityModel::PointMass => {
             if perturbing_only {
-                GravityAcceleration::default()
+                GravityKernelOutput::default()
             } else {
-                calc_spherical(source.mu, position)
+                GravityKernelOutput {
+                    sh_pfix: None,
+                    pm_inertial: Some(calc_spherical(source.mu, position)),
+                }
             }
         }
         GravityModel::SphericalHarmonics(_) => {
@@ -161,13 +230,16 @@ pub fn gravitation_with_scratch(
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
     delta_c20: f64,
     has_delta_coeffs: bool,
-) -> GravityAcceleration {
+) -> GravityKernelOutput {
     match &source.model {
         GravityModel::PointMass => {
             if perturbing_only {
-                GravityAcceleration::default()
+                GravityKernelOutput::default()
             } else {
-                calc_spherical(source.mu, position)
+                GravityKernelOutput {
+                    sh_pfix: None,
+                    pm_inertial: Some(calc_spherical(source.mu, position)),
+                }
             }
         }
         GravityModel::SphericalHarmonics(data) => {
@@ -198,26 +270,20 @@ pub fn gravitation_with_scratch(
                     has_delta_coeffs,
                 );
 
-            // Vector3::transform_transpose(T_parent_this, body_grav_accel)
-            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
-
-            // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial =
-                matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
-
-            if perturbing_only {
-                GravityAcceleration {
-                    grav_accel: sh_accel_inertial,
-                    grav_grad: sh_gradient_inertial,
-                    grav_pot: sh_pf.grav_pot,
-                }
+            // SH stays in planet-fixed; the caller applies the inverse
+            // rotation. Same f64 ops at the boundary as the in-kernel
+            // form — `vector3_transform_transpose` and
+            // `matrix3x3_transpose_transform_matrix` just moved one
+            // frame up the stack so the caller can amortize the work.
+            let pm_inertial = if perturbing_only {
+                None
             } else {
-                let pm = calc_spherical(source.mu, position);
-                GravityAcceleration {
-                    grav_accel: pm.grav_accel + sh_accel_inertial,
-                    grav_grad: pm.grav_grad + sh_gradient_inertial,
-                    grav_pot: pm.grav_pot + sh_pf.grav_pot,
-                }
+                Some(calc_spherical(source.mu, position))
+            };
+
+            GravityKernelOutput {
+                sh_pfix: Some(sh_pf),
+                pm_inertial,
             }
         }
     }
@@ -356,7 +422,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(
+        let kernel_out = gravitation(
             &source,
             pos,
             &DMat3::IDENTITY,
@@ -371,9 +437,13 @@ mod tests {
         );
         let direct = calc_spherical(EARTH_MU, pos);
 
-        assert_eq!(result.grav_accel, direct.grav_accel);
-        assert_eq!(result.grav_pot, direct.grav_pot);
-        assert_eq!(result.grav_grad, direct.grav_grad);
+        // Point-mass returns only the inertial piece — no SH, no
+        // rotation needed.
+        assert!(kernel_out.sh_pfix.is_none());
+        let pm = kernel_out.pm_inertial.expect("point-mass piece");
+        assert_eq!(pm.grav_accel, direct.grav_accel);
+        assert_eq!(pm.grav_pot, direct.grav_pot);
+        assert_eq!(pm.grav_grad, direct.grav_grad);
     }
 
     #[test]

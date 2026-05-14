@@ -80,7 +80,11 @@ fn bench_rk4_sixdof_step(c: &mut Criterion) {
     group.bench_function("degree60_accel", |b| {
         let accel = |s: &SixDofState, _: f64| -> DVec3 {
             let mut sc = scratch.borrow_mut();
-            gravitation_with_scratch(
+            // Apply the inverse rotation here (matching what the
+            // production caller does on every kernel call). The bench
+            // measures the per-substage cost the kernel plus caller
+            // pay together — same total work as the pre-hoist form.
+            let kernel_out = gravitation_with_scratch(
                 &moon_src,
                 s.trans.position,
                 &t_eye,
@@ -93,8 +97,8 @@ fn bench_rk4_sixdof_step(c: &mut Criterion) {
                 &mut sc,
                 0.0,
                 false,
-            )
-            .grav_accel
+            );
+            kernel_out.into_inertial(&t_eye, false).grav_accel
         };
         let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
         b.iter(|| {
