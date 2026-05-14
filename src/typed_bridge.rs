@@ -146,6 +146,20 @@ pub fn mass_raw_to_self_ref(mp: &MassProperties) -> MassPropertiesTyped<SelfRef>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glam::DMat3;
+
+    /// Bit-exact comparison for `DMat3` — the regression class the
+    /// byte-identity tests below guard against is sub-ULP divergence,
+    /// which standard `f64 ==` flattens by treating `0.0 == -0.0` and
+    /// (more relevantly) by ignoring the lowest mantissa bits that
+    /// integrate to multi-kilometre position drift on long-arc runs.
+    /// Compare each lane's underlying bit pattern via `f64::to_bits`.
+    fn dmat3_byte_eq(a: DMat3, b: DMat3) -> bool {
+        a.to_cols_array()
+            .iter()
+            .zip(b.to_cols_array().iter())
+            .all(|(x, y)| x.to_bits() == y.to_bits())
+    }
 
     /// `MassPropertiesTyped::<V>::new(mass)` and the raw→typed bridge
     /// (`MassProperties::new(mass)` → `mass_raw_to_self_ref`, which routes
@@ -186,14 +200,34 @@ mod tests {
     fn point_mass_inverse_inertia_matches_across_construction_paths() {
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
         let b = mass_raw_to_self_ref(&MassProperties::new(424.0));
-        // Cache fields — the primary regression class.
-        assert_eq!(a.inverse_inertia, b.inverse_inertia);
-        assert_eq!(a.inverse_mass, b.inverse_mass);
+        // Cache fields — the primary regression class. Compare via
+        // `to_bits()` (through `dmat3_byte_eq`) because `DMat3`/`f64`
+        // `==` treats `0.0 == -0.0` as equal and silently flattens
+        // the sub-ULP differences this test exists to detect.
+        assert!(
+            dmat3_byte_eq(a.inverse_inertia, b.inverse_inertia),
+            "inverse_inertia diverges between construction paths: \
+             a={:?} b={:?}",
+            a.inverse_inertia,
+            b.inverse_inertia,
+        );
+        assert_eq!(a.inverse_mass.to_bits(), b.inverse_mass.to_bits());
         // Stored inputs and derived storage fields.
         assert_eq!(a.mass, b.mass);
-        assert_eq!(a.inertia.as_dmat3(), b.inertia.as_dmat3());
+        assert!(
+            dmat3_byte_eq(a.inertia.as_dmat3(), b.inertia.as_dmat3()),
+            "inertia diverges between construction paths: a={:?} b={:?}",
+            a.inertia.as_dmat3(),
+            b.inertia.as_dmat3(),
+        );
         assert_eq!(a.center_of_mass.raw_si(), b.center_of_mass.raw_si());
-        assert_eq!(a.t_parent_this, b.t_parent_this);
+        assert!(
+            dmat3_byte_eq(a.t_parent_this, b.t_parent_this),
+            "t_parent_this diverges between construction paths: \
+             a={:?} b={:?}",
+            a.t_parent_this,
+            b.t_parent_this,
+        );
         // Bookkeeping flag — constructors leave caches consistent, so
         // `dirty` is `false` on both sides.
         assert_eq!(a.dirty, b.dirty);
@@ -219,13 +253,26 @@ mod tests {
     /// would still let it pass (`assert_eq!(ZERO, ZERO)` and
     /// `assert_eq!(IDENTITY, IDENTITY)` are vacuous). This test
     /// constructs a raw `MassProperties` whose fields each carry a
-    /// distinct, distinguishable value, then asserts the
-    /// `mass_raw_to_self_ref` bridge propagates every one of them
-    /// verbatim — the field-by-field assertions are the field-drop
-    /// regression fence.
+    /// distinct, distinguishable value, then asserts the bridge's
+    /// actual contract — not "verbatim propagation of every field"
+    /// (`mass_raw_to_typed` intentionally rebuilds via
+    /// `MassPropertiesTyped::with_inertia`, which recomputes
+    /// `inverse_mass = 1/mass` and `inverse_inertia = inertia⁻¹` and
+    /// resets `dirty = false`):
+    ///
+    /// 1. The input cache fields (`inverse_mass`, `inverse_inertia`)
+    ///    are constructed self-consistently with `mass` and `inertia`,
+    ///    so the rebuilt typed sibling's caches equal the raw inputs.
+    /// 2. The structural inputs (`mass`, `inertia`, `position` →
+    ///    `center_of_mass`, `t_parent_this`) propagate from the raw
+    ///    struct unchanged — these are the fields the bridge carries
+    ///    through verbatim, and the field-by-field assertions are the
+    ///    field-drop regression fence for them.
+    /// 3. `dirty` is canonicalised to `false` on the typed side because
+    ///    `with_inertia` always emits a clean cache.
     #[test]
     fn non_default_mass_props_round_trip_across_construction_paths() {
-        use glam::{DMat3, DVec3};
+        use glam::DVec3;
 
         let mass = 424.0_f64;
         // Non-diagonal, well-conditioned inertia: diag conjugated by a
@@ -257,13 +304,31 @@ mod tests {
         let typed = mass_raw_to_self_ref(&raw);
 
         // Every non-trivial field is asserted distinctly so a dropped
-        // field can't slide through with a default value.
+        // field can't slide through with a default value. DMat3 fields
+        // compare via `to_bits()` (through `dmat3_byte_eq`) so a
+        // bridge that silently lost the lowest mantissa bits — the
+        // sub-ULP regression class — is rejected.
         assert_eq!(typed.mass.get::<kilogram>(), raw.mass);
-        assert_eq!(typed.inverse_mass, raw.inverse_mass);
-        assert_eq!(typed.inertia.as_dmat3(), raw.inertia);
-        assert_eq!(typed.inverse_inertia, raw.inverse_inertia);
+        assert_eq!(typed.inverse_mass.to_bits(), raw.inverse_mass.to_bits());
+        assert!(
+            dmat3_byte_eq(typed.inertia.as_dmat3(), raw.inertia),
+            "inertia diverges from raw input: typed={:?} raw={:?}",
+            typed.inertia.as_dmat3(),
+            raw.inertia,
+        );
+        assert!(
+            dmat3_byte_eq(typed.inverse_inertia, raw.inverse_inertia),
+            "inverse_inertia diverges from raw input: typed={:?} raw={:?}",
+            typed.inverse_inertia,
+            raw.inverse_inertia,
+        );
         assert_eq!(typed.center_of_mass.raw_si(), raw.position);
-        assert_eq!(typed.t_parent_this, raw.t_parent_this);
+        assert!(
+            dmat3_byte_eq(typed.t_parent_this, raw.t_parent_this),
+            "t_parent_this diverges from raw input: typed={:?} raw={:?}",
+            typed.t_parent_this,
+            raw.t_parent_this,
+        );
         assert_eq!(typed.dirty, raw.dirty);
 
         // Negative controls: confirm the values are actually
