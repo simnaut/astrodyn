@@ -352,19 +352,35 @@ impl VerificationCaseExt for VerificationCase {
                     // exit boundary, but here we already know an
                     // integer number of ticks have run, so the only
                     // legitimate remainder is f64 accumulation noise.
-                    // A few ULPs of `record.time` (plus a tiny absolute
-                    // floor for the t=0 case) bounds that noise and
-                    // still rejects a 0.6-tick misalignment by ~17
-                    // orders of magnitude.
-                    let align_tol = record.time.abs() * (4.0 * f64::EPSILON) + 1e-12;
+                    //
+                    // `sim.elapsed()` is produced by `n_ticks` repeated
+                    // `simtime += dt` increments inside
+                    // `SimulationTime::advance`. Each `+=` introduces
+                    // up to ~0.5 ULP of rounding, so the worst-case
+                    // accumulated drift is roughly `n_ticks · eps · dt`
+                    // — bounded by tick count, not by absolute time.
+                    // For exact-power-of-two `dt` (e.g. `dt = 1/32 s`
+                    // in SIM_dyncomp's S_define) this is identically
+                    // zero, but for inexact f64 values (e.g. `dt = 0.1`)
+                    // accumulation grows linearly with `n_ticks`. Bound
+                    // the tolerance by that per-tick model with a ×4
+                    // safety factor, plus a small absolute floor for
+                    // the `record.time = 0` case. The bound still
+                    // rejects a 0.6-tick misalignment by many orders
+                    // of magnitude (0.6·dt versus ~n·eps·dt·4).
+                    let n_ticks = (record.time.abs() / dt).round();
+                    let align_tol = (n_ticks + 1.0) * (4.0 * f64::EPSILON) * dt + 1e-12;
                     let remainder = record.time - sim.elapsed();
                     assert!(
                         remainder.abs() <= align_tol,
                         "{}: PreStepCadence::PerTick expects record cadence to be an integer \
                          multiple of dt; record.time={record_time} leaves remainder {remainder} \
-                         after per-tick stepping (dt={dt}, tolerance={align_tol:e})",
+                         after {n_ticks_int} per-tick steps (sim.elapsed()={elapsed}, dt={dt}, \
+                         tolerance={align_tol:e})",
                         self.name,
                         record_time = record.time,
+                        n_ticks_int = n_ticks as u64,
+                        elapsed = sim.elapsed(),
                     );
                 }
                 Some((hook, PreStepCadence::PerRecord)) => {
