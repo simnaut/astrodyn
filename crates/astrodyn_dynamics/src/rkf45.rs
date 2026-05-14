@@ -1,9 +1,14 @@
 // JEOD_INV: TS.01 — the integrator stage kernels operate on the raw
 // `SixDofState` storage shape (one anonymous vehicle per call), so the
-// typed-seam lifts to `BodyAttitude<SelfRef>` /
-// `AngularVelocity<BodyFrame<SelfRef>>` here use the per-entity
-// storage-boundary wildcard; see `docs/JEOD_invariants.md` row TS.01
-// and the lint at `tests/self_ref_self_planet_discipline.rs`.
+// typed-seam lift to `AngularVelocity<BodyFrame<SelfRef>>` here uses
+// the per-entity storage-boundary wildcard. The quaternion stays a
+// raw `JeodQuat` by design: RK4/RKF45 substages produce intermediate
+// quaternion accumulator values that are *not* unit-norm, so the
+// witness-gated `BodyAttitude<V>` constructor would panic on
+// legitimate mid-stage state — only ω is the kind-distinct frame
+// invariant that benefits from compile-time checking here. See
+// `docs/JEOD_invariants.md` row TS.01 and the lint at
+// `tests/self_ref_self_planet_discipline.rs`.
 //! Runge-Kutta-Fehlberg 4(5) integrator.
 //!
 //! Port of JEOD/Trick ER7 `rkf45_butcher_tableau.cc` coefficients and
