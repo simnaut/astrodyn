@@ -2,8 +2,9 @@
 //! via [`VerificationCaseParityExt::run_and_assert_parity`] (#389).
 //!
 //! Drives the same
-//! [`crate::run_verification::sim_ref_attach::run_matrix`] recipe the
-//! `tier3_sim_ref_attach_matrix` test does, materializing it into both
+//! [`astrodyn_verif_jeod::run_verification::sim_ref_attach::run_matrix`]
+//! recipe the `tier3_sim_ref_attach_matrix` test does, materializing it
+//! into both
 //! `astrodyn_runner::Simulation` and `astrodyn_bevy::App` and asserting
 //! per-component `f64::to_bits()` equality at every reference-CSV
 //! checkpoint. The recipe's `pre_step` schedules the attach to
