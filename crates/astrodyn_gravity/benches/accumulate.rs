@@ -85,7 +85,13 @@ fn bench_accumulate_gravity(c: &mut Criterion) {
             &(src, pos, deg),
             |b, &(src, pos, deg)| {
                 b.iter(|| {
-                    let acc = gravitation_with_scratch(
+                    // Apply the inverse rotation here (matching what
+                    // the production caller does on every kernel
+                    // call). After hoisting this is a separate step
+                    // the caller controls, so including it in the
+                    // bench keeps the timed region comparable to the
+                    // pre-hoist combined kernel cost.
+                    let kernel_out = gravitation_with_scratch(
                         black_box(src),
                         black_box(pos),
                         black_box(&t_eye),
@@ -99,6 +105,7 @@ fn bench_accumulate_gravity(c: &mut Criterion) {
                         /* delta_c20        */ 0.0,
                         /* has_delta_coeffs */ false,
                     );
+                    let acc = kernel_out.into_inertial(&t_eye, false);
                     black_box(acc)
                 });
             },
