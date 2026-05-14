@@ -174,13 +174,20 @@ fn matrix_pre_step(_init: &InitialConditions) -> PreStepClosure {
 /// `RUN_ref_attach_matrix` — direct `(offset, T)` attach to Earth.pfix.
 ///
 /// Pairs with the JEOD-generated
-/// `ref_attach_matrix_ref_attach_state.csv` reference. Tolerances are
-/// the literal values from the hand-rolled `tier3_sim_ref_attach.rs`
-/// matrix test, transcribed here verbatim. The split-tolerance
-/// pre/post-attach assertion of the hand-rolled test collapses to the
-/// looser post-attach bound — the pre-attach errors are sub-millimetre
-/// f64-roundoff (well under the 16 m post-attach bound), so a single
-/// global max-error check is equivalent in detection strength.
+/// `ref_attach_matrix_ref_attach_state.csv` reference. Tolerances here
+/// are the post-attach values (16 m position, 1.5e-3 m/s velocity);
+/// `CrossvalReport::assert_*` asserts a single max-abs error over the
+/// entire trajectory, so the pre-attach window (0..50 s linear
+/// extrapolation, sub-millimetre f64-roundoff) is permitted up to the
+/// same loose bound when driven through this recipe alone. The tier3
+/// wrapper (`tier3_sim_ref_attach.rs::tier3_sim_ref_attach_matrix_pre_attach_segment`)
+/// re-runs the pre-attach 0..50 s window with the tight (1e-3 m,
+/// 1e-9 m/s) bound the hand-rolled test enforced, so detection strength
+/// across the pair of tier3 tests matches the original split-tolerance
+/// assertion. The parity wrapper exercises only the recipe path,
+/// because the runner↔bevy bit-identity argument it carries does not
+/// need the absolute pre-attach bound — any drift between adapters
+/// would manifest as bit divergence at the parity layer.
 pub fn run_matrix() -> VerificationCase {
     VerificationCase {
         name: "tier3_sim_ref_attach_matrix",

@@ -238,6 +238,72 @@ fn tier3_sim_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert();
 }
 
+// `sim_ref_attach::run_matrix` configures a single trajectory tolerance
+// (16 m position, 1.5e-3 m/s velocity) sized for the post-attach
+// frame-composition residual. `CrossvalReport::assert_*` asserts a
+// single max-abs error over the *entire* trajectory, so the pre-attach
+// 0..50 s window — pure linear extrapolation with sub-millimetre
+// f64-roundoff error — is held to the same loose bound by the recipe
+// path alone. This dedicated pre-attach test re-runs the 0..50 s
+// window and asserts the tight (1e-3 m, 1e-9 m/s) bound the original
+// hand-rolled split-tolerance test enforced, restoring detection
+// strength on the free-flight portion without disrupting the recipe's
+// adapter-neutral surface (the parity wrapper exercises only the
+// recipe path; pre-attach drift between adapters would already
+// manifest as bit divergence at the parity layer).
+
+#[test]
+fn tier3_sim_ref_attach_matrix_pre_attach_segment() {
+    let rows = load_state_csv("ref_attach_matrix_ref_attach_state.csv");
+
+    // Build the same scenario the recipe drives, but never fire the
+    // attach — the closure stays dormant by running only to
+    // ATTACH_TIME_S, which is the row JEOD logs before BodyAttach
+    // fires.
+    let mut sim = build_ref_attach_sim();
+
+    let mut max_pre_pos_err = 0.0_f64;
+    let mut max_pre_vel_err = 0.0_f64;
+
+    for row in &rows {
+        if row.time > ATTACH_TIME_S {
+            break;
+        }
+        // The CSV samples at 0.5 s but integration runs at dt=1.0 s
+        // (Trick `IntegLoop ... DYNAMICS=1.0`); skip the half-second
+        // rows so the comparison is at integrator-output cadence.
+        if !CrossvalReport::is_on_integrator_cadence(row.time, DT_S) {
+            continue;
+        }
+        sim.step_until(row.time).expect("step_until must not fail");
+
+        let out = sim.body(0);
+        let pos_err = (out.trans.position.raw_si() - row.position).length();
+        let vel_err = (out.trans.velocity.raw_si() - row.velocity).length();
+        max_pre_pos_err = max_pre_pos_err.max(pos_err);
+        max_pre_vel_err = max_pre_vel_err.max(vel_err);
+    }
+
+    println!(
+        "tier3_sim_ref_attach_matrix_pre_attach errors (m, m/s): \
+         pre_pos={max_pre_pos_err:.6e}, pre_vel={max_pre_vel_err:.6e}"
+    );
+
+    // SIM_ref_attach is JEOD's initialization-only verif sim with no
+    // IntegLoop evaluating gravity, so the logged trajectory is pure
+    // linear extrapolation `pos = pos₀ + v · t`. We mirror with zero
+    // GravityControl; the residual is the f64-roundoff accumulation
+    // across 50 s of `position += velocity * dt` — sub-millimetre.
+    assert!(
+        max_pre_pos_err < 1e-3,
+        "pre-attach position error too large: {max_pre_pos_err:.3e} m"
+    );
+    assert!(
+        max_pre_vel_err < 1e-9,
+        "pre-attach velocity error too large: {max_pre_vel_err:.3e} m/s"
+    );
+}
+
 // ════════════════════════════════════════════════════════════════════
 // RUN_ref_attach_pt2pt — attach to Earth.pfix at t=50 by matching
 // mass-point `target.attach1` to `Earth.pfix`'s origin via
