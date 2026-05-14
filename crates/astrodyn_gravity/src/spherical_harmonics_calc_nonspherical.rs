@@ -12,7 +12,7 @@ use glam::{DMat3, DVec3};
 // `PlanetFixed<P>: Frame` follows from the blanket
 // `impl<P: Planet> Frame for PlanetFixed<P>` in astrodyn_quantities.
 
-use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+use crate::spherical_harmonics_gravity_source::{tri_idx, SphericalHarmonicsData};
 
 /// sqrt(f64::MIN_POSITIVE) — underflow guard matching JEOD's SQRT_DBL_MIN.
 const SQRT_DBL_MIN: f64 = 1.4916681462400413e-154;
@@ -306,7 +306,7 @@ pub fn calc_nonspherical_with_scratch(
     // Stack-allocated to avoid heap allocation in the hot path.
     let mut local_cnm = [0.0_f64; 3];
     if degree >= 2 {
-        let src = &data.cnm[2];
+        let src = data.cnm_row(2);
         let n = src.len().min(3);
         local_cnm[..n].copy_from_slice(&src[..n]);
     }
@@ -327,9 +327,20 @@ pub fn calc_nonspherical_with_scratch(
     for ii in 2..=degree {
         let ii_grad_deg_nonzero = ii <= gradient_degree && gradient_degree > 0;
 
-        // Get coefficient pointers for this degree
-        let c_ii: &[f64] = if ii == 2 { &local_cnm } else { &data.cnm[ii] };
-        let s_ii: &[f64] = &data.snm[ii];
+        // Borrow contiguous rows once per `ii`. Flat triangular storage
+        // means each row is a single cache-friendly slice; the inner
+        // `jj` loop then indexes a `&[f64]` directly instead of paying
+        // the row-pointer load that `Vec<Vec<f64>>` would impose.
+        let c_ii: &[f64] = if ii == 2 {
+            &local_cnm
+        } else {
+            data.cnm_row(ii)
+        };
+        let s_ii: &[f64] = data.snm_row(ii);
+        let xi_ii: &[f64] = &data.xi[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
+        let eta_ii: &[f64] = &data.eta[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
+        let zeta_ii: &[f64] = &data.zeta[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
+        let upsilon_ii: &[f64] = &data.upsilon[tri_idx(ii, 0)..tri_idx(ii, 0) + ii + 1];
 
         rad_div_r_nth *= rad_div_r;
 
@@ -348,17 +359,17 @@ pub fn calc_nonspherical_with_scratch(
         *scratch.pnm_mut(ii, ii - 1) = epsilon * data.nrdiag[ii];
 
         // P(n,1) term, equation (7-12)
-        *scratch.pnm_mut(ii, 1) = data.xi[ii][1] * epsilon * scratch.pnm(ii - 1, 1)
-            - data.eta[ii][1] * scratch.pnm(ii - 2, 1);
+        *scratch.pnm_mut(ii, 1) =
+            xi_ii[1] * epsilon * scratch.pnm(ii - 1, 1) - eta_ii[1] * scratch.pnm(ii - 2, 1);
 
         let mut sum_v_n = scratch.pnm(ii, 0) * c_ii[0];
-        let mut sum_h_n = scratch.pnm(ii, 1) * c_ii[0] * data.zeta[ii][0];
+        let mut sum_h_n = scratch.pnm(ii, 1) * c_ii[0] * zeta_ii[0];
         let mut sum_gam_n = sum_v_n * dbl_iip1;
 
         // Equation (7-12) for jj=2..ii-2
         for jj in 2..=(ii.saturating_sub(2)) {
-            *scratch.pnm_mut(ii, jj) = data.xi[ii][jj] * epsilon * scratch.pnm(ii - 1, jj)
-                - data.eta[ii][jj] * scratch.pnm(ii - 2, jj);
+            *scratch.pnm_mut(ii, jj) = xi_ii[jj] * epsilon * scratch.pnm(ii - 1, jj)
+                - eta_ii[jj] * scratch.pnm(ii - 2, jj);
         }
 
         let mut sum_h_grad_n = 0.0;
@@ -368,9 +379,9 @@ pub fn calc_nonspherical_with_scratch(
         let mut sum_l_n = 0.0;
 
         if ii_grad_deg_nonzero {
-            sum_h_grad_n = scratch.pnm(ii, 1) * c_ii[0] * data.zeta[ii][0];
+            sum_h_grad_n = scratch.pnm(ii, 1) * c_ii[0] * zeta_ii[0];
             sum_gam_grad_n = sum_v_n * dbl_iip1;
-            sum_m_n = scratch.pnm(ii, 2) * c_ii[0] * data.upsilon[ii][0];
+            sum_m_n = scratch.pnm(ii, 2) * c_ii[0] * upsilon_ii[0];
             sum_p_n = sum_h_grad_n * dbl_iip1;
             sum_l_n = sum_gam_grad_n * (dbl_iip1 + 1.0);
         }
@@ -424,7 +435,7 @@ pub fn calc_nonspherical_with_scratch(
                 sum_v_n += piijj_x_btilde;
 
                 if jj < ii {
-                    let zetaiijj_x_piijjp1 = data.zeta[ii][jj] * scratch.pnm(ii, jj + 1);
+                    let zetaiijj_x_piijjp1 = zeta_ii[jj] * scratch.pnm(ii, jj + 1);
                     sum_h_n += zetaiijj_x_piijjp1 * b_tilde;
                     if ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                         sum_h_grad_n += zetaiijj_x_piijjp1 * b_tilde;
@@ -441,7 +452,7 @@ pub fn calc_nonspherical_with_scratch(
                 if ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                     sum_gam_grad_n += (dbl_jj + dbl_iip1) * piijj_x_btilde;
                     sum_l_n += (dbl_jj + dbl_iip1) * (dbl_jjp1 + dbl_iip1) * piijj_x_btilde;
-                    sum_m_n += scratch.pnm(ii, jj + 2) * b_tilde * data.upsilon[ii][jj];
+                    sum_m_n += scratch.pnm(ii, jj + 2) * b_tilde * upsilon_ii[jj];
                     sum_s_n += (dbl_jj + dbl_iip1) * jj_x_piijj * b_tilde_m1;
                     sum_t_n -= (dbl_jj + dbl_iip1) * jj_x_piijj * a_tilde_m1;
                 }

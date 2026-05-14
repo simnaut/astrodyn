@@ -7,10 +7,39 @@
 //! from JEOD v5.4.0. Coefficients are normalized; the
 //! [`crate::spherical_harmonics_calc_nonspherical`] kernel expects the
 //! Gottlieb helper arrays to be filled by [`SphericalHarmonicsData::new`].
+//!
+//! ## Flat triangular storage
+//!
+//! The six triangular arrays (`cnm`, `snm`, `xi`, `eta`, `zeta`,
+//! `upsilon`) are stored as flat `Vec<f64>` indexed by
+//! `(n, m) -> n*(n+1)/2 + m`. This packs each row contiguously and
+//! removes the row-pointer indirection of a `Vec<Vec<f64>>` so the
+//! Gottlieb inner loop hits one cache-line per row instead of one
+//! per `(n, m)` access. Bit-identity is preserved: the same `f64`
+//! values are written in the same order — only the storage layout
+//! differs.
 
 use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::frame::SelfPlanet;
 use uom::si::f64::Length;
+
+/// Flat-storage triangular index: `(n, m) -> n*(n+1)/2 + m`.
+///
+/// Maps the `(degree, order)` pair to a flat `Vec<f64>` slot. The
+/// formula equals the count of slots in rows `0..n` plus the offset
+/// `m` within row `n`. Rows are therefore stored contiguously, which
+/// keeps the Gottlieb inner loop on a single cache line per row.
+#[inline]
+pub(crate) const fn tri_idx(n: usize, m: usize) -> usize {
+    n * (n + 1) / 2 + m
+}
+
+/// Number of slots needed for a flat triangular array up to and
+/// including row `degree`. Equal to `(degree + 1) * (degree + 2) / 2`.
+#[inline]
+const fn tri_len(degree: usize) -> usize {
+    (degree + 1) * (degree + 2) / 2
+}
 
 /// Spherical harmonics gravity model data.
 ///
@@ -28,22 +57,27 @@ pub struct SphericalHarmonicsData {
     pub radius: f64,
     /// Gravitational parameter (m^3/s^2).
     pub mu: f64,
-    /// Normalized cosine coefficients: `cnm[n][m]` for n=0..degree, m=0..n.
-    pub cnm: Vec<Vec<f64>>,
-    /// Normalized sine coefficients: `snm[n][m]` for n=0..degree, m=0..n.
-    pub snm: Vec<Vec<f64>>,
+    /// Normalized cosine coefficients, flat triangular storage
+    /// indexed by `tri_idx(n, m)`. Access via [`Self::cnm`] /
+    /// [`Self::cnm_row`].
+    pub(crate) cnm: Vec<f64>,
+    /// Normalized sine coefficients, flat triangular storage
+    /// indexed by `tri_idx(n, m)`. Access via [`Self::snm`] /
+    /// [`Self::snm_row`].
+    pub(crate) snm: Vec<f64>,
     /// Whether C20 is tide-free.
     pub tide_free: bool,
     /// Delta to add to C20 to remove permanent tide.
     pub tide_free_delta: f64,
 
-    // Precomputed Gottlieb helper arrays (from initialize_body())
+    // Precomputed Gottlieb helper arrays (from initialize_body()).
+    // Flat triangular storage, indexed by `tri_idx(n, m)`.
     pub(crate) alpha: Vec<f64>,
     pub(crate) beta: Vec<f64>,
-    pub(crate) xi: Vec<Vec<f64>>,
-    pub(crate) eta: Vec<Vec<f64>>,
-    pub(crate) zeta: Vec<Vec<f64>>,
-    pub(crate) upsilon: Vec<Vec<f64>>,
+    pub(crate) xi: Vec<f64>,
+    pub(crate) eta: Vec<f64>,
+    pub(crate) zeta: Vec<f64>,
+    pub(crate) upsilon: Vec<f64>,
     pub(crate) nrdiag: Vec<f64>,
     pub(crate) int_to_double: Vec<f64>,
 }
@@ -53,6 +87,10 @@ impl SphericalHarmonicsData {
     ///
     /// Precomputes all Gottlieb helper arrays, matching JEOD's
     /// `SphericalHarmonicsGravitySource::initialize_body()`.
+    ///
+    /// `cnm` and `snm` accept the natural triangular `Vec<Vec<f64>>`
+    /// shape (`cnm[n].len() == n + 1`) and are flattened internally
+    /// into `(n, m) -> n*(n+1)/2 + m` storage.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         degree: usize,
@@ -87,32 +125,33 @@ impl SphericalHarmonicsData {
             );
         }
 
+        let tri_n = tri_len(degree);
+        let mut cnm_flat = vec![0.0_f64; tri_n];
+        let mut snm_flat = vec![0.0_f64; tri_n];
+        for n in 0..=degree {
+            let base = tri_idx(n, 0);
+            cnm_flat[base..base + n + 1].copy_from_slice(&cnm[n]);
+            snm_flat[base..base + n + 1].copy_from_slice(&snm[n]);
+        }
+
         let mut data = Self {
             degree,
             order,
             radius,
             mu,
-            cnm,
-            snm,
+            cnm: cnm_flat,
+            snm: snm_flat,
             tide_free,
             tide_free_delta,
             alpha: vec![0.0; degree + 1],
             beta: vec![0.0; degree + 1],
-            xi: Vec::with_capacity(degree + 1),
-            eta: Vec::with_capacity(degree + 1),
-            zeta: Vec::with_capacity(degree + 1),
-            upsilon: Vec::with_capacity(degree + 1),
+            xi: vec![0.0; tri_n],
+            eta: vec![0.0; tri_n],
+            zeta: vec![0.0; tri_n],
+            upsilon: vec![0.0; tri_n],
             nrdiag: vec![0.0; degree + 1],
             int_to_double: vec![0.0; degree + 2],
         };
-
-        // Initialize xi, eta, zeta, upsilon with correct sizes
-        for ii in 0..=degree {
-            data.xi.push(vec![0.0; ii + 1]);
-            data.eta.push(vec![0.0; ii + 1]);
-            data.zeta.push(vec![0.0; ii + 1]);
-            data.upsilon.push(vec![0.0; ii + 1]);
-        }
 
         data.initialize_body();
         data
@@ -155,34 +194,34 @@ impl SphericalHarmonicsData {
                 // Equation (7-10)
                 let num1 = (2.0 * ii_f - 1.0) * (2.0 * ii_f + 1.0);
                 let den1 = (ii_f + jj_f) * (ii_f - jj_f);
-                self.xi[ii][jj] = (num1 / den1).sqrt();
+                self.xi[tri_idx(ii, jj)] = (num1 / den1).sqrt();
 
                 // Equation (7-10)
                 let num2 = (2.0 * ii_f + 1.0) * (ii_f + jj_f - 1.0) * (ii_f - jj_f - 1.0);
                 let den2 = (ii_f + jj_f) * (ii_f - jj_f) * (2.0 * ii_f - 3.0);
                 if num2 == 0.0 {
-                    self.eta[ii][jj] = 0.0;
+                    self.eta[tri_idx(ii, jj)] = 0.0;
                 } else {
-                    self.eta[ii][jj] = (num2 / den2).sqrt();
+                    self.eta[tri_idx(ii, jj)] = (num2 / den2).sqrt();
                 }
             }
 
             for jj in 0..=ii {
                 let jj_f = i2d[jj];
                 if ii == jj {
-                    self.zeta[ii][jj] = 0.0;
-                    self.upsilon[ii][jj] = 0.0;
+                    self.zeta[tri_idx(ii, jj)] = 0.0;
+                    self.upsilon[tri_idx(ii, jj)] = 0.0;
                 } else if jj == 0 {
                     // Equation (7-19)
-                    self.zeta[ii][0] = (ii_f * (ii_f + 1.0) / 2.0).sqrt();
+                    self.zeta[tri_idx(ii, 0)] = (ii_f * (ii_f + 1.0) / 2.0).sqrt();
                     // Equation (7-22)
-                    self.upsilon[ii][0] =
+                    self.upsilon[tri_idx(ii, 0)] =
                         (ii_f * (ii_f - 1.0) * (ii_f + 1.0) * (ii_f + 2.0) / 2.0).sqrt();
                 } else {
                     // Equation (7-19)
-                    self.zeta[ii][jj] = ((ii_f - jj_f) * (ii_f + jj_f + 1.0)).sqrt();
+                    self.zeta[tri_idx(ii, jj)] = ((ii_f - jj_f) * (ii_f + jj_f + 1.0)).sqrt();
                     // Equation (7-22)
-                    self.upsilon[ii][jj] = ((ii_f - jj_f)
+                    self.upsilon[tri_idx(ii, jj)] = ((ii_f - jj_f)
                         * (ii_f + jj_f + 1.0)
                         * (ii_f - jj_f - 1.0)
                         * (ii_f + jj_f + 2.0))
@@ -204,6 +243,42 @@ impl SphericalHarmonicsData {
             self.alpha[ii] = ((2.0 * ii_f + 1.0) * (2.0 * ii_f - 1.0)).sqrt() / ii_f;
             self.beta[ii] = ((2.0 * ii_f + 1.0) / (2.0 * ii_f - 3.0)).sqrt() * (ii_f - 1.0) / ii_f;
         }
+    }
+
+    /// Read a Cnm coefficient: `cnm[n][m]` in the original
+    /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
+    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (i.e. out of
+    /// triangle).
+    #[inline]
+    pub fn cnm(&self, n: usize, m: usize) -> f64 {
+        debug_assert!(m <= n, "cnm({n}, {m}): m must be <= n");
+        self.cnm[tri_idx(n, m)]
+    }
+
+    /// Read an Snm coefficient: `snm[n][m]` in the original
+    /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
+    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n`.
+    #[inline]
+    pub fn snm(&self, n: usize, m: usize) -> f64 {
+        debug_assert!(m <= n, "snm({n}, {m}): m must be <= n");
+        self.snm[tri_idx(n, m)]
+    }
+
+    /// Borrow row `n` of the cosine coefficients as a contiguous
+    /// `&[f64]` of length `n + 1`. Rows are stored contiguously in
+    /// flat triangular storage, so this is a zero-copy reslice.
+    #[inline]
+    pub fn cnm_row(&self, n: usize) -> &[f64] {
+        let base = tri_idx(n, 0);
+        &self.cnm[base..base + n + 1]
+    }
+
+    /// Borrow row `n` of the sine coefficients as a contiguous
+    /// `&[f64]` of length `n + 1`.
+    #[inline]
+    pub fn snm_row(&self, n: usize) -> &[f64] {
+        let base = tri_idx(n, 0);
+        &self.snm[base..base + n + 1]
     }
 
     /// Typed accessor for the gravitational parameter μ.

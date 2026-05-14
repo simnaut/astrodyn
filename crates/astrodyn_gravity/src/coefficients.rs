@@ -46,12 +46,12 @@ pub fn save_binary(
     buf.extend_from_slice(&data.tide_free_delta.to_le_bytes());
     for n in 0..=data.degree {
         for m in 0..=n {
-            buf.extend_from_slice(&data.cnm[n][m].to_le_bytes());
+            buf.extend_from_slice(&data.cnm(n, m).to_le_bytes());
         }
     }
     for n in 0..=data.degree {
         for m in 0..=n {
-            buf.extend_from_slice(&data.snm[n][m].to_le_bytes());
+            buf.extend_from_slice(&data.snm(n, m).to_le_bytes());
         }
     }
     let mut file = std::fs::File::create(path)?;
