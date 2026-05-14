@@ -184,6 +184,28 @@ pub trait SimContext {
         );
     }
 
+    /// Read body `body_idx`'s current inertial-body left-transformation
+    /// quaternion as `glam::DQuat` (xyzw layout). Used by `pre_step`
+    /// closures that need to rotate a body-frame load into the inertial
+    /// frame before calling [`Self::set_body_external_force`] (whose
+    /// argument lives in `RootInertial`). The DQuat is the same value
+    /// the integrator reads via `SimBody.rot.q_inertial_body` — convert
+    /// with [`astrodyn::JeodQuat::from_glam`] when the closure needs the
+    /// scalar-first JEOD layout.
+    ///
+    /// The default implementation panics with an explicit
+    /// "body_q_inertial_body not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters that
+    /// expose a body's rotational state override this.
+    fn body_q_inertial_body(&self, body_idx: usize) -> DQuat {
+        let _ = body_idx;
+        panic!(
+            "body_q_inertial_body not supported by this SimContext implementation; \
+             provide a SimContext impl that reads the adapter's rotational state \
+             (e.g. RotationalStateC on the Bevy body entity)"
+        );
+    }
+
     /// Attach `body_idx` to a non-body reference frame owned by gravity
     /// source `source_idx`, with a fixed structural-origin `offset`
     /// (parent-frame coordinates, m) and `t_parent_child` rotation
@@ -241,15 +263,71 @@ pub enum SourceFrameKind {
     Pfix,
 }
 
-/// Closure type produced by a [`PreStepBuilder`]. Invoked once per
-/// reference-CSV time step, before the simulation propagates.
+/// Closure type produced by a [`PreStepBuilder`]. Invoked before the
+/// simulation advances; the calling cadence is recipe-configurable via
+/// [`PreStepCadence`] on the owning [`VerificationCase`].
 ///
-/// The `time` argument is the reference record's time in seconds since
-/// the simulation epoch. Closures that need a TDB Julian date should
-/// derive it as `j2000_jd + time / 86_400.0` (assuming a J2000 epoch),
-/// or capture the epoch's JD when they're constructed by their
+/// The `time` argument is the simulation time *at the end of the
+/// upcoming interval* in seconds since the simulation epoch. Under
+/// [`PreStepCadence::PerRecord`] that interval spans the gap to the
+/// next reference-CSV checkpoint; under [`PreStepCadence::PerTick`]
+/// it is a single integrator `dt`.
+///
+/// Most closures (third-body ephemeris updates, tide-host source
+/// positions) naturally line up with the reference-CSV cadence: JEOD's
+/// Trick scheduler invokes those at the record rate, so a per-record
+/// closure here matches bit-for-bit. Closures whose physical decision
+/// can flip between two reference-CSV records — scheduled external
+/// force / torque pulses, attach/detach events — must opt into
+/// [`PreStepCadence::PerTick`] so the on/off boundary lines up with
+/// JEOD's per-tick scheduler. The exception is recipes whose
+/// reference cadence already equals the integrator `dt` (typically
+/// [`CsvReference::SyntheticTimes`] scenarios such as
+/// `sim_attach_detach_trajectory::simple`): there every record *is* a
+/// tick, so [`PreStepCadence::PerRecord`] and [`PreStepCadence::PerTick`]
+/// produce identical call sequences and the per-record variant is the
+/// conventional choice.
+///
+/// Closures that need a TDB Julian date should derive it as
+/// `j2000_jd + time / 86_400.0` (assuming a J2000 epoch), or capture
+/// the epoch's JD when they're constructed by their
 /// [`PreStepBuilder`].
 pub type PreStepClosure = Box<dyn FnMut(&mut dyn SimContext, f64) + Send>;
+
+/// Calling cadence for a [`PreStepClosure`].
+///
+/// JEOD's Trick scheduler invokes its hooks at two distinct rates: the
+/// reference-CSV record rate (typically 1–60 s) for third-body /
+/// ephemeris-driven source updates and for tide-host source positions,
+/// and the dynamics rate (e.g. 32 Hz / dt = 0.03125 s for SIM_dyncomp)
+/// for scheduled external force / torque pulses. Our `pre_step` slot
+/// must match whichever cadence the JEOD recipe pairs with, or the
+/// runner-vs-JEOD comparison drifts:
+///
+/// - Calling a per-record closure per tick re-evaluates ephemeris at a
+///   much finer cadence than JEOD does, perturbing the differential
+///   third-body acceleration.
+/// - Calling a per-tick closure per record freezes the closure's
+///   decision across the entire interval, missing the on/off boundary
+///   the recipe schedules.
+///
+/// The variant is recipe-configurable on [`VerificationCase`] rather
+/// than global so each recipe pairs with its own JEOD cadence
+/// independently.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PreStepCadence {
+    /// Invoke the closure once before each `sim.step_until(record.time)`
+    /// call, i.e. once per reference-CSV checkpoint. Matches JEOD's
+    /// per-record scheduler invocation for third-body / ephemeris
+    /// updates and tide-host source positions.
+    #[default]
+    PerRecord,
+    /// Invoke the closure before every integration tick (each
+    /// `sim.step()` / `App::update()`). Matches JEOD's per-tick
+    /// scheduler invocation for scheduled external force / torque
+    /// pulses whose on/off boundary lives between record cadences.
+    PerTick,
+}
 
 /// Factory for a [`PreStepClosure`]. Invoked once at the start of
 /// `run_and_assert` with the t=0 [`InitialConditions`], so the closure
@@ -591,15 +669,28 @@ pub struct VerificationCase {
     /// log and asserts each against the matching entry in
     /// [`Tolerances::extras`].
     pub extras: Option<ExtrasComparator>,
-    /// Optional pre-step hook factory. When `Some`, the runner calls the
-    /// factory once at the start of `run_and_assert` (with the t=0
+    /// Optional pre-step hook factory paired with its calling cadence.
+    ///
+    /// When `Some((builder, cadence))`, the runner calls `builder` once
+    /// at the start of `run_and_assert` (with the t=0
     /// [`InitialConditions`]) to obtain a [`PreStepClosure`], then
-    /// invokes that closure before each `sim.step_until(record.time)`
-    /// call. Use this to inject per-step state — most commonly source
-    /// ephemeris updates — into the running simulation.
+    /// invokes that closure at the given cadence:
+    ///
+    /// - [`PreStepCadence::PerRecord`] — once before each
+    ///   `sim.step_until(record.time)` call (the JEOD-scheduler match
+    ///   for third-body / ephemeris / tide / SRP source-position
+    ///   updates).
+    /// - [`PreStepCadence::PerTick`] — once before each `sim.step()` /
+    ///   `App::update()` tick (the JEOD-scheduler match for scheduled
+    ///   external force / torque pulses whose on/off boundary flips
+    ///   between record cadences).
+    ///
+    /// Use this to inject mid-flight state — source ephemeris updates,
+    /// scheduled external force/torque pulses, or runtime mass-tree
+    /// changes — at whichever rate JEOD itself drives.
     ///
     /// The factory pattern lets the closure capture run-once state (a
     /// loaded DE421 ephemeris, J2000 JD, source indices) that the
-    /// per-step body would otherwise re-derive on every call.
-    pub pre_step: Option<PreStepBuilder>,
+    /// per-call body would otherwise re-derive on every invocation.
+    pub pre_step: Option<(PreStepBuilder, PreStepCadence)>,
 }

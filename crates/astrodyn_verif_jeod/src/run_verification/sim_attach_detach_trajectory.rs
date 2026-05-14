@@ -14,7 +14,7 @@
 //! exactly.
 
 use crate::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };
 use astrodyn::{
     default_leap_second_table, GravityControls, IntegratorType, JeodQuat, MassProperties,
@@ -186,6 +186,6 @@ pub fn simple() -> VerificationCase {
             extras: &[],
         },
         extras: None,
-        pre_step: Some(attach_detach_pre_step),
+        pre_step: Some((attach_detach_pre_step, PreStepCadence::PerRecord)),
     }
 }
