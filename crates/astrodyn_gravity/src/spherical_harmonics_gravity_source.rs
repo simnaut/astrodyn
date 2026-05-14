@@ -47,8 +47,14 @@ pub const MAX_SH_DEGREE: usize = 4096;
 /// is established once at [`SphericalHarmonicsData::new`] (which
 /// asserts the bound on the caller-supplied `degree`); every internal
 /// `tri_idx` call site here drives `n` from a loop bounded by
-/// `self.degree`, so the `n * (n + 1)` multiplication cannot wrap a
-/// 64-bit `usize` in release builds.
+/// `self.degree`, and every public accessor that calls `tri_idx`
+/// also asserts `n <= self.degree`. Under that precondition the
+/// `n * (n + 1)` multiplication is bounded by
+/// `MAX_SH_DEGREE * (MAX_SH_DEGREE + 1) = 4096 * 4097 = 16_781_312`,
+/// and the full triangular slot count
+/// `(MAX_SH_DEGREE + 1) * (MAX_SH_DEGREE + 2) / 2 = 4097 * 4098 / 2 = 8_394_753`
+/// — both fit easily in any `usize >= 32 bits`, so the arithmetic
+/// cannot wrap on any supported platform.
 #[inline]
 pub(crate) const fn tri_idx(n: usize, m: usize) -> usize {
     n * (n + 1) / 2 + m
@@ -275,13 +281,21 @@ impl SphericalHarmonicsData {
 
     /// Read a Cnm coefficient: `cnm[n][m]` in the original
     /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
-    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (out of
-    /// triangle): the triangular invariant must hold in release
-    /// builds, since a stray `m > n` access would otherwise read a
-    /// neighbouring `(n+1, …)` coefficient and silently return a
-    /// physically wrong gravity-field value.
+    /// indexed by `n*(n+1)/2 + m`. Panics if `n > self.degree` or
+    /// `m > n`: both invariants must hold in release builds. A stray
+    /// `n > self.degree` would let the `n*(n+1)/2` multiplication
+    /// arithmetic in `tri_idx` wrap unchecked in release, potentially
+    /// landing inside the coefficient buffer at a meaningless slot; a
+    /// stray `m > n` would silently read a neighbouring `(n+1, …)`
+    /// coefficient. Either failure returns a physically wrong
+    /// gravity-field value.
     #[inline]
     pub fn cnm(&self, n: usize, m: usize) -> f64 {
+        assert!(
+            n <= self.degree,
+            "cnm({n}, {m}): degree n must be <= self.degree ({})",
+            self.degree
+        );
         assert!(
             m <= n,
             "cnm({n}, {m}): order m must be <= degree n (triangular index)"
@@ -291,11 +305,16 @@ impl SphericalHarmonicsData {
 
     /// Read an Snm coefficient: `snm[n][m]` in the original
     /// `Vec<Vec<f64>>` layout, now backed by flat triangular storage
-    /// indexed by `n*(n+1)/2 + m`. Panics if `m > n` (out of
-    /// triangle): see [`Self::cnm`] for why this is a release-build
-    /// `assert!` rather than `debug_assert!`.
+    /// indexed by `n*(n+1)/2 + m`. Panics if `n > self.degree` or
+    /// `m > n`: see [`Self::cnm`] for why both bounds are
+    /// release-build `assert!`s rather than `debug_assert!`s.
     #[inline]
     pub fn snm(&self, n: usize, m: usize) -> f64 {
+        assert!(
+            n <= self.degree,
+            "snm({n}, {m}): degree n must be <= self.degree ({})",
+            self.degree
+        );
         assert!(
             m <= n,
             "snm({n}, {m}): order m must be <= degree n (triangular index)"
@@ -306,16 +325,30 @@ impl SphericalHarmonicsData {
     /// Borrow row `n` of the cosine coefficients as a contiguous
     /// `&[f64]` of length `n + 1`. Rows are stored contiguously in
     /// flat triangular storage, so this is a zero-copy reslice.
+    /// Panics if `n > self.degree`: see [`Self::cnm`] for why the
+    /// degree bound is a release-build `assert!` rather than relying
+    /// on the slice bounds check to catch a wrapped `tri_idx`.
     #[inline]
     pub fn cnm_row(&self, n: usize) -> &[f64] {
+        assert!(
+            n <= self.degree,
+            "cnm_row({n}): degree n must be <= self.degree ({})",
+            self.degree
+        );
         let base = tri_idx(n, 0);
         &self.cnm[base..base + n + 1]
     }
 
     /// Borrow row `n` of the sine coefficients as a contiguous
-    /// `&[f64]` of length `n + 1`.
+    /// `&[f64]` of length `n + 1`. Panics if `n > self.degree`: see
+    /// [`Self::cnm_row`].
     #[inline]
     pub fn snm_row(&self, n: usize) -> &[f64] {
+        assert!(
+            n <= self.degree,
+            "snm_row({n}): degree n must be <= self.degree ({})",
+            self.degree
+        );
         let base = tri_idx(n, 0);
         &self.snm[base..base + n + 1]
     }

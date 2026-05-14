@@ -10,7 +10,7 @@
 //! itself does not know how to parse JEOD source — only how to consume
 //! the binary format derived from it.
 
-use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+use crate::spherical_harmonics_gravity_source::{SphericalHarmonicsData, MAX_SH_DEGREE};
 
 /// Errors from loading a binary spherical-harmonics coefficient blob.
 #[derive(Debug, thiserror::Error)]
@@ -126,10 +126,14 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
     let degree = read_u32(&mut pos)? as usize;
     let order = read_u32(&mut pos)? as usize;
 
-    // Sanity checks to prevent unbounded memory allocation
-    if degree > 10000 {
+    // Bound the declared degree against the same ceiling
+    // `SphericalHarmonicsData::new` enforces, so a misformed blob
+    // surfaces as a typed `CoeffLoadError::InvalidFormat` here
+    // instead of panicking at construction. The downstream `new`
+    // assertion remains as a sanity net for in-process constructors.
+    if degree > MAX_SH_DEGREE {
         return Err(CoeffLoadError::InvalidFormat(format!(
-            "degree {degree} exceeds maximum supported (10000)"
+            "degree {degree} exceeds maximum supported ({MAX_SH_DEGREE})"
         )));
     }
     if order > degree {
