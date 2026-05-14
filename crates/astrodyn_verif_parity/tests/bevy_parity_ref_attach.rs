@@ -43,11 +43,15 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// drift cannot accumulate across the 50 s post-attach window.
 ///
 /// **Currently `#[ignore]`'d**: a small number of post-attach records
-/// (observed: t=70 / t=73 / t=82) exhibit sub-ULP-of-Earth-radius
-/// f64 differences (≤30 ULPs at position magnitudes ~1.8 m, i.e.
-/// ~6.7e-15 m relative drift) in the Earth.pfix rotation matrix
-/// sampled at those specific records. The two runtimes share the
-/// same rotation kernel
+/// (observed: t=70 / t=73 / t=82) exhibit sub-ULP drift in the
+/// Earth.pfix rotation matrix sampled at those specific records —
+/// ≤30 ULPs on unitless matrix elements of magnitude ~1.0, i.e.
+/// ~6.7e-15 (dimensionless). Multiplied through the matrix-attach
+/// recipe's 10 m structural offset that drift surfaces as
+/// ~10 m × 6.7e-15 ≈ 6.7e-14 m of post-attach position disagreement
+/// at those records (matrix-attach reference CSV position magnitudes
+/// run ~10 m, matching the configured offset). The two runtimes
+/// share the same rotation kernel
 /// ([`astrodyn::compute_t_parent_this_from_tjt_with_polar`]), and
 /// pre-attach state plus most post-attach records *are* bit-identical
 /// — the runner-vs-JEOD `tier3_sim_ref_attach_matrix` tolerance (16 m
@@ -69,9 +73,9 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// pinned to produce bit-identical pfix state at every record the
 /// runner observes.
 #[test]
-#[ignore = "Bevy adapter produces sub-ULP-of-Earth-radius f64 drift in \
-            Earth.pfix at 3-of-50 post-attach records; Bevy-side \
-            schedule investigation pending"]
+#[ignore = "Bevy adapter produces sub-ULP drift (~30 ULPs on unitless \
+            matrix elements of magnitude ~1.0) in Earth.pfix at 3-of-50 \
+            post-attach records; Bevy-side schedule investigation pending"]
 fn bevy_parity_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert_parity::<astrodyn::Earth>();
 }

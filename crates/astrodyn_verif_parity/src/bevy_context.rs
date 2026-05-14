@@ -478,7 +478,11 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         // integration runs — so both runtimes observe the same
         // pre-attach state and emit the same captured-offset
         // attachment, and the integrator-reset path lands before that
-        // tick's integration. Bit-identity holds.
+        // tick's integration. Bit-identity across both runtimes is
+        // the target; sub-ULP drift in the Earth.pfix rotation matrix
+        // at a handful of post-attach records is a known Bevy-side
+        // schedule investigation (see `bevy_parity_ref_attach_matrix`,
+        // currently `#[ignore]`'d).
         let event = FrameAttachEvent {
             body,
             parent_frame,
