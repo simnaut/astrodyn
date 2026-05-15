@@ -151,7 +151,7 @@ fn load_rnp_csv(path: &Path) -> Vec<RnpRecord> {
 }
 
 #[test]
-fn rnp_component_comparison() {
+fn tier3_rnp_component_comparison() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../astrodyn_verif_jeod/test_data/dyncomp_run3a_Earth_RNP.csv");
     assert!(

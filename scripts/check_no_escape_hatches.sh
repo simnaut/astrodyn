@@ -71,6 +71,22 @@
 #    e.g. `integrate_body_typed`'s lift over the gateway-owned
 #    `IntegratorType` wrapper). Use sparingly and document each
 #    exemption in the PR.
+#
+# 3. **Raw return types on the Bevy and runner public surfaces**
+#    (#485 H4 / T2). The audit found that `pub fn ... -> DVec3 / DQuat
+#    / DMat3` returns in the Bevy adapter (`SourceReader::source_position`,
+#    `RelativeFrameState::position_velocity`, …) were the inverse
+#    failure mode of category 2: instead of minting a typed value from
+#    raw storage *inside* the adapter, the adapter was *returning* raw
+#    storage to its callers and forcing them to lift back to typed.
+#    The lockstep parity invariant ([[runner-bevy-lockstep]]) extends
+#    the same rule to runner-side surfaces (`Simulation::source_position`,
+#    `Simulation::source_pfix_rotation`, …) so neither consumer drifts.
+#    Each flagged surface should be removed in favor of its
+#    `*_typed::<F>` sibling, or, if the surface is a documented escape
+#    hatch (`FrameOrigin::origin_in`, `Simulation::frame_origin`),
+#    annotated with `// ESCAPE_HATCH: <reason>` on the immediately
+#    preceding comment line.
 set -euo pipefail
 
 # ── Category 1: marker-based (banned across crates/ + src/) ──
@@ -157,11 +173,106 @@ bypass_matches=$(echo "$src_files_to_scan" | xargs awk '
     { prev_allowed = 0 }
 ')
 
+# ── Category 3: raw DVec3 / DQuat / DMat3 return types on Bevy & runner ──
+# Scope: pub-fn signatures inside `crates/astrodyn_bevy/src/**` and
+# `crates/astrodyn_runner/src/**` that return raw glam vector/quat/matrix
+# types. Existing escape hatches (`FrameOrigin::origin_in`,
+# `Simulation::frame_origin`) carry a `// ESCAPE_HATCH: <reason>`
+# annotation on the immediately preceding comment line.
+#
+# Exemptions:
+#   - `components.rs` / `components/**` / `lib.rs` in the Bevy adapter
+#     (canonical insertion-time boundary).
+#   - `tests/**` directories (test surface).
+#   - Runner boundary modules: same set as category 2.
+return_files_to_scan=$( {
+    find crates/astrodyn_bevy/src/ -name "*.rs" -type f \
+        -not -path 'crates/astrodyn_bevy/src/components.rs' \
+        -not -path 'crates/astrodyn_bevy/src/components/*' \
+        -not -path 'crates/astrodyn_bevy/src/lib.rs'
+    find crates/astrodyn_runner/src/ -name "*.rs" -type f \
+        -not -path 'crates/astrodyn_runner/src/simulation/types.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/bodies.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/frame_attach.rs' \
+        -not -path 'crates/astrodyn_runner/src/simulation/mass_tree.rs'
+} | sort)
+
+raw_returns=$(echo "$return_files_to_scan" | xargs awk '
+    FNR == 1 {
+        prev_escape = 0
+        in_sig = 0
+        sig_buf = ""
+        sig_line = 0
+    }
+    # Pure-comment line with `// ESCAPE_HATCH:` propagates to the next
+    # pub-fn line.
+    /^[[:space:]]*\/\/.*ESCAPE_HATCH:/ { prev_escape = 1; next }
+    # Pure-comment / doc-comment line without ESCAPE_HATCH: keep
+    # prev_escape as-is.
+    /^[[:space:]]*\/\// { next }
+    # Blank: keep prev_escape as-is.
+    /^[[:space:]]*$/ { next }
+    {
+        # Multi-line `pub fn` signature handling: start accumulating on a
+        # `pub fn` line and keep appending until the first `{` (body opener)
+        # or `;` (extern / trait method). Then test the accumulated
+        # signature against the raw-return regex. This catches the common
+        # rustfmt style:
+        #     pub fn foo(
+        #         arg: Bar,
+        #     ) -> DVec3 {
+        # which the original single-line regex would miss.
+        if (!in_sig && $0 ~ /^[[:space:]]*pub( *\([^)]*\))? fn /) {
+            in_sig = 1
+            sig_buf = $0
+            sig_line = FNR
+        } else if (in_sig) {
+            sig_buf = sig_buf " " $0
+        }
+        if (in_sig && ($0 ~ /\{/ || $0 ~ /;[[:space:]]*$/)) {
+            # Signature complete. Strip everything after the first `{`
+            # (the body opener) to avoid accidental matches inside the
+            # body. Then test for a raw return.
+            sub(/\{.*/, "", sig_buf)
+            if (sig_buf ~ /->[^{]*(DVec3|DQuat|DMat3)/) {
+                if (prev_escape) {
+                    # Annotated escape hatch — accept.
+                } else {
+                    printf "%s:%d: %s\n", FILENAME, sig_line, sig_buf
+                }
+            }
+            in_sig = 0
+            sig_buf = ""
+            sig_line = 0
+            prev_escape = 0
+            next
+        }
+        # Any non-signature code line resets the propagating-escape state.
+        if (!in_sig) {
+            prev_escape = 0
+        }
+    }
+')
+
 failed=0
 
 if [ -n "$marker_matches" ]; then
     echo "FAIL: escape-hatch markers detected" >&2
     echo "$marker_matches" >&2
+    failed=1
+fi
+
+if [ -n "$raw_returns" ]; then
+    echo "FAIL: raw DVec3 / DQuat / DMat3 return types on Bevy or runner public surface (#485 H4 / T2)" >&2
+    echo "  (scanned: crates/astrodyn_bevy/src/** and crates/astrodyn_runner/src/**;" >&2
+    echo "   components.rs / lib.rs / runner boundary modules exempt.)" >&2
+    echo '  Raw `-> DVec3` / `-> DQuat` / `-> DMat3` on the public surface forces' >&2
+    echo "  every caller to lift back to typed values, the inverse of the H1 (#172)" >&2
+    echo "  failure mode. Replace with a typed sibling (Position<F>, Velocity<F>," >&2
+    echo "  FrameTransform<From, To>), or, if the surface is a documented escape" >&2
+    echo "  hatch (e.g. FrameOrigin::origin_in for the non-static-F case), annotate" >&2
+    echo "  with '// ESCAPE_HATCH: <reason>' on the immediately preceding comment line." >&2
+    echo "$raw_returns" >&2
     failed=1
 fi
 

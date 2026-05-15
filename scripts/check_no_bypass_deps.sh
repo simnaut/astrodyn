@@ -16,6 +16,10 @@
 #   - `astrodyn_bevy` (ECS adapter — a gateway consumer itself).
 #   - `astrodyn_verif_jeod` (cross-validation infrastructure that
 #     itself only depends on the gateway plus the runner).
+#   - `astrodyn_verif_nesc` (NESC GN&C check-cases verification track).
+#   - `astrodyn_verif_parity` (runner ↔ bevy bit-identity tests; also
+#     reaches astrodyn_runner + astrodyn_verif_jeod as gateway-consumer
+#     deps).
 #
 # Owner-crate unit / Tier 2 / Tier 3 tests (e.g.
 # `astrodyn_time/tests/tier3_*.rs`) live inside their owning crate's
@@ -39,10 +43,11 @@ for crate_toml in \
         echo "$bad" >&2
         echo "  Per CLAUDE.md, every consumer of the astrodyn pipeline" >&2
         echo "  goes through 'astrodyn' (+ bevy for the Bevy adapter; +" >&2
-        echo "  astrodyn_runner / astrodyn_bevy / astrodyn_verif_jeod as" >&2
-        echo "  workspace consumers themselves). If 'astrodyn' is missing" >&2
-        echo "  a symbol you need, widen its re-export surface in" >&2
-        echo "  src/lib.rs rather than reaching around it." >&2
+        echo "  astrodyn_runner / astrodyn_bevy / astrodyn_verif_jeod /" >&2
+        echo "  astrodyn_verif_nesc / astrodyn_verif_parity as workspace" >&2
+        echo "  consumers themselves). If 'astrodyn' is missing a symbol" >&2
+        echo "  you need, widen its re-export surface in src/lib.rs rather" >&2
+        echo "  than reaching around it." >&2
         failed=1
     fi
 done
@@ -51,4 +56,4 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "OK: gateway-only invariant holds for runner, bevy, and verif crates"
+echo "OK: gateway-only invariant holds for runner, bevy, and the three verif crates"

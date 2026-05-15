@@ -32,10 +32,30 @@ pub struct GaussJacksonConfig {
     /// Absolute convergence tolerance.
     /// JEOD default: 1e-10.
     pub absolute_tolerance: f64,
+
+    /// Continue when the corrector or a bootstrap edit fails to converge.
+    ///
+    /// JEOD's `GaussJacksonIntegrationGroup` logs a warning and continues
+    /// when the predictor-corrector fails to converge within
+    /// [`max_correction_iterations`](Self::max_correction_iterations), or
+    /// when a bootstrap edit accepts a non-converged correction. We diverge
+    /// from JEOD by default — non-convergence panics — because a degraded
+    /// position silently propagating into the rest of a mission trajectory
+    /// is the silent-wrong-physics class of failure the fail-loudly rule
+    /// exists to prevent (#485 C1).
+    ///
+    /// Set this to `true` to restore JEOD-faithful behavior: a `log::warn!`
+    /// is emitted and integration continues. Use only when matching a JEOD
+    /// reference run exactly is worth the silent-degradation risk (typically
+    /// short reproduction runs of JEOD verif sims), and document the choice
+    /// at the call site.
+    pub allow_non_convergence: bool,
 }
 
 impl Default for GaussJacksonConfig {
-    /// JEOD constructor default: initial=4, final=12, ndoubling=4.
+    /// JEOD constructor default: initial=4, final=12, ndoubling=4. The
+    /// `allow_non_convergence` flag defaults to `false` — see the field's
+    /// rustdoc for the JEOD-faithful opt-in.
     fn default() -> Self {
         Self {
             initial_order: 4,
@@ -44,6 +64,7 @@ impl Default for GaussJacksonConfig {
             max_correction_iterations: 10,
             relative_tolerance: 1e-14,
             absolute_tolerance: 1e-10,
+            allow_non_convergence: false,
         }
     }
 }
@@ -65,6 +86,9 @@ impl GaussJacksonConfig {
     /// JEOD standard configuration.
     /// JEOD: `GaussJacksonConfig::standard_configuration()`.
     /// initial=8, final=12, ndoubling=2, tolerances=1e-14.
+    ///
+    /// `allow_non_convergence` defaults to `false` — see the field's
+    /// rustdoc for the JEOD-faithful opt-in semantics.
     pub fn standard() -> Self {
         Self {
             initial_order: 8,
@@ -73,6 +97,7 @@ impl GaussJacksonConfig {
             max_correction_iterations: 10,
             relative_tolerance: 1e-14,
             absolute_tolerance: 1e-14,
+            allow_non_convergence: false,
         }
     }
 

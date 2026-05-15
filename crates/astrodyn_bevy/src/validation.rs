@@ -299,6 +299,12 @@ pub fn validate_jeod_invariants<P: Planet>(
 
         for error in &errors {
             if error.is_warning() {
+                // FAIL_LOUD_EXEMPT: operational report path for warning-class
+                // ValidationErrors (see `ValidationError::is_warning`). The
+                // warning category is reserved for suspicious-but-valid
+                // states (uninitialized at origin, non-root integ with proper
+                // IntegOrigin shifts per RF.10) where a panic would
+                // false-positive on legitimate setups.
                 bevy::log::warn!("Entity {entity:?}: {error}");
             } else {
                 panic!("Entity {entity:?}: {error}");
@@ -414,16 +420,30 @@ pub fn validate_jeod_invariants<P: Planet>(
                 || has_solar_beta
                 || has_earth_lighting;
             if has_root_dependent {
+                // FAIL_LOUD_EXEMPT: Bevy-side mirror of the runner-side
+                // `NonRootFrameWithRootDependentFeatures` warning-class
+                // ValidationError. The configuration is supported (see
+                // `tests/integ_frame_translation_invariance.rs`) provided
+                // the caller applies the per-step `IntegOrigin` shift at
+                // every RF.10 shift site (SRP, solar beta, earth lighting)
+                // and consumes non-shift sites directly. Promoting to
+                // panic would false-positive on legitimate setups.
                 bevy::log::warn!(
                     "Entity {entity:?}: non-root integration frame (or active \
-                     frame switch into a non-root frame) with features that \
-                     assume root-inertial coordinates (drag={has_drag}, \
-                     flat_plate_srp={has_flat}, cannonball_srp={has_cannonball}, \
+                     frame switch into a non-root frame) paired with features. \
+                     Per RF.10, these fall into two groups: SHIFT SITES (need \
+                     root-inertial conversion before mixing with root-inertial \
+                     source positions — flat_plate_srp={has_flat}, \
+                     cannonball_srp={has_cannonball}, \
+                     solar_beta={has_solar_beta}, \
+                     earth_lighting={has_earth_lighting}) and NON-SHIFT SITES \
+                     (consume the body's typed `Position<PlanetInertial<P>>` \
+                     directly; shifting would break them — drag={has_drag}, \
                      orbital_elements={has_orbital}, euler={has_euler}, \
-                     geodetic={has_geodetic}, lvlh={has_lvlh}, \
-                     solar_beta={has_solar_beta}, earth_lighting={has_earth_lighting}). \
-                     These derived states assume the simulation's central-body inertial \
-                     frame and will produce incorrect results in other frames.",
+                     geodetic={has_geodetic}, lvlh={has_lvlh}). If the \
+                     configuration applies the shift at every shift site (and \
+                     leaves the non-shift sites alone) this warning is \
+                     informational.",
                 );
             }
         }

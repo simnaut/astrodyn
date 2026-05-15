@@ -22,6 +22,8 @@ jobs:
         run: scripts/check_no_escape_hatches.sh
       - name: Gateway-bypass dep guard (#390)
         run: scripts/check_no_bypass_deps.sh
+      - name: Silent-warn fail-loudly guard (#485 T1)
+        run: scripts/check_no_silent_warn.sh
 
   test-examples:
     name: Smoke run examples

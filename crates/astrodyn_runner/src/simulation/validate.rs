@@ -340,6 +340,8 @@ impl Simulation {
         let mut fatal = Vec::new();
         for error in all_errors {
             if error.is_warning() {
+                // FAIL_LOUD_EXEMPT: operational report path for warning-class
+                // ValidationErrors (see `ValidationError::is_warning`).
                 log::warn!("{error}");
             } else {
                 fatal.push(error);

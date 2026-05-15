@@ -61,6 +61,16 @@ impl Simulation {
     }
 
     /// Get the position and velocity of a frame relative to the root inertial frame.
+    ///
+    /// Returns raw `(DVec3, DVec3)`; prefer
+    /// [`frame_origin_typed`](Self::frame_origin_typed) for the typed-result
+    /// path. This raw variant is the deliberate escape hatch matched against
+    /// the Bevy adapter's `FrameOrigin::origin_in` (in `astrodyn_bevy`) for
+    /// callers that can't statically commit to a frame phantom (e.g.
+    /// frame-tree walks driven by runtime `FrameId`s).
+    // ESCAPE_HATCH: documented raw return mirroring FrameOrigin::origin_in
+    // on the Bevy side; the typed-result sibling is frame_origin_typed.
+    // See #485 H4 / T2.
     pub fn frame_origin(&self, frame_id: FrameId) -> (DVec3, DVec3) {
         if frame_id == self.root_frame_id {
             return (DVec3::ZERO, DVec3::ZERO);

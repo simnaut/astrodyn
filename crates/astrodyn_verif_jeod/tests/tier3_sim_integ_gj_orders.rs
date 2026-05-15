@@ -79,7 +79,13 @@ fn gj_energy_error(order: usize) -> f64 {
             position: init_pos,
             velocity: init_vel,
         }),
-        integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(order)),
+        integrator: IntegratorType::GaussJackson(
+            // JEOD-faithful warn-and-continue (#485 C1): synthetic GJ-order
+            // sweep occasionally trips convergence on shorter orders; the
+            // test asserts integrator order-dependent error, not numerical
+            // panic-by-default behavior.
+            GaussJacksonConfig::with_order(order).with_allow_non_convergence(true),
+        ),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
