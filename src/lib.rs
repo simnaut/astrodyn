@@ -209,7 +209,7 @@ pub use astrodyn_dynamics::{
     DetachedSubtreeState, DynamicsConfig, FrameAttachInputs, FrameDerivatives, GravityAcceleration,
     MassBodyId, MassNodeOutputs, MassNodeView, MassPointState, MassProperties, MassStorage,
     MassTree, RotationalState, SixDofState, SixDofStateTyped, TotalForce, TranslationalState,
-    Wrench,
+    Wrench, MAX_SAFE_MASS_KG, MIN_SAFE_MASS_KG,
 };
 
 // astrodyn_dynamics::body_init: typed orbital-element initializer
