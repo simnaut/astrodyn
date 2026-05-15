@@ -81,9 +81,23 @@ pub fn parse_euler_cases_json(s: &str) -> Result<Vec<EulerTestCase>, String> {
 /// Encode the JSON blob consumed by [`load_euler_test_cases`].
 ///
 /// Public for the regen binary; runtime callers should not invoke this.
-pub fn encode_euler_cases_json(cases: &[EulerTestCase]) -> String {
+///
+/// `jeod_commit` is the `git rev-parse HEAD` of the JEOD checkout at
+/// regen time (or `"unknown"` when the checkout is not a git tree);
+/// `generated_utc` is an ISO-8601 UTC timestamp. Both are emitted as
+/// top-level fields for the supply-chain audit trail (#503); they are
+/// not consumed by the runtime parser.
+pub fn encode_euler_cases_json(
+    cases: &[EulerTestCase],
+    jeod_commit: &str,
+    generated_utc: &str,
+) -> String {
     let mut buf = String::new();
-    buf.push_str("{\n  \"source\": \"models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc\",\n");
+    buf.push_str("{\n  \"schema_version\": 2,\n");
+    buf.push_str("  \"source\": \"models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc\",\n");
+    buf.push_str("  \"jeod_version\": \"5.4\",\n");
+    buf.push_str(&format!("  \"jeod_commit\": \"{jeod_commit}\",\n"));
+    buf.push_str(&format!("  \"generated_utc\": \"{generated_utc}\",\n"));
     buf.push_str("  \"note\": \"All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation\",\n");
     buf.push_str("  \"cases\": [\n");
     for (i, c) in cases.iter().enumerate() {
@@ -318,7 +332,7 @@ mod tests {
             ref_body_angles_deg: [30.0, 45.0, 60.0],
             body_ref_angles_deg: [-1.0, 2.0, -3.0],
         }];
-        let encoded = encode_euler_cases_json(&original);
+        let encoded = encode_euler_cases_json(&original, "deadbeef", "2026-05-14T00:00:00Z");
         let decoded = parse_euler_cases_json(&encoded).unwrap();
         assert_eq!(decoded, original);
     }

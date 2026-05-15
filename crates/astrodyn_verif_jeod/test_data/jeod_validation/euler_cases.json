@@ -1,5 +1,9 @@
 {
+  "schema_version": 2,
   "source": "models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc",
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
   "note": "All TEST(EulerDerivedState, ...) blocks share these values; deduplicated to one entry. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation",
   "cases": [
     {

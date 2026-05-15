@@ -44,6 +44,9 @@ use astrodyn_verif_jeod::body_init_fixtures::{
 use astrodyn_verif_jeod::orbital_init::{parse_orbital_init_py, parse_trans_state_py};
 use astrodyn_verif_jeod::reference_state::parse_reference_state_py;
 
+/// Pinned JEOD version captured in every fixture sidecar.
+const JEOD_VERSION: &str = "5.4";
+
 /// Vehicles and the init records to extract for each.
 const SCENARIOS: &[Scenario] = &[
     Scenario {
@@ -90,6 +93,9 @@ fn main() {
     std::fs::create_dir_all(&body_init_root).unwrap_or_else(|e| {
         panic!("Cannot create {}: {e}", body_init_root.display());
     });
+
+    let jeod_commit = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
+    let generated_utc = utc_now_iso8601();
 
     for scenario in SCENARIOS {
         let mut bundle = ScenarioBundle::new(scenario.vehicle);
@@ -150,7 +156,7 @@ fn main() {
             body_init_root.join(format!("{}.json", scenario.vehicle.to_ascii_lowercase()));
         let mut f = std::fs::File::create(&out_path)
             .unwrap_or_else(|e| panic!("Cannot create {}: {e}", out_path.display()));
-        write_bundle(&mut f, &bundle);
+        write_bundle(&mut f, &bundle, &jeod_commit, &generated_utc);
         println!(
             "wrote {} (reference_inertial={}, orbital_inits={}, trans_states={})",
             out_path.display(),
@@ -159,6 +165,50 @@ fn main() {
             bundle.trans_states.len(),
         );
     }
+}
+
+/// Read `git rev-parse HEAD` from the JEOD checkout. Returns `None` when
+/// the directory is not a git checkout (tarball mirror) or `git` is
+/// unavailable; callers fall back to `"unknown"`.
+fn read_git_rev(jeod_root: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(jeod_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn utc_now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_unix_utc(secs)
+}
+
+fn format_unix_utc(secs: i64) -> String {
+    let z = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let hour = sod / 3_600;
+    let minute = (sod / 60) % 60;
+    let second = sod % 60;
+
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp.wrapping_sub(9) };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 fn resolve_jeod_root(args: &[String]) -> Option<std::path::PathBuf> {
@@ -199,9 +249,14 @@ impl ScenarioBundle {
     }
 }
 
-fn write_bundle(out: &mut std::fs::File, bundle: &ScenarioBundle) {
+fn write_bundle(
+    out: &mut std::fs::File,
+    bundle: &ScenarioBundle,
+    jeod_commit: &str,
+    generated_utc: &str,
+) {
     writeln!(out, "{{").unwrap();
-    writeln!(out, "  \"schema_version\": 1,").unwrap();
+    writeln!(out, "  \"schema_version\": 2,").unwrap();
     writeln!(out, "  \"vehicle\": \"{}\",", bundle.vehicle).unwrap();
     writeln!(
         out,
@@ -209,6 +264,9 @@ fn write_bundle(out: &mut std::fs::File, bundle: &ScenarioBundle) {
         bundle.vehicle,
     )
     .unwrap();
+    writeln!(out, "  \"jeod_version\": \"{JEOD_VERSION}\",").unwrap();
+    writeln!(out, "  \"jeod_commit\": \"{jeod_commit}\",").unwrap();
+    writeln!(out, "  \"generated_utc\": \"{generated_utc}\",").unwrap();
     writeln!(
         out,
         "  \"note\": \"Body initialization vectors. Regenerate with: cargo run -p astrodyn_verif_jeod \

@@ -19,6 +19,10 @@
 use std::io::Write;
 
 use regex::Regex;
+use sha2::{Digest, Sha256};
+
+/// Pinned JEOD version captured in the fixture sidecar.
+const JEOD_VERSION: &str = "5.4";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -51,12 +55,73 @@ fn main() {
         cases.len(),
     );
 
+    let jeod_commit = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
+    let generated_utc = utc_now_iso8601();
+
     let out_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_data/planet_pfixposn_seeds.json");
     let mut f = std::fs::File::create(&out_path)
         .unwrap_or_else(|e| panic!("Cannot create {}: {e}", out_path.display()));
-    write_json(&mut f, &cases);
-    println!("wrote {} ({} cases)", out_path.display(), cases.len());
+    write_json(&mut f, &cases, &jeod_commit, &generated_utc);
+    drop(f);
+    let sha = sha256_hex_of_file(&out_path);
+    println!(
+        "wrote {} ({} cases; sha256 {})",
+        out_path.display(),
+        cases.len(),
+        sha,
+    );
+}
+
+/// Read `git rev-parse HEAD` from the JEOD checkout. Returns `None` when
+/// the directory is not a git checkout (tarball mirror) or `git` is
+/// unavailable; callers fall back to `"unknown"`.
+fn read_git_rev(jeod_root: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(jeod_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn sha256_hex_of_file(path: &std::path::Path) -> String {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn utc_now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_unix_utc(secs)
+}
+
+fn format_unix_utc(secs: i64) -> String {
+    let z = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let hour = sod / 3_600;
+    let minute = (sod / 60) % 60;
+    let second = sod % 60;
+
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp.wrapping_sub(9) };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 fn resolve_jeod_root(args: &[String]) -> Option<std::path::PathBuf> {
@@ -170,15 +235,17 @@ fn parse_assign(text: &str, pattern: &str) -> f64 {
         .unwrap_or_else(|e| panic!("failed to parse {:?}: {e}", &caps[1]))
 }
 
-fn write_json(out: &mut std::fs::File, cases: &[Case]) {
+fn write_json(out: &mut std::fs::File, cases: &[Case], jeod_commit: &str, generated_utc: &str) {
     writeln!(out, "{{").unwrap();
-    writeln!(out, "  \"schema_version\": 1,").unwrap();
+    writeln!(out, "  \"schema_version\": 2,").unwrap();
     writeln!(
         out,
         "  \"source\": \"models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py\","
     )
     .unwrap();
-    writeln!(out, "  \"jeod_version\": \"5.4\",").unwrap();
+    writeln!(out, "  \"jeod_version\": \"{JEOD_VERSION}\",").unwrap();
+    writeln!(out, "  \"jeod_commit\": \"{jeod_commit}\",").unwrap();
+    writeln!(out, "  \"generated_utc\": \"{generated_utc}\",").unwrap();
     writeln!(
         out,
         "  \"note\": \"PlanetFixedPosition verification seeds. Regenerate with: cargo run -p astrodyn_planet --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME\","

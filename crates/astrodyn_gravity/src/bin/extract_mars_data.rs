@@ -36,6 +36,13 @@
 //!   third-body Moon source and by the gravity-gradient torque rigs.
 //! - `test_data/gravity/moon_grail150.json` — metadata sidecar.
 //!
+//! Every sidecar carries `jeod_version`, `jeod_commit` (read from
+//! `git rev-parse HEAD` of `$JEOD_HOME` at regen time; falls back to
+//! `"unknown"` if the checkout is not a git tree), `generated_utc`,
+//! `binary_file_bytes`, and `binary_file_sha256`. The hash is asserted by
+//! `tests/fixture_metadata.rs` to catch drift between the committed
+//! `.bin` and its recorded provenance.
+//!
 //! The binary prints each destination path on success.
 
 use std::io::Write;
@@ -44,6 +51,10 @@ use std::path::{Path, PathBuf};
 use astrodyn_gravity::coefficients::save_binary;
 use astrodyn_gravity::jeod_cc::{load_from_jeod_cc, load_mu_from_jeod_cc};
 use astrodyn_gravity::SphericalHarmonicsData;
+use sha2::{Digest, Sha256};
+
+/// Pinned JEOD version captured in every fixture sidecar.
+const JEOD_VERSION: &str = "5.4";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -62,20 +73,21 @@ fn main() {
         jeod_root.display(),
     );
 
-    let jeod_rev = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
+    let jeod_commit = read_git_rev(&jeod_root).unwrap_or_else(|| "unknown".to_string());
+    let generated_utc = utc_now_iso8601();
 
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/gravity");
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
         panic!("Cannot create {}: {e}", out_dir.display());
     });
 
-    extract_mars(&jeod_root, &jeod_rev, &out_dir);
-    extract_sun(&jeod_root, &jeod_rev, &out_dir);
-    extract_moon_lp150q(&jeod_root, &jeod_rev, &out_dir);
-    extract_moon_grail150(&jeod_root, &jeod_rev, &out_dir);
+    extract_mars(&jeod_root, &jeod_commit, &generated_utc, &out_dir);
+    extract_sun(&jeod_root, &jeod_commit, &generated_utc, &out_dir);
+    extract_moon_lp150q(&jeod_root, &jeod_commit, &generated_utc, &out_dir);
+    extract_moon_grail150(&jeod_root, &jeod_commit, &generated_utc, &out_dir);
 }
 
-fn extract_moon_grail150(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
+fn extract_moon_grail150(jeod_root: &Path, jeod_commit: &str, generated_utc: &str, out_dir: &Path) {
     let rel = "models/environment/gravity/data/src/moon_GRAIL150.cc";
     let src_path = jeod_root.join(rel);
     let data = load_from_jeod_cc(&src_path).unwrap_or_else(|e| {
@@ -89,12 +101,17 @@ fn extract_moon_grail150(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     let bin_path = out_dir.join("moon_grail150.bin");
     save_binary(&data, &bin_path)
         .unwrap_or_else(|e| panic!("Cannot write {}: {e}", bin_path.display()));
+    let (bin_size, bin_sha256) = read_size_and_sha256(&bin_path);
 
     let meta_path = out_dir.join("moon_grail150.json");
     write_metadata(
         &meta_path,
         rel,
-        jeod_rev,
+        jeod_commit,
+        generated_utc,
+        "moon_grail150.bin",
+        bin_size,
+        &bin_sha256,
         Some(data.degree),
         Some(data.order),
         data.mu,
@@ -106,14 +123,15 @@ fn extract_moon_grail150(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     );
 
     println!(
-        "wrote {} ({} bytes) and {}",
+        "wrote {} ({} bytes; sha256 {}) and {}",
         bin_path.display(),
-        std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0),
+        bin_size,
+        bin_sha256,
         meta_path.display(),
     );
 }
 
-fn extract_moon_lp150q(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
+fn extract_moon_lp150q(jeod_root: &Path, jeod_commit: &str, generated_utc: &str, out_dir: &Path) {
     let rel = "models/environment/gravity/data/src/moon_LP150Q.cc";
     let src_path = jeod_root.join(rel);
     let data = load_from_jeod_cc(&src_path).unwrap_or_else(|e| {
@@ -127,12 +145,17 @@ fn extract_moon_lp150q(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     let bin_path = out_dir.join("moon_lp150q.bin");
     save_binary(&data, &bin_path)
         .unwrap_or_else(|e| panic!("Cannot write {}: {e}", bin_path.display()));
+    let (bin_size, bin_sha256) = read_size_and_sha256(&bin_path);
 
     let meta_path = out_dir.join("moon_lp150q.json");
     write_metadata(
         &meta_path,
         rel,
-        jeod_rev,
+        jeod_commit,
+        generated_utc,
+        "moon_lp150q.bin",
+        bin_size,
+        &bin_sha256,
         Some(data.degree),
         Some(data.order),
         data.mu,
@@ -143,14 +166,15 @@ fn extract_moon_lp150q(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     );
 
     println!(
-        "wrote {} ({} bytes) and {}",
+        "wrote {} ({} bytes; sha256 {}) and {}",
         bin_path.display(),
-        std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0),
+        bin_size,
+        bin_sha256,
         meta_path.display(),
     );
 }
 
-fn extract_mars(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
+fn extract_mars(jeod_root: &Path, jeod_commit: &str, generated_utc: &str, out_dir: &Path) {
     let rel = "models/environment/gravity/data/src/mars_MRO110B2.cc";
     let src_path = jeod_root.join(rel);
     let data = load_from_jeod_cc(&src_path).unwrap_or_else(|e| {
@@ -164,12 +188,17 @@ fn extract_mars(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     let bin_path = out_dir.join("mars_mro110b2.bin");
     save_binary(&data, &bin_path)
         .unwrap_or_else(|e| panic!("Cannot write {}: {e}", bin_path.display()));
+    let (bin_size, bin_sha256) = read_size_and_sha256(&bin_path);
 
     let meta_path = out_dir.join("mars_mro110b2.json");
     write_metadata(
         &meta_path,
         rel,
-        jeod_rev,
+        jeod_commit,
+        generated_utc,
+        "mars_mro110b2.bin",
+        bin_size,
+        &bin_sha256,
         Some(data.degree),
         Some(data.order),
         data.mu,
@@ -180,14 +209,15 @@ fn extract_mars(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     );
 
     println!(
-        "wrote {} ({} bytes) and {}",
+        "wrote {} ({} bytes; sha256 {}) and {}",
         bin_path.display(),
-        std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0),
+        bin_size,
+        bin_sha256,
         meta_path.display(),
     );
 }
 
-fn extract_sun(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
+fn extract_sun(jeod_root: &Path, jeod_commit: &str, generated_utc: &str, out_dir: &Path) {
     let rel = "models/environment/gravity/data/src/sun_spherical.cc";
     let src_path = jeod_root.join(rel);
     let mu = load_mu_from_jeod_cc(&src_path).unwrap_or_else(|e| {
@@ -223,12 +253,17 @@ fn extract_sun(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     let bin_path = out_dir.join("sun_spherical.bin");
     save_binary(&data, &bin_path)
         .unwrap_or_else(|e| panic!("Cannot write {}: {e}", bin_path.display()));
+    let (bin_size, bin_sha256) = read_size_and_sha256(&bin_path);
 
     let meta_path = out_dir.join("sun_spherical.json");
     write_metadata(
         &meta_path,
         rel,
-        jeod_rev,
+        jeod_commit,
+        generated_utc,
+        "sun_spherical.bin",
+        bin_size,
+        &bin_sha256,
         None, // degree (semantically point-mass)
         None, // order
         mu,
@@ -241,9 +276,10 @@ fn extract_sun(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
     );
 
     println!(
-        "wrote {} ({} bytes) and {}",
+        "wrote {} ({} bytes; sha256 {}) and {}",
         bin_path.display(),
-        std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0),
+        bin_size,
+        bin_sha256,
         meta_path.display(),
     );
 }
@@ -307,11 +343,53 @@ fn read_git_rev(jeod_root: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Read a file's size and SHA-256 hex digest in one pass.
+fn read_size_and_sha256(path: &Path) -> (u64, String) {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    (bytes.len() as u64, format!("{:x}", hasher.finalize()))
+}
+
+/// Current UTC time formatted as `YYYY-MM-DDThh:mm:ssZ`.
+fn utc_now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_unix_utc(secs)
+}
+
+fn format_unix_utc(secs: i64) -> String {
+    let z = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let hour = sod / 3_600;
+    let minute = (sod / 60) % 60;
+    let second = sod % 60;
+
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp.wrapping_sub(9) };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn write_metadata(
     path: &Path,
     source_rel: &str,
-    jeod_rev: &str,
+    jeod_commit: &str,
+    generated_utc: &str,
+    binary_file: &str,
+    binary_file_bytes: u64,
+    binary_file_sha256: &str,
     degree: Option<usize>,
     order: Option<usize>,
     mu: f64,
@@ -323,9 +401,14 @@ fn write_metadata(
     let mut f = std::fs::File::create(path)
         .unwrap_or_else(|e| panic!("Cannot create {}: {e}", path.display()));
     writeln!(f, "{{").unwrap();
-    writeln!(f, "  \"schema_version\": 1,").unwrap();
+    writeln!(f, "  \"schema_version\": 2,").unwrap();
     writeln!(f, "  \"source\": {},", json_str(source_rel)).unwrap();
-    writeln!(f, "  \"jeod_rev\": {},", json_str(jeod_rev)).unwrap();
+    writeln!(f, "  \"jeod_version\": \"{JEOD_VERSION}\",").unwrap();
+    writeln!(f, "  \"jeod_commit\": {},", json_str(jeod_commit)).unwrap();
+    writeln!(f, "  \"generated_utc\": \"{generated_utc}\",").unwrap();
+    writeln!(f, "  \"binary_file\": {},", json_str(binary_file)).unwrap();
+    writeln!(f, "  \"binary_file_bytes\": {binary_file_bytes},").unwrap();
+    writeln!(f, "  \"binary_file_sha256\": \"{binary_file_sha256}\",").unwrap();
     if let Some(d) = degree {
         writeln!(f, "  \"degree\": {d},").unwrap();
     }

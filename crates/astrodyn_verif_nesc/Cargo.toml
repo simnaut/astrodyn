@@ -18,6 +18,11 @@ astrodyn = { path = "../..", version = "0.1.0" }
 astrodyn_runner = { path = "../astrodyn_runner", version = "0.1.0" }
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.1.0" }
 glam = { workspace = true }
+# `sha2` is consumed by the `extract_nesc` regen binary (to record
+# SHA-256 of the produced canonical CSV in a sidecar) and by the
+# metadata-integrity test under `tests/`. Lives in regular deps because
+# `src/bin/` binaries cannot link `[dev-dependencies]`.
+sha2 = { workspace = true }
 
 [lints]
 workspace = true

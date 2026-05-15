@@ -31,6 +31,11 @@ log = { workspace = true }
 regex = "1"
 thiserror = { workspace = true }
 uom = { workspace = true }
+# `sha2` is consumed by the `extract_*` regen binaries (to record SHA-256
+# of produced fixtures in their JSON sidecars) and by the
+# metadata-integrity test under `tests/`. Lives in regular deps because
+# `src/bin/` binaries cannot link `[dev-dependencies]`.
+sha2 = { workspace = true }
 
 [dev-dependencies]
 # Full-step microbench for `Simulation::step()`. Lives here (not in

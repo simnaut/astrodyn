@@ -47,6 +47,21 @@ are parsed by `astrodyn_gravity::jeod_cc` into the binary fixtures
 committed under `test_data/gravity/`; production gravity does not parse
 JEOD source.
 
+## Fixture provenance
+
+Every committed `.bin` under `test_data/gravity/` carries a sidecar
+`<name>.json` (schema 2) recording the upstream source path, JEOD
+version, JEOD commit SHA at extraction time, generation timestamp, and
+the SHA-256 + byte count of the produced binary. Verbatim-mirrored text
+fixtures (e.g. `grav_geospherical_verif_out.txt`) carry a parallel
+`<name>.meta.json`. The workspace-level `tests/fixture_metadata.rs`
+asserts that every committed fixture has a matching sidecar with
+size + SHA-256 fields that match the file bytes, so a regen run that
+desynchronises the metadata fails CI. Re-run
+`cargo run -p astrodyn_gravity --bin extract_grav_coeffs` (or
+`extract_mars_data`) against a JEOD checkout to refresh the fixtures
+and sidecars together.
+
 ## See also
 
 - [`docs/JEOD_invariants.md`](https://github.com/simnaut/astrodyn/blob/main/docs/JEOD_invariants.md) — `GV.*`

@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "source": "https://nescacademy.nasa.gov/flightsim/2023/scn_8/Lunar_08_sim_01.csv",
+  "nesc_release": "GN&C 2023",
+  "upstream_file_sha256": "unknown (pre-#503 baseline)",
+  "generated_utc": "unknown (pre-#503 baseline)",
+  "reference_file": "cc8_nrho_reference.csv",
+  "reference_file_bytes": 2769426,
+  "reference_file_sha256": "8f9e3d57e27e86491d70491e13bb325eb2f250c63e048993a12c4d3fe8264748",
+  "note": "NESC CC8 NRHO canonical reference CSV. Regenerate with: cargo run -p astrodyn_verif_nesc --bin extract_nesc"
+}
