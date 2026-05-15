@@ -122,6 +122,18 @@ cargo run --profile release-with-debug \
     --scenario earth_moon_clem --steps 100000 --warmup 1000 --repeat 5
 ```
 
+## License and attribution
+
+Dual-licensed under either [`LICENSE-MIT`](LICENSE-MIT) or
+[`LICENSE-APACHE`](LICENSE-APACHE) at your option (SPDX: `MIT OR Apache-2.0`).
+
+The repository also redistributes a verbatim mirror of NASA JEOD v5.4 source
+files under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` as
+verification fixtures only. Those files remain governed by NASA's Open Source
+Agreement (NOSA) v1.3, not astrodyn's dual license. See
+[`NOTICE.md`](NOTICE.md) for the full attribution chain and the architectural
+distinction (astrodyn is an independent reimplementation, not a JEOD fork).
+
 ## See also
 
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and

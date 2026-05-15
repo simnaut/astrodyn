@@ -65,6 +65,15 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/simnaut/astrodyn"
 
+# Workspace-wide attribution metadata. `notice` points at the repo-root
+# NOTICE.md that documents the verbatim NASA JEOD source mirror under
+# `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` and its NOSA terms.
+# Cargo does not consume this key directly; it is published in workspace
+# metadata so downstream tooling (license scanners, supply-chain auditors)
+# can discover the attribution file alongside the SPDX license expression.
+[workspace.metadata]
+notice = "NOTICE.md"
+
 [workspace.dependencies]
 glam = { version = "0.30", features = ["std"] }
 bevy = { version = "0.18", default-features = false, features = [

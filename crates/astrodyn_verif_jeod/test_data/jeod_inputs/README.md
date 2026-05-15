@@ -8,6 +8,16 @@ same files are committed verbatim under this directory so
 `cargo nextest run --workspace` works on a fresh clone with no JEOD
 checkout.
 
+## Licensing and attribution
+
+The files in this directory are a **verbatim, unmodified mirror** of NASA JEOD
+v5.4 sources, redistributed solely as verification fixtures. They remain
+governed by JEOD's upstream NASA Open Source Agreement (NOSA) v1.3, not by
+astrodyn's own `MIT OR Apache-2.0` license. See the repo-root
+[`NOTICE.md`](../../../../NOTICE.md) for the full attribution chain (upstream
+project, government designation, pinned version, license terms, and how NOSA
+composes with astrodyn's dual license).
+
 ## Layout
 
 Every fixture is committed at the same relative path it occupies in a
