@@ -204,7 +204,11 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
-            GeodeticConfigC { planet },
+            GeodeticConfigC {
+                planet,
+                r_eq: earth_shape.r_eq,
+                r_pol: earth_shape.r_pol,
+            },
         ))
         .id();
 
@@ -495,7 +499,11 @@ fn bevy_parity_derived_state_polar_geodetic() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
-            GeodeticConfigC { planet },
+            GeodeticConfigC {
+                planet,
+                r_eq: earth_shape.r_eq,
+                r_pol: earth_shape.r_pol,
+            },
         ))
         .id();
 
@@ -903,7 +911,11 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
             }),
-            GeodeticConfigC { planet },
+            GeodeticConfigC {
+                planet,
+                r_eq: earth_shape.r_eq,
+                r_pol: earth_shape.r_pol,
+            },
         ))
         .id();
 
