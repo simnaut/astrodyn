@@ -263,12 +263,11 @@ impl Simulation {
         &self,
         source_idx: usize,
     ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
-        // allowed: typed-sibling accessor boundary. The kernel returns
-        // a frame-erased `DMat3`; the phantom is the caller's
-        // pinned-planet convention, attached unchecked.
-        sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx).map(
-            astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix,
-        )
+        let raw = sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx);
+        // allowed: typed-sibling accessor boundary. The kernel returns a
+        // frame-erased `DMat3`; the phantom is the caller's pinned-planet
+        // convention attached unchecked, matching `source_position_typed`.
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 
     /// Get the inertial-frame [`FrameId`] for a gravity source.

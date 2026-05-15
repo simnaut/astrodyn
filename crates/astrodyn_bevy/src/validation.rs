@@ -423,23 +423,27 @@ pub fn validate_jeod_invariants<P: Planet>(
                 // FAIL_LOUD_EXEMPT: Bevy-side mirror of the runner-side
                 // `NonRootFrameWithRootDependentFeatures` warning-class
                 // ValidationError. The configuration is supported (see
-                // `tests/integ_frame_translation_invariance.rs` for a
-                // correctly-handled non-root setup with the same feature
-                // set) provided the caller applies the per-step
-                // `IntegOrigin` shift per RF.10. Promoting to panic
-                // would false-positive on legitimate setups.
+                // `tests/integ_frame_translation_invariance.rs`) provided
+                // the caller applies the per-step `IntegOrigin` shift at
+                // every RF.10 shift site (SRP, solar beta, earth lighting)
+                // and consumes non-shift sites directly. Promoting to
+                // panic would false-positive on legitimate setups.
                 bevy::log::warn!(
                     "Entity {entity:?}: non-root integration frame (or active \
-                     frame switch into a non-root frame) paired with features \
-                     that consume root-inertial coordinates (drag={has_drag}, \
-                     flat_plate_srp={has_flat}, cannonball_srp={has_cannonball}, \
+                     frame switch into a non-root frame) paired with features. \
+                     Per RF.10, these fall into two groups: SHIFT SITES (need \
+                     root-inertial conversion before mixing with root-inertial \
+                     source positions — flat_plate_srp={has_flat}, \
+                     cannonball_srp={has_cannonball}, \
+                     solar_beta={has_solar_beta}, \
+                     earth_lighting={has_earth_lighting}) and NON-SHIFT SITES \
+                     (consume the body's typed `Position<PlanetInertial<P>>` \
+                     directly; shifting would break them — drag={has_drag}, \
                      orbital_elements={has_orbital}, euler={has_euler}, \
-                     geodetic={has_geodetic}, lvlh={has_lvlh}, \
-                     solar_beta={has_solar_beta}, earth_lighting={has_earth_lighting}). \
-                     The consumer must apply the per-step `IntegOrigin` shift \
-                     (RF.10) to convert the body's integration-frame state into \
-                     root-inertial before the consumer runs; without that shift \
-                     the consumer mixes coordinates from different frames.",
+                     geodetic={has_geodetic}, lvlh={has_lvlh}). If the \
+                     configuration applies the shift at every shift site (and \
+                     leaves the non-shift sites alone) this warning is \
+                     informational.",
                 );
             }
         }

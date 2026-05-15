@@ -198,7 +198,12 @@ return_files_to_scan=$( {
 } | sort)
 
 raw_returns=$(echo "$return_files_to_scan" | xargs awk '
-    FNR == 1 { prev_escape = 0 }
+    FNR == 1 {
+        prev_escape = 0
+        in_sig = 0
+        sig_buf = ""
+        sig_line = 0
+    }
     # Pure-comment line with `// ESCAPE_HATCH:` propagates to the next
     # pub-fn line.
     /^[[:space:]]*\/\/.*ESCAPE_HATCH:/ { prev_escape = 1; next }
@@ -207,18 +212,46 @@ raw_returns=$(echo "$return_files_to_scan" | xargs awk '
     /^[[:space:]]*\/\// { next }
     # Blank: keep prev_escape as-is.
     /^[[:space:]]*$/ { next }
-    # Match `pub fn ... -> ...DVec3` (or DQuat / DMat3), including
-    # `Option<DVec3>`, `(DVec3, DVec3)`, and `Result<DVec3, _>` shapes.
-    # The `\\bDVec3\\b` style word-boundary keeps `IntegOrigin` (which
-    # is typed) from matching just because its impl uses DVec3 internally.
-    /^[[:space:]]*pub( *\([^)]*\))? fn [^(]*\([^)]*\)[^{]*->[^{]*(DVec3|DQuat|DMat3)/ {
-        if (prev_escape) { prev_escape = 0; next }
-        printf "%s:%d: %s\n", FILENAME, FNR, $0
-        prev_escape = 0
-        next
+    {
+        # Multi-line `pub fn` signature handling: start accumulating on a
+        # `pub fn` line and keep appending until the first `{` (body opener)
+        # or `;` (extern / trait method). Then test the accumulated
+        # signature against the raw-return regex. This catches the common
+        # rustfmt style:
+        #     pub fn foo(
+        #         arg: Bar,
+        #     ) -> DVec3 {
+        # which the original single-line regex would miss.
+        if (!in_sig && $0 ~ /^[[:space:]]*pub( *\([^)]*\))? fn /) {
+            in_sig = 1
+            sig_buf = $0
+            sig_line = FNR
+        } else if (in_sig) {
+            sig_buf = sig_buf " " $0
+        }
+        if (in_sig && ($0 ~ /\{/ || $0 ~ /;[[:space:]]*$/)) {
+            # Signature complete. Strip everything after the first `{`
+            # (the body opener) to avoid accidental matches inside the
+            # body. Then test for a raw return.
+            sub(/\{.*/, "", sig_buf)
+            if (sig_buf ~ /->[^{]*(DVec3|DQuat|DMat3)/) {
+                if (prev_escape) {
+                    # Annotated escape hatch — accept.
+                } else {
+                    printf "%s:%d: %s\n", FILENAME, sig_line, sig_buf
+                }
+            }
+            in_sig = 0
+            sig_buf = ""
+            sig_line = 0
+            prev_escape = 0
+            next
+        }
+        # Any non-signature code line resets the propagating-escape state.
+        if (!in_sig) {
+            prev_escape = 0
+        }
     }
-    # Any other code line resets the propagating-escape state.
-    { prev_escape = 0 }
 ')
 
 failed=0

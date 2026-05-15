@@ -332,14 +332,24 @@ impl std::fmt::Display for ValidationError {
                 write!(
                     f,
                     "Body {body_idx}: non-root integration frame paired with features \
-                     that consume root-inertial coordinates (drag, SRP, orbital elements, \
-                     euler angles, LVLH, geodetic, solar beta, or earth lighting). The \
-                     consumer must apply the per-step `IntegOrigin` shift (RF.10) to \
-                     convert the body's integration-frame state into root-inertial \
-                     before the consumer runs. Without that shift, the consumer mixes \
-                     coordinates from different frames and produces wrong physics. \
+                     that may depend on the integration-frame choice. Per RF.10, these \
+                     fall into two groups:\n  \
+                     - SHIFT SITES (need root-inertial conversion before consuming the \
+                       body's state alongside root-inertial source positions): SRP \
+                       (cannonball / flat-plate), solar beta, earth lighting. The \
+                       caller must apply the per-step `IntegOrigin` shift via \
+                       `body.trans.to_inertial(&integ_origin)` (or the typed phantom \
+                       sibling) before feeding state into the consumer.\n  \
+                     - NON-SHIFT SITES (operate within the body's planet-inertial \
+                       integration frame; shifting them would break their semantics): \
+                       atmosphere, drag, LVLH, geodetic, orbital elements, euler \
+                       angles. These consume the body's typed `Position<PlanetInertial<P>>` \
+                       directly — no shift is required.\n  \
+                     If your configuration applies the shift correctly at every shift \
+                     site (and leaves the non-shift sites alone), this warning is \
+                     informational. \
                      `crates/astrodyn_runner/tests/integ_frame_translation_invariance.rs` \
-                     demonstrates a correctly-configured non-root setup."
+                     is the worked example."
                 )
             }
             Self::EphemerisOnRootSource { source_idx } => {

@@ -195,11 +195,10 @@ impl SourceReader<'_, '_> {
         &self,
         source: Entity,
     ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
+        let raw = self.source_pfix_rotation(source);
         // allowed: typed-sibling accessor boundary. The phantom is the
         // caller's pinned-planet convention attached unchecked.
-        self.source_pfix_rotation(source).map(
-            astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix,
-        )
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 }
 
@@ -368,10 +367,9 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
         &self,
         source: Entity,
     ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
+        let raw = self.source_pfix_rotation(source);
         // allowed: typed-sibling accessor boundary; phantom attached unchecked.
-        self.source_pfix_rotation(source).map(
-            astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix,
-        )
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 
     /// Set the inertial position of `source` and sync to the source's

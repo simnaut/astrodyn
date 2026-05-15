@@ -109,12 +109,10 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
     /// (bit-identical to the input); the cached quaternion is derived via
     /// `DQuat::from_mat3`.
     ///
-    /// The caller must pass a proper orthonormal rotation matrix —
-    /// `debug_assert!`s check `det ≈ 1.0` and `M·Mᵀ ≈ I`. Production
-    /// behaviour on a non-rotation matrix is unspecified (`from_mat3`
-    /// produces an arbitrary quaternion; subsequent `.apply()` calls
-    /// continue to use the original matrix and remain bit-identical to a
-    /// raw `M * v` multiply).
+    /// The caller must pass a proper orthonormal rotation matrix — both
+    /// debug and release builds `assert!` that `|det(M) - 1| < 1e-9` and
+    /// `max|M·Mᵀ - I| < 1e-9`. See the `# Panics` section below for the
+    /// exact preconditions and the post-#485 release-mode policy.
     ///
     /// **Use when** the matrix is the source of truth — e.g., RNP / Mars /
     /// Moon / DE421 rotation kernels — and round-tripping through
