@@ -128,11 +128,11 @@ use crate::mass_tree::MassTreeView;
 ///
 /// Panics with a "Fail Loudly" diagnostic when the kernel detects a
 /// non-orthonormal composed rotation (degenerate
-/// `MassChildOf.t_parent_child` upstream), or when the
-/// orchestration walk finds an orphaned subtree
-/// (a `MassChildOf` chain that doesn't terminate at a root in the
-/// world). Both cases indicate a misconfiguration in mission code,
-/// not a runtime physics divergence.
+/// `MassChildOf.t_parent_child` upstream), when the orchestration
+/// walk finds an orphaned subtree (a `MassChildOf` chain that doesn't
+/// terminate at a root in the world), or when a mass-tree node lacks
+/// `RotationalStateC` / `TranslationalStateC<P>`. Each case indicates a
+/// misconfiguration in mission code, not a runtime physics divergence.
 // JEOD_INV: DB.13 — kinematic state propagation routed through structural frames (parent → struct → link → child struct → child body)
 // JEOD_INV: DB.17 — only the root integrates; non-root state is derived each step
 #[allow(clippy::type_complexity)]
@@ -196,12 +196,27 @@ pub fn propagate_state_from_root_system<P: Planet>(
             // <MassNode>` is the only relabel needed here; the
             // per-edge `t_parent_child` matrix carries any per-link
             // frame transition the JEOD attach geometry encodes.
+            // JEOD_INV: DB.17 — every mass-tree node feeds its
+            // RotationalState + TranslationalState into the kinematic
+            // walk; a missing state on any node (root, intermediate,
+            // or leaf) would corrupt every descendant. Surface the
+            // missing component as a per-entity panic rather than
+            // silently substituting `(DQuat::IDENTITY, DVec3::ZERO)`,
+            // which used to propagate identity rotation + zero
+            // position through the chain. CLAUDE.md "Fail Loudly".
             let (rot_untyped, trans_typed) = match read_q.get(entity) {
                 Ok((r, t)) => (
                     astrodyn::typed_bridge::rot_typed_to_raw(&r.0),
                     t.0.relabel_to::<astrodyn::MassNode>(),
                 ),
-                Err(_) => Default::default(),
+                Err(_) => panic!(
+                    "kinematic propagation needs entity {entity:?}'s RotationalStateC + \
+                     TranslationalStateC<P>, but the query returned no match. The entity \
+                     is in the MassChildOf tree (so it carries MassPropertiesC) but at \
+                     least one of those two state components is missing. Either add the \
+                     missing component to the entity before it joins the simulation, or \
+                     remove the entity's MassChildOf parent link."
+                ),
             };
             let t_struct_body = struct_q
                 .get(entity)
@@ -782,5 +797,53 @@ mod tests {
             diff < 1e-10,
             "propagated child attitude must equal t_pc · parent_T; got diff {diff}"
         );
+    }
+
+    /// Fail-loudly regression: a mass-tree node that lacks
+    /// `RotationalStateC` + `TranslationalStateC<P>` previously
+    /// silently substituted `(DQuat::IDENTITY, DVec3::ZERO)` for the
+    /// missing state, propagating identity rotation + zero position
+    /// through every descendant. The kinematic walk now panics with a
+    /// per-entity diagnostic instead. Configuration under test: a
+    /// rooted parent with full state plus a kinematic child that
+    /// carries the mass-tree edge (`MassChildOf` + `MassPropertiesC`)
+    /// but is missing both state components. Per CLAUDE.md "Fail
+    /// Loudly".
+    #[test]
+    #[should_panic(expected = "kinematic propagation needs entity")]
+    fn missing_state_on_mass_tree_node_panics() {
+        let mut app = add_test_app();
+
+        let parent = app
+            .world_mut()
+            .spawn((
+                Name::new("rooted_parent"),
+                MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                    &(MassProperties::new(10.0)),
+                )),
+                RotationalStateC::default(),
+                TranslationalStateC::<astrodyn::Earth>::default(),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Child carries the mass-tree edge but no state components.
+        // `from_queries` requires `MassPropertiesC` on every edge end,
+        // but does not gate on the state components — so this is the
+        // exact configuration the kinematic walk used to swallow.
+        app.world_mut().spawn((
+            Name::new("stateless_child"),
+            MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
+                &(MassProperties::new(5.0)),
+            )),
+            MassChildOf::with_rotation(parent, DVec3::ZERO, DMat3::IDENTITY),
+        ));
+
+        app.add_systems(Update, propagate_state_from_root_system::<astrodyn::Earth>);
+        app.update();
     }
 }

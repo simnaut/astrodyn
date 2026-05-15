@@ -374,7 +374,7 @@ pub fn dimensionless(value: f64) -> Ratio {
 pub use astrodyn_math::JeodQuat;
 
 // astrodyn_math: derived state types
-pub use astrodyn_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements};
+pub use astrodyn_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, OrbitalError};
 
 // astrodyn_math::euler_angles: typed-quantity Euler-angle helpers
 // paired with the already-exposed `EulerSequence`.

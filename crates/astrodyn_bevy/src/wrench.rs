@@ -1326,6 +1326,15 @@ mod tests {
             let mut cmds = app.world_mut().commands();
             let p = parent_cfg.spawn_bevy::<astrodyn::Earth>(&mut cmds, &[earth]);
             app.world_mut().flush();
+            // 3-DOF parents that participate in a mass tree need an
+            // explicit `RotationalStateC` so the kinematic walk can
+            // read it. `spawn_bevy` omits `RotationalStateC` when the
+            // body is point-mass (no rotational dynamics); the previous
+            // silent-default fallback in the propagation system has
+            // been retired by the fail-loudly conversion.
+            app.world_mut()
+                .entity_mut(p)
+                .insert(RotationalStateC::default());
             p
         };
 
@@ -1352,6 +1361,12 @@ mod tests {
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
+                // `RotationalStateC` is required on every mass-tree
+                // node so `propagate_state_from_root_system` can read
+                // it during the kinematic walk; the previous
+                // silent-default fallback was retired by the
+                // fail-loudly conversion at the propagation site.
+                RotationalStateC::default(),
                 crate::TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                     position: parent_pos,
                     velocity: DVec3::ZERO,
@@ -1378,10 +1393,17 @@ mod tests {
             app.world_mut().run_schedule(FixedUpdate);
         }
 
-        // Child must still be at its spawn position. With the bug,
-        // gravity would have integrated it ~9.8/2 m in the first
-        // step alone (4.9 m), with growing drift each subsequent
-        // step.
+        // The kinematic-propagation system runs after `integration_system`
+        // every tick, so it overwrites the child's `TranslationalStateC`
+        // with the kinematic-walk value at the end of each step
+        // regardless of how `integration_system` treated it. The
+        // assertion below therefore probes the kinematic-walk's
+        // post-integration output formula, not the `KinematicChildC`
+        // gate contract directly — that contract is pinned separately
+        // by the marker-presence `assert!` below (lines 1449-1452),
+        // which checks the marker is installed by wrench aggregation
+        // and so prevents `integration_system` from advancing the
+        // child independently within a tick.
         let child_pos = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<crate::TranslationalStateC<astrodyn::Earth>>(child)
@@ -1389,19 +1411,6 @@ mod tests {
                 .0,
         )
         .position;
-        let drift = (child_pos - parent_pos).length();
-        // The child should not have moved under integration. Allow
-        // numerical noise but fail loudly on any meaningful drift.
-        assert!(
-            drift < 1e-6,
-            "kinematic child drifted {drift:.3e} m under gravity over 5 steps; \
-             expected ~0 (KinematicChildC marker should keep integration_system \
-             from advancing it)"
-        );
-
-        // Sanity: the parent (root) DID integrate. If neither moved,
-        // the test would silently pass even with a broken
-        // integration system.
         let parent_pos_after = astrodyn::typed_bridge::trans_typed_to_raw(
             &app.world()
                 .get::<crate::TranslationalStateC<astrodyn::Earth>>(parent)
@@ -1409,6 +1418,29 @@ mod tests {
                 .0,
         )
         .position;
+        // Composite CoM of the (parent 420000 kg + child 100 kg @ offset
+        // 0.5 m along x) chain sits at `100·0.5/(420000+100) ≈ 1.19e-4`
+        // along x in the parent's structural frame. With both bodies
+        // at identity attitude, the propagation kernel writes the
+        // child's inertial position as `parent_after + (offset −
+        // composite_in_pstr)` (the `pcm_to_ccm` shift from
+        // `compute_kinematic_child_state`). The assertion compares the
+        // stored child position against that formula.
+        let composite_in_pstr_x = 100.0 * 0.5 / (420_000.0 + 100.0);
+        let expected_offset = DVec3::new(0.5 - composite_in_pstr_x, 0.0, 0.0);
+        let expected_child_pos = parent_pos_after + expected_offset;
+        let drift = (child_pos - expected_child_pos).length();
+        assert!(
+            drift < 1e-6,
+            "kinematic child position {child_pos:?} departs from the kinematic-walk \
+             formula `parent_after + offset - composite_in_pstr` by {drift:.3e} m over \
+             5 steps; expected ~0 (the post-integration propagation walk should write \
+             this exact composition every tick)"
+        );
+
+        // Sanity: the parent (root) DID integrate. If neither moved,
+        // the test would silently pass even with a broken
+        // integration system.
         let parent_drift = (parent_pos_after - parent_pos).length();
         assert!(
             parent_drift > 1.0,
