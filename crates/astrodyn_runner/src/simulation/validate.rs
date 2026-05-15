@@ -10,15 +10,22 @@ use uom::si::mass::kilogram;
 use super::Simulation;
 
 impl Simulation {
-    /// Validate all bodies against JEOD invariants and apply auto-corrections.
+    /// Validate all bodies against JEOD invariants.
     ///
     /// Call once before the first `step()`. Returns `Ok(())` if all bodies are
     /// valid, or `Err(errors)` with all validation errors found.
     ///
-    /// Also runs `GravityControl::check_validity()` on each control to
-    /// auto-correct degree/order (matching JEOD's `initialize_gravity_controls()`
-    /// and the Bevy adapter's startup validation).
-    // JEOD_INV: GV.03 — check_validity() called at startup (auto-corrections applied in-place)
+    /// Also runs [`GravityControl::check_validity`] on each control. That
+    /// validator panics on any gravity-control misconfiguration (out-of-range
+    /// degree/order/gradient ordinals, non-spherical against a point-mass
+    /// source, etc.) rather than silently auto-correcting — see CLAUDE.md
+    /// "Fail Loudly". Where JEOD would log a non-fatal `MessageHandler::error`
+    /// and continue with a clamped control, we surface the misconfiguration
+    /// at validation time so the operator sees the divergence between the
+    /// requested gravity model and what would actually be evaluated.
+    ///
+    /// [`GravityControl::check_validity`]: astrodyn::GravityControl::check_validity
+    // JEOD_INV: GV.03 — check_validity() called at startup
     pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let num_sources = self.gravity_data.len();
         let mut all_errors = Vec::new();
@@ -202,9 +209,12 @@ impl Simulation {
                 }
             }
 
-            // Apply gravity control auto-corrections (degree/order clamping).
-            // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
-            for ctrl in &mut body.gravity_controls.controls {
+            // Gravity control startup validation. `check_validity` panics
+            // on any misconfiguration (see CLAUDE.md "Fail Loudly"); we
+            // intentionally do not gather these into `all_errors` because
+            // a wrong gravity model is not recoverable downstream.
+            // JEOD_INV: GV.03 — check_validity() called at startup
+            for ctrl in &body.gravity_controls.controls {
                 if let Some(grav) = self.gravity_data.get(ctrl.source_name) {
                     ctrl.check_validity(&grav.source);
                 }
