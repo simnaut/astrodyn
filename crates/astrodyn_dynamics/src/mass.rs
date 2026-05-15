@@ -68,14 +68,15 @@ pub const MAX_SAFE_MASS_KG: f64 = 1e100;
 ///
 /// The check is scale-invariant — `(product - identity).abs() < tol`
 /// against the identity, regardless of the inertia tensor's own
-/// magnitudes — so a single absolute tolerance suffices. `1e-6`
-/// matches [`INERTIA_CONSISTENCY_TOL`] (the public-facing tolerance
-/// for `validate_consistency`); using the same bound means a tensor
-/// that survives `checked_inertia_inverse` also survives the public
-/// post-construction `validate_consistency(1e-6)` call. Realistic
-/// spacecraft tensors (principal moments 1–1e4 kg·m²) exercise this
-/// at the ~1e-15 level, leaving 9 orders of margin.
-const POST_INVERSE_IDENTITY_TOL: f64 = 1e-6;
+/// magnitudes — so a single absolute tolerance suffices. Defined as
+/// [`INERTIA_CONSISTENCY_TOL`] (the public-facing tolerance for
+/// `validate_consistency`) so the two bounds cannot drift apart: a
+/// tensor that survives `checked_inertia_inverse` is guaranteed to
+/// survive the public post-construction `validate_consistency` call
+/// at the same tolerance. Realistic spacecraft tensors (principal
+/// moments 1–1e4 kg·m²) exercise this at the ~1e-15 level, leaving
+/// 9 orders of margin.
+const POST_INVERSE_IDENTITY_TOL: f64 = INERTIA_CONSISTENCY_TOL;
 
 /// Invert `inertia` and assert the inverse reproduces the identity
 /// under multiplication — i.e. `I · I⁻¹ ≈ I_{3×3}`.
@@ -291,14 +292,15 @@ impl MassProperties {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [[`MIN_SAFE_MASS_KG`], [`MAX_SAFE_MASS_KG`]] does
-    /// not apply. The requirements on `mass` are `mass > 0 &&
-    /// mass.is_finite()` *and* `(1.0 / mass).is_finite()` — the second
-    /// half additionally rejects positive finite subnormals below `1.0 /
-    /// f64::MAX ≈ 5.6e-309`, whose reciprocal overflows to `+inf` and
-    /// would silently cache a non-finite `inverse_mass`. The inertia
-    /// tensor is guarded separately by the scale-invariant
-    /// inertia-inverse check shared with `recompute_derived`.
+    /// safe-range bound `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]` (see
+    /// [`MIN_SAFE_MASS_KG`] / [`MAX_SAFE_MASS_KG`]) does not apply. The
+    /// requirements on `mass` are `mass > 0 && mass.is_finite()` *and*
+    /// `(1.0 / mass).is_finite()` — the second half additionally
+    /// rejects positive finite subnormals below `1.0 / f64::MAX ≈
+    /// 5.6e-309`, whose reciprocal overflows to `+inf` and would
+    /// silently cache a non-finite `inverse_mass`. The inertia tensor
+    /// is guarded separately by the scale-invariant inertia-inverse
+    /// check shared with `recompute_derived`.
     ///
     /// # Panics
     /// Panics (with a diagnostic that names the broken assumption) if:
@@ -534,11 +536,12 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [[`MIN_SAFE_MASS_KG`], [`MAX_SAFE_MASS_KG`]] does
-    /// not apply. The requirements on `mass` are `mass > 0 &&
-    /// mass.is_finite()` *and* `(1.0 / mass).is_finite()` — the second
-    /// half additionally rejects positive finite subnormals below `1.0
-    /// / f64::MAX ≈ 5.6e-309`, whose reciprocal overflows to `+inf`.
+    /// safe-range bound `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]` (see
+    /// [`MIN_SAFE_MASS_KG`] / [`MAX_SAFE_MASS_KG`]) does not apply. The
+    /// requirements on `mass` are `mass > 0 && mass.is_finite()` *and*
+    /// `(1.0 / mass).is_finite()` — the second half additionally
+    /// rejects positive finite subnormals below `1.0 / f64::MAX ≈
+    /// 5.6e-309`, whose reciprocal overflows to `+inf`.
     ///
     /// # Panics
     /// Panics (with a diagnostic that names the broken assumption) if:
@@ -841,10 +844,13 @@ mod tests {
     //
     // * Explicit-inertia constructors (`with_inertia`,
     //   `recompute_derived`) accept a caller-supplied inertia whose
-    //   magnitude is independent of `mass`. The only requirement on
-    //   `mass` is that `1/mass` stays finite — i.e. `mass > 0 &&
-    //   mass.is_finite()`. The inertia tensor is guarded separately by
-    //   the scale-invariant `checked_inertia_inverse`.
+    //   magnitude is independent of `mass`. The requirement on `mass`
+    //   is `mass > 0 && mass.is_finite() && (1.0 / mass).is_finite()`
+    //   — the third clause is non-redundant because a positive finite
+    //   subnormal below `1.0 / f64::MAX ≈ 5.6e-309` satisfies the
+    //   first two yet reciprocates to `+inf`. The inertia tensor is
+    //   guarded separately by the scale-invariant
+    //   `checked_inertia_inverse`.
 
     #[test]
     #[should_panic(expected = "out of safe range")]
@@ -936,11 +942,16 @@ mod tests {
 
     /// Mass below the point-mass safe floor paired with a sane,
     /// well-conditioned explicit inertia must succeed. The
-    /// explicit-inertia path's `inverse_inertia` is derived solely from
-    /// the supplied tensor — `mass` only feeds the `1/mass` cache, which
-    /// is finite for any finite-positive mass. Rejecting this input
-    /// would force callers to invent a fake mass purely to satisfy a
-    /// numerical guard that does not apply to their path.
+    /// explicit-inertia path's `inverse_inertia` is derived solely
+    /// from the supplied tensor — `mass` only feeds the `1/mass`
+    /// cache, which is finite for any normal-range positive mass.
+    /// (The fixture `1e-150` is well above
+    /// `1.0 / f64::MAX ≈ 5.6e-309`, so its reciprocal is itself a
+    /// normal-range f64; positive subnormals below that threshold
+    /// are rejected by the `(1.0 / mass).is_finite()` post-check —
+    /// see the subnormal-rejection tests below.) Rejecting this
+    /// input would force callers to invent a fake mass purely to
+    /// satisfy a numerical guard that does not apply to their path.
     #[test]
     fn untyped_with_inertia_accepts_tiny_mass_with_sane_inertia() {
         let mp = MassProperties::with_inertia(
@@ -1112,6 +1123,48 @@ mod tests {
         );
     }
 
+    // The next three tests mirror the untyped `MassProperties::with_inertia`
+    // coverage for negative, NaN, and infinite masses. The typed sibling
+    // re-implements the same mass guard against the unwrapped `f64`
+    // (`Mass::get::<kilogram>()`), so without these typed-side asserts
+    // the two APIs could silently diverge on which inputs they reject —
+    // e.g. dropping the `is_finite()` clause on the typed side would let
+    // a `Mass::new::<kilogram>(f64::NAN)` through while the untyped
+    // sibling still panics.
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_with_inertia_panics_on_negative_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(-1.0),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(DMat3::IDENTITY),
+            Position::<StructuralFrame<TestVehicle>>::zero(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_with_inertia_panics_on_nan_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(f64::NAN),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(DMat3::IDENTITY),
+            Position::<StructuralFrame<TestVehicle>>::zero(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_with_inertia_panics_on_infinite_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(f64::INFINITY),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(DMat3::IDENTITY),
+            Position::<StructuralFrame<TestVehicle>>::zero(),
+        );
+    }
+
     /// Companion to the analogous `with_inertia` test: with the
     /// explicit-inertia path's relaxed mass guard, `recompute_derived`
     /// rejects only NaN / infinite / zero / negative masses, not masses
@@ -1136,6 +1189,72 @@ mod tests {
         mp.recompute_derived();
     }
 
+    // The next six tests pin the negative / NaN / infinite branches of
+    // the `recompute_derived` mass guard on both the untyped and typed
+    // sides. The `recompute_derived` mass check is a separate assert
+    // from the `with_inertia` one (it runs against `self.mass` after
+    // an in-place mutation, not against a constructor argument), so
+    // without these dedicated cases the constructor tests could keep
+    // passing while the recompute branch silently regressed to accept
+    // one of these invalid values.
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn untyped_recompute_derived_panics_on_negative_mass() {
+        let mut mp = MassProperties::new(10.0);
+        mp.mass = -1.0;
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn untyped_recompute_derived_panics_on_nan_mass() {
+        let mut mp = MassProperties::new(10.0);
+        mp.mass = f64::NAN;
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn untyped_recompute_derived_panics_on_infinite_mass() {
+        let mut mp = MassProperties::new(10.0);
+        mp.mass = f64::INFINITY;
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_recompute_derived_panics_on_negative_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let mut mp = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
+        mp.mass = Mass::new::<kilogram>(-1.0);
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_recompute_derived_panics_on_nan_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let mut mp = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
+        mp.mass = Mass::new::<kilogram>(f64::NAN);
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
+    #[test]
+    #[should_panic(expected = "finite and strictly positive")]
+    fn typed_recompute_derived_panics_on_infinite_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let mut mp = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
+        mp.mass = Mass::new::<kilogram>(f64::INFINITY);
+        mp.dirty = true;
+        mp.recompute_derived();
+    }
+
     // ---- subnormal-mass rejection -------------------------------------
     //
     // The explicit-inertia paths (`with_inertia`, `recompute_derived` —
@@ -1149,10 +1268,13 @@ mod tests {
     // `inverse_mass.is_finite()` branch of the assert at each of the
     // four affected entry points so it cannot regress silently.
     //
-    // The smaller of the two values (`1e-310`) is the canonical
-    // subnormal: well below `f64::MIN_POSITIVE ≈ 2.2e-308`, so
-    // `is_subnormal() == true`. Both values reciprocate to `+inf` under
-    // round-to-nearest f64 division.
+    // The canonical fixture below is `1e-310`: well below
+    // `f64::MIN_POSITIVE ≈ 2.2e-308`, so `is_subnormal() == true`,
+    // and below `1.0 / f64::MAX ≈ 5.6e-309`, so its reciprocal
+    // rounds to `+inf` under f64 division. That single value
+    // exercises both halves of the compound predicate (positive
+    // finite *and* reciprocal overflow) at each of the four affected
+    // entry points.
 
     /// `1e-310` is a positive finite subnormal (`is_subnormal()`,
     /// `is_finite()`, `> 0.0` all true) whose reciprocal `1/m` overflows

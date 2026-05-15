@@ -222,9 +222,13 @@ mod tests {
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
         let b = mass_raw_to_self_ref(&MassProperties::new(424.0));
         // Cache fields — the primary regression class. Compare via
-        // `to_bits()` (through `dmat3_byte_eq`) because `DMat3`/`f64`
-        // `==` treats `0.0 == -0.0` as equal and silently flattens
-        // the sub-ULP differences this test exists to detect.
+        // `to_bits()` (through `dmat3_byte_eq`) because `==` on
+        // `f64`/`DMat3` is IEEE value equality, not byte equality:
+        // it treats `0.0 == -0.0` as `true` and `NaN == NaN` as
+        // `false`, so a silent `+0.0 → -0.0` rewrite or a propagated
+        // deterministic NaN lane would mis-classify under `==`. ULP
+        // differences are caught by both predicates — the bit-level
+        // form just additionally handles signed-zero and NaN payloads.
         assert!(
             dmat3_byte_eq(a.inverse_inertia, b.inverse_inertia),
             "inverse_inertia diverges between construction paths: \
@@ -263,19 +267,20 @@ mod tests {
             MassPropertiesTyped::<SelfRef>::to_untyped(&b),
         );
 
-        // Stale-cache fence. The `a == b` comparison above is
+        // Stale-cache fence. The field-by-field assertions above
+        // (and the `to_untyped` projection equality) are
         // self-consistent on both sides — every cache equals
-        // `1/mass`/`inertia.inverse()` of the corresponding structural
-        // field, so a degenerate bridge that *copied* the raw cache
-        // fields and merely flipped `dirty = false` (skipping
-        // `with_inertia`'s recompute entirely) would still pass it.
-        // To prove the recompute genuinely runs, build a raw input
-        // whose `inverse_mass`/`inverse_inertia` are *deliberately
-        // wrong* and assert the typed sibling emerges with the
-        // structurally-correct values (`1/mass` and `inertia⁻¹`),
-        // *not* the stale cache. The structural inputs match the
-        // canonical `MassProperties::new(424.0)` form so we can name
-        // the expected re-derived cache directly.
+        // `1/mass`/`inertia.inverse()` of the corresponding
+        // structural field, so a degenerate bridge that *copied* the
+        // raw cache fields and merely flipped `dirty = false`
+        // (skipping `with_inertia`'s recompute entirely) would still
+        // pass them. To prove the recompute genuinely runs, build a
+        // raw input whose `inverse_mass`/`inverse_inertia` are
+        // *deliberately wrong* and assert the typed sibling emerges
+        // with the structurally-correct values (`1/mass` and
+        // `inertia⁻¹`), *not* the stale cache. The structural inputs
+        // match the canonical `MassProperties::new(424.0)` form so
+        // we can name the expected re-derived cache directly.
         let mass_kg = 424.0_f64;
         let canonical_inertia = DMat3::IDENTITY * mass_kg;
         let raw_with_stale_cache = MassProperties {
@@ -424,16 +429,21 @@ mod tests {
         assert_eq!(MassPropertiesTyped::<SelfRef>::to_untyped(&typed), raw);
     }
 
-    /// `mass_raw_to_typed` routes through `MassPropertiesTyped::with_inertia`,
-    /// whose contract is to recompute `inverse_mass` / `inverse_inertia`
-    /// from the freshly-supplied inputs and emit `dirty = false`. The
-    /// companion test above seeds the raw input with `dirty = false` and
-    /// asserts equality, which a bridge that just **copied** `dirty`
-    /// verbatim would also pass — leaving the `true → false`
-    /// canonicalisation half of the contract untested. This test seeds
-    /// `dirty = true` and asserts the typed sibling lands on `dirty =
-    /// false`, which only a bridge that actually re-derives the cache
-    /// (via `with_inertia` or equivalent) can satisfy.
+    /// Dirty-flag canonicalisation fence.
+    /// `mass_raw_to_typed` routes through
+    /// `MassPropertiesTyped::with_inertia`, whose contract emits
+    /// `dirty = false` regardless of the raw input's flag. The
+    /// companion test above seeds the raw input with `dirty = false`,
+    /// which a bridge that just **copies** `dirty` verbatim would
+    /// also satisfy — leaving the `true → false` canonicalisation
+    /// half of the contract untested. This test pins exactly that
+    /// canonicalisation: it seeds `dirty = true` and asserts the
+    /// typed sibling lands on `dirty = false`. The cache-recompute
+    /// half of the `with_inertia` contract is covered separately by
+    /// the stale-cache fence inside
+    /// `point_mass_inverse_inertia_matches_across_construction_paths`,
+    /// which seeds deliberately-wrong `inverse_mass` /
+    /// `inverse_inertia` values on the raw side.
     #[test]
     fn raw_to_typed_canonicalises_dirty_flag() {
         use glam::DVec3;
