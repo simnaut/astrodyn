@@ -737,12 +737,18 @@ mod tests {
         mp.validate_consistency(1e-6); // should not panic
     }
 
-    // JEOD_INV: MA.04 — `inverse_inertia` must satisfy `I * I^-1 ≈ identity`;
-    // corrupting the inverse must fire the consistency assert in
-    // `MassProperties::validate_consistency`.
     #[test]
     #[should_panic(expected = "inconsistent")]
     fn validate_consistency_fails_for_wrong_inverse() {
+        // JEOD_INV: MA.04 — `inverse_inertia` must satisfy
+        // `I * I^-1 ≈ identity`; corrupting the inverse must fire the
+        // consistency assert in `MassProperties::validate_consistency`.
+        // JEOD_INV: DB.19 — Euler's equation `α = I⁻¹ · (τ − ω × I·ω)`
+        // requires `inverse_inertia` to actually be the inverse of
+        // `inertia`. `validate_consistency` is the panic site that
+        // protects the precondition; a corrupted inverse would
+        // otherwise produce a silently-wrong rotational acceleration
+        // on every integration step.
         let mut mp = MassProperties::with_inertia(
             10.0,
             DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0)),

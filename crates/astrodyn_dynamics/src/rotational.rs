@@ -631,6 +631,25 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "normalize_integ called with zero-magnitude quaternion")]
+    fn normalize_integ_panics_on_zero_quaternion() {
+        // JEOD_INV: DB.09 — after every integration step the attitude
+        // quaternion must be renormalized. `normalize_integ` is the
+        // kernel every integrator path calls (RK4 / RKF45 / ABM4 /
+        // Gauss-Jackson), and its `norm_sq > 0` precondition is the
+        // panic site that fires when an upstream stage corrupts the
+        // quaternion to the all-zero 4-vector. A silent
+        // divide-by-zero here would have the integrator propagate
+        // `NaN` attitude on the next step, which the *Fail Loudly*
+        // rule forbids; the assert keeps that failure mode visible.
+        // Drives the panic with the canonical degenerate input — a
+        // zero-magnitude quaternion — to pin the diagnostic substring
+        // that the gate scans.
+        let mut q = JeodQuat::new(0.0, 0.0, 0.0, 0.0);
+        normalize_integ(&mut q);
+    }
+
+    #[test]
     fn typed_rotational_state_round_trips() {
         use astrodyn_quantities::aliases::AngularVelocity;
         use astrodyn_quantities::frame::TestVehicle;
