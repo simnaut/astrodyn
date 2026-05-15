@@ -331,11 +331,25 @@ impl std::fmt::Display for ValidationError {
             Self::NonRootFrameWithRootDependentFeatures { body_idx } => {
                 write!(
                     f,
-                    "Body {body_idx}: non-root integration frame with features that \
-                     assume root-inertial coordinates (drag, SRP, orbital elements, \
-                     euler angles, LVLH, geodetic, solar beta, or earth lighting). \
-                     These derived states assume the simulation's central-body \
-                     inertial frame and will produce incorrect results in other frames."
+                    "Body {body_idx}: non-root integration frame paired with features \
+                     that may depend on the integration-frame choice. Per RF.10, these \
+                     fall into two groups:\n  \
+                     - SHIFT SITES (need root-inertial conversion before consuming the \
+                       body's state alongside root-inertial source positions): SRP \
+                       (cannonball / flat-plate), solar beta, earth lighting. The \
+                       caller must apply the per-step `IntegOrigin` shift via \
+                       `body.trans.to_inertial(&integ_origin)` (or the typed phantom \
+                       sibling) before feeding state into the consumer.\n  \
+                     - NON-SHIFT SITES (operate within the body's planet-inertial \
+                       integration frame; shifting them would break their semantics): \
+                       atmosphere, drag, LVLH, geodetic, orbital elements, euler \
+                       angles. These consume the body's typed `Position<PlanetInertial<P>>` \
+                       directly — no shift is required.\n  \
+                     If your configuration applies the shift correctly at every shift \
+                     site (and leaves the non-shift sites alone), this warning is \
+                     informational. \
+                     `crates/astrodyn_runner/tests/integ_frame_translation_invariance.rs` \
+                     is the worked example."
                 )
             }
             Self::EphemerisOnRootSource { source_idx } => {
@@ -435,8 +449,19 @@ impl ValidationError {
     /// Whether this is a warning rather than a fatal error.
     ///
     /// Warnings indicate suspicious-but-valid state (e.g., a body at the origin
-    /// might be intentional). Both the Bevy adapter and `Simulation::validate()`
-    /// should use this to decide severity.
+    /// might be intentional, or a body in a non-root integration frame that has
+    /// correctly set up the [RF.10] `IntegOrigin` shifts). Both the Bevy
+    /// adapter and `Simulation::validate()` should use this to decide severity.
+    ///
+    /// #485 C2 considered reclassifying `NonRootFrameWithRootDependentFeatures`
+    /// as fatal, but `tests/integ_frame_translation_invariance.rs` demonstrates
+    /// that the configuration IS handled correctly via the `IntegOrigin` shift
+    /// machinery — the diagnostic's "will produce incorrect results" was an
+    /// overstatement. The diagnostic prose has been rewritten to be accurate
+    /// (it warns that the *caller* must apply RF.10 shifts), and the warning
+    /// stays a warning.
+    ///
+    /// [RF.10]: ../../../docs/JEOD_invariants.md
     pub fn is_warning(&self) -> bool {
         matches!(
             self,

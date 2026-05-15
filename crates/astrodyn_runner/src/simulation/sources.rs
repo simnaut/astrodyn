@@ -174,6 +174,13 @@ impl Simulation {
 
     /// Get the current position of a gravity source relative to the root
     /// inertial frame. Returns `DVec3::ZERO` for the root-mapped central source.
+    ///
+    /// Prefer [`source_position_typed`](Self::source_position_typed) for the
+    /// typed-result path.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up. The typed sibling
+    // `source_position_typed` exists; this raw variant is preserved for
+    // backwards compatibility until the parity-lockstep follow-on PR (see
+    // #485 task 18) removes it alongside the Bevy mirrors.
     pub fn source_position(&self, source_idx: usize) -> DVec3 {
         sim_source_position(
             &self.frame_tree,
@@ -233,8 +240,34 @@ impl Simulation {
 
     /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
     /// if the source has no rotation model (no pfix frame).
+    ///
+    /// Prefer [`source_pfix_rotation_typed`](Self::source_pfix_rotation_typed)
+    /// for typed `FrameTransform<RootInertial, PlanetFixed<P>>`.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up. Raw `DMat3`
+    // return is deferred to the parity-lockstep follow-on PR (see #485
+    // task 18) to be removed alongside the Bevy mirror in
+    // `SourceReader::source_pfix_rotation`.
     pub fn source_pfix_rotation(&self, source_idx: usize) -> Option<DMat3> {
         sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx)
+    }
+
+    /// Typed sibling of [`source_pfix_rotation`](Self::source_pfix_rotation).
+    ///
+    /// Returns the source's planet-fixed rotation as a typed
+    /// `FrameTransform<RootInertial, PlanetFixed<P>>`, matching the canonical
+    /// shape used by `PlanetFixedRotationC<P>` on the Bevy adapter side. The
+    /// caller asserts via the turbofish that `source_idx` resolves to the
+    /// planet `P`'s pfix frame — no runtime check is performed (mirroring
+    /// `source_position_typed`'s phantom-attachment boundary).
+    pub fn source_pfix_rotation_typed<P: astrodyn::Planet>(
+        &self,
+        source_idx: usize,
+    ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
+        let raw = sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx);
+        // allowed: typed-sibling accessor boundary. The kernel returns a
+        // frame-erased `DMat3`; the phantom is the caller's pinned-planet
+        // convention attached unchecked, matching `source_position_typed`.
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 
     /// Get the inertial-frame [`FrameId`] for a gravity source.

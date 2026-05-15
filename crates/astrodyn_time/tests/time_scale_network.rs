@@ -18,7 +18,10 @@ use astrodyn_time::{TimeManager, TimeScaleId};
 /// We test that our TAI→UTC→TAI round-trip is consistent on both sides.
 #[test]
 fn tai_utc_round_trip_across_leap_second_2017() {
-    let table = default_leap_second_table();
+    // The 2017 leap second is the last entry in the table; probing one
+    // second past it (utc_tjt_after = 17754 + 1/86400) is strictly OOR,
+    // so opt in to JEOD-faithful clamp behavior (#485 H2).
+    let table = default_leap_second_table().with_clamp_out_of_range(true);
 
     // Just before the 2017 leap second: 2016-12-31 23:59:59 UTC
     // UTC TJT = 17754.0 - 1/86400 = 17753.999988...

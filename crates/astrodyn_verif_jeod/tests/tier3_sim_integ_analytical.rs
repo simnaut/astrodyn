@@ -219,7 +219,13 @@ fn tier3_integ_rkf45_vs_analytical() {
 fn tier3_integ_gj8_vs_analytical() {
     let dt = 10.0;
     let r = compare_analytical(
-        IntegratorType::GaussJackson(GaussJacksonConfig::with_order(8)),
+        IntegratorType::GaussJackson(
+            // JEOD-faithful warn-and-continue (#485 C1): synthetic
+            // analytical comparison occasionally trips GJ convergence; the
+            // reference here is the analytical orbit, so we want the
+            // JEOD-compatible behavior we're comparing against.
+            GaussJacksonConfig::with_order(8).with_allow_non_convergence(true),
+        ),
         dt,
     );
 

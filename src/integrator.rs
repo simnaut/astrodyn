@@ -103,6 +103,19 @@ impl GaussJacksonConfig {
     pub fn validate(&self) {
         self.0.validate()
     }
+
+    /// Opt in to JEOD-faithful warn-and-continue on corrector or
+    /// bootstrap non-convergence. See
+    /// [`astrodyn_dynamics::GaussJacksonConfig::allow_non_convergence`]
+    /// for the full rationale — the short version is that the default
+    /// (`false`) panics on a non-converged step, and setting this to
+    /// `true` restores JEOD's behavior of logging a warning and
+    /// continuing with a degraded position. Use only for matching JEOD
+    /// reference runs exactly.
+    pub fn with_allow_non_convergence(mut self, allow: bool) -> Self {
+        self.0.allow_non_convergence = allow;
+        self
+    }
 }
 
 impl From<GaussJacksonConfig> for RawGaussJacksonConfig {

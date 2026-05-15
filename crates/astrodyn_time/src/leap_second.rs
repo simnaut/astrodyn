@@ -17,15 +17,33 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// TAI-UTC offset in seconds at that boundary. Entries are sorted by TJT.
 ///
 /// Mirrors JEOD's `when_vec` / `val_vec` arrays from `tai_to_utc.cc`.
+///
+/// # Out-of-range epochs
+///
+/// By default, epochs outside the table's `[first_boundary, last_boundary]`
+/// range cause a **panic** (#485 H2): silently using a boundary value for an
+/// epoch the table cannot resolve produces wrong UTC conversions that
+/// cascade through every dependent calculation. To restore JEOD's
+/// log-once-and-clamp behavior, call [`Self::with_clamp_out_of_range`] with `true`
+/// — useful only for matching JEOD reference runs exactly or when the
+/// caller has independent knowledge that the boundary value is correct
+/// for the epoch in question.
 #[derive(Debug, Clone)]
 pub struct LeapSecondTable {
     /// (tjt_boundary, tai_minus_utc_seconds) pairs, sorted by TJT.
     entries: Vec<(f64, f64)>,
+    /// When `false` (the default), out-of-range TAI/UTC lookups panic.
+    /// When `true`, the table returns the boundary value and emits a
+    /// one-time warning. See the struct rustdoc for the policy rationale.
+    clamp_out_of_range: bool,
 }
 
 impl LeapSecondTable {
     /// Create a leap second table from (TJT, TAI-UTC seconds) pairs.
     /// Entries must be sorted by TJT.
+    ///
+    /// The constructed table panics on out-of-range epoch lookups; opt in
+    /// to JEOD-faithful clamp behavior with [`Self::with_clamp_out_of_range`].
     pub fn from_entries(entries: Vec<(f64, f64)>) -> Self {
         // JEOD_INV: TM.39 — leap-second table must be non-empty and monotonic in TJT.
         // JEOD's `when_vec` is assumed monotonic in `time_converter_tai_utc.cc`; we enforce at construction.
@@ -34,7 +52,10 @@ impl LeapSecondTable {
             entries.windows(2).all(|w| w[0].0 <= w[1].0),
             "Leap second entries must be sorted by TJT"
         );
-        Self { entries }
+        Self {
+            entries,
+            clamp_out_of_range: false,
+        }
     }
 
     /// Create from (MJD, TAI-UTC seconds) pairs (as found in Leap_Second.dat).
@@ -44,6 +65,16 @@ impl LeapSecondTable {
             .map(|&(mjd, tai_utc)| (mjd_to_tjt(mjd), tai_utc))
             .collect();
         Self::from_entries(entries)
+    }
+
+    /// Opt in to JEOD's clamp-on-out-of-range behavior: a `log::warn!` is
+    /// emitted once per process for each direction (TAI, UTC) and the
+    /// boundary index is returned. Default is `false` (panic on
+    /// out-of-range) — see the struct rustdoc for the policy rationale
+    /// (#485 H2).
+    pub fn with_clamp_out_of_range(mut self, clamp: bool) -> Self {
+        self.clamp_out_of_range = clamp;
+        self
     }
 
     /// Look up the TAI-UTC offset (in seconds) at a given TAI TJT.
@@ -117,10 +148,24 @@ impl LeapSecondTable {
         let last = self.entries.len() - 1;
         // Before the first entry: JEOD uses val_vec[0], so return index 0.
         // Boundary at i=0 in the "TAI frame" is `when_vec[0] + val_vec[0]/86400`
-        // (no prior entry, so we use val_vec[0] itself). Mirror JEOD's
-        // operational one-time WARN when TAI precedes the leap-second table.
+        // (no prior entry, so we use val_vec[0] itself). Default policy
+        // panics; the JEOD-faithful clamp path emits a one-time WARN.
         let first_tai_boundary = self.entries[0].0 + self.entries[0].1 / SECONDS_PER_DAY;
         if tai_tjt < first_tai_boundary {
+            // JEOD_INV: TM.41 — out-of-range TAI lookup before table start.
+            // Default fail-loudly (#485 H2); JEOD-faithful clamp behavior
+            // is reachable via `with_clamp_out_of_range(true)`.
+            assert!(
+                self.clamp_out_of_range,
+                "TAI time {tai_tjt} precedes first leap-second table boundary \
+                 ({first_tai_boundary}). The boundary TAI-UTC value ({} s) \
+                 would silently propagate as wrong physics. \
+                 Use a covered epoch, or call \
+                 `.with_clamp_out_of_range(true)` on the LeapSecondTable to \
+                 opt in to JEOD-faithful clamp behavior.",
+                self.entries[0].1
+            );
+            // JEOD_INV: TM.41 — JEOD-faithful warn on opt-in clamp path.
             static WARNED_BEFORE_TAI: AtomicBool = AtomicBool::new(false);
             if !WARNED_BEFORE_TAI.swap(true, Ordering::Relaxed) {
                 warn!(
@@ -131,15 +176,30 @@ impl LeapSecondTable {
             }
             return 0;
         }
-        // Mirror JEOD's one-time WARN when TAI follows the last boundary.
-        // The last regime extends forward indefinitely, so we only emit the
-        // warning; the actual index still comes from the search below.
+        // After the last boundary: the last regime extends forward
+        // indefinitely. Default policy panics; clamp opt-in warns and
+        // continues with the boundary value via the search below.
         let last_tai_boundary = if last == 0 {
             self.entries[0].0 + self.entries[0].1 / SECONDS_PER_DAY
         } else {
             self.entries[last].0 + self.entries[last - 1].1 / SECONDS_PER_DAY
         };
-        if tai_tjt >= last_tai_boundary {
+        // Strictly past the last regime boundary is OOR. Equality is in-range:
+        // the boundary is the instant the last regime starts and the lookup
+        // value at that instant is the table's authoritative answer.
+        if tai_tjt > last_tai_boundary {
+            // JEOD_INV: TM.41 — out-of-range TAI lookup past table end.
+            assert!(
+                self.clamp_out_of_range,
+                "TAI time {tai_tjt} follows last leap-second table boundary \
+                 ({last_tai_boundary}). The boundary TAI-UTC value ({} s) \
+                 would silently propagate as wrong physics. \
+                 Refresh the table for the new epoch, or call \
+                 `.with_clamp_out_of_range(true)` on the LeapSecondTable to \
+                 opt in to JEOD-faithful clamp behavior.",
+                self.entries[last].1
+            );
+            // JEOD_INV: TM.41 — JEOD-faithful warn on opt-in clamp path.
             static WARNED_AFTER_TAI: AtomicBool = AtomicBool::new(false);
             if !WARNED_AFTER_TAI.swap(true, Ordering::Relaxed) {
                 warn!(
@@ -164,8 +224,20 @@ impl LeapSecondTable {
     fn find_index_for_utc(&self, utc_tjt: f64) -> usize {
         let last = self.entries.len() - 1;
         // JEOD time_converter_tai_utc.cc:158-233: log INFORM when time is
-        // outside the leap second table range.
+        // outside the leap second table range. Default policy panics
+        // (#485 H2); clamp opt-in restores the warn-and-continue behavior.
         if utc_tjt < self.entries[0].0 {
+            // JEOD_INV: TM.41 — out-of-range UTC lookup before table start.
+            assert!(
+                self.clamp_out_of_range,
+                "UTC time {utc_tjt} precedes first leap-second table entry \
+                 ({}). The boundary TAI-UTC value ({} s) would silently \
+                 propagate as wrong physics. Use a covered epoch, or call \
+                 `.with_clamp_out_of_range(true)` on the LeapSecondTable to \
+                 opt in to JEOD-faithful clamp behavior.",
+                self.entries[0].0, self.entries[0].1
+            );
+            // JEOD_INV: TM.41 — JEOD-faithful warn on opt-in clamp path.
             static WARNED_BEFORE: AtomicBool = AtomicBool::new(false);
             if !WARNED_BEFORE.swap(true, Ordering::Relaxed) {
                 warn!(
@@ -176,7 +248,21 @@ impl LeapSecondTable {
             }
             return 0;
         }
-        if utc_tjt >= self.entries[last].0 {
+        // Strictly past the last regime boundary is OOR. Equality is in-range:
+        // the boundary is the instant the last regime starts (handled by the
+        // linear search returning `last` as its fall-through).
+        if utc_tjt > self.entries[last].0 {
+            // JEOD_INV: TM.41 — out-of-range UTC lookup past table end.
+            assert!(
+                self.clamp_out_of_range,
+                "UTC time {utc_tjt} follows last leap-second table entry \
+                 ({}). The boundary TAI-UTC value ({} s) would silently \
+                 propagate as wrong physics. Refresh the table for the new \
+                 epoch, or call `.with_clamp_out_of_range(true)` on the \
+                 LeapSecondTable to opt in to JEOD-faithful clamp behavior.",
+                self.entries[last].0, self.entries[last].1
+            );
+            // JEOD_INV: TM.41 — JEOD-faithful warn on opt-in clamp path.
             static WARNED_AFTER: AtomicBool = AtomicBool::new(false);
             if !WARNED_AFTER.swap(true, Ordering::Relaxed) {
                 warn!(
@@ -201,6 +287,15 @@ impl LeapSecondTable {
 ///
 /// Data from JEOD `Leap_Second.dat` (28 entries, 1972-2017).
 /// MJD values from the file, TAI-UTC in seconds.
+///
+/// The returned table has `clamp_out_of_range = true` by default
+/// (#485 H2 pragmatic resolution): production missions routinely target
+/// post-2017 epochs, and the IERS "no new leap seconds since 2017" state
+/// is the legitimate operating regime extension. Callers needing strict
+/// out-of-range rejection (asserting the epoch falls inside the tabulated
+/// range) should construct via [`LeapSecondTable::from_entries`] or
+/// [`LeapSecondTable::from_mjd_entries`] directly without chaining the
+/// clamp opt-in.
 pub fn default_leap_second_table() -> LeapSecondTable {
     // (MJD, TAI-UTC seconds) from JEOD Leap_Second.dat
     let mjd_entries: &[(f64, f64)] = &[
@@ -233,7 +328,7 @@ pub fn default_leap_second_table() -> LeapSecondTable {
         (57204.0, 36.0), // 2015-07-01
         (57754.0, 37.0), // 2017-01-01
     ];
-    LeapSecondTable::from_mjd_entries(mjd_entries)
+    LeapSecondTable::from_mjd_entries(mjd_entries).with_clamp_out_of_range(true)
 }
 
 #[cfg(test)]
@@ -279,15 +374,49 @@ mod tests {
     }
 
     #[test]
-    fn first_and_last_entries() {
-        let table = default_leap_second_table();
-        // Before first entry: should use first entry's offset
+    fn first_and_last_entries_clamping() {
+        // Opt in to JEOD-faithful clamp behavior — without the flag, OOR
+        // epochs panic by default (#485 H2).
+        let table = default_leap_second_table().with_clamp_out_of_range(true);
+        // Before first entry: should use first entry's offset.
         let tjt_before = mjd_to_tjt(41000.0);
         assert_eq!(table.tai_utc_at_utc_tjt(tjt_before), 10.0);
 
-        // After last entry
+        // After last entry.
         let tjt_after = mjd_to_tjt(58000.0);
         assert_eq!(table.tai_utc_at_utc_tjt(tjt_after), 37.0);
+    }
+
+    /// Helper: build a strict (non-clamping) copy of the default table. Used
+    /// by the panic tests to assert the fail-loudly behavior without going
+    /// through `default_leap_second_table()` (which is clamp-by-default per
+    /// the #485 H2 pragmatic resolution).
+    fn strict_default_table() -> LeapSecondTable {
+        default_leap_second_table().with_clamp_out_of_range(false)
+    }
+
+    #[test]
+    #[should_panic(expected = "precedes first leap-second table entry")]
+    fn utc_before_table_panics_when_strict() {
+        let _ = strict_default_table().tai_utc_at_utc_tjt(mjd_to_tjt(41000.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "follows last leap-second table entry")]
+    fn utc_after_table_panics_when_strict() {
+        let _ = strict_default_table().tai_utc_at_utc_tjt(mjd_to_tjt(58000.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "precedes first leap-second table boundary")]
+    fn tai_before_table_panics_when_strict() {
+        let _ = strict_default_table().tai_utc_at_tai_tjt(mjd_to_tjt(41000.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "follows last leap-second table boundary")]
+    fn tai_after_table_panics_when_strict() {
+        let _ = strict_default_table().tai_utc_at_tai_tjt(mjd_to_tjt(58000.0));
     }
 
     #[test]
@@ -337,7 +466,12 @@ mod tests {
 
     #[test]
     fn tai_utc_round_trip_all_boundaries() {
-        let table = default_leap_second_table();
+        // Includes the last boundary at MJD 57754 (2017-01-01); the test
+        // probes "boundary + 0.5d" which is strictly past that regime's
+        // last in-table entry, so we opt in to JEOD-faithful clamp
+        // behavior (#485 H2). The default-panic behavior is exercised by
+        // the dedicated `*_panics_by_default` tests above.
+        let table = default_leap_second_table().with_clamp_out_of_range(true);
         let mjds: &[f64] = &[
             41317.0, 41499.0, 42048.0, 43144.0, 44786.0, 47161.0, 49169.0, 50083.0, 51179.0,
             53736.0, 56109.0, 57754.0,

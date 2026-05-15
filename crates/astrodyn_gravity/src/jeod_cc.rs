@@ -119,12 +119,22 @@ pub fn load_from_jeod_cc(path: &Path) -> Result<SphericalHarmonicsData, CoeffLoa
         field: "mu",
         path: path_str.clone(),
     })?;
-    let radius = radius.ok_or(CoeffLoadError::MissingField {
+    let radius = radius.ok_or_else(|| CoeffLoadError::MissingField {
         field: "radius",
+        path: path_str.clone(),
+    })?;
+    // Both tide_free fields are required: a silently-defaulted `tide_free_delta`
+    // would skip the J2 tide-free → zero-tide correction (~4e-9, mission-relevant
+    // for long propagations); a silently-defaulted `tide_free` flag would pick
+    // the wrong correction sign. Per #485 H3.
+    let tide_free = tide_free.ok_or_else(|| CoeffLoadError::MissingField {
+        field: "tide_free",
+        path: path_str.clone(),
+    })?;
+    let tide_free_delta = tide_free_delta.ok_or(CoeffLoadError::MissingField {
+        field: "tide_free_delta",
         path: path_str,
     })?;
-    let tide_free = tide_free.unwrap_or(true);
-    let tide_free_delta = tide_free_delta.unwrap_or(0.0);
 
     // Allocate coefficient arrays
     let mut cnm: Vec<Vec<f64>> = Vec::with_capacity(degree + 1);
