@@ -63,6 +63,21 @@ silent_warns=$(echo "$src_files_to_scan" | xargs awk '
         for (i = 10; i > 1; i--) history[i] = history[i - 1]
         history[1] = $0
     }
+    # Reset history at policy-block boundaries so tags from a prior
+    # block do not leak forward into the next warn site:
+    #   - Blank line: separates distinct policy blocks (the common case).
+    #   - `}` alone: ends a syntactic block; any tag inside the closed
+    #     block belongs to that block, not the code that follows.
+    # Without these resets a new untagged `warn!()` placed after a
+    # tagged-warn block would be silently exempted by the older tag.
+    /^[[:space:]]*$/ {
+        for (i = 1; i <= 10; i++) history[i] = ""
+        next
+    }
+    /^[[:space:]]*\}[[:space:]]*$/ {
+        for (i = 1; i <= 10; i++) history[i] = ""
+        next
+    }
     # Doc comments (`///` or `//!`) that mention the warn macro
     # textually are documentation, not call sites. Skip them.
     /^[[:space:]]*\/\/[\/!]/ { next }
@@ -71,7 +86,8 @@ silent_warns=$(echo "$src_files_to_scan" | xargs awk '
     # cover fully-qualified call sites.
     /log::warn!|bevy::log::warn!|^[[:space:]]*warn!\(/ {
         # Look in the current line and the 9-line preceding history
-        # for an acceptable tag.
+        # for an acceptable tag (history is cleared at policy-block
+        # boundaries above).
         ok = 0
         for (i = 1; i <= 10; i++) {
             if (history[i] ~ /JEOD_INV:[[:space:]]*[A-Z]+\.[0-9]+/ ||
