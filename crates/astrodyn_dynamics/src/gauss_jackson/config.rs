@@ -175,3 +175,86 @@ impl GaussJacksonConfig {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =======================================================================
+    // Negative tests for the IG.04-IG.08 GaussJacksonConfig validators.
+    // The error string is the load-bearing signal: `.validate()` joins the
+    // per-row messages from `.check()` into a single panic, so pinning the
+    // substring proves the right row's branch fired even though the panic
+    // surface is shared. Driving each row independently keeps a refactor
+    // that neuters one validator (e.g. by replacing `is_multiple_of(2)`
+    // with a typo'd predicate) from sliding past a generic "Invalid
+    // GaussJacksonConfig" match.
+    // =======================================================================
+
+    // JEOD_INV: IG.04 — initial_order must be even and in [2, 14]; an odd
+    // value is the cleanest way to drive the predicate's even-integer
+    // half of the check without crossing into IG.05's range-violation
+    // path.
+    #[test]
+    #[should_panic(expected = "initial_order")]
+    fn ig_04_panics_on_odd_initial_order() {
+        let cfg = GaussJacksonConfig {
+            initial_order: 5, // odd; valid range upper bound matches IG.05 separately
+            ..Default::default()
+        };
+        cfg.validate();
+    }
+
+    // JEOD_INV: IG.05 — final_order must be even, in [initial_order, 14];
+    // 16 is past the upper bound and trips the range arm rather than the
+    // "less than initial" arm.
+    #[test]
+    #[should_panic(expected = "final_order")]
+    fn ig_05_panics_on_oversize_final_order() {
+        let cfg = GaussJacksonConfig {
+            final_order: 16,
+            ..Default::default()
+        };
+        cfg.validate();
+    }
+
+    // JEOD_INV: IG.06 — ndoubling_steps must be ≤ 20; one past the cap
+    // is enough to fire the guard.
+    #[test]
+    #[should_panic(expected = "ndoubling_steps")]
+    fn ig_06_panics_on_oversize_ndoubling_steps() {
+        let cfg = GaussJacksonConfig {
+            ndoubling_steps: 21,
+            ..Default::default()
+        };
+        cfg.validate();
+    }
+
+    // JEOD_INV: IG.07 — relative_tolerance must be finite and in [0, 1];
+    // 2.0 exceeds the upper bound, so the range arm of the predicate
+    // fires rather than the finiteness arm.
+    #[test]
+    #[should_panic(expected = "relative_tolerance")]
+    fn ig_07_panics_on_out_of_range_relative_tolerance() {
+        let cfg = GaussJacksonConfig {
+            relative_tolerance: 2.0,
+            ..Default::default()
+        };
+        cfg.validate();
+    }
+
+    // JEOD_INV: IG.08 — absolute_tolerance must be finite and ≥ 0; a
+    // negative value trips the sign half of the check. (JEOD's error
+    // message string mistakenly references `relative_tolerance` — the
+    // variable actually checked is `absolute_tolerance`, which our port
+    // names correctly.)
+    #[test]
+    #[should_panic(expected = "absolute_tolerance")]
+    fn ig_08_panics_on_negative_absolute_tolerance() {
+        let cfg = GaussJacksonConfig {
+            absolute_tolerance: -1.0,
+            ..Default::default()
+        };
+        cfg.validate();
+    }
+}

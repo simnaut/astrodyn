@@ -748,4 +748,50 @@ mod tests {
             prop_assert_eq!(lifted, typed);
         }
     }
+
+    // =======================================================================
+    // Negative tests for the PF section. Each drives the misconfiguration
+    // through a public conversion entry point so a future refactor that
+    // neuters one of the kernel asserts would be caught by CI rather than
+    // silently propagating NaN / a wrong-by-default geodetic state.
+    // =======================================================================
+
+    // JEOD_INV: PF.01 — `cartesian_to_spherical` rejects positions within
+    // `r_eq · 1e-10` of the planet center; without this guard the unit
+    // direction `cart / r_local` is undefined and `asin(z / r_local)`
+    // returns NaN.
+    #[test]
+    #[should_panic(expected = "too close to planet center")]
+    fn pf_01_panics_on_spherical_near_center() {
+        let _ = cartesian_to_spherical(DVec3::ZERO, EARTH_R_EQ);
+    }
+
+    // JEOD_INV: PF.01 — same precondition on the geodetic entry point;
+    // the sibling assert here protects the Borkowski iteration from a
+    // degenerate `r_ellipse` that would zero-divide `c`'s denominator.
+    #[test]
+    #[should_panic(expected = "too close to planet center")]
+    fn pf_01_panics_on_geodetic_near_center() {
+        let _ = cartesian_to_geodetic(DVec3::ZERO, EARTH_R_EQ, EARTH_R_POL);
+    }
+
+    // JEOD_INV: PF.02 — NaN in the input would silently propagate through
+    // the iteration; the assert at the kernel entry point fails loud so
+    // the misconfiguration is named at the call site.
+    #[test]
+    #[should_panic(expected = "NaN or Inf")]
+    fn pf_02_panics_on_nan_input() {
+        let nan_input = DVec3::new(f64::NAN, 0.0, 0.0);
+        let _ = cartesian_to_geodetic(nan_input, EARTH_R_EQ, EARTH_R_POL);
+    }
+
+    // JEOD_INV: PF.02 — infinity is the second non-finite class the
+    // PF.02 assert catches; both `NaN` and `±∞` trip the same `is_finite`
+    // check, so we drive each independently to pin both branches.
+    #[test]
+    #[should_panic(expected = "NaN or Inf")]
+    fn pf_02_panics_on_inf_input() {
+        let inf_input = DVec3::new(f64::INFINITY, 0.0, 0.0);
+        let _ = cartesian_to_geodetic(inf_input, EARTH_R_EQ, EARTH_R_POL);
+    }
 }

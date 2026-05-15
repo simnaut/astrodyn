@@ -450,4 +450,38 @@ mod tests {
         // kernel — not what numeric value either produces.
         assert_eq!(typed_sunny.value, untyped_sunny);
     }
+
+    // `compute_shadow_fraction` rejects a non-positive source radius
+    // before the `body_radius / source_radius` ratio would divide by
+    // zero downstream. JEOD validates this in
+    // `RadiationThirdBody::initialize` against a stored config; our
+    // stateless function asserts at the per-step call site so the
+    // misconfiguration is named at the same call site that triggers
+    // it.
+    // JEOD_INV: IN.12 — RadiationSource.radius > 0 precondition
+    #[test]
+    #[should_panic(expected = "source_radius must be positive")]
+    fn in_12_panics_on_zero_source_radius() {
+        let sun = DVec3::new(AU, 0.0, 0.0);
+        let body = DVec3::ZERO;
+        // Vehicle near Earth — geometry must reach the radius asserts
+        // (region B early-out only fires for vehicles past the
+        // penumbra; place the vehicle on the anti-Sun side).
+        let vehicle = DVec3::new(-7_000_000.0, 0.0, 0.0);
+        let _ = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, 0.0);
+    }
+
+    // Sibling assert: JEOD validates `RadiationThirdBody.radius > 0`
+    // in `RadiationThirdBody::initialize`; we re-check at the kernel
+    // entry so a stale zero on a fresh config can't slip past the
+    // ratio-computation arm.
+    // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0 precondition
+    #[test]
+    #[should_panic(expected = "body_radius must be positive")]
+    fn in_11_panics_on_zero_body_radius() {
+        let sun = DVec3::new(AU, 0.0, 0.0);
+        let body = DVec3::ZERO;
+        let vehicle = DVec3::new(-7_000_000.0, 0.0, 0.0);
+        let _ = compute_shadow_fraction(vehicle, sun, body, 0.0, SUN_RADIUS);
+    }
 }

@@ -369,12 +369,37 @@ mod tests {
         assert_eq!(v_out.raw_si(), m * v_raw);
     }
 
-    /// `debug_assert!` panic on a non-orthonormal input (in debug builds).
+    // `FrameTransform::from_matrix` rejects a non-orthonormal input.
+    // The check is release-mode `assert!` (promoted from
+    // `debug_assert!` in the post-#485 fail-loudly pass) so the
+    // precondition holds in production runs. A non-orthonormal input
+    // that slipped through would silently cache a meaningless derived
+    // quaternion and propagate wrong physics through every subsequent
+    // `.apply()` call.
+    // JEOD_INV: RF.12 — determinant ≈ 1 precondition (det = 2 trips it)
     #[test]
-    #[cfg(debug_assertions)]
     #[should_panic(expected = "determinant")]
     fn from_matrix_rejects_non_unit_determinant() {
         let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0)); // det = 2
+        let _: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
+    }
+
+    // Sibling negative test for the orthonormality branch. A shear
+    // matrix has `det ≈ 1` but `M·Mᵀ ≠ I`, so the determinant arm
+    // passes and the second `assert!` is the one that fires. Driving
+    // each arm independently keeps a future predicate weakening (e.g.
+    // dropping the orthonormality check while leaving the determinant
+    // one) from sliding past CI.
+    // JEOD_INV: RF.12 — orthonormality precondition (M·Mᵀ ≈ I)
+    #[test]
+    #[should_panic(expected = "orthonormal")]
+    fn from_matrix_rejects_shear() {
+        // det = 1 but M·Mᵀ ≠ I; cols (1, 0.1, 0), (0, 1, 0), (0, 0, 1).
+        let m = DMat3::from_cols(
+            DVec3::new(1.0, 0.1, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
         let _: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
     }
 

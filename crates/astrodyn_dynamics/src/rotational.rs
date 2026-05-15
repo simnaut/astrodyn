@@ -573,6 +573,18 @@ mod tests {
         );
     }
 
+    // JEOD_INV: DB.09 — the integration-step renormalize rejects a
+    // zero-magnitude quaternion; otherwise the `1.0 / sqrt(qmagsq)`
+    // factor would be `+∞` and silently poison every subsequent
+    // attitude state. The assert at the kernel entry catches the
+    // misconfiguration before any output is produced.
+    #[test]
+    #[should_panic(expected = "zero-magnitude quaternion")]
+    fn db_09_panics_on_zero_quaternion() {
+        let mut q = JeodQuat::new(0.0, 0.0, 0.0, 0.0);
+        normalize_integ(&mut q);
+    }
+
     /// normalize_integ does NOT flip sign (unlike JeodQuat::normalize).
     #[test]
     fn normalize_integ_preserves_sign() {

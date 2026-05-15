@@ -575,4 +575,39 @@ mod tests {
         abm.mark_topology_dirty();
         let _ = abm4_translational_step(&state, accel_fn, 0.01, &mut abm);
     }
+
+    // JEOD_INV: IG.34 — a zero-sized step would silently rotate the
+    // predictor history without any actual time advance, leaving the
+    // saved derivatives misaligned by one slot relative to the
+    // (unchanged) time origin. The assert at the entry of
+    // `abm4_translational_step` catches the misconfiguration before
+    // any history mutation happens.
+    #[test]
+    #[should_panic(expected = "finite positive dt")]
+    fn ig_34_panics_on_zero_dt() {
+        let mut abm = Abm4State::new();
+        let state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+        let _ = abm4_translational_step(&state, accel_fn, 0.0, &mut abm);
+    }
+
+    // JEOD_INV: IG.34 — sibling test for the non-finite branch. NaN
+    // would propagate through the predictor recurrence and silently
+    // poison every subsequent step; the assert pins the misconfig at
+    // the call site rather than in a downstream consumer reading
+    // `NaN`-tainted state.
+    #[test]
+    #[should_panic(expected = "finite positive dt")]
+    fn ig_34_panics_on_nan_dt() {
+        let mut abm = Abm4State::new();
+        let state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+        let _ = abm4_translational_step(&state, accel_fn, f64::NAN, &mut abm);
+    }
 }

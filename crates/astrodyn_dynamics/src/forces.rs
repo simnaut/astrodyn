@@ -513,6 +513,8 @@ mod tests {
         dc.validate(); // should not panic
     }
 
+    // JEOD_INV: DB.05 — `three_dof=true` prevents rotational integrator creation
+    // JEOD_INV: DB.06 — `three_dof=true && rotational_dynamics=true` is inconsistent
     #[test]
     #[should_panic(expected = "three_dof=true AND rotational_dynamics=true")]
     fn validate_rejects_three_dof_with_rotational() {

@@ -1652,4 +1652,62 @@ mod tests {
         let plate = plate.assert_vehicle::<Iss>();
         assert_eq!(plate.area, 10.0);
     }
+
+    // JEOD_INV: IN.33 — non-thermal SRP rejects a zero-area plate; the
+    // assert fires inside the per-plate loop on the first iteration so
+    // the panic names the offending plate index. A zero area silently
+    // produces zero force / zero torque downstream, which is the
+    // wrong-by-default behaviour the fail-loudly rule forbids.
+    #[test]
+    #[should_panic(expected = "FlatPlate.area must be > 0")]
+    fn in_33_panics_on_zero_area_flat_plate() {
+        let plate = FlatPlate::<SelfRef> {
+            area: 0.0, // misconfigured
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let _ = compute_flat_plate_srp(
+            &[(plate, params)],
+            DVec3::new(1.0, 0.0, 0.0),
+            1000.0,
+            DVec3::ZERO,
+            1.0,
+        );
+    }
+
+    // JEOD_INV: IN.33 — the thermal-coupled SRP path adds an emissivity
+    // assert (`thermal.emissivity > 0`) on top of the area check. A
+    // zero emissivity would make the radiative-equilibrium denominator
+    // collapse and the temperature derivative blow up; we panic at the
+    // entry instead.
+    #[test]
+    #[should_panic(expected = "FlatPlateThermal.emissivity must be > 0")]
+    fn in_33_panics_on_zero_emissivity_thermal_plate() {
+        let plate = FlatPlate::<SelfRef> {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: Position::<StructuralFrame<SelfRef>>::from_raw_si(DVec3::ZERO),
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.0, // misconfigured
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let _ = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &[0.0],
+            DVec3::new(1.0, 0.0, 0.0),
+            1000.0,
+            DVec3::ZERO,
+            1.0,
+        );
+    }
 }
