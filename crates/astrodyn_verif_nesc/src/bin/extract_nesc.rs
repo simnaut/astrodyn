@@ -35,6 +35,8 @@
 //! cargo run -p astrodyn_verif_nesc --bin extract_nesc -- --nesc-home /path/to/nesc
 //! ```
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::process::Command;
 

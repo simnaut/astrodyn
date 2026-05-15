@@ -16,6 +16,8 @@
 //! #101's type-system refactor: every refactor-only phase must satisfy
 //! `max_error_new ≤ max(baseline · 1.0 + 1e-12 · magnitude, 1e-12)`.
 
+#![forbid(unsafe_code)]
+
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;

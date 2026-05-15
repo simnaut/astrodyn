@@ -45,6 +45,8 @@
 //!
 //! The binary prints each destination path on success.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

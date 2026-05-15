@@ -12,6 +12,8 @@
 //! by the same typestate builder, so mission code can swap between Bevy
 //! and the standalone runner without rebuilding the configuration.
 
+#![forbid(unsafe_code)]
+
 use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};

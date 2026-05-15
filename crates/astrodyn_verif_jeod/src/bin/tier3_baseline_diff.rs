@@ -34,6 +34,8 @@
 //! Prerequisite: `target/tier3_crossval/*.json` must exist (run
 //! `cargo nextest run --workspace -E 'test(tier3_)'` first).
 
+#![forbid(unsafe_code)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;

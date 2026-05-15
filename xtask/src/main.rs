@@ -17,6 +17,8 @@
 //! (<https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration>) for the
 //! canonical workflow, the incremental-vs-force semantics, and how to add a new sim.
 
+#![forbid(unsafe_code)]
+
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};

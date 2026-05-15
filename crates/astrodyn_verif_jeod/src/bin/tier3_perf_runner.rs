@@ -32,6 +32,8 @@
 //! schema; see the README's Performance toolkit section for the
 //! consumer (`perf-history.csv` append in `perf-baseline-track`).
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};

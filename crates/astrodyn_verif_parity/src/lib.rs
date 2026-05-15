@@ -38,6 +38,8 @@
 //! within the same tolerance. Issue #389 closes the gap by making the
 //! `bevy_parity_*` test set a superset of every Tier 3 topic.
 
+#![forbid(unsafe_code)]
+
 use std::time::Duration;
 
 use astrodyn_bevy::{RotationalStateC, SimulationBuilderBevyExt, TranslationalStateC};

@@ -16,6 +16,8 @@
 //! cargo run -p astrodyn_runner --example apollo
 //! ```
 
+#![forbid(unsafe_code)]
+
 use astrodyn::recipes::scenarios::apollo;
 use astrodyn::recipes::{ephemeris as ephemeris_recipes, Mission};
 use astrodyn::{

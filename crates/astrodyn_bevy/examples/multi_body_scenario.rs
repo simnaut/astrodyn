@@ -28,6 +28,8 @@
 //! cargo run -p astrodyn_bevy --example multi_body_scenario
 //! ```
 
+#![forbid(unsafe_code)]
+
 use std::time::Duration;
 
 use astrodyn::recipes::scenarios::apollo;
