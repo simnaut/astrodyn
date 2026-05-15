@@ -43,6 +43,11 @@ fn build_minimal_app() -> App {
     app
 }
 
+// JEOD_INV: MA.24 — an `AttachEvent<SelfRef, SelfRef>` arriving without
+// `MassTreeR` registered must panic; otherwise the staging system would
+// silently drain the event, leaving the targeted body propagating
+// unattached. The runner side has no analogue — `Simulation::mass_tree`
+// is a non-`Option` value member, unreachable by construction.
 #[test]
 #[should_panic(expected = "AttachEvent received but `MassTreeR` is not registered")]
 fn staging_system_panics_when_attach_event_arrives_without_mass_tree() {

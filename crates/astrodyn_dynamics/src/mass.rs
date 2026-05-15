@@ -737,6 +737,9 @@ mod tests {
         mp.validate_consistency(1e-6); // should not panic
     }
 
+    // JEOD_INV: MA.04 — `inverse_inertia` must satisfy `I * I^-1 ≈ identity`;
+    // corrupting the inverse must fire the consistency assert in
+    // `MassProperties::validate_consistency`.
     #[test]
     #[should_panic(expected = "inconsistent")]
     fn validate_consistency_fails_for_wrong_inverse() {
@@ -1185,6 +1188,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "finite and strictly positive")]
     fn untyped_recompute_derived_panics_on_zero_mass() {
+        // JEOD_INV: MA.03 — `inverse_mass` must remain consistent with
+        // `mass`; the post-mutation guard in `recompute_derived` rejects
+        // any mass for which `1/mass` is not finite (zero falls in that
+        // set), preventing a stale or `+inf`-valued `inverse_mass` cache.
+        // JEOD_INV: MA.07 — derived quantities are refreshed inside the
+        // same `recompute_derived` call that runs this guard, so the
+        // panic fires before any non-finite cache leaks to consumers.
         let mut mp = MassProperties::new(10.0);
         mp.mass = 0.0;
         mp.dirty = true;
@@ -1194,6 +1204,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "finite and strictly positive")]
     fn typed_recompute_derived_panics_on_zero_mass() {
+        // JEOD_INV: MA.03 — typed sibling of the untyped consistency
+        // guard; pins the same `recompute_derived` failure path on
+        // `MassPropertiesTyped`.
+        // JEOD_INV: MA.07 — derived caches refreshed in the same call.
         use astrodyn_quantities::frame::TestVehicle;
         let mut mp = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
         mp.mass = Mass::new::<kilogram>(0.0);

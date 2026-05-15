@@ -1322,6 +1322,45 @@ mod tests {
         tree.add_mass_point(pid, "", DVec3::ZERO, DMat3::IDENTITY);
     }
 
+    // JEOD_INV: MA.09 — mass point names must be unique per body; adding
+    // a second mass point with a name already in use on the same body
+    // must fire the `find_mass_point().is_none()` assert. Mirrors JEOD
+    // `mass.cc:359-368` which calls `MessageHandler::fail` on the same
+    // condition.
+    #[test]
+    #[should_panic(expected = "duplicate mass point name 'dock' on body 'parent'")]
+    fn add_mass_point_rejects_duplicate_name() {
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        tree.add_mass_point(pid, "dock", DVec3::ZERO, DMat3::IDENTITY);
+        tree.add_mass_point(pid, "dock", DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "Detached child 'child' has singular composite inertia")]
+    fn detach_rejects_singular_composite_inertia() {
+        // JEOD_INV: MA.15 — detach recomputes inverse inertia for the
+        // detached child; the recomputation guards against a singular
+        // composite inertia (det ≈ 0) so the new root cannot quietly
+        // carry an `inf`/`NaN` `inverse_inertia` into the next
+        // rotational step. The post-attach `composite_properties` is
+        // corrupted directly via `get_mut` to a zero matrix; detach
+        // must then fire the named diagnostic. (The legitimate
+        // construction surface for a singular inertia is blocked
+        // upstream by `MassProperties::with_inertia` and by
+        // `compute_node_composite`, so a direct mutation is the only
+        // way to reach the detach-side guard from a unit test.)
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let cid = tree.add_body("child".into(), MassProperties::new(5.0));
+        tree.attach(cid, pid, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        // Corrupt the child's composite inertia to a singular matrix
+        // post-attach but pre-detach. `mass` stays positive so detach
+        // enters the inversion branch and the determinant guard fires.
+        tree.get_mut(cid).composite_properties.inertia = DMat3::ZERO;
+        tree.detach(cid);
+    }
+
     #[test]
     fn attach_aligned_identity_points() {
         // Two bodies with points at their origins, identity rotation.
@@ -1655,6 +1694,10 @@ mod tests {
 
     /// `attach_to_frame_offset` panics with an actionable diagnostic
     /// when the named subject point does not exist on the body.
+    // JEOD_INV: MA.21 — named attachment point must exist on the body;
+    // the lookup miss must fire the `find_mass_point().unwrap_or_else`
+    // panic with the body name in the message so a mission engineer can
+    // locate the offending call site.
     #[test]
     #[should_panic(expected = "mass point 'missing' not found on body 'body'")]
     fn attach_to_frame_offset_missing_point_panics() {
@@ -1967,6 +2010,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "already in the same tree")]
     fn attach_with_reroot_rejects_same_tree_parent_is_root() {
+        // JEOD_INV: MA.08 — no cycle in mass tree (the same-tree
+        // rejection is the loud-fail surface of the cycle check at the
+        // reroot entry point).
+        // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention);
+        // `attach_with_reroot` compares the *roots* of the two bodies
+        // (a check that only compared `child_root` to `parent_id`
+        // would miss sibling-parent cases — see the sibling-parent
+        // test below).
         let mut tree = MassTree::new();
         let a = tree.add_root("a".into(), MassProperties::new(1.0));
         let b = tree.add_root("b".into(), MassProperties::new(1.0));
