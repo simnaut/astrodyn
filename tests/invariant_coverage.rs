@@ -10,6 +10,18 @@
 //! 2. Every `// JEOD_INV: XX.YY` tag in source MUST reference an invariant
 //!    that exists in the catalog.
 //!
+//! 3. (Informational, seed gate from #531) Every `enforced` invariant row
+//!    SHOULD have at least one `#[should_panic]` negative test that drives
+//!    the misconfiguration and verifies the panic message — this proves
+//!    the `assert!`/`panic!` site actually fires rather than being a
+//!    silently-dead branch. The negative test is recognised by a
+//!    `// JEOD_INV: XX.YY` tag inside or immediately preceding a
+//!    `#[should_panic]` test function. This third leg is informational
+//!    this round (prints a `::warning::`-style coverage report but does
+//!    not fail the build); subsequent PRs add the body of negative tests
+//!    per catalog section, and the assertion is promoted to a hard gate
+//!    once the catalog is fully covered.
+//!
 //! Fails CI if someone:
 //! - Marks an invariant as `enforced` without adding a source tag
 //! - Removes a source tag without updating the catalog status
@@ -376,6 +388,233 @@ fn no_duplicate_catalog_ids() {
     );
 }
 
+/// Scan source files for `#[should_panic]` test functions whose
+/// surrounding context (immediately preceding lines or function body)
+/// carries a `// JEOD_INV: XX.YY` tag, and return the set of catalog
+/// IDs that have at least one such negative test.
+///
+/// Matching window: any `JEOD_INV:` tag within the test function's
+/// body, OR on any of the 6 lines immediately preceding the
+/// `#[should_panic]` attribute (covers a leading doc comment, the
+/// `#[test]` attribute, and a tag-bearing comment above it).
+///
+/// Tags appearing only in unrelated source comments (i.e. outside a
+/// `#[should_panic]`-attributed test) are NOT counted as negative
+/// tests — the existing `// JEOD_INV: GV.04` tag at the
+/// panic-emitting `assert!` call site is documentation of the
+/// enforcement site, not proof that the panic actually fires.
+fn find_negative_tests() -> BTreeMap<String, Vec<String>> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut tagged: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    let mut roots = vec![
+        manifest_dir.join("crates"),
+        manifest_dir.join("src"),
+        manifest_dir.join("tests"),
+    ];
+    // Also scan per-crate `tests/` directories explicitly — the recursive
+    // walk below picks them up via `crates/<crate>/tests/`, but listing
+    // the top-level `tests/` separately ensures the workspace-root
+    // integration tests are covered too.
+    let crates_dir = manifest_dir.join("crates");
+    if let Ok(entries) = fs::read_dir(&crates_dir) {
+        for entry in entries.flatten() {
+            let tests_dir = entry.path().join("tests");
+            if tests_dir.is_dir() {
+                roots.push(tests_dir);
+            }
+        }
+    }
+
+    for root in roots {
+        scan_negative_tests_recursive(&root, manifest_dir, &mut tagged);
+    }
+    tagged
+}
+
+fn scan_negative_tests_recursive(
+    dir: &Path,
+    manifest_root: &Path,
+    tagged: &mut BTreeMap<String, Vec<String>>,
+) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_negative_tests_recursive(&path, manifest_root, tagged);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel_path = path.strip_prefix(manifest_root).unwrap_or(&path);
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim_start();
+                if !trimmed.starts_with("#[should_panic") {
+                    continue;
+                }
+                // Collect tags from a window: 6 lines above through the
+                // closing brace of the function body. The brace search
+                // counts depth from the first `{` on or after the
+                // `#[should_panic]` line.
+                let window_start = idx.saturating_sub(6);
+                let body_end = find_test_fn_body_end(&lines, idx);
+                let window_end = body_end.unwrap_or(lines.len().min(idx + 80));
+
+                let mut window_tags = BTreeSet::new();
+                for window_line in &lines[window_start..window_end] {
+                    for tag in extract_inv_tags(window_line) {
+                        window_tags.insert(tag);
+                    }
+                }
+                let location = format!("{}:{}", rel_path.display(), idx + 1);
+                for tag in window_tags {
+                    tagged.entry(tag).or_default().push(location.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Given a `#[should_panic]` attribute line at `attr_idx`, find the
+/// line index just past the test function's closing brace by simple
+/// brace counting. Returns `None` if no balanced body is found within
+/// 200 lines (defensive — keeps the scanner fast on malformed input).
+fn find_test_fn_body_end(lines: &[&str], attr_idx: usize) -> Option<usize> {
+    let mut depth: i32 = 0;
+    let mut started = false;
+    let limit = lines.len().min(attr_idx + 200);
+    for (i, line) in lines.iter().enumerate().take(limit).skip(attr_idx) {
+        for c in line.chars() {
+            match c {
+                '{' => {
+                    depth += 1;
+                    started = true;
+                }
+                '}' => {
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        if started && depth == 0 {
+            return Some(i + 1);
+        }
+    }
+    None
+}
+
+/// Direction 6 (informational seed from #531): every `enforced`
+/// catalog row should have at least one negative test driving the
+/// misconfiguration. Emits a `::warning::`-style coverage report and
+/// PASSES regardless — the bidirectional gate is staged in chunks
+/// (this PR seeds the matcher + a handful of tests; subsequent PRs
+/// fill in the per-section bodies; the final PR in the chain promotes
+/// this to a hard `assert!`).
+///
+/// Rationale: today the bidirectional `tag ↔ catalog` checks above
+/// only prove the tag *exists* at the enforcement site. They do not
+/// prove the `assert!` actually fires under misconfiguration — an
+/// AI-authored refactor could neuter a panic site to a silent
+/// `if … return` and CI would stay green. A `#[should_panic(expected
+/// = "…")]` negative test that drives the failure and pins the panic
+/// message text closes that gap.
+#[test]
+fn enforced_rows_have_negative_tests_or_warn() {
+    let catalog = parse_catalog();
+    let neg_tests = find_negative_tests();
+
+    let mut covered_enforced: Vec<&String> = Vec::new();
+    let mut missing_enforced: Vec<&String> = Vec::new();
+    let mut covered_partial: Vec<&String> = Vec::new();
+    let mut missing_partial: Vec<&String> = Vec::new();
+
+    for (tag, status) in &catalog {
+        // Skip rows that are not in scope for negative tests:
+        // - `structural` is enforced at compile time (deleted ctor,
+        //   value member, typestate witness) — there is no runtime
+        //   panic to drive.
+        // - `deferred` and `n/a` are out of scope by definition.
+        let scope_enforced = status.starts_with("enforced");
+        let scope_partial = status.starts_with("partial");
+        if !scope_enforced && !scope_partial {
+            continue;
+        }
+        let has_test = neg_tests.contains_key(tag);
+        match (scope_enforced, has_test) {
+            (true, true) => covered_enforced.push(tag),
+            (true, false) => missing_enforced.push(tag),
+            (false, true) => covered_partial.push(tag),
+            (false, false) => missing_partial.push(tag),
+        }
+    }
+
+    let enforced_total = covered_enforced.len() + missing_enforced.len();
+    let partial_total = covered_partial.len() + missing_partial.len();
+
+    eprintln!();
+    eprintln!("=== Negative-test coverage (#531 seed gate, informational) ===");
+    eprintln!(
+        "enforced: {}/{} rows have a #[should_panic] negative test",
+        covered_enforced.len(),
+        enforced_total
+    );
+    eprintln!(
+        "partial:  {}/{} rows have a #[should_panic] negative test (best-effort)",
+        covered_partial.len(),
+        partial_total
+    );
+    if !missing_enforced.is_empty() {
+        eprintln!();
+        eprintln!(
+            "::warning:: {} `enforced` row(s) lack a #[should_panic] negative test.",
+            missing_enforced.len()
+        );
+        eprintln!(
+            "::warning:: Add `#[should_panic(expected = \"<substring>\")]` test(s) near \
+             the enforcement site, tagged with `// JEOD_INV: XX.YY`."
+        );
+        eprintln!("Missing (enforced):");
+        for tag in &missing_enforced {
+            eprintln!("  - {tag}");
+        }
+    }
+    if !missing_partial.is_empty() {
+        eprintln!();
+        eprintln!(
+            "(`partial` rows without negative tests — informational, lower priority): {}",
+            missing_partial
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    eprintln!("================================================================");
+    eprintln!();
+
+    // Pass unconditionally this round. The gate is promoted to an
+    // assertion once the catalog body lands (tracked as follow-up
+    // sub-issues of #517 / #531).
+    //
+    // Sanity check: the matcher must locate at least the seed tests
+    // landed alongside this gate; if zero rows are covered, the
+    // scanner is broken and the informational-mode escape hatch is
+    // hiding the breakage.
+    assert!(
+        !covered_enforced.is_empty(),
+        "Negative-test scanner found zero covered `enforced` rows. \
+         The seed tests in `gravity_controls.rs`, `mass.rs`, and \
+         `crates/astrodyn_quantities/tests/quat_normalize_panic.rs` \
+         should each contribute coverage; if all of them are missing \
+         the scanner has regressed (window, brace-counting, or root \
+         set), not the test suite."
+    );
+}
+
 /// Print a coverage summary (informational, not an assertion).
 /// Run with: `cargo test --test invariant_coverage coverage_summary -- --ignored --nocapture`
 #[test]
@@ -419,6 +658,13 @@ fn coverage_summary() {
     eprintln!("  n/a:       {na}");
     eprintln!("  not enforced: {not_enforced}");
     eprintln!("Source tags: {tagged_count} unique IDs, {tag_sites} total sites");
+
+    let neg_tests = find_negative_tests();
+    let neg_covered: usize = catalog
+        .iter()
+        .filter(|(tag, status)| status.starts_with("enforced") && neg_tests.contains_key(*tag))
+        .count();
+    eprintln!("Negative tests (`#[should_panic]` + JEOD_INV tag): {neg_covered}/{enforced} enforced rows covered");
     eprintln!();
 
     // Per-section breakdown.

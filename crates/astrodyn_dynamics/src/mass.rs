@@ -856,24 +856,28 @@ mod tests {
     //   guarded separately by the scale-invariant
     //   `checked_inertia_inverse`.
 
+    // JEOD_INV: MA.02 — negative test for `MassProperties::new(0.0)`
     #[test]
     #[should_panic(expected = "out of safe range")]
     fn untyped_new_panics_on_zero_mass() {
         let _ = MassProperties::new(0.0);
     }
 
+    // JEOD_INV: MA.02 — negative test for negative mass
     #[test]
     #[should_panic(expected = "out of safe range")]
     fn untyped_new_panics_on_negative_mass() {
         let _ = MassProperties::new(-1.0);
     }
 
+    // JEOD_INV: MA.02 — negative test for NaN mass
     #[test]
     #[should_panic(expected = "out of safe range")]
     fn untyped_new_panics_on_nan_mass() {
         let _ = MassProperties::new(f64::NAN);
     }
 
+    // JEOD_INV: MA.02 — negative test for +Inf mass
     #[test]
     #[should_panic(expected = "out of safe range")]
     fn untyped_new_panics_on_infinite_mass() {
