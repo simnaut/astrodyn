@@ -17,9 +17,12 @@ use uom::si::mass::kilogram;
 
 /// Default tolerance for [`MassProperties::validate_consistency`].
 ///
-/// Checks that `I * I^-1` is within this tolerance of the identity matrix.
-/// Matches the precision expected from `DMat3::inverse()` for typical
-/// spacecraft inertia tensors (principal moments ~1–10000 kg*m^2).
+/// Checks that every entry of `I * I^-1 - identity` is `<=` this
+/// tolerance in absolute value (inclusive, matching the `<=` semantics
+/// of `glam::DMat3::abs_diff_eq` that `validate_consistency` delegates
+/// to). Matches the precision expected from `DMat3::inverse()` for
+/// typical spacecraft inertia tensors (principal moments ~1–10000
+/// kg*m^2).
 pub const INERTIA_CONSISTENCY_TOL: f64 = 1e-6;
 
 /// Lower bound on mass (kg) accepted by the point-mass constructors
@@ -66,7 +69,7 @@ pub const MAX_SAFE_MASS_KG: f64 = 1e100;
 
 /// Tolerance for the post-inverse consistency check `I · I⁻¹ ≈ I_{3×3}`.
 ///
-/// The check is scale-invariant — `(product - identity).abs() < tol`
+/// The check is scale-invariant — `(product - identity).abs() <= tol`
 /// against the identity, regardless of the inertia tensor's own
 /// magnitudes — so a single absolute tolerance suffices. Defined as
 /// [`INERTIA_CONSISTENCY_TOL`] (the public-facing tolerance for
@@ -98,8 +101,9 @@ const POST_INVERSE_IDENTITY_TOL: f64 = INERTIA_CONSISTENCY_TOL;
 ///   2. the inverse itself is finite — rejects genuinely singular
 ///      matrices whose `inverse()` returns `inf`/`NaN` entries
 ///      (`det = 0`, near-zero subnormals, linearly dependent columns); and
-///   3. `I · I⁻¹` is within `POST_INVERSE_IDENTITY_TOL` of
-///      `I_{3×3}` — rejects the pathological case where guards (1)
+///   3. `(I · I⁻¹ − I_{3×3}).abs() <= POST_INVERSE_IDENTITY_TOL`
+///      entry-wise (inclusive at the boundary) — rejects the
+///      pathological case where guards (1)
 ///      and (2) pass but cofactor underflow silently zeroed out
 ///      individual inverse entries. The smoking gun: a diagonal
 ///      tensor like `diag(1e300, 1e-200, 1e-200)` has a finite
