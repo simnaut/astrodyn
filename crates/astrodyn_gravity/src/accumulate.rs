@@ -1028,4 +1028,52 @@ mod tests {
             },
         );
     }
+
+    /// A `differential` (third-body) control whose source is at the
+    /// integration frame origin is degenerate: the third-body
+    /// correction `mu/|rho|^3 * rho` divides by `|rho| = 0`. JEOD
+    /// derives the third-body classification structurally from the
+    /// frame tree (`is_progeny_of`) and never produces this
+    /// configuration; in our ECS the `differential` flag is set
+    /// explicitly per control, so the misconfiguration is reachable
+    /// (e.g., a recipe that tags Earth as a third-body while
+    /// integrating in an Earth-centered frame). Panicking here
+    /// surfaces that configuration error before the singular
+    /// arithmetic produces NaN forces silently.
+    // JEOD_INV: GV.14 — negative test: third-body source at integration origin
+    #[test]
+    #[should_panic(expected = "is at the integration frame origin")]
+    fn gv_14_panics_on_third_body_at_integration_origin() {
+        let mu = 1.327_124_400e20;
+        let source = GravitySource {
+            mu,
+            model: GravityModel::PointMass,
+        };
+        let mut ctrl = GravityControl::new_third_body(0_usize);
+        // `new_third_body` already sets `differential = true`; assert
+        // here so the test's intent is independent of constructor
+        // defaults.
+        assert!(ctrl.differential);
+        ctrl.battin_method = false;
+        let controls = GravityControls {
+            controls: vec![ctrl],
+        };
+        // Source position == integration origin == ZERO: the
+        // third-body branch's `frame_pos_relative_to_source` is the
+        // zero vector and trips the assert.
+        let _ = accumulate_gravity(
+            DVec3::new(1.5e11, 0.0, 0.0),
+            &controls,
+            DVec3::ZERO,
+            |_id: usize| -> Option<ResolvedSource<'_>> {
+                Some(ResolvedSource {
+                    source: &source,
+                    rotation: None,
+                    position: DVec3::ZERO, // ← coincides with integration origin
+                    delta_c20: 0.0,
+                    has_delta_coeffs: false,
+                })
+            },
+        );
+    }
 }
