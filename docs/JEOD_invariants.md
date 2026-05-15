@@ -283,7 +283,7 @@ Our port wraps ANISE (`crates/astrodyn_ephemeris`, 243 lines: `ephemeris.rs` + `
 |-----|-----------|-------------|----------|------------|
 | AT.01 | `active` flag gates computation | flag-gate | runtime | structural (no atmosphere → no AtmosphericStateC) |
 | AT.02 | Atmosphere model pointer non-null for update | structural | runtime | structural (AtmosphereModelR resource checked) |
-| AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`crates/astrodyn_bevy/src/systems/environment.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
+| AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`crates/astrodyn_bevy/src/systems/environment.rs` — atmosphere path panics if planet_entity set but PlanetFixedRotationC missing; `crates/astrodyn_bevy/src/systems/derived_state.rs::geodetic_system` panics with a per-cause diagnostic when `GeodeticConfigC.planet` does not resolve to the `(PlanetFixedRotationC<P>, PlanetC)` pair instead of silently writing `GeodeticState::default()`) |
 | AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`crates/astrodyn_atmosphere/src/lib.rs` compute_corotation_wind, `crates/astrodyn_bevy/src/systems/environment.rs` atmosphere_update_system) |
 
 ## Section IN: Interactions
@@ -298,7 +298,7 @@ Our port wraps ANISE (`crates/astrodyn_ephemeris`, 243 lines: `ephemeris.rs` + `
 | IN.06 | RadiationPressure.active gates computation | flag-gate | runtime | structural (no FlatPlateConfigC → no SRP) |
 | IN.07 | RadiationThirdBody name required | fatal | initialization | n/a (shadow bodies by Entity) |
 | IN.08 | RadiationThirdBody belongs to one model only | fatal | structural | n/a (function-based, no ownership) |
-| IN.09 | RadiationSource planet must be found by DynManager | fatal | initialization | enforced (`crates/astrodyn_bevy/src/systems/interaction.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`) |
+| IN.09 | RadiationSource planet must be found by DynManager | fatal | initialization | enforced (`crates/astrodyn_bevy/src/systems/interaction.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`. `crates/astrodyn_bevy/src/systems/derived_state.rs::solar_beta_system` panics with a per-cause diagnostic naming the affected body when a `SolarBetaC` body is present but no `SunMarker` exists, instead of silently writing `SolarBeta::default() = 0.0` — bodies that explicitly request solar beta cannot fall back to "perfectly noon", which is geometrically plausible and silently corrupts thermal / power / pointing budgets) |
 | IN.10 | RadiationSource.luminosity ≥ 1e-6 for flux computation | flag-gate | runtime | n/a (luminosity is a compile-time constant; `distance < 1.0` guard prevents division by near-zero) |
 | IN.11 | RadiationThirdBody.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.12 | RadiationSource.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
@@ -405,7 +405,7 @@ Source: `../jeod/models/utils/orbital_elements/src/orbital_elements.cc`. Our por
 
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
-| OE.01 | `mu` (gravitational parameter) must be positive; non-positive or non-finite `mu` fails `from_cartesian` (`orbital_elements.cc:427-436`) | fatal | initialization | enforced (`crates/astrodyn_math/src/orbital_elements.rs` returns `OrbitalError::InvalidMu`; verified at test line 977-978) |
+| OE.01 | `mu` (gravitational parameter) must be positive; non-positive or non-finite `mu` fails `from_cartesian` (`orbital_elements.cc:427-436`) | fatal | initialization | enforced (`crates/astrodyn_math/src/orbital_elements.rs` returns `OrbitalError::InvalidMu`; verified at test line 977-978. The Bevy adapter additionally surfaces a `gravity_source` wiring miss as a per-cause panic in `crates/astrodyn_bevy/src/systems/derived_state.rs::orbital_elements_system` when `OrbitalElementsConfigC.gravity_source` does not resolve to a `GravitySourceC` component, instead of silently writing zero orbital elements) |
 | OE.02 | Semi-parameter `p = a(1-e²)` must be positive for `to_cartesian`; non-positive `p` fails (`orbital_elements.cc:403-410`) | fatal | runtime | enforced (`orbital_elements.rs:290-292` returns `DegenerateOrbit`) |
 | OE.03 | `sin²ν + cos²ν ≈ 1` to tolerance 1e-6 in `to_cartesian` (`orbital_elements.cc:414-424`) | fatal | runtime | enforced (`orbital_elements.rs:301-304`) |
 | OE.04 | Eccentricity regime classification: `e < TOLERANCE` ⇒ circular branch; `|e−1| < parabolic-eps` ⇒ parabolic; otherwise elliptic or hyperbolic. Tolerances enforce a branch selection rather than fail (`orbital_elements.cc:560-597`) | structural | consistency | enforced (`orbital_elements.rs:141-142` and surrounding branch selection) |
