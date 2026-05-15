@@ -208,6 +208,12 @@ impl Ephemeris {
     ) -> Result<glam::DMat3, EphemerisError> {
         // Use DE421 PA frame for Moon (high fidelity libration from BPC),
         // IAU built-in for other bodies.
+        // JEOD_INV: EP.17 — orientation-ephemeris analog of the body-not-in-file
+        // check: a request for a body with no IAU/PA orientation model registered
+        // here is refused with a QueryError rather than silently falling through
+        // to ANISE with an unknown frame ID. JEOD's `de4xx_file_update.cc`
+        // `item_not_in_file` covers translation queries; this arm is the same
+        // intent applied to body rotations.
         let orient = match body {
             EphemerisBody::Moon => 31006, // Moon PA from de421.bpc
             EphemerisBody::Mars => 499,   // IAU_MARS
@@ -221,6 +227,10 @@ impl Ephemeris {
         let from_frame = Frame::new(body_to_naif(body), J2000);
         let to_frame = Frame::new(body_to_naif(body), orient);
 
+        // JEOD_INV: EP.17 — ANISE raises a segment-not-found or no-orientation-data
+        // error when the requested body's orientation data is not loaded (e.g.
+        // Moon PA without a BPC kernel); we map it through QueryError so the
+        // adapter layer can escalate to a loud panic.
         let dcm = self
             .almanac
             .rotate(from_frame, to_frame, epoch)
@@ -352,5 +362,74 @@ mod typed_accessor_tests {
             (r_au - 0.9833).abs() < 0.01,
             "Earth-Sun distance: {r_au} AU"
         );
+    }
+
+    // Querying outside the loaded SPK segment's valid epoch range surfaces
+    // an `EphemerisError::QueryError` carrying ANISE's "valid from … but not
+    // at requested …" message. The `unwrap()` panics with the Debug-formatted
+    // error, pinning the substring proves the range check actually fires
+    // rather than silently extrapolating.
+    #[test]
+    #[should_panic(expected = "but not at requested")]
+    fn ep_14_panics_on_far_future_epoch_into_get_state_typed() {
+        // JEOD_INV: EP.14 — query epoch must lie within the loaded segment's
+        // valid range; far-future epochs must fail loudly, not extrapolate.
+        let ephem = load_de421();
+        // DE421's translation segment for Earth ends in 2053 (per ANISE).
+        // 2_500_000.0 TDB JD ≈ 2132 AD — well past the loaded segment.
+        let far_future_tdb_jd = 2_500_000.0_f64;
+        let _ = ephem
+            .get_state_typed(EphemerisBody::Moon, EphemerisBody::Earth, far_future_tdb_jd)
+            .unwrap();
+    }
+
+    // Symmetric coverage for the lower bound of the valid segment: DE421's
+    // translation segment begins in 1899; a TDB JD far before that must
+    // surface the same `QueryError` rather than silently extrapolating
+    // polynomial coefficients into invalid epochs.
+    #[test]
+    #[should_panic(expected = "but not at requested")]
+    fn ep_14_panics_on_far_past_epoch_into_get_state_typed() {
+        // JEOD_INV: EP.14 — query epoch must lie within the loaded segment's
+        // valid range; far-past epochs must fail loudly, not extrapolate.
+        let ephem = load_de421();
+        // 2_000_000.0 TDB JD ≈ 763 BC — well before the loaded segment.
+        let far_past_tdb_jd = 2_000_000.0_f64;
+        let _ = ephem
+            .get_state_typed(EphemerisBody::Moon, EphemerisBody::Earth, far_past_tdb_jd)
+            .unwrap();
+    }
+
+    // Orientation-ephemeris availability check fires for any body that has
+    // no IAU/PA orientation model wired through `get_body_rotation_epoch`'s
+    // match (currently only Moon and Mars are supported). Driving the Sun
+    // branch confirms the explicit QueryError-returning arm refuses to
+    // silently fall through to ANISE with an unknown orientation frame ID.
+    #[test]
+    #[should_panic(expected = "No IAU orientation model")]
+    fn ep_17_panics_on_unsupported_body_for_get_body_rotation() {
+        // JEOD_INV: EP.17 — orientation-ephemeris availability for the
+        // requested body must be enforced rather than silently extrapolated.
+        let ephem = load_de421();
+        let _ = ephem
+            .get_body_rotation(EphemerisBody::Sun, J2000_TDB_JD)
+            .unwrap();
+    }
+
+    // When a body *is* in the supported set (Moon → DE421 PA) but the
+    // corresponding orientation kernel was never loaded, ANISE's rotation
+    // engine raises a "no orientation data loaded" error which maps through
+    // the rotation `map_err` site to a `QueryError`. The kernel under test
+    // loads only the .bsp (no .bpc), so the Moon rotation path is forced
+    // down the missing-orientation branch.
+    #[test]
+    #[should_panic(expected = "no orientation data loaded")]
+    fn ep_17_panics_on_moon_rotation_without_bpc_loaded() {
+        // JEOD_INV: EP.17 — body-orientation kernel must be loaded before
+        // a rotation query for that body; missing data must surface loudly.
+        let ephem = load_de421();
+        let _ = ephem
+            .get_body_rotation(EphemerisBody::Moon, J2000_TDB_JD)
+            .unwrap();
     }
 }
