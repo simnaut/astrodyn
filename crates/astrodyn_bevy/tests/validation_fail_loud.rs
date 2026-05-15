@@ -109,6 +109,56 @@ fn collect_first_panic(app: &mut App) -> String {
         .unwrap_or_else(|| "<non-string panic payload>".to_string())
 }
 
+/// `#[should_panic]` sibling of
+/// `validate_jeod_invariants_panics_on_rotational_without_mass`. The
+/// `catch_unwind` variant exists to extract and pin a *specific
+/// substring* of the panic payload; this variant exists to make the
+/// negative-test scanner in `tests/invariant_coverage.rs` count the
+/// site for `MA.01`'s catalog row (the scanner only matches
+/// `#[should_panic]` attributes, not `catch_unwind` patterns). Both
+/// tests drive the same misconfiguration; keeping them in lock-step
+/// guards against either gate regressing silently.
+#[test]
+#[should_panic(expected = "fails component validation")]
+fn validate_jeod_invariants_should_panic_on_rotational_without_mass() {
+    // JEOD_INV: MA.01 — `MassBody` (surfaced here as `MassPropertiesC`)
+    // must be present on any body with `rotational_dynamics = true`.
+    // `astrodyn::validate_body` reports the fatal-class
+    // `RotationalWithoutMass`, and the Bevy adapter's
+    // `validate_jeod_invariants` system escalates that to a panic with
+    // the `"fails component validation"` diagnostic prefix. JEOD
+    // enforces the equivalent via `MassBody` being a value member of
+    // `DynBody`; our adapter recovers the same fail-loud contract at
+    // the validation system boundary.
+    let mut app = build_minimal_app();
+    let earth = app
+        .world_mut()
+        .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
+        .id();
+    app.world_mut().spawn((
+        Name::new("MisconfiguredSixDof"),
+        TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<PlanetInertial<Earth>>(),
+            velocity: DVec3::new(0.0, 7_000.0, 0.0).m_per_s_at::<PlanetInertial<Earth>>(),
+        }),
+        RotationalStateC::default(),
+        DynamicsConfigC(DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        }),
+        GravityAccelerationC::default(),
+        GravityControlsC(GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        }),
+    ));
+    app.world_mut().run_schedule(Startup);
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(DT));
+    app.world_mut().run_schedule(FixedUpdate);
+}
+
 /// `rotational_dynamics=true` without a `MassPropertiesC` is a
 /// fatal-class `ValidationError::RotationalWithoutMass`. Pinning the
 /// `"fails component validation"` diagnostic prefix proves the
