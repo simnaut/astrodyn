@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(payload.order, 2);
         assert_eq!(payload.radius, radius);
         assert_eq!(payload.mu, mu);
-        assert_eq!(payload.cnm[2][0], -4.841_695e-4);
-        assert_eq!(payload.snm[2][2], -1.400_273e-6);
+        assert_eq!(payload.cnm(2, 0), -4.841_695e-4);
+        assert_eq!(payload.snm(2, 2), -1.400_273e-6);
     }
 }
