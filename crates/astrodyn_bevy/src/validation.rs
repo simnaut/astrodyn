@@ -112,8 +112,22 @@ pub(crate) fn is_root_equivalent_entity(
 /// Delegates per-body checks to [`astrodyn::validate_body`] and applies
 /// gravity control auto-corrections via `check_validity()`.
 ///
+/// Validation is a hard gate: any invariant violation (including the
+/// warning-class `UninitializedState` and
+/// `NonRootFrameWithRootDependentFeatures` cases) panics on detection
+/// rather than logging and continuing. The construction-time
+/// error-return path from `VehicleConfig::spawn_bevy` is the
+/// future-preferred surface for surfacing these failures synchronously;
+/// until that refactor lands, the panic-on-detection here is the
+/// fail-loudly guarantee that misconfigured entities cannot propagate
+/// through the integration pipeline.
+///
 /// # Panics
-/// Panics with a descriptive message for any violated invariant.
+/// Panics with a descriptive `Entity {entity:?} fails component
+/// validation: ...` message for any violated invariant. The message
+/// names the offending entity, the specific failure, and how to fix
+/// the call site (which component to spawn, which frame to integrate
+/// in, etc.).
 // JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn validate_jeod_invariants<P: Planet>(
@@ -297,18 +311,37 @@ pub fn validate_jeod_invariants<P: Planet>(
             plate_counts,
         );
 
-        for error in &errors {
-            if error.is_warning() {
-                // FAIL_LOUD_EXEMPT: operational report path for warning-class
-                // ValidationErrors (see `ValidationError::is_warning`). The
-                // warning category is reserved for suspicious-but-valid
-                // states (uninitialized at origin, non-root integ with proper
-                // IntegOrigin shifts per RF.10) where a panic would
-                // false-positive on legitimate setups.
-                bevy::log::warn!("Entity {entity:?}: {error}");
-            } else {
-                panic!("Entity {entity:?}: {error}");
+        // Per the project's "Fail Loudly" non-negotiable, any
+        // `ValidationError` returned by `astrodyn::validate_body` is a
+        // hard gate: a body whose component set fails an invariant
+        // check must not propagate through the integration pipeline
+        // under any classification (fatal or warning-class). Construction-
+        // time error return from `VehicleConfig::spawn_bevy` is the
+        // future-preferred surface — see the corresponding `# Panics`
+        // rustdoc on this system. Until that refactor lands, the
+        // Bevy-side validator panics on detection so the misconfiguration
+        // surfaces at the first validation tick rather than as silently
+        // wrong physics downstream.
+        //
+        // JEOD_INV: DM.05 — all required states initialized before first integration (panic on detection)
+        // JEOD_INV: DB.11 — `initialized_states` tracking (translational state must be non-zero for propagating bodies)
+        if !errors.is_empty() {
+            // Concatenate every detected `ValidationError` into the
+            // panic message so callers see the full failure set in one
+            // shot, not the first error followed by silent drop of the
+            // rest. The leading-newline + `  - ` indent shape is the
+            // same one `Simulation::validate()` uses when the runner
+            // formats its `Err(Vec<ValidationError>)` for display.
+            let mut detail = String::new();
+            for error in &errors {
+                detail.push_str("\n  - ");
+                detail.push_str(&error.to_string());
             }
+            panic!(
+                "Entity {entity:?} fails component validation:{detail}\n\
+                 Validation is a hard gate — spawn the missing component(s) \
+                 before adding the entity to the simulation."
+            );
         }
 
         // ── Frame-switch + non-root frame validation ──
@@ -319,21 +352,24 @@ pub fn validate_jeod_invariants<P: Planet>(
         // body's `gravity_controls` so the post-switch differential flip
         // leaves a non-differential central body. Bodies whose
         // integration frame is non-root, or which have an active switch
-        // into a non-root frame, also warn when carrying root-dependent
-        // features (drag, SRP, orbital elements, etc.).
+        // into a non-root frame, also panic when carrying root-dependent
+        // features (drag, SRP, orbital elements, etc.) — RF.10 catalogs
+        // the shift discipline required to mix integration-frame state
+        // with root-inertial source positions.
         let (body_frame_handle, switches) = body_frame_state.get(entity).unwrap_or((None, None));
         let root_entity_value = root_frame_entity.as_ref().map(|r| r.0);
         // Resolve the body's current integration frame entity via
         // `Query<&ChildOf>` on its frame entity. Bodies registered
         // before the frames-as-entities components landed have no
         // `FrameEntityC` — treat those as root-integrated (the
-        // pre-migration default) so they don't trip the warning.
+        // pre-migration default) so they don't trip the non-root
+        // panic below.
         let body_integ_frame_entity = body_frame_handle
             .and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
         // Use `is_root_equivalent_entity` instead of raw entity equality so
         // Earth-centered bodies with `IntegSourceC(Some(earth))`
         // (Earth.inertial sits one level below the generic root with
-        // identity state) don't trip the warning. See helper doc.
+        // identity state) don't trip the non-root panic. See helper doc.
         let non_root_integ = match (body_integ_frame_entity, root_entity_value) {
             (Some(integ_e), Some(root_e)) => {
                 !is_root_equivalent_entity(integ_e, root_e, &parents, &frame_states)
@@ -390,7 +426,7 @@ pub fn validate_jeod_invariants<P: Planet>(
                 // above — switching back to the central body in Bevy
                 // still produces a target frame entity one level below
                 // root, but with identity state, so it is numerically
-                // root-equivalent and must not trip the warning.
+                // root-equivalent and must not trip the non-root panic.
                 if let (Some(tfe), Some(root_e)) = (target_frame_entity, root_entity_value) {
                     if !is_root_equivalent_entity(tfe, root_e, &parents, &frame_states) {
                         non_root_switch = true;
@@ -420,30 +456,45 @@ pub fn validate_jeod_invariants<P: Planet>(
                 || has_solar_beta
                 || has_earth_lighting;
             if has_root_dependent {
-                // FAIL_LOUD_EXEMPT: Bevy-side mirror of the runner-side
-                // `NonRootFrameWithRootDependentFeatures` warning-class
-                // ValidationError. The configuration is supported (see
-                // `tests/integ_frame_translation_invariance.rs`) provided
-                // the caller applies the per-step `IntegOrigin` shift at
-                // every RF.10 shift site (SRP, solar beta, earth lighting)
-                // and consumes non-shift sites directly. Promoting to
-                // panic would false-positive on legitimate setups.
-                bevy::log::warn!(
-                    "Entity {entity:?}: non-root integration frame (or active \
-                     frame switch into a non-root frame) paired with features. \
-                     Per RF.10, these fall into two groups: SHIFT SITES (need \
-                     root-inertial conversion before mixing with root-inertial \
-                     source positions — flat_plate_srp={has_flat}, \
+                // Per the project's "Fail Loudly" non-negotiable, a body
+                // integrating in (or switching into) a non-root frame
+                // while also carrying root-dependent features is a hard
+                // gate: the caller must either spawn the body in the
+                // root inertial frame, or remove the root-dependent
+                // feature components before the entity reaches the
+                // simulation. The construction-time error-return path
+                // from `VehicleConfig::spawn_bevy` is the future-preferred
+                // surface for this check; until that refactor lands the
+                // validator panics on detection so the misconfiguration
+                // cannot silently produce wrong physics downstream.
+                //
+                // RF.10 (`docs/JEOD_invariants.md`) catalogs which shift
+                // sites consume root-inertial source positions (SRP,
+                // solar beta, earth lighting) and which non-shift sites
+                // consume the body's typed `Position<PlanetInertial<P>>`
+                // directly (drag, orbital elements, euler, geodetic,
+                // lvlh) — the panic message reproduces that split so
+                // the caller knows which component to drop or which
+                // frame to integrate in.
+                panic!(
+                    "Entity {entity:?} fails component validation: non-root \
+                     integration frame (or active frame switch into a non-root \
+                     frame) is paired with root-dependent features. \
+                     Per RF.10, these fall into two groups: SHIFT SITES \
+                     (consume root-inertial source positions — \
+                     flat_plate_srp={has_flat}, \
                      cannonball_srp={has_cannonball}, \
                      solar_beta={has_solar_beta}, \
-                     earth_lighting={has_earth_lighting}) and NON-SHIFT SITES \
-                     (consume the body's typed `Position<PlanetInertial<P>>` \
-                     directly; shifting would break them — drag={has_drag}, \
-                     orbital_elements={has_orbital}, euler={has_euler}, \
-                     geodetic={has_geodetic}, lvlh={has_lvlh}). If the \
-                     configuration applies the shift at every shift site (and \
-                     leaves the non-shift sites alone) this warning is \
-                     informational.",
+                     earth_lighting={has_earth_lighting}) and NON-SHIFT \
+                     SITES (consume the body's typed \
+                     `Position<PlanetInertial<P>>` directly — \
+                     drag={has_drag}, orbital_elements={has_orbital}, \
+                     euler={has_euler}, geodetic={has_geodetic}, \
+                     lvlh={has_lvlh}). \
+                     Validation is a hard gate — spawn the body in the \
+                     root inertial frame or drop the root-dependent \
+                     component(s) before adding the entity to the \
+                     simulation."
                 );
             }
         }
