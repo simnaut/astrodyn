@@ -397,6 +397,7 @@ version = "0.1.1"
 dependencies = [
  "astrodyn_quantities",
  "log",
+ "proptest",
  "uom",
 ]
 
