@@ -87,7 +87,7 @@ fn j2_nodal_regression_rate() {
     // Analytical J2 regression rate:
     //   dΩ/dt = -3nJ₂R²cos(i) / (2p²)
     // where J₂ is unnormalized = -sqrt(5) * C20
-    let c20 = sh_data.cnm[2][0];
+    let c20 = sh_data.cnm(2, 0);
     let j2 = -(5.0_f64).sqrt() * c20;
     let a = elems_start.semi_major_axis;
     let e = elems_start.e_mag;
