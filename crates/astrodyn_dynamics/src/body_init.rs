@@ -1311,4 +1311,50 @@ mod tests {
             "ang vel must match the renormalized-matrix formula (off-unit input): err = {err_off}"
         );
     }
+
+    // =======================================================================
+    // BA.05 negative tests — orbit initializer requires `mu > 0`.
+    //
+    // JEOD `dyn_body_init_orbit.cc:98-111` validates the central body's
+    // gravity source before computing the position/velocity. Our port
+    // asserts `mu > 0.0` at the entry of every orbital-init kernel; the
+    // three tests below drive the same misconfiguration through each
+    // public entry point so a future refactor cannot neuter a single
+    // assert and leave the others intact.
+    // =======================================================================
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_05_panics_on_zero_mu_in_orbital_elements_init() {
+        // JEOD_INV: BA.05 — `init_from_orbital_elements` rejects mu = 0
+        // before the Keplerian-to-Cartesian conversion would otherwise
+        // produce NaN propagation downstream.
+        let _ = init_from_orbital_elements(
+            EARTH_R_EQ + 400_000.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0, // misconfigured: no gravity source
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_05_panics_on_negative_mu_in_mean_anomaly_init() {
+        // JEOD_INV: BA.05 — `init_from_mean_anomaly` shares the same
+        // guard; a negative mu is non-physical and would silently flip
+        // the orbit sense if allowed through.
+        let _ = init_from_mean_anomaly(EARTH_R_EQ + 400_000.0, 0.01, 0.0, 0.0, 0.0, 0.0, -EARTH_MU);
+    }
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_05_panics_on_zero_mu_in_time_periapsis_init() {
+        // JEOD_INV: BA.05 — `init_from_time_periapsis` defers to the
+        // mean-anomaly path but checks `mu > 0` itself first so the
+        // diagnostic names the entry point the caller invoked.
+        let _ = init_from_time_periapsis(EARTH_R_EQ + 400_000.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0);
+    }
 }
