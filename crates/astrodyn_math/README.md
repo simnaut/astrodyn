@@ -16,6 +16,42 @@ from [NASA JEOD v5.4.0](https://github.com/nasa/jeod). Specifically:
 and the inline helpers under
 [`math/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/math/include/).
 
+## When to use
+
+- **Coordinate / orbital-element conversions** — Cartesian ↔ Keplerian
+  (`OrbitalElements`), geodetic ↔ Cartesian, body-frame ↔ LVLH ↔ NED.
+- **Attitude algebra** — composing or interpolating JEOD-convention
+  quaternions, computing Euler-angle sequences, building rotation
+  matrices that round-trip with JEOD source.
+- **Lighting / pointing scalars** — solar beta angle for thermal /
+  power budgeting against an orbit.
+
+If you're an upstream physics crate (gravity, dynamics, frames,
+interactions) that needs a battle-tested coordinate or attitude
+primitive, reach here rather than rolling your own. If you're mission
+code, the recipes / typed components in `astrodyn` and `astrodyn_bevy`
+already wrap these — you rarely call `astrodyn_math` directly.
+
+## Key concepts
+
+The crate is organized around a single attitude type — `JeodQuat`, the
+unified scalar-first, left-transformation `Quat<ScalarFirst,
+LeftTransform>` re-exported from `astrodyn_quantities` — so there is
+only one quaternion convention in the workspace, enforced by the type
+system rather than by comments. Algebra (composition, conjugation,
+interpolation), conversions (to/from Euler angles and rotation
+matrices), and the witness-gated `NormalizedQuat` constructor all
+operate on that one type.
+
+Coordinate kernels follow JEOD's source layout faithfully:
+`cartesian_to_geodetic` uses Borkowski's iterative latitude solver
+(stable at the poles and at low altitude); `mat3_from_rows` matches
+JEOD's row-major matrix convention; `OrbitalElements` keeps the same
+true/mean/orbital anomaly trio JEOD carries. Angles are radians,
+lengths meters, throughout. The typed `*_typed` siblings drop into
+those raw kernels via `.raw_si()` and re-wrap on exit, so the public
+surface stays frame- and unit-checked without taxing the inner loop.
+
 ## Layered architecture
 
 ```

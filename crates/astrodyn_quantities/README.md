@@ -8,6 +8,47 @@ Sits at the bottom of the workspace dependency graph. Every other
 Bevy glue, depends on `astrodyn_quantities` for typed quantities and the
 phantom frame / time-scale tags.
 
+## When to use
+
+- **Mission / scenario code** declaring positions, velocities, masses,
+  epochs, angular rates, or quaternions — reach for `F64Ext`
+  (`400.0.km()`, `51.6.deg()`) and the typed aliases (`Position<F>`,
+  `Velocity<F>`, `SecondsSince<S>`, `NormalizedQuat`).
+- **Authors of a new `astrodyn_*` physics function** adding a public
+  surface — wrap inputs/outputs in the typed quantities so the
+  compiler refuses cross-frame, cross-scale, or scalar-vs-vector
+  quaternion mismatches before they become silent numerical bugs.
+- **Adapter / glue authors** (Bevy components, parity wrappers) — use
+  the typed quantities as the storage representation so the witness
+  invariants (e.g. `NormalizedQuat`) cannot be forged at the boundary.
+
+Do *not* reach for this crate from raw integration-kernel math; the
+arithmetic-density path drops into `glam::DVec3` / `f64` via
+`.raw_si()` and re-wraps on exit (see the three-layer facade below).
+
+## Key concepts
+
+Phantom-frame tags (`RootInertial`, `PlanetInertial<P>`,
+`IntegrationFrame`, `Ecef`, `PlanetFixed<P>`, `BodyFrame<V>`, …) are
+zero-cost markers attached to `Qty3<D, F>` so that
+`Position<RootInertial>` and `Position<Ecef>` are *different types* —
+the only legal path between them is a `FrameTransform<From, To>`,
+itself only composable when the inner frames match. Time scales work
+the same way via `SecondsSince<S: TimeScale>` (`TAI`, `TT`, `TDB`,
+`UT1`, `UTC`, …). Quaternion convention is similarly typed: a `Quat<L,
+T>` carries both its scalar-position layout and its transform side, so
+JEOD's scalar-first / left-transformation convention can be named once
+and enforced everywhere.
+
+Witness types like `NormalizedQuat` are constructor-gated — they can
+only be produced by an explicit `.normalize()` call (or an
+algebraically-closed operation), so any function that takes a
+`NormalizedQuat` parameter is guaranteed at the type level that the
+input is unit norm. The `F64Ext` facade
+(`400.0.km()`, `51.6.deg()`, `420_000.0.kg()`) makes the typed surface
+ergonomic enough that mission code never has to spell out `uom::si::*`
+paths.
+
 ## Three-layer facade
 
 ```
