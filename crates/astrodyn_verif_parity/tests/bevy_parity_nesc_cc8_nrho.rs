@@ -1,4 +1,14 @@
 //! Bevy parity wrapper for NESC CC8 (NRHO).
+
+#![allow(
+    clippy::float_cmp,
+    reason = "bevy-parity tests assert bit-exact identity between runner and Bevy state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Drives the same `cc8_builder()` factory through both runtimes —
 //! [`astrodyn_runner::Simulation`] and the Bevy `populate_app::<Moon>`

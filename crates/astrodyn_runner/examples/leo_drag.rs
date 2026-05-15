@@ -1,4 +1,10 @@
 //! LEO orbit with atmospheric drag using the recipes module.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Propagates an ISS-like orbit (400 km, i=51.6 deg) with the MET
 //! atmosphere model and shows altitude decay over 24 hours. Uses

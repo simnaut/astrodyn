@@ -310,6 +310,15 @@ pub fn abm4_translational_step(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "integrator step-count and analytic-period tests assert bit-exact recovery of literal values"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts (~hours of orbit) fit exactly in f64 mantissa and usize"
+)]
 mod tests {
     use super::*;
 

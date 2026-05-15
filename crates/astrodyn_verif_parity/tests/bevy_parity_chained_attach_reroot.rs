@@ -1,6 +1,16 @@
 //! Bevy parity for the chained-attach re-rooting kernel
 //! (`MassTree::attach_with_reroot`, ports JEOD's
 //! `dyn_body_attach.cc::attach_child` 521→567 reroot path).
+
+#![allow(
+    clippy::float_cmp,
+    reason = "bevy-parity tests assert bit-exact identity between runner and Bevy state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Scope: this test pins the composite-mass + parent-pointer
 //! invariants of the new mass-tree kernel, exercised through the Bevy

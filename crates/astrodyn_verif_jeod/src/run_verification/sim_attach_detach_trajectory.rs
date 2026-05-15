@@ -13,6 +13,12 @@
 //! `bevy_parity_attach_detach_trajectory.rs::bevy_parity_attach_detach_trajectory_simple`
 //! exactly.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by attach/detach trajectory span (<< usize / f64 mantissa)"
+)]
+
 use crate::verification::{
     CsvReference, InitialConditions, PreStepCadence, PreStepClosure, Tolerances, VerificationCase,
 };

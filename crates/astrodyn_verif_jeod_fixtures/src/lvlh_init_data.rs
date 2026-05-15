@@ -268,6 +268,10 @@ fn parse_trans_init_content(content: &str, source: &Path, function_name: &str) -
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "parser tests assert bit-exact recovery of literal Python init values"
+)]
 mod tests {
     use super::*;
 

@@ -297,6 +297,14 @@ fn normalize_integ(q: &mut JeodQuat) {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "identity / zero-omega tests assert bit-exact preservation of literal quaternion components"
+)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "test step counts (e.g. n = 100) fit exactly in f64 mantissa"
+)]
 mod tests {
     use super::*;
     use crate::frame::SelfRef;

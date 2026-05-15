@@ -144,6 +144,10 @@ pub fn mass_raw_to_self_ref(mp: &MassProperties) -> MassPropertiesTyped<SelfRef>
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-bridge tests assert bit-exact identity at the typed-vs-raw boundary"
+)]
 mod tests {
     use super::*;
     use glam::DMat3;

@@ -1,5 +1,10 @@
 //! Regression tests for `VehicleConfig::spawn_bevy`'s `integ_source`
 //! and `frame_switches` translation.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "spawn-translation tests assert bit-exact recovery of literal-built fields (e.g. SWITCH_RADIUS)"
+)]
 //!
 //! `spawn_bevy` (lib.rs) accepts a `VehicleConfig` whose
 //! `integ_source: Option<usize>` and `frame_switches: Vec<FrameSwitchConfig<usize>>`

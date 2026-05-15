@@ -13,8 +13,17 @@
 
 use glam::DVec3;
 
-/// Speed of light squared (m²/s²). Exact value: (299_792_458)².
-const C_SQUARED: f64 = 89_875_517_873_681_764.0;
+/// Speed of light squared (m²/s²).
+///
+/// The exact integer (299_792_458)² = 89_875_517_873_681_764 exceeds the
+/// 2⁵³ contiguous-integer range of `f64`, so we cannot write it as a
+/// literal without `lossy_float_literal` firing. Compute it from the
+/// exact `c` literal (which fits in f64 with bit-exact representation)
+/// at compile time; the resulting `f64` is the nearest representable
+/// neighbour either way, and the multiplication path is the one
+/// JEOD's `gravity_controls.cc` uses anyway.
+const C_LIGHT: f64 = 299_792_458.0; // m/s, SI definitional
+const C_SQUARED: f64 = C_LIGHT * C_LIGHT;
 
 /// A gravity source for relativistic correction computation.
 ///
@@ -128,6 +137,10 @@ pub fn compute_relativistic_correction(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
 

@@ -171,6 +171,17 @@ mod tests {
     fn epoch_literal_matches_recipe_clementine_1994() {
         let literal_tai_tjt = 9412.0 + 28.0 / 86400.0;
         let recipe_tai_tjt = epoch::clementine_1994().tai_tjt_at_epoch;
-        assert_eq!(literal_tai_tjt, recipe_tai_tjt);
+        // The whole point of this guard is to catch a future bit-drift
+        // between the literal in [`earth_moon_clem`] and the recipe
+        // entry; a tolerance window would defeat that.
+        #[allow(
+            clippy::float_cmp,
+            reason = "bit-exact literal-vs-recipe sync guard for the Clementine epoch"
+        )]
+        let aligned = literal_tai_tjt == recipe_tai_tjt;
+        assert!(
+            aligned,
+            "literal {literal_tai_tjt} does not match recipe {recipe_tai_tjt}",
+        );
     }
 }

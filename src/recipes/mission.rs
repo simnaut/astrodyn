@@ -175,6 +175,10 @@ impl Mission {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "mission-recipe tests assert bit-exact recovery of literal-built state fields"
+)]
 mod tests {
     use super::*;
     use crate::recipes::epoch;

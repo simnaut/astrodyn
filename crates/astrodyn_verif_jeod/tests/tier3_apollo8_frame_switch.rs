@@ -1,5 +1,15 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: Apollo 8 frame switching cross-validation.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Two sub-tests validating integration frame switching:
 //!

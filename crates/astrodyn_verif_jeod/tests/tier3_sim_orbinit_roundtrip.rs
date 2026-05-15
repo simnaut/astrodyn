@@ -1,4 +1,14 @@
 //! Tier 3: Orbit initialization round-trip tests
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! For each orbit family, initializes from orbital elements, propagates through
 //! `Simulation::step()`, then recovers orbital elements from the propagated

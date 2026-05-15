@@ -173,6 +173,10 @@ where
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "LVLH frame tests assert bit-exact orientation against analytic literals"
+)]
 mod tests {
     use super::*;
     // Test alias so the existing test bodies keep their compact `compute_lvlh_frame`

@@ -70,6 +70,10 @@ impl MissionElapsedTime {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "MET reset and seconds-since-epoch tests assert bit-exact zero / literal values"
+)]
 mod tests {
     use super::*;
 

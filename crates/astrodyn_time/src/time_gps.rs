@@ -56,6 +56,13 @@ pub struct GpsTimeComponents {
 ///
 /// Ported from JEOD `time_gps.cc::set_time_by_seconds()`.
 pub fn gps_components(gps_days: f64) -> GpsTimeComponents {
+    // Days since the 1980 GPS epoch — even 200 years out (~73 050)
+    // is < `i32::MAX` (~2.1e9), so the floor cast cannot truncate
+    // for any realistic simulation epoch.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "GPS day count bounded by simulation epoch span (<< i32::MAX)"
+    )]
     let gps_time_int = gps_days.floor() as i32;
     let seconds_of_day = (gps_days - gps_time_int as f64) * SECONDS_PER_DAY;
 
@@ -84,6 +91,10 @@ pub fn gps_components(gps_days: f64) -> GpsTimeComponents {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "GPS TAI offsets are integer literals stored in f64; bit-exact equality is the invariant"
+)]
 mod tests {
     use super::*;
 

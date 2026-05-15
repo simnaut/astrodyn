@@ -4,6 +4,11 @@
 //! GPS = TAI - 19s at multiple epochs, MET from configured epoch,
 //! calendar↔JD round-trip, TimeManager full propagation.
 
+#![allow(
+    clippy::float_cmp,
+    reason = "TAI-UTC offsets are integer literals in f64; bit-exact equality is the spec"
+)]
+
 use astrodyn_time::epoch::{jd_to_tjt, tjt_to_jd, SECONDS_PER_DAY};
 use astrodyn_time::leap_second::default_leap_second_table;
 use astrodyn_time::time_gps;

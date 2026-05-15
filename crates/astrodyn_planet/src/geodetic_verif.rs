@@ -236,6 +236,10 @@ fn parse_array3_field(s: &str, key: &str) -> Option<[f64; 3]> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "fixture parser tests assert bit-exact recovery of literal JSON values"
+)]
 mod tests {
     use super::*;
 

@@ -1,5 +1,10 @@
 //! `NormalizedQuat` invariant preservation.
 
+#![allow(
+    clippy::float_cmp,
+    reason = "layout-conversion round-trip asserts bit-exact recovery of array bytes"
+)]
+
 use astrodyn_quantities::prelude::*;
 
 #[test]

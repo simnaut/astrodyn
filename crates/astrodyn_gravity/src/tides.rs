@@ -191,6 +191,10 @@ pub fn compute_delta_c20(config: &TidalConfig, t_inertial_pfix: &DMat3) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tide-tensor tests assert bit-exact zero / typed-vs-raw parity at the type boundary"
+)]
 mod tests {
     use super::*;
 

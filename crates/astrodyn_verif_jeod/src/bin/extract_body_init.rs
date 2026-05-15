@@ -1,5 +1,11 @@
 //! Extract JEOD `Modified_data/*.py` body-initialization vectors into
 //! committed fixtures under `test_data/body_init/<vehicle>.json`.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "regen-tool sizes and counts fit exactly in f64 mantissa and target int width"
+)]
 //!
 //! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses the body-init
 //! Python files for each scenario, and writes the JSON consumed by

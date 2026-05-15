@@ -350,6 +350,10 @@ pub fn parse_trans_state_py(content: &str) -> Result<TransStateRecord, BodyInitF
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "trans-state parser tests assert bit-exact recovery of literal Python init values"
+)]
 mod tests {
     use super::*;
 

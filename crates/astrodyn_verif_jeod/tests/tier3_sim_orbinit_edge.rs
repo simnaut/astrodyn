@@ -1,4 +1,14 @@
 //! Tier 3: SIM_orbinit cross-validation via Simulation pipeline
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Validates body initialization from 4 distinct coordinate representations
 //! by building each scenario through its `sim_orbinit_edge` recipe,

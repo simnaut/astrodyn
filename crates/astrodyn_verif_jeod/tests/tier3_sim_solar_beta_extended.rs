@@ -1,4 +1,14 @@
 //! Tier 3: Extended solar-beta tests (analytical).
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! These tests build controlled orbit/Sun geometries and propagate through
 //! `Simulation::step()` with a fake Sun source at a chosen position. The

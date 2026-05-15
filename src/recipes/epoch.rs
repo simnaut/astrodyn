@@ -163,6 +163,10 @@ pub fn at_iso(s: &str) -> SimulationTime {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "epoch-recipe tests assert bit-exact recovery of TJT field values"
+)]
 mod tests {
     use super::*;
 

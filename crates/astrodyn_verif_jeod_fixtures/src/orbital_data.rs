@@ -99,7 +99,14 @@ pub fn parse_orbital_vectors_bin(bytes: &[u8]) -> Result<Vec<CartesianStateVecto
 /// Public for the regen binary; runtime callers should not invoke this.
 pub fn encode_orbital_vectors_bin(vectors: &[CartesianStateVector]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(4 + vectors.len() * 6 * 8);
-    buf.extend_from_slice(&(vectors.len() as u32).to_le_bytes());
+    // Test fixtures contain hundreds of vectors at most; the binary format
+    // header is a 32-bit count by design.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "test-fixture count bounded by JEOD verif sims (<< u32::MAX)"
+    )]
+    let count_u32 = vectors.len() as u32;
+    buf.extend_from_slice(&count_u32.to_le_bytes());
     for v in vectors {
         for c in [
             v.position.x,

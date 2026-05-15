@@ -696,6 +696,10 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "mass-properties tests assert bit-exact recovery of literal scalars and tensor components"
+)]
 mod tests {
     use super::*;
 

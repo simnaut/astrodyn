@@ -388,6 +388,10 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
 // verification.
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "operator-overload round-trip tests assert bit-exact equality of literal-constructed components"
+)]
 mod tests {
     use crate::aliases::*;
     use crate::frame::RootInertial;

@@ -74,6 +74,10 @@ pub fn matrix3x3_product_transpose_transpose(mat_left: &DMat3, mat_right: &DMat3
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "matrix-construction tests assert bit-exact equality of literal-initialized components"
+)]
 mod tests {
     use super::*;
 

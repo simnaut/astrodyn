@@ -337,6 +337,39 @@ There are three kind-distinct inertial-flavor phantoms:
 structurally guarded vs convention-only and why each consumer falls
 into one or the other.
 
+### Lints & invariants
+
+The workspace `[workspace.lints]` table in the root `Cargo.toml` is the
+single source of truth for cross-crate lint policy; every member opts
+in with `lints.workspace = true`. Beyond the doc / `unsafe_code`
+hygiene rules already in place, the numerics half of the policy denies
+five Clippy lints that protect against silent floating-point bugs
+(#517 task 3):
+
+- `clippy::float_cmp` — no `==` on `f64`. The exceptions are
+  bit-exact sentinels (state-change detectors, bypass-change-detection
+  hashing) and tests whose invariant *is* "no rounding occurred".
+- `clippy::cast_precision_loss` — no `usize as f64` / `u128 as f64`
+  without justification. Small loop counters that fit in the mantissa
+  are fine; passing an unbounded count to a Float without `try_from`
+  is not.
+- `clippy::lossy_float_literal` — no `89_875_517_873_681_764.0`
+  literal that the nearest `f64` can't represent. Compute it from a
+  representable source (e.g., `C_LIGHT * C_LIGHT`) so the loss is
+  visible to readers.
+- `clippy::cast_possible_truncation` — no `f64 as i32` /
+  `usize as u32` without a documented bound. Tag the site with a
+  comment naming the bound, or convert with `try_from`.
+- `clippy::as_underscore` — no `let x = … as _`. Spell the target
+  type so reviewers can audit the cast.
+
+Every `#[allow(clippy::<lint>, reason = "…")]` in this codebase
+carries a `reason` field. The pattern is non-negotiable: the bypass
+is the audit log, and a bypass without a justification is a TODO that
+someone forgot. The same rule applies to file-level `#![allow]` and
+module-level `#[allow]` on `#[cfg(test)] mod tests` blocks — write
+the rationale in the `reason`, never as a free-floating comment.
+
 ## Quaternion Convention
 
 JEOD uses **scalar-first, left-transformation** quaternions: `[q0, q1, q2, q3]`

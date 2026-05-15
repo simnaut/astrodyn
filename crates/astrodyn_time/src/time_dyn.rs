@@ -62,6 +62,13 @@ impl DynamicTime {
             "simtime must be finite, got {}",
             simtime
         );
+        // `ref_scale` is set exclusively by this method below; an exact
+        // bit-comparison against the public `scale_factor` field is the
+        // intended "user touched the scale" sentinel, not a numerical test.
+        #[allow(
+            clippy::float_cmp,
+            reason = "bit-exact sentinel: detects user assignment to scale_factor"
+        )]
         if self.ref_scale != self.scale_factor {
             self.offset = self.seconds - (self.scale_factor * simtime);
             let _direction_changed = self.ref_scale * self.scale_factor < 0.0;

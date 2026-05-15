@@ -262,6 +262,10 @@ impl SimulationTime {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "initial-state tests assert bit-exact zero / literal field values at known epochs"
+)]
 mod tests {
     use super::*;
     use crate::leap_second::default_leap_second_table;

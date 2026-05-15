@@ -38,8 +38,22 @@ pub fn save_binary(
     let mut buf = Vec::new();
     buf.extend_from_slice(b"JEOD"); // 4-byte magic
     buf.extend_from_slice(&1u32.to_le_bytes()); // 4-byte version
-    buf.extend_from_slice(&(data.degree as u32).to_le_bytes());
-    buf.extend_from_slice(&(data.order as u32).to_le_bytes());
+
+    // SH degree/order are bounded by the source coefficient file
+    // (GGM05C ≤ 360, EGM ≤ 2 190); the binary format pins them at 32-bit
+    // width by design.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "SH degree/order bounded by source coefficient file (<< u32::MAX)"
+    )]
+    let degree_u32 = data.degree as u32;
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "SH degree/order bounded by source coefficient file (<< u32::MAX)"
+    )]
+    let order_u32 = data.order as u32;
+    buf.extend_from_slice(&degree_u32.to_le_bytes());
+    buf.extend_from_slice(&order_u32.to_le_bytes());
     buf.extend_from_slice(&data.radius.to_le_bytes());
     buf.extend_from_slice(&data.mu.to_le_bytes());
     buf.push(if data.tide_free { 1 } else { 0 });
@@ -220,6 +234,15 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "coefficient layout tests assert bit-exact recovery of literal-built (n, m) values"
+)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "test SH degrees <= 32 fit exactly in f64 mantissa and u32"
+)]
 mod tests {
     use super::*;
 

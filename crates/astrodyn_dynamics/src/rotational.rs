@@ -365,6 +365,10 @@ pub fn normalize_integ(q: &mut JeodQuat) {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;

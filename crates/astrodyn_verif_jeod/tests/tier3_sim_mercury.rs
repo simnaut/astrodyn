@@ -1,4 +1,14 @@
 //! Tier 3: SIM_mercury — Mercury relativistic gravity validation.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Validates post-Newtonian relativistic gravity correction by comparing
 //! Newtonian vs relativistic Mercury trajectories. The GR perihelion advance

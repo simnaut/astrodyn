@@ -214,6 +214,13 @@ fn utc_now_iso8601() -> String {
 /// ISO-8601 string. Uses the canonical civil-from-days algorithm
 /// (Howard Hinnant, 2013) so it stays correct across the proleptic
 /// Gregorian calendar without leap-second adjustment.
+// Howard Hinnant's civil-from-days algorithm: every intermediate (`doe`,
+// `yoe`, `doy`, `mp`) is bounded by an explicit divisor (146 097, 400, …)
+// well below `u32::MAX`. The truncations are exact by construction.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Hinnant civil-from-days intermediates bounded by divisor (<< u32::MAX)"
+)]
 fn format_unix_utc(secs: i64) -> String {
     let z = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400);

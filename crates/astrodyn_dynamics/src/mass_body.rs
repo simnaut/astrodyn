@@ -919,6 +919,10 @@ pub fn point_mass_inertia(mass: f64, offset: DVec3) -> DMat3 {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "mass-tree default-construction tests assert bit-exact zero / literal values"
+)]
 mod tests {
     use super::*;
 

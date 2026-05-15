@@ -293,6 +293,10 @@ pub fn run_atmosphere_stage<P, K, Store, BodyIter>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "atmosphere recipe tests assert bit-exact recovery of literal-built state values"
+)]
 mod tests {
     use super::*;
     use astrodyn_atmosphere::exponential::ExponentialAtmosphere;

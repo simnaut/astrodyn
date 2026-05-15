@@ -1,5 +1,11 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Apollo trans-lunar injection: multi-body gravity, staging, impulsive maneuver.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Demonstrates a recipe-aware pattern: starts from
 //! [`Mission::apollo_translunar`](astrodyn::recipes::Mission::apollo_translunar)

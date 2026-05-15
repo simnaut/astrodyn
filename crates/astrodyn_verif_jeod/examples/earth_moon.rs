@@ -1,4 +1,10 @@
 //! Clementine lunar orbit: multi-body gravity with Earth, Moon, and Sun.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Verification-style example exercising:
 //! - Moon LP150Q 60×60 spherical-harmonics gravity

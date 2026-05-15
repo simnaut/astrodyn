@@ -130,6 +130,19 @@ missing_docs = { level = "deny", priority = -1 }
 broken_intra_doc_links = "deny"
 invalid_html_tags = "deny"
 
+# Numerics hygiene (#529 / #517 task 3). Silent `f64 → f32` casts and
+# `==` on floats are the floating-point analogue of Bun's ignored
+# `noalias`: they compile, look right, and produce wrong physics. Every
+# call site that genuinely needs one of these patterns carries an
+# `#[allow(... reason = "...")]` so the bypass is auditable at review
+# time.
+[workspace.lints.clippy]
+float_cmp = "deny"
+cast_precision_loss = "deny"
+lossy_float_literal = "deny"
+cast_possible_truncation = "deny"
+as_underscore = "deny"
+
 [lints]
 workspace = true
 

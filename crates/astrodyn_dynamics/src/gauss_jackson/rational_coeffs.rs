@@ -151,6 +151,10 @@ impl RationalCoefficients {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "rational-coefficient tests assert bit-exact equality of computed values against exact rationals"
+)]
 mod tests {
     use super::*;
 

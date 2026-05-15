@@ -278,6 +278,15 @@ pub fn rk4_sixdof_step(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "RK4 round-trip tests assert bit-exact recovery of analytic literals (e.g. ω·dt)"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 mod tests {
     use super::*;
     use crate::mass::MassProperties;

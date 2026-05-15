@@ -1396,6 +1396,10 @@ pub fn reset_integrators(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "integration parity tests assert bit-exact identity between coupled / standard paths"
+)]
 mod tests {
     use super::*;
     use crate::interactions::FlatPlateState;

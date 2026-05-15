@@ -257,6 +257,15 @@ pub fn apply_constraint<C: HolonomicConstraint + ?Sized>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "constraint-evaluation tests assert bit-exact recovery of analytic literals"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 mod tests {
     use super::*;
 

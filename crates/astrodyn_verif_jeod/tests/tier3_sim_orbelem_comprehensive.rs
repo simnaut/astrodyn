@@ -1,4 +1,14 @@
 //! Tier 3: SIM_orb_elem comprehensive -- 7 orbit families via Simulation pipeline
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Builds each scenario through its `sim_orbelem_comprehensive` recipe,
 //! propagates for the recipe's declared `SyntheticTimes` cadence (one

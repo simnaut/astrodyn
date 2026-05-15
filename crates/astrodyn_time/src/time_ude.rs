@@ -58,6 +58,16 @@ impl UserDefinedEpoch {
     /// Convert seconds to clock representation.
     ///
     /// Ported from JEOD `TimeUDE::clock_update()`.
+    //
+    // After `rem_euclid(SECONDS_PER_DAY)` / `div_euclid(3600.0)` /
+    // `div_euclid(60.0)` the operands are < 24 / < 60 / < 60
+    // respectively, all comfortably within `i32`. `clock_day` is bounded
+    // by the simulation's epoch span (well within `i32::MAX` days ~
+    // 5.8 million years).
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "clock fields bounded by div_euclid moduli (24h/60m/60s)"
+    )]
     fn clock_update(&mut self) {
         let mut scratch = self.seconds.rem_euclid(SECONDS_PER_DAY);
         self.clock_day = self.seconds.div_euclid(SECONDS_PER_DAY) as i32;
@@ -85,6 +95,10 @@ impl UserDefinedEpoch {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "UDE reset and clock-decomposition tests assert bit-exact zero / literal values"
+)]
 mod tests {
     use super::*;
 

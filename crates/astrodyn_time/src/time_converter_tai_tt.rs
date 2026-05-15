@@ -37,6 +37,10 @@ pub fn tt_to_tai_typed(t: SecondsSince<TT>) -> SecondsSince<TAI> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "TAI-TT offset is the exact rational 32.184 s; bit-exact equality is the spec"
+)]
 mod tests {
     use super::*;
 

@@ -195,6 +195,13 @@ impl VerificationCaseParityExt for VerificationCase {
             // sample at integer multiples of `dt` so the division
             // should be exact; round to absorb f64 representation
             // jitter (e.g. 60.0 / 10.0 = 5.999…).
+            // `dt_steps` is bounded by the per-record cadence (typically
+            // 10⁴ ticks at most), far below `usize::MAX`.
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_precision_loss,
+                reason = "verif step count bounded by per-record cadence (<< usize::MAX)"
+            )]
             let dt_steps = ((record.time - runner_sim.elapsed()) / dt).round() as usize;
             assert!(
                 dt_steps > 0,

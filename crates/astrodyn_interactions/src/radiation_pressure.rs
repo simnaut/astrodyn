@@ -708,6 +708,10 @@ pub fn solar_flux_at_distance(distance: f64) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "SRP typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
     use astrodyn_quantities::frame::SelfRef;

@@ -157,6 +157,15 @@ impl ContactMaterial {
     /// speed (matches JEOD `SpringPairInteraction` which uses a single
     /// `mu`).
     fn mu_at_speed(&self, tangential_speed: f64) -> f64 {
+        // Fast-path sentinel: callers that want a continuous transition
+        // typically set `mu_static = mu_kinetic` from the same literal,
+        // and we want to skip the slip-velocity branch in that case.
+        // The comparison is intentionally bit-exact — a `< eps` window
+        // would introduce a discontinuity at the chosen tolerance.
+        #[allow(
+            clippy::float_cmp,
+            reason = "bit-exact sentinel for caller-supplied 'same coefficient' fast path"
+        )]
         if self.mu_static == self.mu_kinetic {
             return self.mu_kinetic;
         }
@@ -1129,6 +1138,10 @@ fn closest_points_segment_segment(p1: DVec3, p2: DVec3, p3: DVec3, p4: DVec3) ->
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "contact-material tests assert bit-exact recovery of literal-built parameters"
+)]
 mod tests {
     use super::*;
 

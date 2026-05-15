@@ -1,4 +1,14 @@
 //! Tier 3: SIM_orbinit docker cross-validation (t=0 initialization)
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! JEOD's SIM_orbinit is an initialization-only sim
 //! (`exec_set_terminate_time(0)`) that writes the post-initialization

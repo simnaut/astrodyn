@@ -5,6 +5,15 @@
 //! Maintains exact rational arithmetic for coefficient generation,
 //! then converts to f64 for runtime use.
 
+// `Ratio128 -> f64` is the documented lossy bridge at the integrator
+// boundary: exact rationals are computed once at startup, then projected
+// onto `f64` for runtime arithmetic. The loss is intentional and bounded
+// by the GCD reduction in `simplify`.
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "documented lossy projection from exact Ratio128 to runtime f64"
+)]
+
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// 128-bit rational number with exact arithmetic.
@@ -293,6 +302,10 @@ impl Ratio128 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "Ratio128 -> f64 projection tests assert bit-exact equality with explicit small rationals"
+)]
 mod tests {
     use super::*;
 

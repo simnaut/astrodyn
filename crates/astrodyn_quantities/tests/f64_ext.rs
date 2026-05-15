@@ -1,5 +1,10 @@
 //! `F64Ext` unit-conversion round-trip tests.
 
+#![allow(
+    clippy::float_cmp,
+    reason = "round-trip tests assert bit-exact recovery of literal-constructed values"
+)]
+
 use astrodyn_quantities::prelude::*;
 use uom::si::{
     acceleration::meter_per_second_squared, angle::radian, angular_velocity::radian_per_second,

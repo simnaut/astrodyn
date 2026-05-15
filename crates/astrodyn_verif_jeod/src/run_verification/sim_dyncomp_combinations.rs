@@ -1,6 +1,12 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructors for the analytical SIM_dyncomp
 //! physics-combinations family (`tier3_sim_dyncomp_combinations`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! The numbered SIM_dyncomp RUN_* scenarios already have Docker-backed
 //! cross-validation tests (`tier3_sim_dyncomp_run2`..`run10`). The

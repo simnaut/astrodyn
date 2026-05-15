@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the orbinit-families
 //! conservation scans (`tier3_sim_orbinit_families`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! Like the round-trip recipes in
 //! [`super::sim_orbinit_roundtrip`], these cases have no JEOD reference

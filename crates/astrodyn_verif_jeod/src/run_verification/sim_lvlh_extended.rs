@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the SIM_LVLH analytical-extended
 //! family (`tier3_sim_lvlh_extended`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! These cases have no JEOD reference CSV — they exercise analytical
 //! properties of the LVLH frame (orbit-normal sign on retrograde flips,

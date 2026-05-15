@@ -1,5 +1,10 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Tier 1 unit tests for [`GravParam<P>`]'s planet-phantom guards.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "round-trip tests assert bit-exact recovery of literal-constructed μ values"
+)]
 //!
 //! These tests cover the positive runtime behavior of the new typed μ
 //! surface (round-trip through `from_si`, `relabel`, and the

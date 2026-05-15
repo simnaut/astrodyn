@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the 6-DOF drag analytical family
 //! (`tier3_sim_drag_6dof`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! These cases have no JEOD reference CSV — they exercise closed-form
 //! identities of the ballistic-drag model (constant `Cd·A` with a

@@ -191,6 +191,10 @@ impl SphericalHarmonicsData {
     /// Precompute Gottlieb helper arrays.
     /// Direct port of JEOD `spherical_harmonics_gravity_source.cc::initialize_body()`.
     #[allow(clippy::needless_range_loop)]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "SH degree counters are <= a few hundred; fit exactly in f64 mantissa"
+    )]
     fn initialize_body(&mut self) {
         let degree = self.degree;
 

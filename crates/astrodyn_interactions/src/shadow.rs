@@ -216,6 +216,10 @@ pub fn compute_shadow_fraction_typed(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "shadow-geometry tests assert bit-exact recovery of analytic fractions (0.0, 0.5, 1.0)"
+)]
 mod tests {
     use super::*;
 

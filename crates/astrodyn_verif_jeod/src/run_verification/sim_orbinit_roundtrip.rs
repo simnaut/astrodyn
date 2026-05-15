@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the orbinit-round-trip analytical
 //! family (`tier3_sim_orbinit_roundtrip`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! These cases have no JEOD reference CSV — they exercise the closed
 //! identity that Cartesian↔Keplerian conversion plus a full pipeline

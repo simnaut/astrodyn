@@ -339,6 +339,10 @@ fn normalize_or_zero(v: DVec3) -> DVec3 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "surface-model tests assert bit-exact recovery of literal-built facet parameters"
+)]
 mod tests {
     use super::*;
     use std::f64::consts::{FRAC_PI_4, PI};
