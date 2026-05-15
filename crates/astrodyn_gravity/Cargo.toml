@@ -8,6 +8,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 # Cargo defaults to publishing only `src/` plus a few well-known files.
 # We need the binary gravity fixtures (~1.9 MB total) to ride along so
 # `include_bytes!` in `src/data.rs` resolves correctly when building

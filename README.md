@@ -122,6 +122,27 @@ cargo run --profile release-with-debug \
     --scenario earth_moon_clem --steps 100000 --warmup 1000 --repeat 5
 ```
 
+## Minimum supported Rust version
+
+astrodyn requires **Rust 1.87 or newer**. The `rust-version` field is
+declared in `[workspace.package]` so every published member crate
+inherits it; users on older toolchains get a clean
+`error: package <name> requires Rust 1.87` from cargo rather than a
+deep dependency-tree compile error.
+
+The binding constraints are the `bevy = "0.18"` dependency (released
+targeting Rust ~1.85) and direct workspace usage of
+`u{32,usize}::is_multiple_of` (stabilized in Rust 1.87) inside the
+Gauss–Jackson integrator. The workspace also uses modern stdlib
+features (`#[diagnostic::on_unimplemented]`, recent const generics)
+that require an MSRV of at least this vintage.
+
+**Bump policy.** Raising the MSRV is treated as a minor-version event,
+not a patch. The project tracks the last two to three stable Rust
+releases as the supported window; updates land when a dependency
+forces the floor higher or when a stdlib feature with no clean polyfill
+becomes load-bearing. Bumps are called out in the changelog.
+
 ## License and attribution
 
 Dual-licensed under either [`LICENSE-MIT`](LICENSE-MIT) or
