@@ -163,7 +163,7 @@ the source site under the opt-in arm.
 | GV.04 | degree ≤ source degree | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |
 | GV.05 | order ≤ source order | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |
 | GV.06 | order ≤ degree | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |
-| GV.07 | degree=0 with spherical=false (JEOD auto-corrects to spherical; we panic per Fail Loudly) | error | consistency | enforced — fail-loud (`gravity_controls.rs check_validity` panics; intentional divergence from JEOD's non-fatal `MessageHandler::error`) |
+| GV.07 | degree<2 with spherical=false (JEOD auto-corrects to spherical for degree=0 and clamps degree=1 to point-mass at the kernel; we panic at startup for both per Fail Loudly, since degree<2 produces zero SH perturbation from Gottlieb) | error | consistency | enforced — fail-loud (`gravity_controls.rs check_validity` panics; intentional divergence from JEOD's non-fatal `MessageHandler::error`) |
 | GV.08 | gradient_degree ≤ degree (JEOD clamps; we panic per Fail Loudly) | error | consistency | enforced — fail-loud (`gravity_controls.rs check_validity` panics; per-step `effective_orders` still clamps so kernel-side asserts never trip for an already-validated control) |
 | GV.09 | gradient_degree ≠ 1 (JEOD resets to 0; we panic per Fail Loudly) | error | consistency | enforced — fail-loud (`gravity_controls.rs check_validity` panics) |
 | GV.10 | gradient_order ≤ gradient_degree (JEOD clamps; we panic per Fail Loudly) | error | consistency | enforced — fail-loud (`gravity_controls.rs check_validity` panics) |

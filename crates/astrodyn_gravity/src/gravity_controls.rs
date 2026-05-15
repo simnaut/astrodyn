@@ -227,8 +227,12 @@ impl<SourceId> GravityControl<SourceId> {
     /// with a different gravity model than the operator requested.
     ///
     /// # Panics
-    /// - `spherical` is false and `degree == 0` (use
-    ///   `GravityControl::new_spherical` for point-mass).
+    /// - `spherical` is false and `degree < 2` (use
+    ///   `GravityControl::new_spherical` for point-mass). `degree == 1`
+    ///   is also rejected here because Gottlieb returns zero perturbation
+    ///   for degree < 2 — accepting it would let `effective_orders`
+    ///   silently collapse the request to point-mass and violate Fail
+    ///   Loudly.
     /// - `spherical` is false against a `GravityModel::PointMass` source.
     /// - `degree > source.degree` or `order > source.order`.
     /// - `order > degree`.
@@ -241,16 +245,27 @@ impl<SourceId> GravityControl<SourceId> {
             return;
         }
 
-        // JEOD_INV: GV.07 — degree=0 with spherical=false panics
+        // JEOD_INV: GV.07 — degree < 2 with spherical=false panics
         // (JEOD `spherical_harmonics_gravity_controls.cc:334-346` logs a
         // non-fatal MessageHandler::error and flips spherical=true; we
         // surface the misconfiguration instead — silently flipping the
         // gravity model under the caller violates Fail Loudly.)
+        //
+        // `degree == 1` is also rejected: Gottlieb returns zero
+        // perturbation for degree < 2 (`calc_nonspherical_with_scratch`),
+        // so the per-step `effective_orders` clamp collapses it to 0
+        // and the runtime path takes the spherical branch. Accepting
+        // `degree == 1` at startup would let that silent fixup propagate
+        // to a kernel that produces point-mass acceleration under a
+        // control whose configuration *says* non-spherical — exactly the
+        // silent-model-change failure mode this gate exists to prevent.
         assert!(
-            self.degree > 0,
-            "Non-spherical gravity (spherical=false) requested with degree=0. \
+            self.degree >= 2,
+            "Non-spherical gravity (spherical=false) requested with degree={} (< 2). \
              Set spherical=true via `GravityControl::new_spherical(...)` \
-             for point-mass gravity, or set degree >= 2."
+             for point-mass gravity, or set degree >= 2. degree=1 is meaningless \
+             for spherical harmonics (Gottlieb returns zero perturbation for degree < 2).",
+            self.degree
         );
 
         match &source.model {
@@ -1008,13 +1023,36 @@ mod tests {
     /// JEOD silently flips it; we panic so the operator sees the
     /// inconsistency.
     #[test]
-    #[should_panic(expected = "Non-spherical gravity (spherical=false) requested with degree=0")]
+    #[should_panic(
+        expected = "Non-spherical gravity (spherical=false) requested with degree=0 (< 2)"
+    )]
     fn check_validity_panics_on_zero_degree_with_spherical_false() {
         let src = dummy_sh_source(8, 8);
         let ctrl = GravityControl::<usize> {
             spherical: false,
             degree: 0,
             order: 0,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `spherical=false` with `degree=1` is a misconfiguration: the per-step
+    /// `effective_orders` clamp collapses degree=1 to 0 (Gottlieb returns
+    /// zero perturbation for degree < 2), which would silently change the
+    /// gravity model under the operator. The startup gate rejects it so the
+    /// inconsistency between the configured `spherical=false` and the
+    /// effectively-point-mass runtime path surfaces immediately.
+    #[test]
+    #[should_panic(
+        expected = "Non-spherical gravity (spherical=false) requested with degree=1 (< 2)"
+    )]
+    fn check_validity_panics_on_degree_one_with_spherical_false() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
             ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
