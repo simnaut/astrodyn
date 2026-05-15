@@ -565,6 +565,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "stale predictor history")]
     fn abm4_step_with_topology_dirty_panics() {
+        // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
         let mut abm = Abm4State::new();
         let state = TranslationalState {
             position: DVec3::new(1.0, 0.0, 0.0),
@@ -574,5 +575,24 @@ mod tests {
 
         abm.mark_topology_dirty();
         let _ = abm4_translational_step(&state, accel_fn, 0.01, &mut abm);
+    }
+
+    /// IG.34: `abm4_translational_step` rejects a zero (or negative)
+    /// `dt`. A zero step still rotates the history buffer slot, dropping
+    /// the oldest sample without any actual time advance — the predictor
+    /// then reads a stale derivative as if it were `n-3` cycles old, and
+    /// the corrector silently propagates a degraded state.
+    #[test]
+    #[should_panic(expected = "abm4_translational_step requires a finite positive dt")]
+    fn ig_34_panics_on_zero_dt() {
+        // JEOD_INV: IG.34 — step dt must be finite and strictly positive
+        let mut abm = Abm4State::new();
+        let state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+
+        let _ = abm4_translational_step(&state, accel_fn, 0.0, &mut abm);
     }
 }

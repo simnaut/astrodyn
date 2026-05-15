@@ -1376,6 +1376,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "stale predictor/corrector history")]
     fn gj_step_with_topology_dirty_panics() {
+        // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
         let mut gj = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
         let mut state = TranslationalState {
             position: DVec3::new(1.0, 0.0, 0.0),
