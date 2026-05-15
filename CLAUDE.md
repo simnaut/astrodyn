@@ -7,6 +7,24 @@ Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's T
 See the [Strategy wiki page](https://github.com/simnaut/astrodyn/wiki/Strategy)
 for architecture and phase summaries. The original phased implementation plan
 (Phases 1–7) closed in April 2026; ongoing work is tracked as GitHub issues.
+The most recent comprehensive findings audit is the
+[Audit-2026-05 wiki page](https://github.com/simnaut/astrodyn/wiki/Audit-2026-05),
+which also enumerates the project's load-bearing guardrails — read it
+before proposing refactors that touch the CI scripts, the parity-superset
+invariant, the typed-quantity facade, or the JEOD invariant catalog.
+
+### Documentation convention
+
+Non-Rust-crate docs (architecture notes, contributor primers, audit
+reports, design discussions) live in the
+[GitHub wiki](https://github.com/simnaut/astrodyn/wiki). `docs/` in this
+repo is reserved for files that must travel with source — currently
+only `docs/JEOD_invariants.md`, which is consistency-checked against
+`// JEOD_INV: XX.YY` source tags by `tests/invariant_coverage.rs`.
+Per-crate `README.md` files live in their crates as Rust convention
+(surfaced on crates.io). When new architecture / primer / audit /
+design content is needed, default to a new wiki page rather than a new
+`docs/` file.
 
 ### Environment Setup
 
@@ -53,6 +71,13 @@ The parallel **NESC GN&C Lunar Check Cases** verification track lives in
 `crates/astrodyn_verif_nesc/test_data/`. See
 `crates/astrodyn_verif_nesc/README.md` for the workflow, the canonical
 release pin, and the DE440 ephemeris asset that CC8 depends on.
+
+**Ephemeris kernels**: `astrodyn_ephemeris` distributes its required
+DE4xx kernels as assets on the project's GitHub Releases (introduced
+in #476). The default `fetch` feature downloads them on first use; for
+air-gapped builds, set `$ASTRODYN_EPHEMERIS_KERNELS_DIR` to a directory
+holding the pre-downloaded kernels and disable the feature
+(`--no-default-features`).
 
 ## Three-Layer Architecture (non-negotiable)
 
@@ -200,7 +225,7 @@ common topics; a long tail of tier3 topics is tracked individually in
 [`KNOWN_PARITY_GAPS`](https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_verif_parity/tests/parity_coverage.rs)
 for incremental closure (multi-planet scenarios, pre-recipe siblings,
 analytical-only tests, scenarios with `pre_step` ephemeris updates that
-need a Bevy-side `SimContext` impl — see issue #395). The
+need a Bevy-side `SimContext` impl). The
 `crates/astrodyn_verif_parity/tests/parity_coverage.rs` meta-test
 enforces the superset invariant: a new `tier3_*` topic that lands
 without either a parity wrapper or a `KNOWN_PARITY_GAPS` exemption
@@ -306,63 +331,20 @@ where q0 is scalar. `glam::DQuat` uses `[x, y, z, w]` where w is scalar.
 Always convert at the boundary. Test with non-trivial rotations (never just identity
 or 90-degree axes).
 
-## JEOD Source Navigation
+## JEOD Source and Verification Data
 
-Key directories in `../jeod`:
+For navigating the upstream JEOD source tree (DynBody, RNP, gravity
+coefficients, etc.) and for the catalog of extractable verification
+data (`grav_geospherical/verif_out.txt`, `euler_derived_state_ut.cc`,
+ISS/STS-114 reference state vectors, and the three parsability tiers
+of JEOD's `Modified_data` Python files), see the
+[JEOD-Source-Data wiki page](https://github.com/simnaut/astrodyn/wiki/JEOD-Source-Data).
+The per-crate `extract_*` binaries described in "Environment Setup"
+above are catalogued there with their outputs.
 
-```
-models/dynamics/dyn_body/          DynBody — the central vehicle class (~1200 lines)
-models/dynamics/dyn_manager/       DynManager — simulation orchestrator
-models/dynamics/mass/              MassBody — rigid body mass properties and trees
-models/dynamics/body_action/       BodyAction — initialization (orbit, LVLH, NED)
-models/dynamics/derived_state/     EulerDerivedState, OrbElemDerivedState, etc.
-models/environment/gravity/        Spherical harmonics gravity (Gottlieb algorithm)
-models/environment/gravity/data/   Coefficient files (C++ headers with arrays)
-models/environment/time/           Time scales (TAI/UTC/UT1/TDB/TT/GMST)
-models/environment/time/data/      Leap_Second.dat
-models/environment/ephemerides/    DE4xx binary ephemeris reader
-models/environment/planet/         Planet shape, radius, flattening
-models/environment/atmosphere/     MET atmosphere model
-models/environment/RNP/            Earth rotation (precession, nutation, polar motion)
-models/interactions/aerodynamics/  Drag force computation
-models/interactions/radiation_pressure/  Solar radiation pressure
-models/interactions/gravity_torque/      Gravity gradient torque
-models/utils/ref_frames/           RefFrame tree (backbone of all coordinate systems)
-models/utils/integration/          Gauss-Jackson, LSODE integrators
-models/utils/orbital_elements/     Cartesian <-> Keplerian conversion
-models/utils/quaternion/           Quaternion math
-models/utils/planet_fixed/         Geodetic coordinates
-models/utils/lvlh_frame/           LVLH frame
-```
-
-The spherical harmonics core algorithm is in:
-`models/environment/gravity/src/spherical_harmonics_calc_nonspherical.cc`
-
-Gravity coefficients are C++ arrays in:
-`models/environment/gravity/data/include/earth_GGM05C.hh` (and similar)
-
-## JEOD Verification Data
-
-JEOD has 479 regression tests and 262 unit tests. Most unit tests are structural (empty
-bodies, mock checks) — only two sources have extractable numerical test vectors:
-
-- `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`
-  40 test cases: position -> expected gravity acceleration/gradient/potential.
-  Format: 18 space-separated numeric fields per line.
-
-- `models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc`
-  6 test cases: rotation matrix -> expected Euler angles.
-
-Reference state vectors (ISS, STS-114) are in Python files at:
-`models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/`
-
-These Python files come in three parsability tiers:
-1. **Directly parseable**: `reference_*_trans_state.py`, `Leap_Second.dat`, `verif_out.txt`,
-   simple `return [value]` files — plain regex extraction.
-2. **Needs trick.attach_units() stripping**: orbital element files, mass files, attitude files.
-   Pattern: `key = trick.attach_units("degree", 51.67)` — strip wrapper, apply unit conversion.
-3. **Not parseable** (~30%): orchestration files with `exec()`, `eval()`. Don't contain
-   unique data — they wire together the parseable files above. Ignore them.
+Reach for this content when reading or porting from JEOD source, when
+the answer to a `JEOD Convention Rule` ambiguity is in a JEOD `.cc`
+file, or when adding a new `extract_*` binary or `tier3_*` fixture.
 
 ## JEOD Integration Loop (maps to FixedUpdate)
 
@@ -424,7 +406,7 @@ cargo nextest run --workspace -E 'test(tier3_)'               # tier 3 only
 cargo nextest run --workspace -E 'test(bevy_parity)'          # bevy_parity_* only
 cargo nextest run -p astrodyn_math                                # single crate
 cargo nextest run -p astrodyn_gravity -E 'test(verif)'            # gravity verification only
-cargo nextest run -p astrodyn_runner --test tier3_sim_dyncomp_run2  # single Tier 3 test
+cargo nextest run -p astrodyn_verif_jeod --test tier3_sim_dyncomp_run2  # single Tier 3 test
 ```
 
 Plain `cargo test` also works but runs tests serially per binary:
@@ -505,70 +487,27 @@ binaries currently deferred to `test-parity-trajectory-full`.
 
 See `crates/astrodyn_bevy/tests/README.md` for tier conventions and the tolerance/baseline workflow.
 
-## Generating Tier 3 Reference Data (Docker)
+## Generating Tier 3 Reference Data
 
-JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
-Trick is cloned at `../trick`, JEOD at `../jeod`. See
-the [Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration)
-for the full workflow, troubleshooting, and "adding a new sim" recipe.
+Tier 3 CSVs are committed to the repo; users don't regenerate them
+unless JEOD bumps a coefficient file, a new sim is added, or a Trick /
+JEOD upgrade may have changed numerical output. The full workflow —
+`cargo xtask regenerate-tier3` wrapper, explicit `docker run`
+invocation for cargo-less environments, incremental vs `--force` semantics,
+the "adding a new sim" recipe, the troubleshooting matrix, and the
+`log_state_ASCII.csv` column layout — lives on the
+[Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration).
 
-The canonical wrapper is the `xtask` binary (requires the
-`.cargo/config.toml.example` alias copied into `.cargo/config.toml`):
+Quick start: clone `nasa/jeod` and `nasa/trick` as siblings of this
+repo, set `JEOD_HOME` / `TRICK_HOME`, copy
+`.cargo/config.toml.example` to `.cargo/config.toml`, then run
+`cargo xtask regenerate-tier3` from the workspace root (incremental by
+default; pass `--force` to regenerate everything).
 
-```bash
-cargo xtask regenerate-tier3            # incremental — skips existing CSVs
-cargo xtask regenerate-tier3 --force    # regenerate everything
-cargo xtask regenerate-tier3 --build    # force rebuild jeod-trick first
-```
-
-For environments without cargo (or for explicit reference), the equivalent
-direct Docker invocation is:
-
-```bash
-# Build container (context is parent dir so trick/ and jeod/ are accessible)
-docker build -f trick/Dockerfile -t jeod-trick ..
-
-# Generate reference CSVs into test_data/ (incremental — skips existing outputs)
-mkdir -p test_data
-docker run --rm \
-  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-  -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
-  jeod-trick
-
-# Force regenerate all data (ignores existing outputs)
-docker run --rm -e FORCE=1 \
-  -v $(pwd)/crates/astrodyn_verif_jeod/test_data:/output \
-  -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
-  jeod-trick
-```
-
-The generation script is **incremental by default**: it checks for existing
-`${label}_*.csv` files in the output directory and skips any sim whose data is
-already present. This avoids expensive `trick-CP` builds and sim runs when adding
-new sims to `generate_references.sh`. Set `FORCE=1` to regenerate everything.
-
-The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
-JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
-`test_data/` and are consumed by `crates/astrodyn_verif_jeod/tests/tier3_sim_*.rs`.
-
-**Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
-RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
-
-**Phase 2 Tier 3 tests** (require reference CSVs from Docker):
-- RUN_3A: 4x4 spherical harmonics gravity, 8-hour ISS orbit
-- RUN_3B: 8x8 spherical harmonics gravity, 8-hour ISS orbit
-- Test: `crates/astrodyn_verif_jeod/tests/tier3_sim_dyncomp_run3.rs`
-
-CSV column layout for `log_state_ASCII.csv`:
-- Column 0: `sys.exec.out.time {s}`
-- Columns 1,8,15: `composite_body.state.trans.position[0,1,2] {m}`
-- Columns 2,9,16: `composite_body.state.trans.velocity[0,1,2] {m/s}`
-- (interleaved with rotation matrix, quaternion, and angular velocity columns)
-
-CSV and `.bsp` test data files are committed to the repository. Only binary `.trk` files
-(Trick's native log format) are gitignored. Tests assert (panic) when required data is
-absent — they never skip gracefully. The assert message includes the exact command to
-obtain the data.
+CSV and `.bsp` files are committed; only binary `.trk` files (Trick's
+native log format) are gitignored. Tests assert (panic) when required
+data is absent — they never skip gracefully. The assert message
+includes the exact command to obtain the data.
 
 ## JEOD Invariant Tracking (non-negotiable)
 
@@ -588,9 +527,10 @@ copy ctors). We catalog every invariant we encounter in
    `// JEOD_INV: GV.04 — degree <= source degree`. The tag text should
    accurately describe what the code does and note any divergence from JEOD.
 
-3. **CI coverage** (`crates/astrodyn_bevy/tests/invariant_coverage.rs`): bidirectional test —
-   every `enforced`/`partial`/`structural` invariant in the catalog must have
-   at least one source tag, and every source tag must reference a catalog entry.
+3. **CI coverage** (`tests/invariant_coverage.rs`, at the workspace
+   root): bidirectional test — every `enforced`/`partial`/`structural`
+   invariant in the catalog must have at least one source tag, and
+   every source tag must reference a catalog entry.
 
 ### When you encounter an unrecorded invariant
 
@@ -649,24 +589,63 @@ use astrodyn_bevy::prelude::*;        // AstrodynPlugin, typed Components, Astro
 use astrodyn_bevy::recipes::*;        // earth, orbital_elements, vehicle, scenarios
 ```
 
-**Compose a vehicle** with the typestate `VehicleBuilder` (re-exported by
-`astrodyn_bevy::prelude`). The compiler refuses `.three_dof_point_mass(...)`
-until a state is set, refuses `.rk4()` until mass is set, refuses `.build()`
-until an integrator is chosen.
+### Canonical entry point: `SimulationBuilder::populate_app`
+
+For full-scenario composition (sources, bodies, ephemeris, mass tree,
+integrator state — all in one builder), the canonical entry point is
+`SimulationBuilder::populate_app::<P>(&mut app)` (promoted in #442).
+Compose the scenario, hand it to `populate_app`, and it installs the
+`AstrodynPlugin`, writes time/ephemeris resources, spawns one entity
+per source and one per body, pre-allocates any mass tree, and returns
+`ScenarioHandles` whose `source_entities` / `body_entities` vecs are
+keyed parallel to the builder's `sources` / `bodies`:
 
 ```rust
-// `VehicleBuilder`, `GravityControl`, `GravityGradient`, and `F64Ext` come from
-// `astrodyn_bevy::prelude`. `earth`, `orbital_elements`, `vehicle` come from
-// `astrodyn_bevy::recipes`.
-let mu = earth::point_mass().source.mu.m3_per_s2();
+let mut app = App::new();
+app.add_plugins(MinimalPlugins);
+let dt = sb.dt;
+app.insert_resource(Time::<Fixed>::from_seconds(dt));
+app.insert_resource(IntegrationDtR(dt));
+
+let handles = sb
+    .populate_app::<astrodyn::Earth>(&mut app)
+    .expect("populate_app materializes the scenario under <Earth>");
+
+let vehicle_entity = handles.body_entities[0];
+```
+
+Worked example: `crates/astrodyn_bevy/examples/multi_body_scenario.rs`.
+
+### Single-vehicle insertion: `VehicleConfig::spawn_bevy`
+
+For inserting one vehicle into an already-constructed App (a smaller
+example, a test, or a follow-up insertion into a running simulation),
+use the per-vehicle method on `VehicleConfig`. The typestate
+`VehicleBuilder` refuses `.three_dof_point_mass(...)` until a state is
+set, refuses `.rk4()` until mass is set, refuses `.build()` until an
+integrator is chosen:
+
+```rust
+let mu_typed = earth::point_mass().source.mu.m3_per_s2();
 let cfg = VehicleBuilder::new()
-    .from_orbital_elements(orbital_elements::iss(), mu)
+    .from_orbital_elements(orbital_elements::iss(), mu_typed)
     .three_dof_point_mass(vehicle::iss_mass())
     .rk4()
-    .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+    .gravity(GravityControl::new_spherical(
+        SourceHandle::central(),
+        GravityGradient::Skip,
+    ))
     .build();
 let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth_entity]);
 ```
+
+Worked example: `crates/astrodyn_bevy/examples/typed_mission.rs`.
+
+### App setup helpers
+
+`AstrodynAppExt` (#443) provides App-level setup helpers (e.g.,
+fixed-step advancement) so mission code doesn't reach into Bevy
+internals. Use it through the prelude.
 
 **Compiler errors as physics**: passing a `Position<Ecef>` where
 `Position<RootInertial>` is required produces a custom diagnostic in physics
@@ -674,7 +653,8 @@ language pointing to the missing `FrameTransform<Ecef, RootInertial>` step, not 
 PhantomData type-mismatch wall.
 
 **Reference**:
-- Canonical worked example: `crates/astrodyn_bevy/examples/typed_mission.rs`.
+- Full-scenario worked example: `crates/astrodyn_bevy/examples/multi_body_scenario.rs`.
+- Single-vehicle worked example: `crates/astrodyn_bevy/examples/typed_mission.rs`.
 - Contributor primer (phantom tags, adding new dimensions, escape hatches):
   [Type-System wiki page](https://github.com/simnaut/astrodyn/wiki/Type-System).
 - Architecture and phase history:
