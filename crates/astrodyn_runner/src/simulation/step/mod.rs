@@ -65,9 +65,9 @@ impl Simulation {
     /// Returns raw `(DVec3, DVec3)`; prefer
     /// [`frame_origin_typed`](Self::frame_origin_typed) for the typed-result
     /// path. This raw variant is the deliberate escape hatch matched against
-    /// the Bevy adapter's [`crate::FrameOrigin::origin_in`] for callers that
-    /// can't statically commit to a frame phantom (e.g. frame-tree walks
-    /// driven by runtime `FrameId`s).
+    /// the Bevy adapter's `FrameOrigin::origin_in` (in `astrodyn_bevy`) for
+    /// callers that can't statically commit to a frame phantom (e.g.
+    /// frame-tree walks driven by runtime `FrameId`s).
     // ESCAPE_HATCH: documented raw return mirroring FrameOrigin::origin_in
     // on the Bevy side; the typed-result sibling is frame_origin_typed.
     // See #485 H4 / T2.

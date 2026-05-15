@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// range cause a **panic** (#485 H2): silently using a boundary value for an
 /// epoch the table cannot resolve produces wrong UTC conversions that
 /// cascade through every dependent calculation. To restore JEOD's
-/// log-once-and-clamp behavior, call [`Self::with_clamp_out_of_range(true)`]
+/// log-once-and-clamp behavior, call [`Self::with_clamp_out_of_range`] with `true`
 /// — useful only for matching JEOD reference runs exactly or when the
 /// caller has independent knowledge that the boundary value is correct
 /// for the epoch in question.
