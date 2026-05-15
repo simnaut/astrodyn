@@ -142,3 +142,342 @@ pub fn rot_raw_to_self_ref(s: &RotationalState) -> RotationalStateTyped<SelfRef>
 pub fn mass_raw_to_self_ref(mp: &MassProperties) -> MassPropertiesTyped<SelfRef> {
     mass_raw_to_typed::<SelfRef>(mp)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::DMat3;
+
+    /// Bit-exact comparison for `DMat3`. `f64 ==` compares **values**,
+    /// not bit patterns, which fails the byte-identity check we want
+    /// here in two opposite directions (framed from the perspective of
+    /// `==` as the predicate that *should* return `true` iff the bits
+    /// agree):
+    ///
+    /// 1. **Signed-zero false positives.** `0.0 == -0.0` is `true`
+    ///    despite the two values having distinct bit patterns — `==`
+    ///    claims equality where there is none byte-wise. A
+    ///    raw→typed bridge that silently rebuilt a `+0.0` lane as
+    ///    `-0.0` would pass a `==` check while still corrupting the
+    ///    lowest-mantissa-bit agreement that integrates to
+    ///    multi-kilometre position drift on long-arc rotational runs.
+    /// 2. **NaN false negatives.** `NaN != NaN` is `true` *even when
+    ///    the two operands share an identical bit pattern* (NaN
+    ///    compares unequal to itself by IEEE-754 rule) — `==` rejects
+    ///    equality where the bits *do* match. A bridge that
+    ///    faithfully propagated a deterministic NaN lane through to
+    ///    the typed sibling would *fail* an `==` check despite being
+    ///    byte-identical — the very property we are asserting.
+    ///
+    /// Comparing each lane's underlying bit pattern via `f64::to_bits`
+    /// resolves both: `(+0.0).to_bits() != (-0.0).to_bits()` rejects
+    /// the silent signed-zero rewrite, and matching NaN payloads
+    /// compare equal because integer equality is reflexive.
+    fn dmat3_byte_eq(a: DMat3, b: DMat3) -> bool {
+        a.to_cols_array()
+            .iter()
+            .zip(b.to_cols_array().iter())
+            .all(|(x, y)| x.to_bits() == y.to_bits())
+    }
+
+    /// `MassPropertiesTyped::<V>::new(mass)` and the raw→typed bridge
+    /// (`MassProperties::new(mass)` → `mass_raw_to_self_ref`, which routes
+    /// through `MassPropertiesTyped::with_inertia`) must produce
+    /// byte-identical structs for the same input mass. Both
+    /// constructors now compute the inverse via glam's general 3×3
+    /// inverse formula; the previous element-wise `IDENTITY / m` form
+    /// in `new` differed by sub-ULP amounts on the diagonal and ~1e-25
+    /// on the off-diagonals from adjugate cancellations, which amplified
+    /// to ~91 km position error over a 7-day Clementine rotational-
+    /// dynamics integration.
+    ///
+    /// Coverage scope: this test exercises the *default* configuration
+    /// of `MassProperties::new(mass)`, where `center_of_mass = ZERO`
+    /// and `t_parent_this = IDENTITY`. The field-by-field assertions
+    /// would therefore not catch a regression that drops one of those
+    /// trivially-zero / trivially-identity fields from the bridge —
+    /// `assert_eq!(ZERO, ZERO)` and `assert_eq!(IDENTITY, IDENTITY)`
+    /// trivially pass even if either side never read the field at all.
+    /// The companion test
+    /// `non_default_mass_props_round_trip_across_construction_paths`
+    /// closes that gap with a non-zero CoM, a non-identity
+    /// `t_parent_this`, and a non-diagonal inertia tensor.
+    ///
+    /// The assertions below are stated explicitly per-field rather than
+    /// via a struct-level `PartialEq` comparison. `MassPropertiesTyped<V>`
+    /// does derive `PartialEq`, but the derive synthesizes a
+    /// `V: PartialEq` bound on the impl, and the `SelfRef` vehicle
+    /// marker used here only derives `Debug + Clone + Copy` (`PartialEq`
+    /// is intentionally omitted because the type is a zero-sized
+    /// phantom tag with no distinguishing state). Direct
+    /// `assert_eq!(a, b)` on `MassPropertiesTyped<SelfRef>` therefore
+    /// does not compile; the field-by-field projection sidesteps that
+    /// without losing any coverage — see the `to_untyped()` projection
+    /// assertion below which exercises the untyped sibling's
+    /// struct-level `PartialEq`.
+    #[test]
+    fn point_mass_inverse_inertia_matches_across_construction_paths() {
+        use glam::DVec3;
+
+        let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
+        let b = mass_raw_to_self_ref(&MassProperties::new(424.0));
+        // Cache fields — the primary regression class. Compare via
+        // `to_bits()` (through `dmat3_byte_eq`) because `==` on
+        // `f64`/`DMat3` is IEEE value equality, not byte equality:
+        // it treats `0.0 == -0.0` as `true` and `NaN == NaN` as
+        // `false`, so a silent `+0.0 → -0.0` rewrite or a propagated
+        // deterministic NaN lane would mis-classify under `==`. ULP
+        // differences are caught by both predicates — the bit-level
+        // form just additionally handles signed-zero and NaN payloads.
+        assert!(
+            dmat3_byte_eq(a.inverse_inertia, b.inverse_inertia),
+            "inverse_inertia diverges between construction paths: \
+             a={:?} b={:?}",
+            a.inverse_inertia,
+            b.inverse_inertia,
+        );
+        assert_eq!(a.inverse_mass.to_bits(), b.inverse_mass.to_bits());
+        // Stored inputs and derived storage fields.
+        assert_eq!(a.mass, b.mass);
+        assert!(
+            dmat3_byte_eq(a.inertia.as_dmat3(), b.inertia.as_dmat3()),
+            "inertia diverges between construction paths: a={:?} b={:?}",
+            a.inertia.as_dmat3(),
+            b.inertia.as_dmat3(),
+        );
+        assert_eq!(a.center_of_mass.raw_si(), b.center_of_mass.raw_si());
+        assert!(
+            dmat3_byte_eq(a.t_parent_this, b.t_parent_this),
+            "t_parent_this diverges between construction paths: \
+             a={:?} b={:?}",
+            a.t_parent_this,
+            b.t_parent_this,
+        );
+        // Bookkeeping flag — constructors leave caches consistent, so
+        // `dirty` is `false` on both sides.
+        assert_eq!(a.dirty, b.dirty);
+        assert!(!a.dirty);
+        // Untyped projection equality closes the field coverage: any
+        // future field added to `MassPropertiesTyped` that is also
+        // exported into the untyped `MassProperties` will be compared
+        // here verbatim, which catches the same dropped-field class as
+        // the proptest round-trips in `crates/astrodyn_dynamics/src/mass.rs`.
+        assert_eq!(
+            MassPropertiesTyped::<SelfRef>::to_untyped(&a),
+            MassPropertiesTyped::<SelfRef>::to_untyped(&b),
+        );
+
+        // Stale-cache fence. The field-by-field assertions above
+        // (and the `to_untyped` projection equality) are
+        // self-consistent on both sides — every cache equals
+        // `1/mass`/`inertia.inverse()` of the corresponding
+        // structural field, so a degenerate bridge that *copied* the
+        // raw cache fields and merely flipped `dirty = false`
+        // (skipping `with_inertia`'s recompute entirely) would still
+        // pass them. To prove the recompute genuinely runs, build a
+        // raw input whose `inverse_mass`/`inverse_inertia` are
+        // *deliberately wrong* and assert the typed sibling emerges
+        // with the structurally-correct values (`1/mass` and
+        // `inertia⁻¹`), *not* the stale cache. The structural inputs
+        // match the canonical `MassProperties::new(424.0)` form so
+        // we can name the expected re-derived cache directly.
+        let mass_kg = 424.0_f64;
+        let canonical_inertia = DMat3::IDENTITY * mass_kg;
+        let raw_with_stale_cache = MassProperties {
+            mass: mass_kg,
+            // Stale: structurally consistent value would be `1/424.0`.
+            inverse_mass: 999.0,
+            inertia: canonical_inertia,
+            // Stale: structurally consistent value would be
+            // `canonical_inertia.inverse()`. Use a marker the asserts
+            // below can distinguish from the truth.
+            inverse_inertia: DMat3::from_diagonal(DVec3::new(999.0, 999.0, 999.0)),
+            position: DVec3::ZERO,
+            t_parent_this: DMat3::IDENTITY,
+            // Mark dirty so a bridge that "honours" the raw flag would
+            // not be tempted to skip work.
+            dirty: true,
+        };
+        let c = mass_raw_to_self_ref(&raw_with_stale_cache);
+        // The stale `inverse_mass = 999.0` must be discarded; the
+        // typed sibling must carry the re-derived `1/mass`. Compare to
+        // the canonical sibling `a` (built via the typed `new`
+        // constructor) — bit-identity here proves the bridge ran the
+        // same general 3×3 inverse formula, not a copy.
+        assert_eq!(
+            c.inverse_mass.to_bits(),
+            a.inverse_mass.to_bits(),
+            "raw→typed bridge must recompute inverse_mass from mass; \
+             stale raw cache (999.0) leaked through into the typed \
+             sibling instead of being replaced by 1/mass"
+        );
+        assert!(
+            dmat3_byte_eq(c.inverse_inertia, a.inverse_inertia),
+            "raw→typed bridge must recompute inverse_inertia from \
+             inertia; stale raw cache leaked through into the typed \
+             sibling. expected={:?} got={:?}",
+            a.inverse_inertia,
+            c.inverse_inertia,
+        );
+        // And the canonicalisation of `dirty: true → false` rounds out
+        // the contract — confirms the bridge actually executed
+        // `with_inertia`, which always emits a clean cache.
+        assert!(
+            !c.dirty,
+            "raw→typed bridge must canonicalise dirty to false \
+             regardless of the raw input's flag; got dirty=true"
+        );
+    }
+
+    /// Companion to
+    /// `point_mass_inverse_inertia_matches_across_construction_paths`
+    /// that exercises a **non-default** configuration: non-zero
+    /// centre-of-mass offset, non-identity `t_parent_this`, and a
+    /// non-diagonal inertia tensor. The point-mass test above only
+    /// covers `center_of_mass = ZERO` and `t_parent_this = IDENTITY`,
+    /// so dropping either of those fields from the raw→typed bridge
+    /// would still let it pass (`assert_eq!(ZERO, ZERO)` and
+    /// `assert_eq!(IDENTITY, IDENTITY)` are vacuous). This test
+    /// constructs a raw `MassProperties` whose fields each carry a
+    /// distinct, distinguishable value, then asserts the bridge's
+    /// actual contract — not "verbatim propagation of every field"
+    /// (`mass_raw_to_typed` intentionally rebuilds via
+    /// `MassPropertiesTyped::with_inertia`, which recomputes
+    /// `inverse_mass = 1/mass` and `inverse_inertia = inertia⁻¹` and
+    /// resets `dirty = false`):
+    ///
+    /// 1. The input cache fields (`inverse_mass`, `inverse_inertia`)
+    ///    are constructed self-consistently with `mass` and `inertia`,
+    ///    so the rebuilt typed sibling's caches equal the raw inputs.
+    /// 2. The structural inputs (`mass`, `inertia`, `position` →
+    ///    `center_of_mass`, `t_parent_this`) propagate from the raw
+    ///    struct unchanged — these are the fields the bridge carries
+    ///    through verbatim, and the field-by-field assertions are the
+    ///    field-drop regression fence for them.
+    /// 3. `dirty` is canonicalised to `false` on the typed side because
+    ///    `with_inertia` always emits a clean cache.
+    #[test]
+    fn non_default_mass_props_round_trip_across_construction_paths() {
+        use glam::DVec3;
+
+        let mass = 424.0_f64;
+        // Non-diagonal, well-conditioned inertia: diag conjugated by a
+        // small rotation so off-diagonal entries are non-zero but
+        // det != 0 and the inverse is well-defined.
+        let diag = DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0));
+        let rot = DMat3::from_axis_angle(DVec3::new(1.0, 2.0, 3.0).normalize(), 0.5_f64);
+        let inertia = rot.transpose() * diag * rot;
+        let com = DVec3::new(0.1, -0.2, 0.3);
+        // Non-identity `t_parent_this` — Apollo regression class
+        // (#393): a 180° rotation about Z, the same eigen-rotation
+        // SIM_Apollo's modules declare.
+        let t_parent_this = DMat3::from_axis_angle(DVec3::Z, std::f64::consts::PI);
+
+        // `MassProperties::with_inertia` doesn't set `t_parent_this`
+        // (it stays at `IDENTITY`), so populate the raw struct
+        // directly — the bridge has to carry every field through
+        // regardless of which constructor produced the raw form.
+        let raw = MassProperties {
+            mass,
+            inverse_mass: 1.0 / mass,
+            inertia,
+            inverse_inertia: inertia.inverse(),
+            position: com,
+            t_parent_this,
+            dirty: false,
+        };
+
+        let typed = mass_raw_to_self_ref(&raw);
+
+        // Every non-trivial field is asserted distinctly so a dropped
+        // field can't slide through with a default value. DMat3 fields
+        // compare via `to_bits()` (through `dmat3_byte_eq`) so a
+        // bridge that silently lost the lowest mantissa bits — the
+        // sub-ULP regression class — is rejected.
+        assert_eq!(typed.mass.get::<kilogram>(), raw.mass);
+        assert_eq!(typed.inverse_mass.to_bits(), raw.inverse_mass.to_bits());
+        assert!(
+            dmat3_byte_eq(typed.inertia.as_dmat3(), raw.inertia),
+            "inertia diverges from raw input: typed={:?} raw={:?}",
+            typed.inertia.as_dmat3(),
+            raw.inertia,
+        );
+        assert!(
+            dmat3_byte_eq(typed.inverse_inertia, raw.inverse_inertia),
+            "inverse_inertia diverges from raw input: typed={:?} raw={:?}",
+            typed.inverse_inertia,
+            raw.inverse_inertia,
+        );
+        assert_eq!(typed.center_of_mass.raw_si(), raw.position);
+        assert!(
+            dmat3_byte_eq(typed.t_parent_this, raw.t_parent_this),
+            "t_parent_this diverges from raw input: typed={:?} raw={:?}",
+            typed.t_parent_this,
+            raw.t_parent_this,
+        );
+        assert_eq!(typed.dirty, raw.dirty);
+
+        // Negative controls: confirm the values are actually
+        // distinguishable from the defaults so the assertions above
+        // can't pass vacuously.
+        assert_ne!(raw.position, DVec3::ZERO);
+        assert_ne!(raw.t_parent_this, DMat3::IDENTITY);
+
+        // Round-trip via the untyped projection exercises the
+        // struct-level `PartialEq` and catches any future field added
+        // to one side but not the other.
+        assert_eq!(MassPropertiesTyped::<SelfRef>::to_untyped(&typed), raw);
+    }
+
+    /// Dirty-flag canonicalisation fence.
+    /// `mass_raw_to_typed` routes through
+    /// `MassPropertiesTyped::with_inertia`, whose contract emits
+    /// `dirty = false` regardless of the raw input's flag. The
+    /// companion test above seeds the raw input with `dirty = false`,
+    /// which a bridge that just **copies** `dirty` verbatim would
+    /// also satisfy — leaving the `true → false` canonicalisation
+    /// half of the contract untested. This test pins exactly that
+    /// canonicalisation: it seeds `dirty = true` and asserts the
+    /// typed sibling lands on `dirty = false`. The cache-recompute
+    /// half of the `with_inertia` contract is covered separately by
+    /// the stale-cache fence inside
+    /// `point_mass_inverse_inertia_matches_across_construction_paths`,
+    /// which seeds deliberately-wrong `inverse_mass` /
+    /// `inverse_inertia` values on the raw side.
+    #[test]
+    fn raw_to_typed_canonicalises_dirty_flag() {
+        use glam::DVec3;
+
+        let mass = 424.0_f64;
+        let inertia = DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0));
+        let raw_dirty = MassProperties {
+            mass,
+            inverse_mass: 1.0 / mass,
+            inertia,
+            inverse_inertia: inertia.inverse(),
+            position: DVec3::new(0.1, -0.2, 0.3),
+            t_parent_this: DMat3::IDENTITY,
+            // The contract under test: an input that advertises stale
+            // caches must come out canonicalised on the typed side.
+            dirty: true,
+        };
+        let typed = mass_raw_to_self_ref(&raw_dirty);
+        assert!(
+            !typed.dirty,
+            "raw→typed bridge must canonicalise dirty to false \
+             (with_inertia re-derives the cache); got dirty=true"
+        );
+
+        // Sanity: the rebuilt caches still agree byte-for-byte with the
+        // raw input's self-consistent values, so the canonicalisation
+        // doesn't come at the cost of cache divergence.
+        assert_eq!(
+            typed.inverse_mass.to_bits(),
+            raw_dirty.inverse_mass.to_bits()
+        );
+        assert!(dmat3_byte_eq(
+            typed.inverse_inertia,
+            raw_dirty.inverse_inertia
+        ));
+    }
+}
