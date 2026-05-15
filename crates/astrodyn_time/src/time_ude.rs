@@ -69,6 +69,22 @@ impl UserDefinedEpoch {
         reason = "clock fields bounded by div_euclid moduli (24h/60m/60s)"
     )]
     fn clock_update(&mut self) {
+        // JEOD_INV: TM.38 — clock decomposition is defined only for a finite
+        // `seconds` value; a non-finite input would silently produce zero
+        // clock fields (NaN.div_euclid → NaN, then `as i32` saturates to 0)
+        // and propagate as wrong physics. JEOD assumes its sim-input pipe
+        // delivers a valid f64 (`time_ude.cc` clock_update has no guard); we
+        // assert defensively so a bad upstream input fails loudly rather than
+        // poisoning every clock-decomposed time scale downstream.
+        assert!(
+            self.seconds.is_finite(),
+            "clock_update: seconds must be finite, got {}. \
+             A non-finite UDE seconds value would silently decompose into \
+             zero clock fields. Fix the upstream parent-time advance that \
+             produced the non-finite UDE seconds.",
+            self.seconds
+        );
+
         let mut scratch = self.seconds.rem_euclid(SECONDS_PER_DAY);
         self.clock_day = self.seconds.div_euclid(SECONDS_PER_DAY) as i32;
         self.clock_hour = scratch.div_euclid(3600.0) as i32;
@@ -140,5 +156,21 @@ mod tests {
         let mut ude = UserDefinedEpoch::new(1000.0);
         ude.update(500.0);
         assert!((ude.seconds - (-500.0)).abs() < 1e-15);
+    }
+
+    /// Pins the `assert!(self.seconds.is_finite())` guard at the entry of
+    /// `clock_update`. Without this check a NaN UDE seconds value would
+    /// silently decompose to zero clock fields (`NaN.div_euclid → NaN`,
+    /// `NaN as i32 → 0`) and propagate as wrong physics through every
+    /// clock-decomposed time scale that consumes the UDE state. JEOD
+    /// `time_ude.cc::clock_update()` has no guard because it assumes a
+    /// valid f64 from its sim-input pipe; our defensive assert is the
+    /// fail-loudly equivalent.
+    // JEOD_INV: TM.38 — negative test: NaN seconds into clock_update panics
+    #[test]
+    #[should_panic(expected = "clock_update: seconds must be finite")]
+    fn tm_38_panics_on_nan_seconds_into_clock_update() {
+        let mut ude = UserDefinedEpoch::new(0.0);
+        ude.update(f64::NAN);
     }
 }

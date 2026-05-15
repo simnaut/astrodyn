@@ -345,6 +345,35 @@ mod tests {
         LeapSecondTable::from_entries(vec![]);
     }
 
+    /// Pins the empty-table assert in `LeapSecondTable::from_entries`. The
+    /// `find_index_for_tai`/`find_index_for_utc` lookups index `self.entries[0]`
+    /// and `self.entries[last]` directly; an empty table would index out of
+    /// bounds at the first lookup. JEOD's `time_converter_tai_utc.cc` assumes
+    /// a populated `when_vec` from `Leap_Second.dat`; we assert at construction
+    /// so a missing / empty fixture fails loudly at table-build time rather
+    /// than panicking opaquely on the first TAI↔UTC conversion.
+    // JEOD_INV: TM.39 — negative test: empty leap-second table rejected at construction
+    #[test]
+    #[should_panic(expected = "must not be empty")]
+    fn tm_39_panics_on_empty_leap_second_table() {
+        // JEOD_INV: TM.39 — empty `when_vec`/`val_vec` rejected at construction.
+        LeapSecondTable::from_entries(vec![]);
+    }
+
+    /// Pins the monotonicity assert in `LeapSecondTable::from_entries`. The
+    /// `find_index_for_utc` search returns the first `i` with
+    /// `entries[i].0 <= utc_tjt < entries[i+1].0`; an unsorted `when_vec` would
+    /// return a wrong bracket without panicking, silently producing a wrong
+    /// TAI-UTC offset. JEOD's algorithm relies on monotonic `when_vec` by
+    /// convention; we enforce at construction.
+    // JEOD_INV: TM.39 — negative test: out-of-order TJT entries rejected
+    #[test]
+    #[should_panic(expected = "must be sorted by TJT")]
+    fn tm_39_panics_on_unsorted_leap_second_entries() {
+        // JEOD_INV: TM.39 — non-monotonic `when_vec` rejected at construction.
+        LeapSecondTable::from_entries(vec![(50000.0, 32.0), (40000.0, 10.0)]);
+    }
+
     #[test]
     fn default_table_has_28_entries() {
         let table = default_leap_second_table();
@@ -421,6 +450,36 @@ mod tests {
     #[should_panic(expected = "follows last leap-second table boundary")]
     fn tai_after_table_panics_when_strict() {
         let _ = strict_default_table().tai_utc_at_tai_tjt(mjd_to_tjt(58000.0));
+    }
+
+    /// Pins the strict out-of-range UTC lookup assert at
+    /// `find_index_for_utc`'s pre-first-entry branch. The default
+    /// `default_leap_second_table()` factory opts in to JEOD-faithful
+    /// clamp-and-warn (#485 H2); strict mode is reachable by chaining
+    /// `with_clamp_out_of_range(false)`. A neutered guard would silently
+    /// return the boundary TAI-UTC value, producing a wrong UTC
+    /// conversion that cascades through every dependent time scale.
+    // JEOD_INV: TM.41 — negative test: strict UTC lookup before first entry panics
+    #[test]
+    #[should_panic(expected = "precedes first leap-second table entry")]
+    fn tm_41_panics_on_strict_utc_lookup_before_first_entry() {
+        // JEOD_INV: TM.41 — out-of-range UTC TJT in strict mode (clamp opt-out).
+        let table = default_leap_second_table().with_clamp_out_of_range(false);
+        let _ = table.tai_utc_at_utc_tjt(mjd_to_tjt(41000.0));
+    }
+
+    /// Pins the strict out-of-range UTC lookup assert at
+    /// `find_index_for_utc`'s post-last-entry branch. Mirrors the
+    /// before-first-entry test above; the late-epoch direction matters
+    /// for missions targeting epochs past the table's last tabulated
+    /// boundary (post-2017 with our shipped 28-entry table).
+    // JEOD_INV: TM.41 — negative test: strict UTC lookup after last entry panics
+    #[test]
+    #[should_panic(expected = "follows last leap-second table entry")]
+    fn tm_41_panics_on_strict_utc_lookup_after_last_entry() {
+        // JEOD_INV: TM.41 — out-of-range UTC TJT in strict mode (clamp opt-out).
+        let table = default_leap_second_table().with_clamp_out_of_range(false);
+        let _ = table.tai_utc_at_utc_tjt(mjd_to_tjt(70000.0));
     }
 
     #[test]
