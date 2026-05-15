@@ -23,8 +23,8 @@
 
 use astrodyn::recipes;
 use astrodyn::{
-    EphemerisBody, GravityControl, GravityControls, GravityGradient, MassProperties, RotationModel,
-    SimulationBuilder, SimulationTime, SrpModel, TranslationalState, VehicleConfig,
+    EphemerisBody, F64Ext, GravityControl, GravityGradient, RotationModel, SimulationBuilder,
+    SimulationTime, TranslationalState, VehicleBuilder,
 };
 use glam::DVec3;
 
@@ -136,38 +136,26 @@ pub fn earth_moon_clem(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Simula
     sb = sb.sun(sun_idx).ephemeris(ephemeris);
 
     let (pos, vel) = initial_state.unwrap_or((INIT_POS, INIT_VEL));
-    // Construct the `VehicleConfig` via struct literal rather than the
-    // typed `VehicleBuilder` because `MassPropertiesTyped::<V>::new(mass)`
-    // and the raw→typed bridge (`mass_raw_to_self_ref` →
-    // `MassPropertiesTyped::with_inertia`) compute `inverse_inertia`
-    // with different formulas (`I/m` vs. `(I*m).inverse()`) that
-    // disagree at the ULP level. Over the 7-day Clementine integration
-    // that drift amplifies to ~91 km — past the
-    // [0.832, 0.331, 0.972] m cross-validation tolerance. The bridge
-    // path matches the pre-#447 baseline, so we route through it here
-    // to keep PR-1 bit-identical. See #459.
-    sb.add_body(VehicleConfig {
-        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
-            position: pos,
-            velocity: vel,
-        }),
-        gravity_controls: GravityControls {
-            controls: vec![
-                GravityControl::new_nonspherical(moon_idx, 60, 60, GravityGradient::Skip),
-                GravityControl::new_third_body(earth_idx),
-                GravityControl::new_third_body(sun_idx),
-            ],
-        },
-        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(
-            &MassProperties::new(424.0),
-        )),
-        srp: Some(SrpModel::Cannonball {
-            cx_area: SRP_CX_AREA,
-            albedo: SRP_ALBEDO,
-            diffuse: SRP_DIFFUSE,
-        }),
-        ..Default::default()
-    });
+    let vehicle = VehicleBuilder::new()
+        .with_translational(astrodyn::typed_bridge::trans_raw_to_root(
+            &TranslationalState {
+                position: pos,
+                velocity: vel,
+            },
+        ))
+        .three_dof_point_mass(424.0.kg())
+        .rk4()
+        .gravity(GravityControl::new_nonspherical(
+            moon_idx,
+            60,
+            60,
+            GravityGradient::Skip,
+        ))
+        .gravity(GravityControl::new_third_body(earth_idx))
+        .gravity(GravityControl::new_third_body(sun_idx))
+        .cannonball_srp(SRP_CX_AREA, SRP_ALBEDO, SRP_DIFFUSE)
+        .build();
+    sb.add_body(vehicle);
     sb
 }
 
