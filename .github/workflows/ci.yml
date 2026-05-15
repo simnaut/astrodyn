@@ -24,6 +24,20 @@ jobs:
         run: scripts/check_no_bypass_deps.sh
       - name: Silent-warn fail-loudly guard (#485 T1)
         run: scripts/check_no_silent_warn.sh
+      - name: Tier 3 baseline-widening guard
+        # Diffs `crates/astrodyn_verif_jeod/test_data/baselines.json`
+        # against `origin/main` and surfaces per-component widenings
+        # bucketed as notice / warning / error. Closes the discipline
+        # gap that `tier3_baseline_diff.rs` cannot detect — that tool
+        # compares the *current run* to the *baseline file in the PR
+        # branch*, so a PR that also edits the baseline is
+        # self-consistent. This static diff is the structural fence on
+        # the file itself.
+        run: |
+          # Fetch the base branch tip so `git show origin/main:...`
+          # resolves even on a shallow PR checkout.
+          git fetch --no-tags --depth=1 origin main
+          scripts/check_baseline_widening.sh
 
   test-examples:
     name: Smoke run examples
