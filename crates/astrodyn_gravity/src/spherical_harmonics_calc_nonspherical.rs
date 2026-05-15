@@ -364,14 +364,22 @@ pub fn calc_nonspherical_with_scratch(
         // means each row is a single cache-friendly slice; the inner
         // `jj` loop then indexes a `&[f64]` directly instead of paying
         // the row-pointer load that `Vec<Vec<f64>>` would impose.
+        //
+        // `row_start..row_end` is derived from `tri_idx(ii, 0)` once per
+        // `ii` and reused for every per-row slice below. Reusing it
+        // (instead of calling `cnm_row(ii)` / `snm_row(ii)`) avoids the
+        // redundant `tri_idx` recomputation and the per-call release
+        // `assert!` bound check on each accessor — those bounds are
+        // already established by the `row_start..row_end` derivation,
+        // and the slice itself panics on an out-of-range index.
+        let row_start = tri_idx(ii, 0);
+        let row_end = row_start + ii + 1;
         let c_ii: &[f64] = if ii == 2 {
             &local_cnm
         } else {
-            data.cnm_row(ii)
+            &data.cnm[row_start..row_end]
         };
-        let s_ii: &[f64] = data.snm_row(ii);
-        let row_start = tri_idx(ii, 0);
-        let row_end = row_start + ii + 1;
+        let s_ii: &[f64] = &data.snm[row_start..row_end];
         let xi_ii: &[f64] = &data.xi[row_start..row_end];
         let eta_ii: &[f64] = &data.eta[row_start..row_end];
         let zeta_ii: &[f64] = &data.zeta[row_start..row_end];

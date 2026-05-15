@@ -51,9 +51,31 @@ pub fn save_binary(
     // linearly produces exactly the same `(n=0..=deg, m=0..=n)` order
     // the load path expects -- the on-disk bytes are byte-identical to
     // the per-element accessor path.
+    //
+    // Per the "Fail Loudly" rule (CLAUDE.md): the buffer-length checks
+    // protect serialization correctness, so they must hold in release
+    // builds. A mismatched flat-vec length would silently truncate or
+    // pad the on-disk coefficient stream, and a bad blob would be
+    // accepted by `load_binary_from_bytes` only to manifest later as
+    // wrong gravity-field values. `assert_eq!` keeps the check live in
+    // release.
     let num_coeffs = (data.degree + 1) * (data.degree + 2) / 2;
-    debug_assert_eq!(data.cnm.len(), num_coeffs);
-    debug_assert_eq!(data.snm.len(), num_coeffs);
+    assert_eq!(
+        data.cnm.len(),
+        num_coeffs,
+        "cnm flat buffer length {} does not match expected triangular slot count {} for degree {}",
+        data.cnm.len(),
+        num_coeffs,
+        data.degree
+    );
+    assert_eq!(
+        data.snm.len(),
+        num_coeffs,
+        "snm flat buffer length {} does not match expected triangular slot count {} for degree {}",
+        data.snm.len(),
+        num_coeffs,
+        data.degree
+    );
     buf.reserve(2 * num_coeffs * 8);
     for &c in &data.cnm[..num_coeffs] {
         buf.extend_from_slice(&c.to_le_bytes());
