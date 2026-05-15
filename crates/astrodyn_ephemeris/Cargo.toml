@@ -8,6 +8,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 # The kernel assets are NOT bundled into the .crate. `data::load()`
 # resolves a `KernelSpec` against (1) `$ASTRODYN_EPHEMERIS_KERNELS_DIR`,
 # (2) `$CARGO_MANIFEST_DIR/assets/` (workspace builds only), (3) the user

@@ -8,6 +8,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 # Workspace-only artifacts that don't belong in the published crate:
 # Trick / Docker reference-CSV regen tooling, the JEOD-invariant catalog
 # (lives next to the source it tags), workspace-level invariant tests,
@@ -64,6 +65,17 @@ version = "0.1.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/simnaut/astrodyn"
+# Declared MSRV. The binding constraints are (a) the `bevy = "0.18"`
+# dep tree (released targeting Rust ~1.85) and (b) usage of
+# `u{32,usize}::is_multiple_of` (stabilized in Rust 1.87) inside the
+# Gauss–Jackson integrator. 1.87 is the conservative-but-modern floor
+# that satisfies both. Cargo surfaces a clean
+# `error: package requires Rust 1.87` for older toolchains instead of
+# the cryptic compile errors users would otherwise see. The
+# `clippy::incompatible_msrv` lint also fires against any stdlib item
+# stabilized after this floor, preventing silent MSRV drift. See
+# `README.md` § "Minimum supported Rust version" for the bump policy.
+rust-version = "1.87"
 
 # Workspace-wide attribution metadata. `notice` points at the repo-root
 # NOTICE.md that documents the verbatim NASA JEOD source mirror under
