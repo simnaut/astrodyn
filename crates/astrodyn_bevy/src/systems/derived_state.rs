@@ -25,11 +25,17 @@ use super::util::body_integ_origin_in_root;
 ///
 /// # Panics
 ///
-/// Panics when the typed kernel rejects the instantaneous state
-/// (non-positive μ, degenerate orbit with `|h| ≈ 0`, or Kepler
-/// iteration non-convergence). Each variant emits a per-cause
-/// diagnostic naming the entity and the caller fix — silent
-/// zero-element fallback would let geometrically-impossible
+/// Panics in two cases:
+///
+/// 1. `OrbitalElementsConfigC.gravity_source` does not resolve to an
+///    entity carrying `GravitySourceC`. The diagnostic names the body,
+///    the failing source entity, and the bundle remediation.
+/// 2. The typed kernel rejects the instantaneous state (non-positive
+///    μ, degenerate orbit with `|h| ≈ 0`, or Kepler iteration
+///    non-convergence). Each variant emits a per-cause diagnostic
+///    naming the entity and the caller fix.
+///
+/// Silent zero-element fallback would let geometrically-impossible
 /// `(a, e, i) = (0, 0, 0)` values reach downstream consumers as if
 /// they were correct. CLAUDE.md "Fail Loudly".
 pub fn orbital_elements_system<P: Planet>(
@@ -42,16 +48,33 @@ pub fn orbital_elements_system<P: Planet>(
     sources: Query<&GravitySourceC>,
 ) {
     for (entity, state, config, mut elements) in &mut query {
-        let Ok(source) = sources.get(config.gravity_source) else {
-            // The companion misconfiguration — a `gravity_source` entity
-            // that doesn't carry `GravitySourceC` — is intentionally
-            // out of scope for this guard: it's a wiring contract
-            // separate from the kernel's structural failure modes
-            // and is policed elsewhere as the gravity / config
-            // surface tightens.
-            elements.0 = Default::default();
-            continue;
-        };
+        // JEOD_INV: OE.01 — surface a `gravity_source` wiring miss as
+        // a per-cause panic naming the offending entity and the broken
+        // wiring rather than silently writing zero orbital elements.
+        // The previous `Default::default()` fallback (the
+        // `OrbitalElementsConfigC.gravity_source` points at an entity
+        // that doesn't carry `GravitySourceC` case) is exactly the
+        // silent-numerically-wrong shape "Fail Loudly" forbids: a
+        // downstream consumer reading `(a, e, i) = (0, 0, 0)` cannot
+        // distinguish "no orbital elements computed" from
+        // "geometrically-impossible orbit". A standalone wiring guard
+        // here is in defense-in-depth with the startup `validation`
+        // pass — that pass only fires on `Added<GravityControlsC>`
+        // bodies, so a `OrbitalElementsConfigC` inserted after the
+        // body's spawn tick (or on an entity without
+        // `GravityControlsC`) reaches the system unchecked.
+        let source = sources.get(config.gravity_source).unwrap_or_else(|_| {
+            panic!(
+                "{entity:?} orbital elements: \
+                 OrbitalElementsConfigC.gravity_source = {gravity_source:?} \
+                 does not resolve to a GravitySourceC component. Insert \
+                 GravitySourceC on that entity (via SourceBundle / PlanetBundle \
+                 / SunBundle / MoonBundle at spawn time), or point \
+                 gravity_source at a gravity-source entity that already has \
+                 the component.",
+                gravity_source = config.gravity_source
+            )
+        });
         // `OrbitalElementsC<P>` and the typed kernel result both pin
         // the planet to `P`. Mint a `GravParam<P>` from the source's
         // f64 mu at the call boundary; the caller is responsible for
@@ -149,19 +172,55 @@ pub fn lvlh_system<P: Planet>(mut query: Query<(&TranslationalStateC<P>, &mut Lv
 /// Compute geodetic state for entities with `GeodeticConfigC`.
 ///
 /// Placed in `AstrodynSet::DerivedState`.
+///
+/// # Panics
+///
+/// Panics when `GeodeticConfigC.planet` does not resolve to an entity
+/// carrying `PlanetFixedRotationC<P>` (the per-step inertial→pfix
+/// rotation required by the geodetic kernel). The diagnostic names the
+/// offending body, the planet entity that failed lookup, and the
+/// remediation — silent `GeodeticState::default()` would write
+/// `(lat, lon, alt) = (0, 0, 0)` (the Gulf of Guinea), geographically
+/// indistinguishable from a real fix. The reference-ellipsoid radii
+/// `r_eq` / `r_pol` live on the config directly (mirroring the runner's
+/// `body.geodetic_planet: (idx, r_eq, r_pol)` shape) so they cannot be
+/// missing at the system level — a misconfiguration there is a type
+/// error, not a runtime miss. CLAUDE.md "Fail Loudly".
 pub fn geodetic_system<P: Planet>(
     mut query: Query<(
+        Entity,
         &TranslationalStateC<P>,
         &GeodeticConfigC,
         &mut GeodeticStateC,
     )>,
-    planets: Query<(&PlanetFixedRotationC<P>, &PlanetC)>,
+    planets: Query<&PlanetFixedRotationC<P>>,
 ) {
-    for (state, config, mut geodetic) in &mut query {
-        let Ok((rot, planet)) = planets.get(config.planet) else {
-            geodetic.0 = Default::default();
-            continue;
-        };
+    for (entity, state, config, mut geodetic) in &mut query {
+        // JEOD_INV: AT.03 — surface a `GeodeticConfigC.planet` wiring
+        // miss as a per-cause panic naming the offending entity and
+        // the missing component rather than silently writing zero
+        // geodetic state. The previous `Default::default()` fallback
+        // (lat = lon = alt = 0) is geographically indistinguishable
+        // from "vehicle off the coast of Africa", so downstream
+        // consumers reading the silent-default state cannot detect
+        // the misconfiguration. The planet entity must carry
+        // `PlanetFixedRotationC<P>` (the inertial→pfix rotation); the
+        // typical misconfiguration is pointing `GeodeticConfigC.planet`
+        // at a gravity-source entity spawned without a `rotation_model`
+        // (so `spawn_source` skipped the rotation insert), or at a
+        // non-planet entity entirely.
+        let rot = planets.get(config.planet).unwrap_or_else(|_| {
+            panic!(
+                "{entity:?} geodetic state: \
+                 GeodeticConfigC.planet = {planet_entity:?} does not resolve \
+                 to PlanetFixedRotationC<{p}>. Spawn the planet source with a \
+                 non-`None` `rotation_model` (or hand-insert \
+                 `PlanetFixedRotationC<{p}>` on the existing planet entity) and \
+                 point GeodeticConfigC.planet at it.",
+                planet_entity = config.planet,
+                p = std::any::type_name::<P>(),
+            )
+        });
         // Position is already typed `Position<PlanetInertial<P>>` —
         // matches the typed kernel's `P` directly, no relabel needed.
         // Geodetic stays in planet-inertial throughout (no integ-origin
@@ -172,8 +231,8 @@ pub fn geodetic_system<P: Planet>(
         geodetic.0 = astrodyn::compute_body_geodetic_typed::<P>(
             state.position,
             rot.0.matrix_ref(),
-            planet.r_eq.m(),
-            planet.r_pol.m(),
+            config.r_eq.m(),
+            config.r_pol.m(),
         );
     }
 }
@@ -189,6 +248,18 @@ pub fn geodetic_system<P: Planet>(
 /// instantiation registers a separate Sun-state component per planet.
 ///
 /// Placed in `AstrodynSet::DerivedState`.
+///
+/// # Panics
+///
+/// Panics when at least one body carries `SolarBetaC` but no
+/// `SunMarker` entity exists in the world. Silent
+/// `SolarBeta::default() = 0.0` fallback writes the
+/// geometrically-plausible "perfectly noon" value into every requesting
+/// body, which silently corrupts downstream consumers (thermal / power
+/// / pointing budgets). The diagnostic names the affected body and the
+/// two remediations (spawn a Sun source via `SunBundle`, or remove
+/// `SolarBetaC` from the body). Also panics on multiple `SunMarker`
+/// entities — JEOD assumes exactly one Sun. CLAUDE.md "Fail Loudly".
 #[allow(clippy::type_complexity)]
 pub fn solar_beta_system<P: Planet>(
     frame_origin: FrameOrigin,
@@ -196,6 +267,7 @@ pub fn solar_beta_system<P: Planet>(
     parents: Query<&ChildOf>,
     mut query: Query<
         (
+            Entity,
             &TranslationalStateC<P>,
             Option<&FrameEntityC>,
             &mut SolarBetaC,
@@ -207,9 +279,30 @@ pub fn solar_beta_system<P: Planet>(
     let sun_state = match sun_query.single() {
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
-            // No SunMarker present: clear stale solar beta values
-            for (_, _, mut beta) in &mut query {
-                beta.0 = Default::default();
+            // JEOD_INV: IN.09 — surface a missing `SunMarker` as a
+            // per-cause panic naming the affected body and the wiring
+            // fix rather than silently writing `SolarBeta = 0.0` into
+            // every body's `SolarBetaC`. The previous fallback gave
+            // every body the "perfectly-noon" solar-beta value, which
+            // is geometrically plausible (β ∈ [-90°, 90°] includes 0)
+            // and silently corrupts downstream consumers (thermal /
+            // power / pointing budgets). When no body carries
+            // `SolarBetaC` the query is empty and the system is a
+            // no-op — the panic fires only when a body is configured
+            // to read solar beta and the scenario is missing its Sun
+            // source. The startup `validation` pass enforces this
+            // invariant on `Added<GravityControlsC>` bodies; this
+            // per-step guard catches bodies that bypass that path
+            // (e.g. a body with `SolarBetaC` but no `GravityControlsC`,
+            // or a `SolarBetaC` inserted after the body's spawn tick).
+            if let Some((entity, _, _, _)) = query.iter().next() {
+                panic!(
+                    "{entity:?} solar beta: no SunMarker entity exists in the World, \
+                     but {entity:?} carries SolarBetaC. Spawn a Sun source body via \
+                     SunBundle (which inserts SunMarker + TranslationalStateC and \
+                     registers the body in the source frame tree), or remove \
+                     SolarBetaC from {entity:?}."
+                );
             }
             return;
         }
@@ -220,7 +313,7 @@ pub fn solar_beta_system<P: Planet>(
             );
         }
     };
-    for (state, body_frame, mut beta) in &mut query {
+    for (_entity, state, body_frame, mut beta) in &mut query {
         // Solar beta is a root-inertial-shift consumer (RF.10): the
         // kernel mixes the body state with the Sun position in
         // absolute root-inertial coordinates. For non-root-integrated
@@ -270,10 +363,24 @@ mod tests {
     //! same panic site, and the test pins the message shape so any
     //! future kernel change that exposes the variant surfaces a
     //! diagnostic the caller can act on.
+    //!
+    //! Three additional wiring-miss regressions cover the sibling
+    //! silent-Default fallbacks retired in this module:
+    //!
+    //! - `orbital_gravity_source_lookup_miss_panics_with_caller_fix` —
+    //!   `OrbitalElementsConfigC.gravity_source` resolves to an entity
+    //!   that lacks `GravitySourceC`.
+    //! - `geodetic_planet_lookup_miss_panics_with_caller_fix` —
+    //!   `GeodeticConfigC.planet` resolves to an entity that lacks
+    //!   `PlanetFixedRotationC<P>`.
+    //! - `solar_beta_missing_sun_marker_panics_with_caller_fix` — a
+    //!   body carries `SolarBetaC` but the World has no `SunMarker`
+    //!   entity.
 
     use super::*;
     use crate::components::{
-        GravitySourceC, OrbitalElementsC, OrbitalElementsConfigC, TranslationalStateC,
+        GeodeticConfigC, GeodeticStateC, GravitySourceC, OrbitalElementsC, OrbitalElementsConfigC,
+        SolarBetaC, TranslationalStateC,
     };
     use astrodyn::{Earth, GravityModel, GravitySource, TranslationalState};
     use glam::DVec3;
@@ -360,5 +467,151 @@ mod tests {
         let mut app = add_test_app();
         let entity = app.world_mut().spawn_empty().id();
         panic_for_orbital_error(entity, OrbitalError::KeplerConvergence(1234));
+    }
+
+    /// `OrbitalElementsConfigC.gravity_source` pointed at an entity
+    /// without `GravitySourceC` previously wrote
+    /// `OrbitalElements::default()` (a = e = i = 0) into the body and
+    /// continued, leaving downstream consumers unable to distinguish
+    /// "wiring broken" from "geometrically-impossible orbit". The
+    /// system now panics naming the failing entity and the missing
+    /// `GravitySourceC` so the caller can fix the wiring at spawn
+    /// time. The bait entity here is a bare `spawn_empty()` — the
+    /// minimal misconfiguration shape, which is the most common
+    /// real-world failure mode (the caller spawned a planet entity
+    /// before the bundle that inserts `GravitySourceC` ran).
+    #[test]
+    #[should_panic(expected = "does not resolve to a GravitySourceC component")]
+    fn orbital_gravity_source_lookup_miss_panics_with_caller_fix() {
+        let mut app = add_test_app();
+        let bad_source = app.world_mut().spawn_empty().id();
+        app.world_mut().spawn((
+            TranslationalStateC::<Earth>::from_untyped(TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            }),
+            OrbitalElementsConfigC {
+                gravity_source: bad_source,
+            },
+            OrbitalElementsC::<Earth>::default(),
+        ));
+        app.add_systems(Update, orbital_elements_system::<Earth>);
+        app.update();
+    }
+
+    /// `GeodeticConfigC.planet` pointed at an entity without
+    /// `PlanetFixedRotationC<P>` previously wrote
+    /// `GeodeticState::default()` (lat = lon = alt = 0 — the Gulf of
+    /// Guinea) into the body and continued. The system now panics
+    /// naming the failing entity and the missing component, so the
+    /// caller can fix the wiring at spawn time. The bait entity is a
+    /// bare `spawn_empty()` (no `PlanetFixedRotationC`), the minimal
+    /// misconfiguration shape.
+    #[test]
+    #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
+    fn geodetic_planet_lookup_miss_panics_with_caller_fix() {
+        let mut app = add_test_app();
+        let bad_planet = app.world_mut().spawn_empty().id();
+        app.world_mut().spawn((
+            TranslationalStateC::<Earth>::from_untyped(TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            }),
+            GeodeticConfigC {
+                planet: bad_planet,
+                r_eq: astrodyn::EARTH.shape.r_eq,
+                r_pol: astrodyn::EARTH.shape.r_pol,
+            },
+            GeodeticStateC::default(),
+        ));
+        app.add_systems(Update, geodetic_system::<Earth>);
+        app.update();
+    }
+
+    /// A body carrying `SolarBetaC` in a world with no `SunMarker`
+    /// entity previously had `SolarBeta::default() = 0.0` written to
+    /// every step — the geometrically-plausible "perfectly noon"
+    /// value that silently corrupts thermal / power / pointing
+    /// budgets. The system now panics naming the affected body and
+    /// the two remediations (spawn a Sun via `SunBundle`, or remove
+    /// `SolarBetaC` from the body). The `RootFrameEntityR` resource
+    /// is required by the system's signature but the panic fires
+    /// before any frame-tree access, so a placeholder entity
+    /// (no `FrameTransC` / `FrameRotC` / `FrameAngVelC`) suffices.
+    #[test]
+    #[should_panic(expected = "no SunMarker entity exists in the World")]
+    fn solar_beta_missing_sun_marker_panics_with_caller_fix() {
+        let mut app = add_test_app();
+        let root_frame_e = app.world_mut().spawn_empty().id();
+        app.insert_resource(crate::RootFrameEntityR(root_frame_e));
+        app.world_mut().spawn((
+            TranslationalStateC::<Earth>::from_untyped(TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            }),
+            SolarBetaC::default(),
+        ));
+        // Deliberately no SunMarker / SunBundle in the world; the
+        // `Without<SunMarker>` body still appears in the system's
+        // query, and the missing-Sun branch panics naming it.
+        app.add_systems(Update, solar_beta_system::<Earth>);
+        app.update();
+    }
+
+    /// Regression for the `populate_app`-shape geodetic scenario
+    /// (e.g. the SIM_NED Tier 3 family) that previously panicked
+    /// at the geodetic site because the gravity-source entity was
+    /// spawned with `PlanetFixedRotationC<P>` (from the source's
+    /// `rotation_model`) but **without** `PlanetC` (the source
+    /// doesn't carry planet shape — `mu` only). The geodetic
+    /// system now reads ellipsoid radii from `GeodeticConfigC`
+    /// directly, mirroring the runner's
+    /// `body.geodetic_planet: (idx, r_eq, r_pol)` shape, so this
+    /// arrangement runs without a `PlanetC` on the planet entity.
+    /// One tick is enough to drive the system; the assertion is
+    /// just "does not panic and writes a non-default altitude".
+    #[test]
+    fn geodetic_system_runs_when_planet_entity_has_rotation_but_no_planet_shape() {
+        use crate::components::{GeodeticConfigC, GeodeticStateC, PlanetFixedRotationC};
+        use astrodyn::{FrameTransform, EARTH};
+
+        let mut app = add_test_app();
+        // Planet entity carries `PlanetFixedRotationC<P>` (what
+        // `spawn_source` inserts when `rotation_model != None`) but
+        // *not* `PlanetC` (what `PlanetBundle::from_config` inserts).
+        let planet = app
+            .world_mut()
+            .spawn(PlanetFixedRotationC::<Earth>(FrameTransform::from_matrix(
+                glam::DMat3::IDENTITY,
+            )))
+            .id();
+        let vehicle = app
+            .world_mut()
+            .spawn((
+                TranslationalStateC::<Earth>::from_untyped(TranslationalState {
+                    position: DVec3::new(EARTH.shape.r_eq + 400_000.0, 0.0, 0.0),
+                    velocity: DVec3::new(0.0, 7500.0, 0.0),
+                }),
+                GeodeticConfigC {
+                    planet,
+                    r_eq: EARTH.shape.r_eq,
+                    r_pol: EARTH.shape.r_pol,
+                },
+                GeodeticStateC::default(),
+            ))
+            .id();
+        app.add_systems(Update, geodetic_system::<Earth>);
+        app.update();
+
+        let geo = app
+            .world()
+            .get::<GeodeticStateC>(vehicle)
+            .expect("GeodeticStateC must remain after one tick")
+            .0;
+        assert!(
+            geo.altitude > 1.0e5,
+            "geodetic altitude = {} m — expected ~4e5 m, indicating the kernel ran",
+            geo.altitude,
+        );
     }
 }

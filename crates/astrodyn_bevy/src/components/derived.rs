@@ -33,16 +33,25 @@ pub struct EulerAnglesConfigC {
 
 /// Configuration for geodetic state computation.
 ///
-/// The `planet` entity is queried for `PlanetFixedRotationC` and `PlanetC`
-/// to obtain the rotation matrix and ellipsoid radii.
-/// Presence of this component + `GeodeticStateC` on an entity enables
-/// per-step geodetic computation in `AstrodynSet::DerivedState`.
+/// The `planet` entity is queried for `PlanetFixedRotationC<P>` to obtain
+/// the inertial→planet-fixed rotation each step; the ellipsoid radii
+/// `r_eq` / `r_pol` are carried directly on this config (mirroring the
+/// runner's `body.geodetic_planet: (idx, r_eq, r_pol)` shape) so a
+/// scenario whose source entity does not carry the planet shape — e.g.
+/// the `SimulationBuilder::populate_app` path, which inserts only the
+/// gravity/rotation components on the source — can still drive
+/// geodetic computation. Presence of this component + `GeodeticStateC`
+/// on an entity enables per-step geodetic computation in
+/// `AstrodynSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
-    /// Planet entity supplying ellipsoid radii (`PlanetC`) and
-    /// `T_inertial→pfix` (`PlanetFixedRotationC`).
+    /// Planet entity supplying `T_inertial→pfix` (`PlanetFixedRotationC<P>`).
     pub planet: Entity,
+    /// Equatorial radius of the reference ellipsoid (m).
+    pub r_eq: f64,
+    /// Polar radius of the reference ellipsoid (m).
+    pub r_pol: f64,
 }
 
 // ── Derived State Outputs ──

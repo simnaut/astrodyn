@@ -1378,15 +1378,15 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
         if let Some(geo) = geodetic {
             // `GeodeticConfig.source_idx` indexes the gravity-source
             // table; `GeodeticConfigC.planet` is the matching ECS
-            // `Entity`. The geodetic kernel reads `PlanetC` (radii) and
-            // `PlanetFixedRotationC` from that entity, so it must be a
-            // gravity source registered with planet-shape and rotation
-            // data — same precondition the runner asserts. The radii
-            // already inside `geo` (`r_eq`, `r_pol`) duplicate what the
-            // planet entity exposes through `PlanetC`; `geodetic_system`
-            // reads the entity's `PlanetC` rather than the config copy,
-            // so the duplication is harmless but the entity must carry
-            // them.
+            // `Entity`. The geodetic kernel reads `PlanetFixedRotationC`
+            // (the per-step inertial→pfix rotation) from that entity
+            // and the ellipsoid radii (`r_eq` / `r_pol`) from the
+            // config itself — same arrangement as the runner's
+            // `body.geodetic_planet: (idx, r_eq, r_pol)` shape — so
+            // sources spawned without a `PlanetC` component (e.g. the
+            // `populate_app` path, which inserts shape data only on
+            // planets that need it) can still drive geodetic without
+            // a separate planet-shape carrier on the source entity.
             let src = resolve_source_entity(
                 source_entities,
                 geo.source_idx,
@@ -1394,7 +1394,11 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             );
             entity.insert((
                 components::GeodeticStateC::default(),
-                components::GeodeticConfigC { planet: src },
+                components::GeodeticConfigC {
+                    planet: src,
+                    r_eq: geo.r_eq,
+                    r_pol: geo.r_pol,
+                },
             ));
         }
         if solar_beta {
