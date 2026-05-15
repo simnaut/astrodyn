@@ -78,8 +78,8 @@ const POST_INVERSE_IDENTITY_TOL: f64 = 1e-6;
 /// under multiplication — i.e. `I · I⁻¹ ≈ I_{3×3}`.
 ///
 /// Used by every site that recomputes `inverse_inertia` from `inertia`
-/// — both untyped and typed `with_inertia`/`recompute_derived` —
-/// so all four entry points apply the same singularity check.
+/// — both untyped and typed `new`/`with_inertia`/`recompute_derived`
+/// — so all six entry points apply the same singularity check.
 ///
 /// The check is **scale-invariant**: instead of comparing the
 /// determinant against an absolute threshold (which rejects
@@ -224,10 +224,12 @@ impl MassProperties {
     ///
     /// `inverse_inertia` is computed via the general 3×3 inverse
     /// (`(I·m).inverse()`) rather than the element-wise reciprocal
-    /// (`I/m`). This is the same formula [`Self::with_inertia`] and
-    /// [`Self::recompute_derived`] use, so all three sites agree
-    /// byte-for-byte — sub-ULP divergence between constructors integrates
-    /// to multi-kilometre drift on long-arc rotational-dynamics runs.
+    /// (`I/m`). This is the same formula [`Self::with_inertia`],
+    /// [`Self::recompute_derived`], and the three sibling entry points
+    /// on [`MassPropertiesTyped`] use, so all six construction paths
+    /// agree byte-for-byte — sub-ULP divergence between constructors
+    /// integrates to multi-kilometre drift on long-arc
+    /// rotational-dynamics runs.
     ///
     /// # Panics
     /// Panics if `mass` is `NaN`, infinite, zero, negative, or outside

@@ -149,15 +149,26 @@ mod tests {
     use glam::DMat3;
 
     /// Bit-exact comparison for `DMat3`. `f64 ==` compares **values**,
-    /// not bit patterns: `0.0 == -0.0` (different bits, equal value) and
-    /// `NaN != NaN` (same bits, unequal value). Either case lets a
-    /// regression sneak through the byte-identity assertions below — a
-    /// raw→typed bridge that silently rebuilt a `+0.0` lane as `-0.0`,
-    /// or replaced a deterministic `NaN` with another `NaN`, would pass
-    /// a `==` check while still corrupting the lowest-mantissa-bit
-    /// agreement that integrates to multi-kilometre position drift on
-    /// long-arc rotational runs. Compare each lane's underlying bit
-    /// pattern via `f64::to_bits` to assert byte identity.
+    /// not bit patterns, which fails the byte-identity check we want
+    /// here in two opposite directions:
+    ///
+    /// 1. **Signed-zero false negatives.** `0.0 == -0.0` is `true`
+    ///    despite the two values having distinct bit patterns. A
+    ///    raw→typed bridge that silently rebuilt a `+0.0` lane as
+    ///    `-0.0` would pass a `==` check while still corrupting the
+    ///    lowest-mantissa-bit agreement that integrates to
+    ///    multi-kilometre position drift on long-arc rotational runs.
+    /// 2. **NaN false positives.** `NaN != NaN` is `true` *even when
+    ///    the two operands share an identical bit pattern* (NaN
+    ///    compares unequal to itself by IEEE-754 rule). A bridge that
+    ///    faithfully propagated a deterministic NaN lane through to
+    ///    the typed sibling would *fail* an `==` check despite being
+    ///    byte-identical — the very property we are asserting.
+    ///
+    /// Comparing each lane's underlying bit pattern via `f64::to_bits`
+    /// resolves both: `(+0.0).to_bits() != (-0.0).to_bits()` rejects
+    /// the silent signed-zero rewrite, and matching NaN payloads
+    /// compare equal because integer equality is reflexive.
     fn dmat3_byte_eq(a: DMat3, b: DMat3) -> bool {
         a.to_cols_array()
             .iter()
@@ -202,6 +213,8 @@ mod tests {
     /// struct-level `PartialEq`.
     #[test]
     fn point_mass_inverse_inertia_matches_across_construction_paths() {
+        use glam::DVec3;
+
         let a = MassPropertiesTyped::<SelfRef>::new(Mass::new::<kilogram>(424.0));
         let b = mass_raw_to_self_ref(&MassProperties::new(424.0));
         // Cache fields — the primary regression class. Compare via
@@ -244,6 +257,66 @@ mod tests {
         assert_eq!(
             MassPropertiesTyped::<SelfRef>::to_untyped(&a),
             MassPropertiesTyped::<SelfRef>::to_untyped(&b),
+        );
+
+        // Stale-cache fence. The `a == b` comparison above is
+        // self-consistent on both sides — every cache equals
+        // `1/mass`/`inertia.inverse()` of the corresponding structural
+        // field, so a degenerate bridge that *copied* the raw cache
+        // fields and merely flipped `dirty = false` (skipping
+        // `with_inertia`'s recompute entirely) would still pass it.
+        // To prove the recompute genuinely runs, build a raw input
+        // whose `inverse_mass`/`inverse_inertia` are *deliberately
+        // wrong* and assert the typed sibling emerges with the
+        // structurally-correct values (`1/mass` and `inertia⁻¹`),
+        // *not* the stale cache. The structural inputs match the
+        // canonical `MassProperties::new(424.0)` form so we can name
+        // the expected re-derived cache directly.
+        let mass_kg = 424.0_f64;
+        let canonical_inertia = DMat3::IDENTITY * mass_kg;
+        let raw_with_stale_cache = MassProperties {
+            mass: mass_kg,
+            // Stale: structurally consistent value would be `1/424.0`.
+            inverse_mass: 999.0,
+            inertia: canonical_inertia,
+            // Stale: structurally consistent value would be
+            // `canonical_inertia.inverse()`. Use a marker the asserts
+            // below can distinguish from the truth.
+            inverse_inertia: DMat3::from_diagonal(DVec3::new(999.0, 999.0, 999.0)),
+            position: DVec3::ZERO,
+            t_parent_this: DMat3::IDENTITY,
+            // Mark dirty so a bridge that "honours" the raw flag would
+            // not be tempted to skip work.
+            dirty: true,
+        };
+        let c = mass_raw_to_self_ref(&raw_with_stale_cache);
+        // The stale `inverse_mass = 999.0` must be discarded; the
+        // typed sibling must carry the re-derived `1/mass`. Compare to
+        // the canonical sibling `a` (built via the typed `new`
+        // constructor) — bit-identity here proves the bridge ran the
+        // same general 3×3 inverse formula, not a copy.
+        assert_eq!(
+            c.inverse_mass.to_bits(),
+            a.inverse_mass.to_bits(),
+            "raw→typed bridge must recompute inverse_mass from mass; \
+             stale raw cache (999.0) leaked through into the typed \
+             sibling instead of being replaced by 1/mass"
+        );
+        assert!(
+            dmat3_byte_eq(c.inverse_inertia, a.inverse_inertia),
+            "raw→typed bridge must recompute inverse_inertia from \
+             inertia; stale raw cache leaked through into the typed \
+             sibling. expected={:?} got={:?}",
+            a.inverse_inertia,
+            c.inverse_inertia,
+        );
+        // And the canonicalisation of `dirty: true → false` rounds out
+        // the contract — confirms the bridge actually executed
+        // `with_inertia`, which always emits a clean cache.
+        assert!(
+            !c.dirty,
+            "raw→typed bridge must canonicalise dirty to false \
+             regardless of the raw input's flag; got dirty=true"
         );
     }
 
