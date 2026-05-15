@@ -1,30 +1,29 @@
-//! Regression tests pinning the panic-on-detection contract of
+//! Regression tests pinning the warning-class / fatal-class split of
 //! `validate_jeod_invariants` for `astrodyn::validate_body` errors.
 //!
-//! Before this conversion the validator emitted `bevy::log::warn!()` for
-//! the `is_warning()`-classified `ValidationError::UninitializedState`
-//! variant and the entity continued through the integration pipeline.
-//! Per the project's "Fail Loudly" non-negotiable (`CLAUDE.md`), every
-//! `ValidationError` returned by `astrodyn::validate_body` is now a
-//! hard gate: it panics with a diagnostic that names the offending
-//! entity, the specific failure, and how to fix the call site.
-//!
-//! The separate RF.10 non-root + root-dependent features check inside
-//! `validate_jeod_invariants` deliberately stays as `warn!`
-//! (FAIL_LOUD_EXEMPT) — the configuration is supported when the caller
-//! applies the per-step `IntegOrigin` shift at every shift site.
+//! Per the project's "Fail Loudly" non-negotiable (`CLAUDE.md`),
+//! fatal-class `ValidationError`s are a hard gate: the validator
+//! panics with a diagnostic that names the offending entity, the
+//! specific failure, and how to fix the call site.
+//! `ValidationError::is_warning()`-class failures
+//! (`UninitializedState`, `NonRootFrameWithRootDependentFeatures`)
+//! emit `bevy::log::warn!()` instead — they flag suspicious-but-valid
+//! configurations and let the entity continue.
 //!
 //! Coverage:
 //!
-//! 1. `validate_jeod_invariants_panics_on_uninitialized_translational_state`
-//!    pins the panic for a body spawned with zero `TranslationalStateC`
-//!    (the `is_likely_uninitialized` path in `astrodyn::validate_body`).
-//! 2. `validate_jeod_invariants_panics_on_rotational_without_mass` pins
-//!    a representative fatal-class panic so we verify the unified
-//!    `"fails component validation"` diagnostic prefix is shared by both
-//!    the fatal-class and warning-class paths.
+//! 1. `validate_jeod_invariants_panics_on_rotational_without_mass`
+//!    pins the fatal-class panic shape (`RotationalWithoutMass`) and
+//!    proves the `"fails component validation"` diagnostic prefix is
+//!    emitted for fatal-class errors. The body carries a default
+//!    `RotationalStateC` so the only error is the
+//!    mass-related one (precise regression against a single failure).
+//! 2. `validate_jeod_invariants_warns_on_uninitialized_translational_state`
+//!    pins the warning-class path: a body spawned with zero
+//!    `TranslationalStateC` (`is_likely_uninitialized`) must *not*
+//!    panic — the validator warns and lets the entity continue.
 //!
-//! Each test drives a single `FixedUpdate` tick inside
+//! The fatal-class test drives a single `FixedUpdate` tick inside
 //! `std::panic::catch_unwind` and asserts the panic payload contains
 //! both the "fails component validation" prefix and a substring
 //! distinguishing the specific failure. The Bevy scheduler runs
@@ -32,6 +31,9 @@
 //! threads downstream of the validation panic — `catch_unwind` lets
 //! us inspect the actual validator panic instead of whichever payload
 //! Bevy's parallel executor happens to surface to the main thread last.
+//!
+//! The warning-class test asserts that the same `FixedUpdate` tick
+//! completes without panicking.
 
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
@@ -42,7 +44,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, GravityAccelerationC, GravityControlsC, IntegrationDtR,
-    MassPropertiesC, PlanetBundle, TranslationalStateC,
+    MassPropertiesC, PlanetBundle, RotationalStateC, TranslationalStateC,
 };
 use bevy::ecs::schedule::ExecutorKind;
 use bevy::prelude::*;
@@ -107,25 +109,88 @@ fn collect_first_panic(app: &mut App) -> String {
         .unwrap_or_else(|| "<non-string panic payload>".to_string())
 }
 
-/// A body with `TranslationalStateC<Earth>` left at all-zero
-/// position/velocity is misconfigured — the integrator would treat the
-/// origin as a valid initial condition and silently propagate from
-/// (0, 0, 0). `astrodyn::validate_body` reports this as
-/// `ValidationError::UninitializedState`, which is the canonical
-/// warning-class error the previous `warn!()` path swallowed.
+/// `rotational_dynamics=true` without a `MassPropertiesC` is a
+/// fatal-class `ValidationError::RotationalWithoutMass`. Pinning the
+/// `"fails component validation"` diagnostic prefix proves the
+/// fatal-class path panics.
+///
+/// The body carries a default `RotationalStateC` so the only
+/// `ValidationError` raised is `RotationalWithoutMass` — without it,
+/// `validate_body` would also report `RotationalWithoutRotState` and
+/// the assertion below could not distinguish which failure surfaced
+/// the panic. Adding the rotational-state component makes the
+/// regression precise to the mass-related diagnostic.
 #[test]
-fn validate_jeod_invariants_panics_on_uninitialized_translational_state() {
+fn validate_jeod_invariants_panics_on_rotational_without_mass() {
     let mut app = build_minimal_app();
     let earth = app
         .world_mut()
         .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
         .id();
 
-    // Spawn a body whose `TranslationalStateC<Earth>` is zero — that's
-    // the trip wire `is_likely_uninitialized` catches inside
-    // `astrodyn::validate_body`.
+    // 6-DOF body without `MassPropertiesC` — `validate_body` reports
+    // `RotationalWithoutMass` (a fatal-class error). `RotationalStateC`
+    // is present (default) so `RotationalWithoutRotState` is *not*
+    // raised, narrowing the failure set to one entry.
     app.world_mut().spawn((
-        Name::new("Bogus"),
+        Name::new("MisconfiguredSixDof"),
+        TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<PlanetInertial<Earth>>(),
+            velocity: DVec3::new(0.0, 7_000.0, 0.0).m_per_s_at::<PlanetInertial<Earth>>(),
+        }),
+        RotationalStateC::default(),
+        DynamicsConfigC(DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        }),
+        GravityAccelerationC::default(),
+        GravityControlsC(GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        }),
+    ));
+
+    // Run Startup so frame-tree registration completes before
+    // `Added<GravityControlsC>` fires the validator on `FixedUpdate`.
+    app.world_mut().run_schedule(Startup);
+
+    let msg = collect_first_panic(&mut app);
+    assert!(
+        msg.contains("fails component validation"),
+        "panic message did not name the validation surface: {msg}"
+    );
+    assert!(
+        msg.contains("rotational_dynamics") || msg.contains("RotationalState"),
+        "panic message did not name the rotational-without-mass diagnostic: {msg}"
+    );
+}
+
+/// A body with `TranslationalStateC<Earth>` left at all-zero
+/// position/velocity trips the `is_likely_uninitialized` heuristic
+/// inside `astrodyn::validate_body`, producing
+/// `ValidationError::UninitializedState`. That variant is classified
+/// as warning-class (`is_warning() == true`) because the origin can
+/// be a legitimate initial condition; the Bevy adapter therefore
+/// emits `bevy::log::warn!()` and lets the entity continue rather
+/// than panicking inside the validator.
+///
+/// Downstream systems on the same tick (e.g. `gravity_computation`)
+/// may still panic on a body sitting at the gravity source center —
+/// that's a different invariant, surfaced by a different site. This
+/// regression test asserts only that *the validator itself* does not
+/// produce its `"fails component validation"` panic for the
+/// warning-class error: if the FixedUpdate tick panics, the panic
+/// payload must not be the validator's diagnostic.
+#[test]
+fn validate_jeod_invariants_warns_on_uninitialized_translational_state() {
+    let mut app = build_minimal_app();
+    let earth = app
+        .world_mut()
+        .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
+        .id();
+
+    app.world_mut().spawn((
+        Name::new("ZeroState"),
         TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
             position: DVec3::ZERO.m_at::<PlanetInertial<Earth>>(),
             velocity: DVec3::ZERO.m_per_s_at::<PlanetInertial<Earth>>(),
@@ -152,61 +217,26 @@ fn validate_jeod_invariants_panics_on_uninitialized_translational_state() {
     // `Added<GravityControlsC>` fires the validator on `FixedUpdate`.
     app.world_mut().run_schedule(Startup);
 
-    let msg = collect_first_panic(&mut app);
-    assert!(
-        msg.contains("fails component validation"),
-        "panic message did not name the validation surface: {msg}"
-    );
-    assert!(
-        msg.contains("uninitialized") || msg.contains("Translational state"),
-        "panic message did not name the UninitializedState diagnostic: {msg}"
-    );
-}
-
-/// `rotational_dynamics=true` without a `MassPropertiesC` is a
-/// fatal-class `ValidationError::RotationalWithoutMass`. The same
-/// panic-on-detection contract that catches the warning-class cases
-/// should also fire here — pinning the unified `"fails component
-/// validation"` diagnostic prefix proves both fatal and warning-class
-/// errors share the same caller-facing message.
-#[test]
-fn validate_jeod_invariants_panics_on_rotational_without_mass() {
-    let mut app = build_minimal_app();
-    let earth = app
-        .world_mut()
-        .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
-        .id();
-
-    // 6-DOF body without `MassPropertiesC` — `validate_body` reports
-    // `RotationalWithoutMass` (a fatal-class error).
-    app.world_mut().spawn((
-        Name::new("MisconfiguredSixDof"),
-        TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
-            position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<PlanetInertial<Earth>>(),
-            velocity: DVec3::new(0.0, 7_000.0, 0.0).m_per_s_at::<PlanetInertial<Earth>>(),
-        }),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        }),
-        GravityAccelerationC::default(),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
-        }),
-    ));
-
-    // Run Startup so frame-tree registration completes before
-    // `Added<GravityControlsC>` fires the validator on `FixedUpdate`.
-    app.world_mut().run_schedule(Startup);
-
-    let msg = collect_first_panic(&mut app);
-    assert!(
-        msg.contains("fails component validation"),
-        "panic message did not name the validation surface: {msg}"
-    );
-    assert!(
-        msg.contains("rotational_dynamics") || msg.contains("RotationalState"),
-        "panic message did not name the rotational-without-mass diagnostic: {msg}"
-    );
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }));
+    if let Err(payload) = result {
+        let msg = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| {
+                payload
+                    .downcast_ref::<&'static str>()
+                    .map(|s| (*s).to_string())
+            })
+            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+        assert!(
+            !msg.contains("fails component validation"),
+            "warning-class UninitializedState must not be raised by the \
+             validator as a fatal panic — got: {msg}"
+        );
+    }
 }

@@ -112,27 +112,37 @@ pub(crate) fn is_root_equivalent_entity(
 /// Delegates per-body checks to [`astrodyn::validate_body`] and applies
 /// gravity control auto-corrections via `check_validity()`.
 ///
-/// Per-body `astrodyn::validate_body` errors (including the
-/// warning-class `UninitializedState`) are a hard gate: every detected
-/// `ValidationError` panics on detection rather than logging and
-/// continuing. The construction-time error-return path from
-/// `VehicleConfig::spawn_bevy` is the future-preferred surface for
-/// surfacing these failures synchronously; until that refactor lands,
-/// the panic-on-detection here is the fail-loudly guarantee that
-/// misconfigured entities cannot propagate through the integration
-/// pipeline.
+/// Per-body `astrodyn::validate_body` errors are split by
+/// `ValidationError::is_warning()`:
+///
+/// * Fatal-class errors (e.g. `RotationalWithoutMass`,
+///   `MissingGravityAcceleration`, `GravitySourceMissing`,
+///   `ThreeDofWithRotational`, `InertiaInconsistent`,
+///   `PlateTemperatureLengthMismatch`) panic on detection — these
+///   describe a body that cannot integrate at all and would otherwise
+///   propagate silently-wrong physics. Construction-time error return
+///   from `VehicleConfig::spawn_bevy` is the future-preferred surface;
+///   until that refactor lands, the Bevy-side validator panics on
+///   detection so the misconfiguration surfaces at the first
+///   validation tick.
+/// * Warning-class errors (`UninitializedState`,
+///   `NonRootFrameWithRootDependentFeatures`) emit
+///   `bevy::log::warn!()` and let the entity continue. These flag
+///   suspicious-but-valid configurations: zero translational state may
+///   be the intended initial condition, and non-root integration with
+///   root-dependent features is supported when the caller applies the
+///   per-step `IntegOrigin` shift at every shift site.
 ///
 /// The separate RF.10 non-root + root-dependent features check below
-/// stays as `warn!` (FAIL_LOUD_EXEMPT) because the configuration is
-/// supported when the caller applies the per-step `IntegOrigin` shift
-/// at every shift site — see the inline rationale at that site.
+/// stays as `warn!` (FAIL_LOUD_EXEMPT) — see the inline rationale at
+/// that site.
 ///
 /// # Panics
 /// Panics with a descriptive `Entity {entity:?} fails component
-/// validation: ...` message for any violated `ValidationError`. The
+/// validation: ...` message for any fatal-class `ValidationError`. The
 /// message names the offending entity, the specific failure, and how
 /// to fix the call site (which component to spawn, which frame to
-/// integrate in, etc.).
+/// integrate in, etc.). Warning-class errors do not panic.
 // JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn validate_jeod_invariants<P: Planet>(
@@ -316,39 +326,65 @@ pub fn validate_jeod_invariants<P: Planet>(
             plate_counts,
         );
 
-        // Per the project's "Fail Loudly" non-negotiable, any
-        // `ValidationError` returned by `astrodyn::validate_body` is a
-        // hard gate: a body whose component set fails an invariant
-        // check must not propagate through the integration pipeline
-        // under any classification (fatal or warning-class). Construction-
-        // time error return from `VehicleConfig::spawn_bevy` is the
-        // future-preferred surface — see the corresponding `# Panics`
-        // rustdoc on this system. Until that refactor lands, the
-        // Bevy-side validator panics on detection so the misconfiguration
-        // surfaces at the first validation tick rather than as silently
-        // wrong physics downstream.
+        // Split `astrodyn::validate_body` errors by
+        // `ValidationError::is_warning()`. Fatal-class errors panic on
+        // detection because they describe a body that cannot integrate
+        // at all (missing gravity acceleration storage, a 6-DOF body
+        // without mass, a degenerate inertia tensor, plate-temperature
+        // length mismatch, etc.) — propagating them would yield
+        // silently-wrong physics. Warning-class errors
+        // (`UninitializedState`, `NonRootFrameWithRootDependentFeatures`)
+        // flag suspicious-but-valid configurations and emit a Bevy
+        // log warning so the entity is allowed to continue.
+        // Construction-time error return from
+        // `VehicleConfig::spawn_bevy` is the future-preferred surface
+        // for fatal-class failures — see the `# Panics` rustdoc on
+        // this system.
         //
-        // JEOD_INV: DM.05 — partial; the underlying validator only flags the zero-translational-state heuristic, which the Bevy adapter then surfaces as a panic
-        // JEOD_INV: DB.11 — partial; same zero-state heuristic surfaced as a panic (no per-component `initialized_states` bitfield in our port)
+        // The bullet-list shape (leading newline + `  - `) keeps
+        // multi-error diagnostics readable when surfaced by Bevy's
+        // logger. The remediation tail is configuration-neutral —
+        // `validate_body` can fail for missing components
+        // (`MissingGravityAcceleration`, `RotationalWithoutMass`,
+        // `RotationalWithoutRotState`) *or* for inconsistent
+        // configurations on entities whose components are all present
+        // (`ThreeDofWithRotational`, `InertiaInconsistent`,
+        // `PlateTemperatureLengthMismatch`, `GravitySourceMissing`),
+        // so the message points at the misconfiguration list above
+        // rather than naming one specific remedy.
+        //
+        // JEOD_INV: DM.05 — partial; warning-class `UninitializedState` warns, fatal-class siblings panic
+        // JEOD_INV: DB.11 — partial; same warning-class/fatal-class split (no per-component `initialized_states` bitfield in our port)
         if !errors.is_empty() {
-            // Concatenate every detected `ValidationError` into the
-            // panic message so callers see the full failure set in one
-            // shot, not the first error followed by silent drop of the
-            // rest. The leading-newline + `  - ` indent shape is a
-            // pragmatic bullet-list format chosen so multi-error panics
-            // remain readable when surfaced by Bevy's logger.
-            let mut detail = String::new();
+            let mut warn_detail = String::new();
+            let mut fatal_detail = String::new();
             for error in &errors {
-                detail.push_str("\n  - ");
-                detail.push_str(&error.to_string());
+                if error.is_warning() {
+                    warn_detail.push_str("\n  - ");
+                    warn_detail.push_str(&error.to_string());
+                } else {
+                    fatal_detail.push_str("\n  - ");
+                    fatal_detail.push_str(&error.to_string());
+                }
             }
-            // The remediation tail is constructed via `format!` (instead
-            // of a multi-line raw literal with `\` continuations) so the
-            // runtime panic message has no risk of accidentally
-            // embedding source indentation if a maintainer forgets a
-            // continuation slash.
-            let remediation = "Validation is a hard gate — spawn the missing component(s) before adding the entity to the simulation.";
-            panic!("Entity {entity:?} fails component validation:{detail}\n{remediation}");
+            if !warn_detail.is_empty() {
+                // Mirror of `Simulation::validate`'s warning-class
+                // handling: `is_warning()` failures
+                // (`UninitializedState`,
+                // `NonRootFrameWithRootDependentFeatures`) may be
+                // intentional and must not panic — see the per-class
+                // rationale in `ValidationError::is_warning`'s docs.
+                // FAIL_LOUD_EXEMPT: operational report path for
+                // `is_warning()`-class `ValidationError` (no JEOD
+                // invariant counterpart).
+                bevy::log::warn!("Entity {entity:?} component validation warnings:{warn_detail}");
+            }
+            if !fatal_detail.is_empty() {
+                let remediation = "Validation is a hard gate — fix the misconfiguration named above and respawn the entity before adding it to the simulation.";
+                panic!(
+                    "Entity {entity:?} fails component validation:{fatal_detail}\n{remediation}"
+                );
+            }
         }
 
         // ── Frame-switch + non-root frame validation ──
