@@ -302,8 +302,8 @@ Our port wraps ANISE (`crates/astrodyn_ephemeris`, 243 lines: `ephemeris.rs` + `
 | IN.10 | RadiationSource.luminosity ≥ 1e-6 for flux computation | flag-gate | runtime | n/a (luminosity is a compile-time constant; `distance < 1.0` guard prevents division by near-zero) |
 | IN.11 | RadiationThirdBody.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.12 | RadiationSource.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
-| IN.13 | Shadow model: vehicle distance > 0 | error | runtime | enforced (`shadow.rs` returns 0.0 if r_mag2 <= 0) |
-| IN.14 | `d_source_to_third` > 0 | error | runtime | enforced (`shadow.rs` returns 1.0 if d <= 0) |
+| IN.13 | Shadow model: vehicle distance > 0 | error | runtime | partial (`shadow.rs` returns 0.0 if `r_mag2 <= 0` — JEOD errors here; we degrade gracefully to "total shadow" because the geometry kernel is stateless and the degenerate-coincident case can be expressed as a fractional-area-of-zero result rather than a fatal failure. IN.26 carries the same "partial" status for the equivalent JEOD-side check.) |
+| IN.14 | `d_source_to_third` > 0 | error | runtime | partial (`shadow.rs` returns 1.0 if `d_source_to_third <= 0` — JEOD errors; we degrade gracefully to "full sun" because a body and source that coincide cannot cast a shadow, so the geometrically-correct illumination fraction is unity rather than a fatal failure. Same rationale as IN.13.) |
 | IN.15 | Aero drag requires body orientation (T_inertial_struct) | structural (mandatory fn parameter) | runtime | enforced (`crates/astrodyn_bevy/src/systems/interaction.rs` — panics if AerodynamicForceC present without RotationalStateC) |
 | IN.16 | RadiationThirdBody requires inertial frame pointer | fatal | initialization | n/a (stateless function takes positions directly) |
 | IN.17 | RadiationSurface requires at least one facet (`num_facets > 0`) | fatal | initialization | deferred (caller passes plate slice; empty slice produces zero force) |

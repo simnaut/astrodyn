@@ -1629,4 +1629,49 @@ mod tests {
         }));
         assert!(result.is_err(), "inactive ground facet should panic");
     }
+
+    /// `compute_ground_contact_geometry` asserts the ground facet is
+    /// active. Sibling of `ground_facet_inactive_panics` above, recast
+    /// as a `#[should_panic]` test so the negative-test scanner picks
+    /// up the row.
+    #[test]
+    #[should_panic(expected = "ground_facet must be active")]
+    fn in_35_panics_on_inactive_ground_facet_at_compute() {
+        // JEOD_INV: IN.35 — inactive GroundFacet rejected at compute site
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
+        let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let mut ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
+        ground.active = false;
+        let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        let _ = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Phase::Initialization,
+        );
+    }
+
+    /// `GroundFacet::new` rejects non-finite `alt_offset`. A NaN/±inf
+    /// offset would propagate through the pfix-frame ground-point
+    /// comparison and produce undefined contact detection.
+    #[test]
+    #[should_panic(expected = "alt_offset must be finite")]
+    fn in_36_panics_on_nan_alt_offset() {
+        // JEOD_INV: IN.36 — GroundFacet.alt_offset must be finite
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
+        let _ = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), f64::NAN, mat);
+    }
+
+    /// `SphericalTerrain::new` rejects a zero or negative radius. A
+    /// non-positive radius collapses the ground point to the planet
+    /// center and yields a NaN normal.
+    #[test]
+    #[should_panic(expected = "radius must be finite and > 0")]
+    fn in_37_panics_on_zero_radius() {
+        // JEOD_INV: IN.37 — SphericalTerrain.radius > 0
+        let _ = SphericalTerrain::new(0.0);
+    }
 }

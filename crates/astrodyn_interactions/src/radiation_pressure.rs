@@ -1632,6 +1632,69 @@ mod tests {
         );
     }
 
+    /// `FlatPlate.area` must be > 0. JEOD's
+    /// `ThermalFacetRider::initialize` (`thermal_facet_rider.cc:129-136`)
+    /// errors on `surface_area <= 0`. We fold the check into the SRP
+    /// hot loop and panic on misconfiguration rather than computing
+    /// nonsensical force/torque. Drive with `illum_factor > 0` and
+    /// `flux_mag > 0` to clear the early return and reach the
+    /// per-plate assert.
+    #[test]
+    #[should_panic(expected = "FlatPlate.area must be > 0")]
+    fn in_33_panics_on_zero_plate_area_in_srp() {
+        // JEOD_INV: IN.33 — FlatPlate.area must be > 0
+        let plate = FlatPlate::<SelfRef> {
+            area: 0.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let _ = compute_flat_plate_srp(
+            &[(plate, params)],
+            DVec3::new(1.0, 0.0, 0.0),
+            1000.0,
+            DVec3::ZERO,
+            1.0,
+        );
+    }
+
+    /// `FlatPlateThermal.emissivity` must be > 0. Port of JEOD's
+    /// `thermal_facet_rider.cc:109-126` fatal-bound check. Drive
+    /// `compute_flat_plate_srp_thermal` with a positive area but zero
+    /// emissivity so the second assert in the same per-plate hot loop
+    /// fires.
+    #[test]
+    #[should_panic(expected = "FlatPlateThermal.emissivity must be > 0")]
+    fn in_33_panics_on_zero_emissivity_in_srp_thermal() {
+        // JEOD_INV: IN.33 — FlatPlateThermal.emissivity must be > 0
+        let plate = FlatPlate::<SelfRef> {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.0, // violates IN.33
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let t_pow4_cached = [270.0_f64.powi(4)];
+        let _ = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &t_pow4_cached,
+            DVec3::new(1.0, 0.0, 0.0),
+            1000.0,
+            DVec3::ZERO,
+            1.0,
+        );
+    }
+
     /// `FlatPlate::assert_vehicle::<W>()` is a zero-cost type-witness
     /// no-op when `V == W`. The negative branch (cross-vehicle
     /// mismatch) is covered by the method's `compile_fail` doctest;

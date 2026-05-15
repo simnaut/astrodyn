@@ -952,6 +952,96 @@ mod tests {
         sim.register_ground_contact_pair(0, veh, ground, 0);
     }
 
+    /// Contact pair bodies must be distinct (JEOD `unique_pair`
+    /// invariant in `contact.cc`). Hand the same body index for both
+    /// halves of the pair; the body-count and material-equality
+    /// checks both pass when `body_a == body_b` with one body
+    /// registered, so the next assert is the unique-pair one.
+    #[test]
+    #[should_panic(expected = "body A and body B must be distinct")]
+    fn in_30_panics_on_same_body_a_b() {
+        // JEOD_INV: IN.30 — contact pair bodies must be distinct
+        let mut sim = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate");
+        // Add a second body so the body-range asserts pass and we
+        // reach the `body_a != body_b` check.
+        let extra = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate")
+            .bodies
+            .remove(0);
+        sim.bodies.push(extra);
+        let mat = dummy_material();
+        let facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        // Same index on both sides → unique_pair violation.
+        sim.register_contact_pair(0, facet, 0, facet);
+    }
+
+    /// The contact-coupled integration path requires RK4 on every
+    /// body in the sim because contact forces are recomputed at each
+    /// stage from the intermediate states — and only RK4's stage
+    /// pattern is supported. Swap one body's integrator to a
+    /// non-RK4 type after registering a contact pair, then `step()`
+    /// to drive the assertion.
+    #[test]
+    #[should_panic(expected = "contact-coupled path")]
+    fn in_31_panics_on_non_rk4_body_in_contact_coupled_path() {
+        use astrodyn::IntegratorType;
+        // JEOD_INV: IN.31 — contact-coupled path requires RK4 on all bodies
+        let mut sim = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate");
+        // Need a second body so a contact pair is well-formed
+        // (`body_a != body_b`). Take another iss_leo_drag-built body
+        // and push it onto our existing sim's body list.
+        let extra = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate")
+            .bodies
+            .remove(0);
+        sim.bodies.push(extra);
+        let mat = dummy_material();
+        let facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        sim.register_contact_pair(0, facet, 1, facet);
+        // Switch body 0's integrator to a non-RK4 type so the
+        // coupled-path RK4 assertion fires on the first `step()`.
+        sim.bodies[0].integrator = IntegratorType::Rkf45;
+        // Single step is enough to enter `integrate_bodies_contact_coupled`.
+        let _ = sim.step();
+    }
+
+    /// Only active `GroundFacet`s may register. JEOD's
+    /// `check_contact_ground` silently skips inactive ground facets;
+    /// our Fail Loudly policy rejects them at registration so a
+    /// misconfigured surface model can't silently drop its
+    /// contribution.
+    #[test]
+    #[should_panic(expected = "ground_facet.active must be true")]
+    fn in_35_panics_on_inactive_ground_facet_at_registration() {
+        // JEOD_INV: IN.35 — only active GroundFacets may register
+        let mut sim = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate");
+        let mat = dummy_material();
+        let veh = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        // Bypass `GroundFacet::new` (which forces `active = true`)
+        // by direct field construction so we can drive the
+        // registration-site assertion.
+        let ground = GroundFacet {
+            terrain: Arc::new(SphericalTerrain::new(6_378_137.0)),
+            alt_offset: 0.0,
+            material: mat,
+            active: false,
+        };
+        sim.register_ground_contact_pair(0, veh, ground, 0);
+    }
+
     /// `set_body_rot` must mirror the new attitude / angular velocity
     /// onto the body's frame-tree node, in the same way
     /// `set_body_position` / `set_body_velocity` mirror their halves.
