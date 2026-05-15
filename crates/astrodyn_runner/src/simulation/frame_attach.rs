@@ -723,6 +723,24 @@ mod tests {
     #[test]
     #[should_panic(expected = "already frame-attached")]
     fn double_attach_panics() {
+        // JEOD_INV: DB.21 — only unattached bodies integrate
+        // (frame-attach gate). The assert at the head of
+        // `attach_to_frame` is the panic site that prevents a second
+        // attach from silently overwriting the first; without it, the
+        // body would be reported as integrating again under the new
+        // parent's offset while in fact the first parent's
+        // relationship had been lost.
+        // JEOD_INV: DB.13 — composite-body propagation is delegated to
+        // the parent frame for frame-attached bodies. The same assert
+        // protects this contract: re-issuing `attach_to_frame` without
+        // a paired detach would replace the parent-frame source
+        // without resetting the propagation pipeline, so the body's
+        // state would drift between two delegation targets in the same
+        // tick.
+        // JEOD_INV: IG.37 — the integrator history reset that runs
+        // after every successful attach is gated by the same
+        // precondition; this test confirms the gate fires before any
+        // history mutation occurs.
         let mut sim = Mission::iss_leo()
             .into_builder()
             .build()
