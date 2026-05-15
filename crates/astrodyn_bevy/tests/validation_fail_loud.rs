@@ -1,27 +1,25 @@
 //! Regression tests pinning the panic-on-detection contract of
-//! `validate_jeod_invariants` (closes #495).
+//! `validate_jeod_invariants` for `astrodyn::validate_body` errors.
 //!
 //! Before this conversion the validator emitted `bevy::log::warn!()` for
-//! the two `is_warning()`-classified `ValidationError` variants
-//! (`UninitializedState`, `NonRootFrameWithRootDependentFeatures`) and
-//! the entity continued through the integration pipeline. Per the
-//! project's "Fail Loudly" non-negotiable (`CLAUDE.md`), validation is
-//! now a hard gate: every detected `ValidationError` panics with a
-//! diagnostic that names the offending entity, the specific failure,
-//! and how to fix the call site.
+//! the `is_warning()`-classified `ValidationError::UninitializedState`
+//! variant and the entity continued through the integration pipeline.
+//! Per the project's "Fail Loudly" non-negotiable (`CLAUDE.md`), every
+//! `ValidationError` returned by `astrodyn::validate_body` is now a
+//! hard gate: it panics with a diagnostic that names the offending
+//! entity, the specific failure, and how to fix the call site.
+//!
+//! The separate RF.10 non-root + root-dependent features check inside
+//! `validate_jeod_invariants` deliberately stays as `warn!`
+//! (FAIL_LOUD_EXEMPT) — the configuration is supported when the caller
+//! applies the per-step `IntegOrigin` shift at every shift site.
 //!
 //! Coverage:
 //!
 //! 1. `validate_jeod_invariants_panics_on_uninitialized_translational_state`
 //!    pins the panic for a body spawned with zero `TranslationalStateC`
 //!    (the `is_likely_uninitialized` path in `astrodyn::validate_body`).
-//! 2. `validate_jeod_invariants_panics_on_non_root_integ_with_drag`
-//!    pins the panic for a body integrating in a non-root inertial frame
-//!    with a root-dependent feature (`DragConfigC` here — a non-shift
-//!    site per RF.10) attached. The current Bevy adapter previously
-//!    emitted a `FAIL_LOUD_EXEMPT` warning here; the panic-on-detection
-//!    contract supersedes that deviation.
-//! 3. `validate_jeod_invariants_panics_on_rotational_without_mass` pins
+//! 2. `validate_jeod_invariants_panics_on_rotational_without_mass` pins
 //!    a representative fatal-class panic so we verify the unified
 //!    `"fails component validation"` diagnostic prefix is shared by both
 //!    the fatal-class and warning-class paths.
@@ -162,97 +160,6 @@ fn validate_jeod_invariants_panics_on_uninitialized_translational_state() {
     assert!(
         msg.contains("uninitialized") || msg.contains("Translational state"),
         "panic message did not name the UninitializedState diagnostic: {msg}"
-    );
-}
-
-/// A body integrating in a non-root inertial frame (here: the Moon's
-/// inertial frame) that also carries a root-dependent feature
-/// component is the configuration the RF.10 mismatch warning catches.
-/// `DragConfigC` is a NON-SHIFT site in the RF.10 taxonomy — the body's
-/// `Position<PlanetInertial<P>>` is consumed directly by the drag
-/// kernel, so mixing it with a non-root integration frame leaves the
-/// caller responsible for the RF.10 shift discipline. The panic stops
-/// the misconfiguration at the validation tick.
-#[test]
-fn validate_jeod_invariants_panics_on_non_root_integ_with_drag() {
-    use astrodyn::{DragConfig, RootInertial, RotationalState, SourceHandle, VehicleBuilder, MOON};
-    use astrodyn_bevy::{SourceInertialVelocityC, SourceMutator, VehicleConfigBevyExt};
-
-    let mut app = build_minimal_app();
-    let earth = app
-        .world_mut()
-        .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
-        .id();
-    let moon = app
-        .world_mut()
-        .spawn(PlanetBundle::<Earth>::point_mass("Moon", &MOON))
-        .insert(SourceInertialVelocityC::default())
-        .id();
-
-    // Run Startup so `register_source_frames_system` materializes the
-    // Moon's frame entity and parents it under the root frame, then
-    // offset the Moon to 3.84e8 m so the frame check classifies its
-    // inertial frame as genuinely non-root (an identity-state child of
-    // root would otherwise be folded back onto "root-equivalent" by
-    // `is_root_equivalent_entity`).
-    app.world_mut().run_schedule(Startup);
-    let mutator_sys = app
-        .world_mut()
-        .register_system(move |mut m: SourceMutator<Earth>| {
-            m.set_source_position(moon, DVec3::new(3.84e8, 0.0, 0.0));
-        });
-    app.world_mut().run_system(mutator_sys).unwrap();
-
-    // Build a vehicle through the public typed surface so it lands
-    // with the full set of frame-tree components (`FrameEntityC`,
-    // `ChildOf` wiring, etc.) the non-root check inspects. The
-    // misconfiguration is the pairing of `integ_source(moon)` —
-    // which lifts the body into the Moon's (non-root) inertial frame
-    // — with a `DragConfigC`, a root-dependent non-shift consumer
-    // per RF.10.
-    let cfg = VehicleBuilder::new()
-        .with_translational(astrodyn::TranslationalStateTyped::<RootInertial> {
-            position: DVec3::new(1_837_400.0, 0.0, 0.0).m_at::<RootInertial>(),
-            velocity: DVec3::new(0.0, 1_600.0, 0.0).m_per_s_at::<RootInertial>(),
-        })
-        .sixdof(
-            RotationalState {
-                quaternion: astrodyn::JeodQuat::identity(),
-                ang_vel_body: DVec3::ZERO,
-            },
-            MassProperties::with_inertia(
-                1_000.0,
-                glam::DMat3::from_diagonal(DVec3::new(100.0, 100.0, 100.0)),
-                DVec3::ZERO,
-            ),
-        )
-        .rk4()
-        .gravity(GravityControl::new_spherical(
-            SourceHandle::index(1),
-            GravityGradient::Skip,
-        ))
-        .integ_source(SourceHandle::index(1))
-        .drag(DragConfig {
-            cd: 2.2,
-            area: 10.0,
-            constant_density: None,
-        })
-        .build();
-
-    {
-        let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<Earth>(&mut commands_queue, &[earth, moon]);
-    }
-    app.world_mut().flush();
-
-    let msg = collect_first_panic(&mut app);
-    assert!(
-        msg.contains("fails component validation"),
-        "panic message did not name the validation surface: {msg}"
-    );
-    assert!(
-        msg.contains("non-root") || msg.contains("RF.10") || msg.contains("drag="),
-        "panic message did not name the RF.10 non-root + root-dependent diagnostic: {msg}"
     );
 }
 
