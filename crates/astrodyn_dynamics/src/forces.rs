@@ -516,6 +516,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "three_dof=true AND rotational_dynamics=true")]
     fn validate_rejects_three_dof_with_rotational() {
+        // JEOD_INV: DB.05 — `three_dof=true` prevents creation of the
+        // rotational integrator in JEOD; `DynamicsConfig::validate`
+        // enforces the same precondition via the conjunction below.
+        // JEOD_INV: DB.06 — the conjunction `three_dof &&
+        // rotational_dynamics` is itself the invalid configuration;
+        // this is the panic site that catches a caller that set both
+        // flags.
         let dc = DynamicsConfig {
             translational_dynamics: true,
             rotational_dynamics: true,
