@@ -954,9 +954,9 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
             // after `register_body_frames_system::<P>` so the body's
             // `FrameEntityC` parent chain is wired (the frame-switch
             // and non-root-integ checks walk it), before
-            // `AstrodynSet::EphemerisUpdate` so consumers of validated
-            // state see the post-validation gravity-control
-            // auto-corrections.
+            // `AstrodynSet::EphemerisUpdate` so any gravity-control
+            // misconfiguration trips the validator's panic before the
+            // first ephemeris/gravity evaluation runs.
             validation::validate_jeod_invariants::<P>
                 .after(systems::register_body_frames_system::<P>)
                 .before(AstrodynSet::EphemerisUpdate),

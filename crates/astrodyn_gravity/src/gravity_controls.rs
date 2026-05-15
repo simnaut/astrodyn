@@ -16,7 +16,6 @@ use glam::DMat3;
 use glam::DVec3;
 
 use crate::gravity_source::{GravityModel, GravitySource};
-use log::warn;
 
 /// Self-documenting selector for the gravity-gradient tensor flag at
 /// the [`GravityControl`] constructor seam. Replaces the bare `bool`
@@ -214,38 +213,60 @@ impl<SourceId> GravityControl<SourceId> {
         }
     }
 
-    /// Validate this control against its gravity source, matching JEOD's
-    /// `SphericalHarmonicsGravityControls::check_validity()`.
+    /// Validate this control against its gravity source.
+    ///
+    /// Ported from JEOD's
+    /// `SphericalHarmonicsGravityControls::check_validity()`, but with
+    /// fail-loud semantics: where JEOD logs a non-fatal
+    /// `MessageHandler::error` and silently auto-corrects the control,
+    /// we panic. A physics simulation has no graceful-degradation mode
+    /// (CLAUDE.md "Fail Loudly"); a mission crate that swaps planet
+    /// sources and forgets to update the gravity degree, or whose
+    /// gradient ordinals fall out of range, must surface the
+    /// misconfiguration at construction rather than silently propagate
+    /// with a different gravity model than the operator requested.
     ///
     /// # Panics
-    /// - `spherical` is false but source is `PointMass`
-    /// - degree > source degree
-    /// - order > source order
-    /// - order > degree
-    ///
-    /// # Notes
-    /// - If `spherical` is false and `degree` is 0, `spherical` is auto-corrected
-    ///   to true with a warning (matches JEOD's non-fatal auto-correction).
-    /// - Invalid `gradient_degree` and `gradient_order` values do not panic;
-    ///   they are clamped to valid ranges and a warning is logged.
+    /// - `spherical` is false and `degree < 2` (use
+    ///   `GravityControl::new_spherical` for point-mass). `degree == 1`
+    ///   is also rejected here because Gottlieb returns zero perturbation
+    ///   for degree < 2 — accepting it would let `effective_orders`
+    ///   silently collapse the request to point-mass and violate Fail
+    ///   Loudly.
+    /// - `spherical` is false against a `GravityModel::PointMass` source.
+    /// - `degree > source.degree` or `order > source.order`.
+    /// - `order > degree`.
+    /// - `gradient` is true and any of:
+    ///   `gradient_degree > degree`, `gradient_degree == 1`,
+    ///   `gradient_order > gradient_degree`, `gradient_order > order`.
     // JEOD_INV: GV.03 — check_validity() called on degree/order mutation
-    pub fn check_validity(&mut self, source: &GravitySource) {
+    pub fn check_validity(&self, source: &GravitySource) {
         if self.spherical {
             return;
         }
 
-        // JEOD_INV: GV.07 — degree=0 with spherical=false auto-corrects to spherical
-        // JEOD spherical_harmonics_gravity_controls.cc:334-346:
-        // degree=0 with spherical=false is auto-corrected to spherical=true
-        // via MessageHandler::error (non-fatal).
-        if self.degree == 0 {
-            warn!(
-                "Non-spherical gravity requested but degree is 0; \
-                 setting spherical=true (matches JEOD auto-correction)."
-            );
-            self.spherical = true;
-            return;
-        }
+        // JEOD_INV: GV.07 — degree < 2 with spherical=false panics
+        // (JEOD `spherical_harmonics_gravity_controls.cc:334-346` logs a
+        // non-fatal MessageHandler::error and flips spherical=true; we
+        // surface the misconfiguration instead — silently flipping the
+        // gravity model under the caller violates Fail Loudly.)
+        //
+        // `degree == 1` is also rejected: Gottlieb returns zero
+        // perturbation for degree < 2 (`calc_nonspherical_with_scratch`),
+        // so the per-step `effective_orders` clamp collapses it to 0
+        // and the runtime path takes the spherical branch. Accepting
+        // `degree == 1` at startup would let that silent fixup propagate
+        // to a kernel that produces point-mass acceleration under a
+        // control whose configuration *says* non-spherical — exactly the
+        // silent-model-change failure mode this gate exists to prevent.
+        assert!(
+            self.degree >= 2,
+            "Non-spherical gravity (spherical=false) requested with degree={} (< 2). \
+             Set spherical=true via `GravityControl::new_spherical(...)` \
+             for point-mass gravity, or set degree >= 2. degree=1 is meaningless \
+             for spherical harmonics (Gottlieb returns zero perturbation for degree < 2).",
+            self.degree
+        );
 
         match &source.model {
             GravityModel::SphericalHarmonics(ref data) => {
@@ -280,38 +301,49 @@ impl<SourceId> GravityControl<SourceId> {
             self.degree
         );
 
-        // Gradient validation: JEOD spherical_harmonics_gravity_controls.cc:395-454
-        // uses MessageHandler::error (non-fatal) and auto-corrects invalid values.
+        // Gradient validation: JEOD `spherical_harmonics_gravity_controls.cc:395-454`
+        // uses MessageHandler::error (non-fatal) and silently auto-corrects
+        // invalid ordinals. We treat the same misconfigurations as fatal:
+        // an out-of-range gradient ordinal means the caller's expectation
+        // of which terms contribute to the gradient tensor diverges from
+        // what the kernel will compute, and propagating that divergence
+        // produces a wrong (but plausible-looking) torque trajectory.
         if self.gradient {
-            // JEOD_INV: GV.08 — gradient_degree <= degree (clamped)
-            if self.gradient_degree > self.degree {
-                warn!(
-                    "Gravity gradient degree ({}) > gravity degree ({}); clamping.",
-                    self.gradient_degree, self.degree
-                );
-                self.gradient_degree = self.degree;
-            }
-            // JEOD_INV: GV.09 — gradient_degree != 1 (reset to 0)
-            if self.gradient_degree == 1 {
-                warn!("Gravity gradient degree must not equal 1; resetting to 0.");
-                self.gradient_degree = 0;
-            }
-            // JEOD_INV: GV.10 — gradient_order <= gradient_degree (clamped)
-            if self.gradient_order > self.gradient_degree {
-                warn!(
-                    "Gravity gradient order ({}) > gradient degree ({}); clamping.",
-                    self.gradient_order, self.gradient_degree
-                );
-                self.gradient_order = self.gradient_degree;
-            }
-            // JEOD_INV: GV.11 — gradient_order <= order (clamped)
-            if self.gradient_order > self.order {
-                warn!(
-                    "Gravity gradient order ({}) > gravity order ({}); clamping.",
-                    self.gradient_order, self.order
-                );
-                self.gradient_order = self.order;
-            }
+            // JEOD_INV: GV.08 — gradient_degree <= degree
+            assert!(
+                self.gradient_degree <= self.degree,
+                "Gravity gradient degree ({}) > gravity degree ({}). \
+                 Set gradient_degree <= degree, or set gradient_degree=0 to \
+                 skip the spherical-harmonics gradient contribution.",
+                self.gradient_degree,
+                self.degree
+            );
+            // JEOD_INV: GV.09 — gradient_degree != 1
+            // (Gottlieb returns zero perturbation for degree < 2, so a
+            // gradient_degree of exactly 1 is meaningless — every n=1 term
+            // collapses to point-mass and produces no SH gradient.)
+            assert!(
+                self.gradient_degree != 1,
+                "Gravity gradient degree must not equal 1 (no SH gradient \
+                 contribution from degree-1 terms). Set gradient_degree=0 \
+                 to skip the SH gradient, or gradient_degree >= 2."
+            );
+            // JEOD_INV: GV.10 — gradient_order <= gradient_degree
+            assert!(
+                self.gradient_order <= self.gradient_degree,
+                "Gravity gradient order ({}) > gradient degree ({}). \
+                 Set gradient_order <= gradient_degree.",
+                self.gradient_order,
+                self.gradient_degree
+            );
+            // JEOD_INV: GV.11 — gradient_order <= order
+            assert!(
+                self.gradient_order <= self.order,
+                "Gravity gradient order ({}) > gravity order ({}). \
+                 Set gradient_order <= order.",
+                self.gradient_order,
+                self.order
+            );
         }
     }
 
@@ -348,14 +380,14 @@ impl<SourceId> GravityControl<SourceId> {
     /// quadruple after clamping to the source's bounds. Does not mutate `self`.
     ///
     /// This is the per-step variant of [`Self::check_validity`]: where
-    /// `check_validity` is a startup gate that mutates `self` and panics on
-    /// out-of-range degree/order (matching JEOD's "fatal" classification
-    /// for GV.04 / GV.05 / GV.06 at initialization), `effective_orders`
-    /// is the runtime path used by [`Self::evaluate_inner`] on every
-    /// step. It clamps gracefully instead of panicking so a control that
-    /// was constructed outside the validation pipeline (or mutated
-    /// mid-mission) doesn't crash deep inside the spherical-harmonics
-    /// kernel.
+    /// `check_validity` is a startup gate that panics on any out-of-range
+    /// ordinal (Fail Loudly), `effective_orders` is the runtime path used
+    /// by [`Self::evaluate_inner`] on every step. It clamps gracefully
+    /// rather than panicking so a control mutated mid-mission, or one
+    /// constructed by a test that deliberately bypasses the validation
+    /// pipeline, doesn't crash deep inside the spherical-harmonics
+    /// kernel. For controls that have passed `check_validity`, the
+    /// per-step clamp is a no-op.
     ///
     /// Returns `(0, 0, 0, 0)` for spherical controls, point-mass sources,
     /// or any case where the request collapses to point-mass gravity
@@ -375,10 +407,11 @@ impl<SourceId> GravityControl<SourceId> {
         }
         let (src_degree, src_order) = match &source.model {
             GravityModel::SphericalHarmonics(data) => (data.degree, data.order),
-            // JEOD_INV: GV.07 — non-spherical against point-mass collapses
-            // to spherical at startup; here we mirror by returning the
-            // zero quadruple so `evaluate_inner` takes the spherical
-            // branch.
+            // JEOD_INV: GV.07 — non-spherical against point-mass panics at
+            // startup (`check_validity`); here we mirror that with a
+            // safety zero quadruple for the rare path where a control
+            // bypasses `check_validity`, so `evaluate_inner` takes the
+            // spherical branch instead of panicking inside the kernel.
             GravityModel::PointMass => return (0, 0, 0, 0),
         };
         let mut degree = self.degree.min(src_degree);
@@ -676,21 +709,14 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
     ///
     /// Delegates to [`GravityControl::check_validity`] on the untyped
     /// projection — runtime-checked invariants (`GV.03`–`GV.11`)
-    /// stay in the canonical f64 path. Mutations the validator
-    /// performs (e.g., auto-correcting `degree == 0` to
-    /// `spherical = true`, clamping out-of-range gradient_degree /
-    /// gradient_order) are reflected back into `self` via the
-    /// `HarmonicDegree` newtypes.
+    /// stay in the canonical f64 path. The validator panics on any
+    /// misconfiguration (see [`GravityControl::check_validity`] for
+    /// the exhaustive list); on success the typed control is
+    /// unchanged.
     // JEOD_INV: GV.03 — check_validity() called on degree/order mutation
-    pub fn check_validity(&mut self, source: &GravitySource) {
-        let mut untyped = self.to_untyped();
+    pub fn check_validity(&self, source: &GravitySource) {
+        let untyped = self.to_untyped();
         untyped.check_validity(source);
-        // Reflect any auto-corrections back into the typed surface.
-        self.spherical = untyped.spherical;
-        self.degree = HarmonicDegree::from(untyped.degree);
-        self.order = HarmonicDegree::from(untyped.order);
-        self.gradient_degree = HarmonicDegree::from(untyped.gradient_degree);
-        self.gradient_order = HarmonicDegree::from(untyped.gradient_order);
     }
 
     /// Drop the [`HarmonicDegree`] newtypes and emit the untyped
@@ -983,6 +1009,164 @@ mod tests {
         // contributes zero for degree < 2 and `perturbing_only` is false).
         assert!(result.grav_accel.is_finite());
         assert!(result.grav_accel.length() > 0.0);
+    }
+
+    // ---- check_validity fail-loud sites ------------------------------
+    //
+    // `check_validity` panics on every misconfiguration that JEOD's
+    // `MessageHandler::error` would have silently auto-corrected. Each
+    // test below pins one panic class so a future regression that
+    // re-introduces silent auto-correction trips immediately.
+
+    /// `spherical=false` with `degree=0` is a misconfiguration: the
+    /// caller meant point-mass gravity but did not flip `spherical`.
+    /// JEOD silently flips it; we panic so the operator sees the
+    /// inconsistency.
+    #[test]
+    #[should_panic(
+        expected = "Non-spherical gravity (spherical=false) requested with degree=0 (< 2)"
+    )]
+    fn check_validity_panics_on_zero_degree_with_spherical_false() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 0,
+            order: 0,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `spherical=false` with `degree=1` is a misconfiguration: the per-step
+    /// `effective_orders` clamp collapses degree=1 to 0 (Gottlieb returns
+    /// zero perturbation for degree < 2), which would silently change the
+    /// gravity model under the operator. The startup gate rejects it so the
+    /// inconsistency between the configured `spherical=false` and the
+    /// effectively-point-mass runtime path surfaces immediately.
+    #[test]
+    #[should_panic(
+        expected = "Non-spherical gravity (spherical=false) requested with degree=1 (< 2)"
+    )]
+    fn check_validity_panics_on_degree_one_with_spherical_false() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `gradient_degree > degree`: JEOD clamps; we panic — clamping
+    /// silently changes which SH terms contribute to the gradient
+    /// tensor and produces a torque trajectory that differs from what
+    /// the operator requested.
+    #[test]
+    #[should_panic(expected = "Gravity gradient degree (12) > gravity degree (4)")]
+    fn check_validity_panics_on_gradient_degree_above_degree() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            gradient: true,
+            gradient_degree: 12,
+            gradient_order: 0,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `gradient_degree == 1`: Gottlieb returns zero perturbation for
+    /// degree < 2, so a gradient_degree of exactly 1 is meaningless.
+    /// JEOD resets to 0; we panic so the misconfiguration surfaces.
+    #[test]
+    #[should_panic(expected = "Gravity gradient degree must not equal 1")]
+    fn check_validity_panics_on_gradient_degree_equal_one() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            gradient: true,
+            gradient_degree: 1,
+            gradient_order: 0,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `gradient_order > gradient_degree`: JEOD clamps; we panic.
+    #[test]
+    #[should_panic(expected = "Gravity gradient order (5) > gradient degree (2)")]
+    fn check_validity_panics_on_gradient_order_above_gradient_degree() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            gradient: true,
+            gradient_degree: 2,
+            gradient_order: 5,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `gradient_order > order`: JEOD clamps; we panic. The
+    /// `gradient_order` check fires before the `> order` check when
+    /// both fail, so this test sets `gradient_order` *below*
+    /// `gradient_degree` and *above* `order` to isolate GV.11.
+    #[test]
+    #[should_panic(expected = "Gravity gradient order (4) > gravity order (2)")]
+    fn check_validity_panics_on_gradient_order_above_order() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 8,
+            order: 2,
+            gradient: true,
+            gradient_degree: 4,
+            gradient_order: 4,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// A control that satisfies every invariant must not panic. Pinned
+    /// alongside the panic tests above so a future overzealous tightening
+    /// of `check_validity` is caught immediately rather than at the next
+    /// downstream test run.
+    #[test]
+    fn check_validity_accepts_well_formed_control() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            gradient: true,
+            gradient_degree: 4,
+            gradient_order: 4,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src); // does not panic
+    }
+
+    /// The typed sibling delegates to the untyped validator; the same
+    /// misconfiguration must panic on the typed surface too.
+    #[test]
+    #[should_panic(expected = "Non-spherical gravity (spherical=false) requested with degree=0")]
+    fn typed_check_validity_panics_on_zero_degree_with_spherical_false() {
+        use astrodyn_quantities::aliases::HarmonicDegree;
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControlTyped::<usize> {
+            spherical: false,
+            degree: HarmonicDegree::from(0_usize),
+            order: HarmonicDegree::from(0_usize),
+            ..GravityControlTyped::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
     }
 
     // ---- proptest round-trips (#398) ----------------------------------
