@@ -18,5 +18,8 @@ astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 log = { workspace = true }
 uom = { workspace = true }
 
+[dev-dependencies]
+proptest = "1"
+
 [lints]
 workspace = true
