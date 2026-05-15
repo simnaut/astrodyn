@@ -2007,6 +2007,11 @@ mod tests {
     /// Same-tree guard: subject's existing root is exactly `parent_id`.
     /// This is the simple "single-edge cycle" case — `attach_with_reroot`
     /// must reject it before attempting the reroot.
+    // JEOD_INV: BA.12 — chained attach (`attach_with_reroot`) must reject
+    // a same-tree parent before recomputing the (offset, rotation) for
+    // the rerooted edge. Without this fail-loud guard the chained-attach
+    // would fall through to `attach`'s cycle walk with a less informative
+    // diagnostic.
     #[test]
     #[should_panic(expected = "already in the same tree")]
     fn attach_with_reroot_rejects_same_tree_parent_is_root() {
@@ -2036,6 +2041,10 @@ mod tests {
     /// `attach`'s cycle walk which fires with a less informative
     /// message. JEOD's `attach_validate_parent` (`mass_attach.cc:373`)
     /// rejects this via `parent.get_root_body() == get_root_body()`.
+    // JEOD_INV: BA.12 — chained-attach same-tree guard, sibling variant.
+    // Confirms `attach_with_reroot` walks both subject *and* parent up
+    // to their roots before accepting the chained attach, not just the
+    // simple "parent == root_of(subject)" case.
     #[test]
     #[should_panic(expected = "already in the same tree")]
     fn attach_with_reroot_rejects_same_tree_parent_is_sibling() {
@@ -2054,5 +2063,68 @@ mod tests {
         // message. The fix detects same-tree here and panics with the
         // intended diagnostic naming the shared root.
         let _ = tree.attach_with_reroot(b, c, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    // =======================================================================
+    // BA.03 / BA.04 negative tests — `attach` direct guards.
+    //
+    // BA.03 — JEOD `body_attach.cc:58-71` rejects attachment with a
+    // null parent reference. In our port the parent is a `MassBodyId`
+    // (non-null by type), and the two runtime guards in `attach` are:
+    //
+    //   (1) the subject must be unparented (`parent[child_id].is_none()`),
+    //   (2) self-attachment is forbidden (`child_id != parent_id`).
+    //
+    // Both panics are reachable from a single user-facing entry point
+    // — `MassTree::attach` — and both are part of the BA.03 contract.
+    //
+    // BA.04 — JEOD `mass_attach.cc:166-177` forbids cycles; our walk-up
+    // from `parent_id` panics if it ever encounters `child_id`.
+    // =======================================================================
+
+    #[test]
+    #[should_panic(expected = "cannot attach a body to itself")]
+    fn ba_03_panics_on_self_attach() {
+        // JEOD_INV: BA.03 — `attach` rejects `child_id == parent_id`
+        // before mutating the tree. The misconfiguration would otherwise
+        // produce a single-node cycle and infinite walks downstream.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        tree.attach(a, a, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "already attached to a parent")]
+    fn ba_03_panics_when_child_already_parented() {
+        // JEOD_INV: BA.03 — `attach` requires the subject to be a root.
+        // Re-attaching a non-root child without first detaching would
+        // produce a body with two parents and break the tree invariant.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        tree.attach(b, a, DVec3::ZERO, DMat3::IDENTITY);
+        // b is now parented under a. A second `attach(b, c, ...)` must
+        // panic instead of silently overwriting the parent edge.
+        tree.attach(b, c, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "would create cycle")]
+    fn ba_04_panics_on_cyclic_attach() {
+        // JEOD_INV: BA.04 — attaching a body under its own descendant
+        // would close a cycle in the mass tree. The walk-up check from
+        // `parent_id` must encounter `child_id` and panic before the
+        // structural edge is recorded.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        // Build (a ← b); b is now a descendant of a.
+        tree.attach(b, a, DVec3::ZERO, DMat3::IDENTITY);
+        // First detach `a` from itself — `a` is already a root, but we
+        // need a *fresh* root subject whose descendant is `parent_id`.
+        // Concretely: attach root `a` under `b` (which is a descendant
+        // of `a`). The walk-up from `b` reaches `a` and must panic.
+        tree.attach(a, b, DVec3::ZERO, DMat3::IDENTITY);
     }
 }
