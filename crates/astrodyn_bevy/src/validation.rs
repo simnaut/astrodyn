@@ -102,15 +102,19 @@ pub(crate) fn is_root_equivalent_entity(
 ///   idempotent (each pass evaluates the same world state and reaches
 ///   the same conclusion).
 /// * **Per-body invariant checks** (SRP mutual exclusion, the full
-///   `astrodyn::validate_body` pass, gravity-control `check_validity`
-///   auto-corrections) iterate the `Added`-filtered `bodies` query, so
-///   they validate only newly-attached bodies. Existing bodies were
-///   validated on the tick they first appeared, and the per-body
-///   invariants do not depend on inter-body state, so re-running them
-///   for unchanged bodies would be wasteful.
+///   `astrodyn::validate_body` pass, gravity-control `check_validity`)
+///   iterate the `Added`-filtered `bodies` query, so they validate only
+///   newly-attached bodies. Existing bodies were validated on the tick
+///   they first appeared, and the per-body invariants do not depend on
+///   inter-body state, so re-running them for unchanged bodies would be
+///   wasteful.
 ///
-/// Delegates per-body checks to [`astrodyn::validate_body`] and applies
-/// gravity control auto-corrections via `check_validity()`.
+/// Delegates per-body checks to [`astrodyn::validate_body`] and runs
+/// `GravityControl::check_validity()` on every control. The latter
+/// panics on any gravity misconfiguration (out-of-range degree/order,
+/// gradient ordinals outside their valid ranges, non-spherical against
+/// a point-mass source) rather than silently auto-correcting — see
+/// CLAUDE.md "Fail Loudly".
 ///
 /// Per-body `astrodyn::validate_body` errors are split by
 /// `ValidationError::is_warning()`:
@@ -146,11 +150,11 @@ pub(crate) fn is_root_equivalent_entity(
 // JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn validate_jeod_invariants<P: Planet>(
-    mut bodies: Query<
+    bodies: Query<
         (
             Entity,
             &DynamicsConfigC,
-            &mut GravityControlsC,
+            &GravityControlsC,
             Option<&GravityAccelerationC>,
             Option<&MassPropertiesC>,
             Option<&RotationalStateC>,
@@ -295,8 +299,7 @@ pub fn validate_jeod_invariants<P: Planet>(
         }
     }
 
-    for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state, flat_plates) in
-        &mut bodies
+    for (entity, config, controls, grav_accel, mass, rot_state, trans_state, flat_plates) in &bodies
     {
         // Compute plate counts for validation
         let plate_counts = flat_plates.map(|fp| {
@@ -524,11 +527,11 @@ pub fn validate_jeod_invariants<P: Planet>(
             }
         }
 
-        // ── Gravity control auto-corrections ──
+        // ── Gravity control startup validation ──
         // JEOD_INV: GV.03 — check_validity() called at startup
-        // This mutates controls (degree/order clamping), so it must be done
-        // after validation, not inside validate_body().
-        for ctrl in &mut controls.0.controls {
+        // Panics on any out-of-range gravity control parameter (degree,
+        // order, gradient ordinals) — see CLAUDE.md "Fail Loudly".
+        for ctrl in &controls.0.controls {
             if let Ok((_source_entity, source)) = sources.get(ctrl.source_name) {
                 ctrl.check_validity(&source.0);
             }
