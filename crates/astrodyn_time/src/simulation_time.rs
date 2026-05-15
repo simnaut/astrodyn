@@ -352,6 +352,36 @@ mod tests {
         sim.advance(f64::INFINITY);
     }
 
+    /// Pins the `assert!(sim_dt.is_finite() && sim_dt >= 0.0)` guard at the
+    /// entry of `SimulationTime::advance`. A NaN `sim_dt` would propagate
+    /// through `tai_seconds += dyn_dt`, contaminating every derived time
+    /// scale (TT, TDB, UTC, UT1, GMST) and the ephemeris/RNP downstream
+    /// without surfacing a numeric NaN at the right call site. JEOD's
+    /// integration loop assumes a valid sim-input `dt`; we assert
+    /// defensively so a bad upstream value fails loudly at the time-advance
+    /// boundary.
+    // JEOD_INV: TM.40 — negative test: non-finite advance dt rejected
+    #[test]
+    #[should_panic(expected = "sim_dt must be finite and >= 0")]
+    fn tm_40_panics_on_non_finite_advance_dt() {
+        // JEOD_INV: TM.40 — NaN sim_dt at SimulationTime::advance entry.
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(f64::NAN);
+    }
+
+    /// Pins the `sim_dt >= 0.0` half of the TM.40 guard. JEOD treats a
+    /// reverse-time advance by passing `dt > 0` with `time_scale_factor < 0`
+    /// (see `advance_time_scale_factor_reversal`); a negative `sim_dt` is
+    /// always a caller error because `simtime` must run forward.
+    // JEOD_INV: TM.40 — negative test: negative advance dt rejected
+    #[test]
+    #[should_panic(expected = "sim_dt must be finite and >= 0")]
+    fn tm_40_panics_on_negative_advance_dt() {
+        // JEOD_INV: TM.40 — sign violation at SimulationTime::advance entry.
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(-1.0);
+    }
+
     #[test]
     fn advance_time_scale_factor_reversal() {
         let mut sim = SimulationTime::at_j2000(default_leap_second_table());
