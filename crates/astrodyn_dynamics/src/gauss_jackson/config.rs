@@ -175,3 +175,107 @@ impl GaussJacksonConfig {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// IG.04: `initial_order` must be an even integer in [2, 14]. Odd
+    /// orders are rejected because Gauss-Jackson's symmetric corrector
+    /// coefficients are tabulated only for even orders.
+    #[test]
+    #[should_panic(expected = "initial_order 3 must be even")]
+    fn ig_04_panics_on_odd_initial_order() {
+        // JEOD_INV: IG.04 — initial_order must be even integer in [2, 14]
+        GaussJacksonConfig {
+            initial_order: 3,
+            final_order: 4,
+            ndoubling_steps: 0,
+            max_correction_iterations: 10,
+            relative_tolerance: 1e-14,
+            absolute_tolerance: 1e-10,
+            allow_non_convergence: false,
+        }
+        .validate();
+    }
+
+    /// IG.05: `final_order` must be ≥ `initial_order`. A final order
+    /// below the initial order would require shrinking the corrector
+    /// stencil mid-flight, which Gauss-Jackson is not formulated for.
+    #[test]
+    #[should_panic(expected = "final_order 2 < initial_order 8")]
+    fn ig_05_panics_on_final_below_initial() {
+        // JEOD_INV: IG.05 — final_order must be even integer in [initial_order, 14]
+        GaussJacksonConfig {
+            initial_order: 8,
+            final_order: 2,
+            ndoubling_steps: 0,
+            max_correction_iterations: 10,
+            relative_tolerance: 1e-14,
+            absolute_tolerance: 1e-10,
+            allow_non_convergence: false,
+        }
+        .validate();
+    }
+
+    /// IG.06: `ndoubling_steps` must be ≤ 20. The doubling cap bounds
+    /// the tour count `1 << ndoubling_steps`, which otherwise overflows
+    /// the stage-cap arithmetic in the integration kernel.
+    #[test]
+    #[should_panic(expected = "ndoubling_steps 21 must be ≤ 20")]
+    fn ig_06_panics_on_excessive_doubling() {
+        // JEOD_INV: IG.06 — ndoubling_steps ≤ 20
+        GaussJacksonConfig {
+            initial_order: 4,
+            final_order: 4,
+            ndoubling_steps: 21,
+            max_correction_iterations: 10,
+            relative_tolerance: 1e-14,
+            absolute_tolerance: 1e-10,
+            allow_non_convergence: false,
+        }
+        .validate();
+    }
+
+    /// IG.07: `relative_tolerance` must be finite and in [0, 1]. A
+    /// tolerance > 1 is meaningless (the corrector would accept any
+    /// finite error), and a non-finite tolerance corrupts convergence
+    /// arithmetic.
+    #[test]
+    #[should_panic(expected = "relative_tolerance")]
+    fn ig_07_panics_on_relative_tolerance_above_one() {
+        // JEOD_INV: IG.07 — relative_tolerance finite and in [0, 1]
+        GaussJacksonConfig {
+            initial_order: 4,
+            final_order: 4,
+            ndoubling_steps: 0,
+            max_correction_iterations: 10,
+            relative_tolerance: 2.0,
+            absolute_tolerance: 1e-10,
+            allow_non_convergence: false,
+        }
+        .validate();
+    }
+
+    /// IG.08: `absolute_tolerance` must be finite and ≥ 0. A negative
+    /// tolerance flips the convergence comparison and lets the corrector
+    /// accept arbitrary errors. (JEOD's diagnostic message names the
+    /// `relative_tolerance` field at this site — a known bug in
+    /// `gauss_jackson_config.cc` — but the variable actually validated
+    /// is `absolute_tolerance`; our diagnostic names the right field.)
+    #[test]
+    #[should_panic(expected = "absolute_tolerance -1 must be finite and ≥ 0")]
+    fn ig_08_panics_on_negative_absolute_tolerance() {
+        // JEOD_INV: IG.08 — absolute_tolerance finite and ≥ 0
+        GaussJacksonConfig {
+            initial_order: 4,
+            final_order: 4,
+            ndoubling_steps: 0,
+            max_correction_iterations: 10,
+            relative_tolerance: 1e-14,
+            absolute_tolerance: -1.0,
+            allow_non_convergence: false,
+        }
+        .validate();
+    }
+}
