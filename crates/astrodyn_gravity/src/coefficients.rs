@@ -240,12 +240,13 @@ mod tests {
         for &degree in &[1_usize, 4, 16, 32] {
             let data = synthesize(degree);
 
-            // Write via the production fast path.
-            let tmp = std::env::temp_dir()
-                .join(format!("astrodyn_gravity_coeffs_round_trip_{degree}.bin"));
-            save_binary(&data, &tmp).expect("save_binary");
-            let bytes_fast = std::fs::read(&tmp).expect("read tmp");
-            std::fs::remove_file(&tmp).ok();
+            // Write via the production fast path. `NamedTempFile` gives
+            // every test invocation a unique path and a drop guard, so
+            // concurrent nextest runs cannot collide on the same file
+            // and a panicking test still cleans up after itself.
+            let tmp = tempfile::NamedTempFile::new().expect("NamedTempFile");
+            save_binary(&data, tmp.path()).expect("save_binary");
+            let bytes_fast = std::fs::read(tmp.path()).expect("read tmp");
 
             // Recreate what the per-element accessor path would emit, so
             // any divergence (row order, endianness, missing element)

@@ -46,6 +46,7 @@ astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
 astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
 proptest = "1"
+tempfile = "3"
 criterion = { workspace = true }
 pprof = { workspace = true }
 
