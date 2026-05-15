@@ -18,6 +18,8 @@
 //! extension on `&mut Commands` is a separate, system-friendly form
 //! that's distinct from the existing `&mut App` terminal.
 
+#![forbid(unsafe_code)]
+
 use astrodyn::init_from_orbital_elements_typed;
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{GravityControl, GravityControls, GravityGradient};

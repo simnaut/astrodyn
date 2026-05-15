@@ -36,6 +36,8 @@
 //! crate (see `planet_geodetic_verif.rs`); the JSON is hand-written and
 //! parsed back via `body_init_fixtures::parse_*` helpers.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 
 use astrodyn_verif_jeod::body_init_fixtures::{

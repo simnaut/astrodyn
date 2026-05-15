@@ -4,6 +4,8 @@
 //! atmosphere model and shows altitude decay over 24 hours. Uses
 //! [`Mission::iss_leo_drag`](astrodyn::recipes::Mission::iss_leo_drag).
 
+#![forbid(unsafe_code)]
+
 use astrodyn::recipes::{constants, Mission};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::DVec3;

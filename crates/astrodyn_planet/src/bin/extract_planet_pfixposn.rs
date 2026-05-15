@@ -16,6 +16,8 @@
 //!
 //! The binary prints the destination path on success.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 
 use regex::Regex;

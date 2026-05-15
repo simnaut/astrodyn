@@ -16,6 +16,8 @@
 //! cargo run -p astrodyn_verif_jeod --example mars_orbit
 //! ```
 
+#![forbid(unsafe_code)]
+
 use astrodyn::recipes::{self, epoch, sun, vehicle};
 use astrodyn::vehicle_builder::VehicleBuilder;
 use astrodyn::{

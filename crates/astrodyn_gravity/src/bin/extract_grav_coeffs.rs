@@ -22,6 +22,8 @@
 //!
 //! The binary prints a summary of each generated file on success.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

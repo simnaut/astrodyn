@@ -275,6 +275,19 @@ rule above — it is its operational corollary. A test or implementation
 that compiles and runs but silently produces wrong physics is the
 half-baked failure mode the previous section forbids.
 
+## Lints & invariants
+
+Every workspace crate forbids `unsafe` at the crate root via
+`#![forbid(unsafe_code)]` (on every `lib.rs`, every `main.rs`, every
+binary under `src/bin/`, and every `example` target). The lint
+operates at the type-system layer, so an AI-assisted port that
+introduces an `unsafe` block fails the build rather than slipping
+through review. If a future crate genuinely needs `unsafe` (FFI, SIMD
+intrinsics, a proven safety-critical performance path), it opts out
+per-crate with `#![allow(unsafe_code)]` and a documented justification
+in the crate's `lib.rs`, mirroring how `scripts/check_no_bypass_deps.sh`
+enumerates exceptions to the dep-layering rule.
+
 ## Precision
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).

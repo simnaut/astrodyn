@@ -17,6 +17,8 @@
 //! cargo run -p astrodyn_verif_jeod --example earth_moon
 //! ```
 
+#![forbid(unsafe_code)]
+
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::setups::earth_moon_clem::{earth_moon_clem, moon_mu};
 

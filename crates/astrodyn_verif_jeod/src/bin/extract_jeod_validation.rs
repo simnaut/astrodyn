@@ -37,6 +37,8 @@
 //! level `tests/fixture_metadata.rs` so a regen that drops or
 //! desynchronises a sidecar fails CI.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

@@ -5,6 +5,8 @@
 //! [`Mission::iss_leo`](astrodyn::recipes::Mission::iss_leo) as the
 //! starting scenario.
 
+#![forbid(unsafe_code)]
+
 use astrodyn::recipes::{constants, Mission};
 use astrodyn_runner::SimulationBuilderExt;
 use glam::DVec3;
