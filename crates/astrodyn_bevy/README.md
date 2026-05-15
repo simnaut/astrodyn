@@ -14,6 +14,47 @@ adapter so they slot into any Bevy app.
 (see the [Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration)).
 API may change before 1.0.
 
+## When to use
+
+- **Building a Bevy-based mission simulation** — Earth-orbit
+  constellation, lunar / Mars approach, station-keeping study,
+  rendezvous-and-proximity scenarios — where the Bevy `App` is the
+  runtime and the ECS world is the single source of truth for
+  state.
+- **Composing a scenario** — sources, bodies, ephemeris, mass tree,
+  integrator config — with `SimulationBuilder::populate_app::<P>`
+  and the typestate `VehicleBuilder` (canonical entry point per
+  CLAUDE.md).
+- **Inserting a single vehicle** into an existing `App` (a smaller
+  example, a follow-up insert during a running sim) via
+  `VehicleConfig::spawn_bevy`.
+
+For non-Bevy use — Tier 3 cross-validation tests, batch propagation,
+offline studies — `astrodyn_runner` is the parallel arena-state
+consumer of the same `astrodyn` pipeline. For pure physics math
+(coordinate conversions, attitude algebra, gravity evaluation) without
+either runtime, depend on `astrodyn` directly.
+
+## Key concepts
+
+The crate is the **thin glue** layer of the three-layer architecture
+(see below): components are typed newtypes around `astrodyn`
+quantities, systems delegate to `astrodyn` pipeline functions, and
+the `AstrodynPlugin` wires the seven `AstrodynSet` variants into
+`FixedUpdate` in JEOD-step order. There is no physics in this crate
+— a CI lint refuses any `astrodyn_*`-physics-crate direct dep, so
+the adapter cannot quietly reimplement what the gateway re-exports.
+
+The typestate `VehicleBuilder` makes vehicle construction a compile-
+time refusal of misconfigurations: `.three_dof_point_mass(...)` is
+unavailable until a state is set, `.rk4()` until mass is set,
+`.build()` until an integrator is chosen. Frame mismatches at
+`spawn_bevy` boundaries surface as physics-language errors
+(*"expected `Position<RootInertial>`, found `Position<Ecef>` — apply
+a `FrameTransform<Ecef, RootInertial>` first"*) via
+`#[diagnostic::on_unimplemented]`, not as raw `PhantomData`
+type-mismatch walls.
+
 ## Architecture
 
 Three layers, separated by hard dependency rules:

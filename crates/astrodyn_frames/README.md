@@ -11,6 +11,47 @@ JEOD) and
 (precession, nutation, polar motion) from
 [NASA JEOD v5.4.0](https://github.com/nasa/jeod).
 
+## When to use
+
+- **Storing a hierarchy of reference frames** — Earth inertial,
+  Earth body-fixed, Moon body-fixed, vehicle structure, vehicle
+  composite-body / core-body — with parent/child links and
+  relative state at every node.
+- **Computing Earth's body-fixed rotation** — precession (J2000 →
+  mean-of-date), nutation (mean-of-date → true-of-date, IAU-1980
+  106-term series), and polar motion / GMST-driven sidereal
+  rotation, all of which must compose in JEOD's order to match
+  reference trajectories.
+- **Mars and Moon body-fixed rotation** for Mars / Apollo verification
+  sims, including lunar libration models.
+
+Mission code rarely touches `FrameTree` directly; the `astrodyn`
+pipeline maintains the tree and the `astrodyn_bevy` adapter mirrors it
+into ECS components. Reach in here when porting a new RNP series, when
+adding a new target body's body-fixed rotation, or when implementing a
+custom frame relative to an existing parent.
+
+## Key concepts
+
+Every node in `FrameTree` stores its state **relative to its
+parent** (not absolute / inertial), matching JEOD's `RefFrame`
+convention. Relative state between arbitrary frames is computed by
+walking to the common ancestor and composing — typed
+`RefFrameStateTyped<P, C>` siblings at the public boundary make those
+compositions frame-checked, so the compiler refuses to combine a
+"vehicle wrt Earth-inertial" with a "Moon wrt Sun" without explicitly
+re-parenting. The tree is a flat `Vec` with parallel
+`Option<FrameId>` parent pointers, which keeps lookups cache-friendly
+and avoids the pointer chasing of JEOD's intrusive linked lists.
+
+Earth rotation composes as `polar_motion · sidereal · nutation ·
+precession`, with each factor a left-transformation,
+scalar-first quaternion (`JeodQuat`). `t_parent_this` is a derived
+cache of `q_parent_this`; the quaternion is the canonical source of
+truth (RF.04), so any update writes the quaternion and refreshes the
+matrix, never the reverse. Mars and Moon rotation models follow the
+same pattern with body-specific pole-direction series.
+
 ## Layered architecture
 
 ```

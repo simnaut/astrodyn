@@ -6,13 +6,47 @@ pipeline.
 
 `astrodyn_runner` is a parallel non-Bevy consumer of `astrodyn`. It owns
 its own state and drives the same pipeline functions the Bevy adapter
-runs from system schedules. Used for:
+runs from system schedules.
 
-- **Tier 3 cross-validation tests** (`tests/tier3_*.rs`) — propagating
-  from JEOD initial conditions and comparing against Trick reference
-  CSVs without standing up a Bevy `App`.
-- **Batch propagation, scripting, and offline studies** that don't
-  need ECS scheduling, parallelism, or Bevy plugins.
+## When to use
+
+- **Tier 3 cross-validation tests** propagating from JEOD initial
+  conditions and comparing against Trick reference CSVs without
+  standing up a Bevy `App` — `astrodyn_verif_jeod`'s 70+
+  `tier3_*` tests drive `Simulation` end-to-end.
+- **Batch propagation, scripting, offline studies, and Jupyter-style
+  exploration** that don't need ECS scheduling, parallelism, or Bevy
+  plugins.
+- **Lockstep parity verification** — `astrodyn_verif_parity` runs
+  identical scenarios through both `astrodyn_runner` and
+  `astrodyn_bevy` and asserts every component is bit-identical, the
+  guard that gives Bevy adapter Tier 3 coverage by transitivity.
+
+For the production target — Bevy ECS as the runtime, with mission
+code expressed as systems and components — reach for `astrodyn_bevy`
+instead. Don't reach for `astrodyn_runner` from a mission crate; its
+state-container shape is incompatible with the ECS world.
+
+## Key concepts
+
+`Simulation` is an arena-state struct: it owns one
+`SimulationContext` (time, ephemeris, gravity sources) and one
+contiguous `Vec` of body states, and steps everything in lockstep.
+The arena layout is deliberate — it makes the runner trivial to
+checkpoint (snapshot the `Vec`), trivial to compare against Trick
+output (the body index is stable across the run), and free of the
+ECS scheduling and change-detection machinery that the Bevy adapter
+takes on.
+
+The pipeline functions it drives — `pre_step`, the per-step
+`TimeUpdate / EphemerisUpdate / Environment / Interaction /
+ForceCollection / Integration / DerivedState` sets — live in
+`astrodyn`, not here, so any improvement that lands there benefits
+both consumers identically. The runner is **not** a dependency of
+`astrodyn_bevy`; both crates depend on `astrodyn` and only
+`astrodyn` for physics, and a CI lint
+(`scripts/check_no_bypass_deps.sh`) refuses any
+`astrodyn_*`-physics-crate direct dep on the four consumer crates.
 
 ## Layered architecture
 

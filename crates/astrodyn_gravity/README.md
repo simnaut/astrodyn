@@ -14,6 +14,47 @@ a numerically stable normalized Legendre recursion that scales to high
 degree and order without the underflow / overflow problems of the
 classical formulation.
 
+## When to use
+
+- **Evaluating gravitational acceleration** at a body's inertial
+  position against one or more sources — point-mass through the
+  full Gottlieb spherical-harmonics expansion at the source's full
+  degree / order.
+- **Computing the gravity-gradient tensor** for tidal forces,
+  gravity-gradient torque (consumed by `astrodyn_interactions`), or
+  diagnostics.
+- **Configuring a vehicle's gravity controls** — choosing which
+  sources to include, whether to add Battin / relativistic
+  corrections, and whether to evaluate the gradient.
+- **Loading JEOD coefficient files** (`earth_GGM05C.hh`,
+  `moon_GRAIL150.hh`, …) into the binary fixture format consumed at
+  runtime — via the `extract_grav_coeffs` regen binary.
+
+Production pipelines never parse JEOD `.cc` files at runtime;
+`extract_grav_coeffs` runs offline and writes binary fixtures under
+`test_data/gravity/` that the runtime loads.
+
+## Key concepts
+
+The Gottlieb algorithm replaces the classical
+unnormalized-associated-Legendre recursion with a **normalized**
+recursion that pushes the dynamic-range problem out of the polynomial
+tail. This is the only formulation that stays numerically valid past
+degree ~30; JEOD uses it for GGM05C (up to 360×360) and we port it
+verbatim, with the same row-major coefficient layout and the same
+recursion order so test vectors match bit-for-bit.
+
+`GravityControl` is **per-source**: a vehicle can pull spherical
+harmonics from Earth while taking the Sun and Moon as point masses,
+and toggle Battin third-body or post-Newtonian relativistic
+corrections independently. `GottliebScratch` holds the recursion's
+intermediate buffers so they can be reused across timesteps without
+reallocating. Gravity acceleration here **excludes** the integration
+frame's own acceleration toward the source — third-body contributions
+arrive as the differential acceleration (vehicle-toward-Sun minus
+Earth-toward-Sun), which is the JEOD convention and the only choice
+that keeps Earth-centered inertial integration consistent.
+
 ## Layered architecture
 
 ```
