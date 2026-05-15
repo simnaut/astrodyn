@@ -65,6 +65,10 @@ pub fn ut1_to_gmst_angle(du: f64) -> Angle {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "GMST tests assert bit-exact equality of literal-initialized state fields"
+)]
 mod tests {
     use super::*;
 

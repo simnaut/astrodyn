@@ -543,6 +543,10 @@ impl VehicleBuilder<Ready> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "VehicleBuilder typestate tests assert bit-exact recovery of literal-built mass values"
+)]
 mod tests {
     use super::*;
     use astrodyn_quantities::ext::F64Ext;

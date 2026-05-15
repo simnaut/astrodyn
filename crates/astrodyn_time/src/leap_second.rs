@@ -332,6 +332,10 @@ pub fn default_leap_second_table() -> LeapSecondTable {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "leap-second TAI-UTC table boundaries are integers stored in f64; bit-exact equality is the invariant"
+)]
 mod tests {
     use super::*;
 

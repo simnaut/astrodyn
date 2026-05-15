@@ -99,6 +99,14 @@ impl<'a> OffsetRows<'a> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "TwoDArray access tests assert bit-exact recovery of literal f64 entries"
+)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "small loop indices (i < 10) fit exactly in f64 mantissa"
+)]
 mod tests {
     use super::*;
 

@@ -1,6 +1,11 @@
 //! Positive-path tests for the Act-5 phantom-wrapped types' vehicle
 //! witness methods (`assert_vehicle`, `assert_pair`, `assert_reference`,
 //! `assert_chief`).
+
+#![allow(
+    clippy::float_cmp,
+    reason = "witness-method tests assert bit-exact recovery of literal-built state fields"
+)]
 //!
 //! Each method is a zero-cost type-level no-op whose `where` bound
 //! resolves only when the caller's vehicle phantoms match the value's.

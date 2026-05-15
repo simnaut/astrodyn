@@ -418,6 +418,12 @@ impl ComputeContext {
         let mut year: i32 = 2000;
         let mut max_days_this_year: i32 = 366; // 2000 is a leap year
 
+        // Day-of-year offset from 2000-01-01: practical epoch range
+        // (centuries) keeps this well within `i32::MAX` days.
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "TJT-offset days bounded by simulation epoch span (<< i32::MAX)"
+        )]
         let mut day_of_year = (tjt_prev_midnight - tjt_year_start + 1.0) as i32;
 
         while day_of_year > max_days_this_year {
@@ -810,6 +816,10 @@ impl ComputeContext {
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "MET state-field tests assert bit-exact recovery of literal-initialized values"
+)]
 mod tests {
     use super::*;
 

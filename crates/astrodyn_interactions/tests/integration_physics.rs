@@ -1,5 +1,15 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Integration tests for interaction physics.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "integration tests assert bit-exact recovery of analytic / literal-built values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts (hours of orbit) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! These tests propagate orbits using the pure `astrodyn_*` crates (no Bevy)
 //! and verify that interaction forces produce physically correct behavior.

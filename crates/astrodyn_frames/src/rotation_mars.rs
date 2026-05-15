@@ -104,6 +104,13 @@ fn compute_nutation(time_days: f64) -> NutationResult {
     let mut obliquity_nut = I_M[0]; // constant term
 
     for ii in 1..=9usize {
+        // `ii` is a small loop counter bounded by 1..=9 and `k = ii - 3` by 1..=6;
+        // both fit exactly in `f64`'s 52-bit mantissa, so the `usize → f64` cast
+        // is lossless here.
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "loop counter 1..=9 fits exactly in f64 mantissa"
+        )]
         let (alpha_m, theta_m) = if ii <= 3 {
             (ii as f64 * MEAN_MOTION, ii as f64 * MEAN_ANOMALY_J2000)
         } else {

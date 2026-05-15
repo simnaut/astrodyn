@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the SIM_SolarBeta analytical-extended
 //! family (`tier3_sim_solar_beta_extended`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! These cases have no JEOD reference CSV — they exercise closed-form
 //! identities of the solar-beta angle (β = asin(ĥ · ŝ)) by parking a

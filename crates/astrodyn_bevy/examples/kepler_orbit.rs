@@ -1,4 +1,10 @@
 //! Bevy ECS Kepler orbit example.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts fit exactly in f64 mantissa and target int width"
+)]
 //!
 //! Spawns an Earth gravity source and a satellite in a 400 km circular
 //! orbit, then propagates for approximately one orbital period using

@@ -1,5 +1,10 @@
 //! Sync check: hardcoded `default_leap_second_table()` matches the
 //! committed `test_data/Leap_Second.dat` byte for byte.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "TAI-UTC offsets are integer-valued; byte-for-byte sync requires bit-exact equality"
+)]
 //!
 //! `default_leap_second_table()` is a 28-entry hardcoded snapshot of
 //! NASA/USNO leap-second data, mirrored verbatim from JEOD's

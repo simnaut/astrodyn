@@ -176,6 +176,13 @@ mod fetch {
         let resp = ureq::get(spec.url)
             .call()
             .map_err(|e| EphemerisError::LoadError(format!("GET {}: {e}", spec.url)))?;
+        // `with_capacity` is a hint only; the explicit length check below is
+        // the authoritative validation, so a truncating cast on 32-bit
+        // targets degrades to a re-allocation rather than a wrong result.
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "capacity hint; length is validated below"
+        )]
         let mut bytes = Vec::with_capacity(spec.bytes as usize);
         resp.into_reader().read_to_end(&mut bytes).map_err(|e| {
             EphemerisError::LoadError(format!("reading response body from {}: {e}", spec.url))

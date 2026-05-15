@@ -216,6 +216,10 @@ impl<F: Frame> Mul<f64> for InertiaTensor<F> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "symmetry / diagonal-element tests assert bit-exact relations between literal-constructed components"
+)]
 mod tests {
     use super::*;
     use crate::frame::RootInertial;

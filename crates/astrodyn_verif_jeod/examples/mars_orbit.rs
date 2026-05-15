@@ -1,4 +1,10 @@
 //! Dawn spacecraft at Mars: high-fidelity spherical harmonics gravity.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Verification-style example exercising:
 //! - Mars MRO110B2 110×110 spherical harmonics gravity from

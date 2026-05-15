@@ -229,6 +229,10 @@ fn parse_mass_content(content: &str, source: &std::path::Path) -> MassInitData {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "mass-fixture parser tests assert bit-exact recovery of literal Python values"
+)]
 mod tests {
     use super::*;
 

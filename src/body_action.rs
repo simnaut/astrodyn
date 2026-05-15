@@ -346,6 +346,10 @@ impl BodyAction {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "body-action recipe tests assert bit-exact recovery of literal-built mass values"
+)]
 mod tests {
     use super::*;
 

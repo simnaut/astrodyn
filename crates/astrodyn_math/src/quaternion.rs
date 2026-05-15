@@ -27,6 +27,10 @@ pub use astrodyn_quantities::{
 // JEOD-parity edge cases that are owned by this crate.
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "quaternion identity / round-trip tests assert bit-exact recovery of literal components"
+)]
 mod tests {
     use super::*;
     use crate::test_utils::{approx_eq_f64, approx_eq_mat3, approx_eq_vec3};

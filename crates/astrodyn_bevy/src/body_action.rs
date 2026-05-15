@@ -849,6 +849,10 @@ pub fn add_body_action_via(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "body-action tests assert bit-exact recovery of literal-built mass values"
+)]
 mod tests {
     use super::*;
     use crate::components::{

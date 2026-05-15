@@ -249,6 +249,10 @@ pub fn compute_corotation_wind_typed<P: Planet>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
 

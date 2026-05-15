@@ -76,6 +76,10 @@ pub fn tdb_to_tai_typed(t: SecondsSince<TDB>, tai_tjt_initial: f64) -> SecondsSi
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "TAI/TDB round-trip closure asserts bit-exact identity at zero offset"
+)]
 mod tests {
     use super::*;
 

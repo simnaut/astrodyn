@@ -1,4 +1,14 @@
 //! Tier 3: Analytical verification of SIM_force_torque physics.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! JEOD's `models/dynamics/dyn_body/verif/SIM_force_torque/` is an
 //! empty-space test rig that verifies force and torque accumulation,

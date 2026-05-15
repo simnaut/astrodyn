@@ -814,6 +814,15 @@ pub fn rkf45_adaptive_sixdof_step(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "step-acceptance tests assert bit-exact zero / literal error-ratio values"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 mod tests {
     use super::*;
     use crate::integration::rk4_translational_step;

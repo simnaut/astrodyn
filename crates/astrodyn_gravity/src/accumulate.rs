@@ -432,6 +432,10 @@ pub fn run_gravity_stage<'a, S, K, Store, BodyIter, FS, FR>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "default-construction tests assert bit-exact zero / literal field values"
+)]
 mod tests {
     use super::*;
     use crate::gravity_source::{GravityModel, GravitySource};

@@ -394,6 +394,13 @@ impl VerificationCaseExt for VerificationCase {
                     let n_ticks = (record.time.abs() / dt).round();
                     let align_tol = (n_ticks + 1.0) * (4.0 * f64::EPSILON) * dt + 1e-12;
                     let remainder = record.time - sim.elapsed();
+                    // `n_ticks` is bounded by the verification record cadence
+                    // (~10⁴ at most per Tier 3 run); cast for diagnostic format only.
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "diagnostic format cast; n_ticks bounded by Tier 3 record count"
+                    )]
+                    let n_ticks_int = n_ticks as u64;
                     assert!(
                         remainder.abs() <= align_tol,
                         "{}: PreStepCadence::PerTick expects record cadence to be an integer \
@@ -402,7 +409,6 @@ impl VerificationCaseExt for VerificationCase {
                          tolerance={align_tol:e})",
                         self.name,
                         record_time = record.time,
-                        n_ticks_int = n_ticks as u64,
                         elapsed = sim.elapsed(),
                     );
                 }
@@ -866,6 +872,13 @@ fn load_reference(
             // `file_name()` returns `Some(_)` first; for `None` the
             // caller skips the file existence check entirely.
             let _ = path;
+            // Synthetic-time generator: `num_steps` is set by the verif case
+            // author (typically O(10³) per orbit period) and fits exactly in
+            // the f64 mantissa.
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "verif step indices bounded by Tier 3 record count"
+            )]
             let times: Vec<f64> = (0..=*num_steps).map(|i| (i as f64) * dt).collect();
             let states = times
                 .iter()

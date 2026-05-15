@@ -1,6 +1,16 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! Tier 3: SIM_verif_attach_detach — chained-attach re-rooting
 //! (`RUN_complex_attach_detach`, `RUN_compute_child_derivative`).
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Cross-validates two slices of JEOD's `RUN_complex_attach_detach` and
 //! `RUN_compute_child_derivative` end-to-end through

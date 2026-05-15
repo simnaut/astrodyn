@@ -1,5 +1,11 @@
 //! `VerificationCase` constructors for the extended relative-dynamics
 //! analytical family (`tier3_sim_relative_extended`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "orbit-period step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! These cases have no JEOD reference CSV — they exercise closed-form
 //! identities of [`astrodyn::compute_relative_state`] and

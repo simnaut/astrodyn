@@ -110,6 +110,10 @@ impl GravitySourceTyped {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "round-trip tests assert bit-exact recovery of literal μ and coefficient values"
+)]
 mod tests {
     use super::*;
     use astrodyn_quantities::ext::F64Ext;

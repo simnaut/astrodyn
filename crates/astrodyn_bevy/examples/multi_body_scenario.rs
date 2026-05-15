@@ -1,5 +1,15 @@
 //! Multi-body scenario example — declarative composition via the
 //! [`SimulationBuilderBevyExt::populate_app`] terminal.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
+#![allow(
+    clippy::float_cmp,
+    reason = "example assertions match literal-built state fields bit-exactly"
+)]
 //!
 //! This is the "scenario in one call" pattern: a recipe assembles the
 //! whole `SimulationBuilder` (sources, bodies, mass tree, ephemeris,

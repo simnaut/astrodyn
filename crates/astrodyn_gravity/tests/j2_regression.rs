@@ -1,4 +1,14 @@
 //! Test J2 nodal regression rate against the analytical formula.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "J2 regression test asserts bit-exact recovery of analytic literal angles"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts (hours of orbit) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Propagates an ISS-like orbit with J2-only gravity and measures the
 //! RAAN change over time. Compares to the analytical formula:

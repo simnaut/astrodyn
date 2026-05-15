@@ -1,4 +1,14 @@
 //! Tier 3: Integrator comparison tests.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "Tier 3 tests assert bit-exact recovery of literal-built / analytic state values"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Tier 3 step counts and indices fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Compares RK4, RKF45, and Gauss-Jackson integrators against each other
 //! and verifies energy conservation on the same circular LEO scenario.

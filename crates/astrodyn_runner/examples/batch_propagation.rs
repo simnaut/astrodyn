@@ -1,4 +1,10 @@
 //! Standalone batch Kepler propagation using the recipes module.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Propagates a circular LEO orbit for 10 periods, printing eccentricity
 //! and energy drift at regular intervals. Uses

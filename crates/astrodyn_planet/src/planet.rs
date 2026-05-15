@@ -87,6 +87,10 @@ impl PlanetShape {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "tests assert bit-exact accessor round-trips against literal-initialized constants"
+)]
 mod tests {
     use crate::presets::*;
 

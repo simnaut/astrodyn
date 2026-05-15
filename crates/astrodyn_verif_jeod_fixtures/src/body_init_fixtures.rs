@@ -206,6 +206,13 @@ const MAX_SCHEMA_VERSION: u64 = 2;
 /// Hand-rolled JSON parser for a body-init bundle. Mirrors the
 /// no-`serde_json` style of `planet_geodetic_verif.rs`.
 pub(crate) fn parse_bundle_json(s: &str) -> Result<BodyInitBundle, String> {
+    // Schema version is a small positive integer encoded as a JSON
+    // number; the surrounding `MIN_SCHEMA_VERSION..=MAX_SCHEMA_VERSION`
+    // range check rejects any value that would not fit exactly.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "schema_version validated to be in MIN..=MAX immediately below"
+    )]
     let schema_version = parse_num_field(s, "schema_version")
         .ok_or_else(|| "missing top-level \"schema_version\" key".to_string())?
         as u64;
@@ -469,6 +476,10 @@ fn parse_array_field_entries<'a>(s: &'a str, key: &str) -> Result<Vec<&'a str>, 
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "parser tests assert bit-exact recovery of literal JSON values"
+)]
 mod tests {
     use super::*;
 

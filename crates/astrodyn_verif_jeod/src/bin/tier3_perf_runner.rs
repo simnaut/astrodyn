@@ -1,4 +1,10 @@
 //! Steady-state per-step wall-clock measurement for Tier 3 scenarios.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "perf runner step counts and timings fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Drives a named scenario through `astrodyn_runner::Simulation::step()`
 //! many times, captures elapsed time across `--repeat` independent runs,

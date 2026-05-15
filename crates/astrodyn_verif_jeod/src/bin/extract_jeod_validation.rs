@@ -1,4 +1,10 @@
 //! Extract / verify the `astrodyn_math` validation fixtures.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "regen-tool sizes and counts fit exactly in f64 mantissa and target int width"
+)]
 //!
 //! This is a **regen-only** path: it reads `$JEOD_HOME` (or an explicit
 //! `--jeod-home <PATH>` argument), parses

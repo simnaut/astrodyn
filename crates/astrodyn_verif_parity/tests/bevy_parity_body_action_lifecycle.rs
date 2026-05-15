@@ -1,5 +1,15 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers.
 //! Tier 3-style cross-validation for the dynamic body-action lifecycle
+
+#![allow(
+    clippy::float_cmp,
+    reason = "bevy-parity tests assert bit-exact identity between runner and Bevy state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //! API (#199). Mirrors JEOD's `SIM_removable_body_action` `RUN_1` and
 //! `mass.py` add → remove → re-add idiom in the Bevy adapter, then
 //! propagates the resulting orbit and cross-validates the trajectory

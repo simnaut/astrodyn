@@ -5,6 +5,11 @@
 //! durations and at critical boundaries (leap seconds, GPS week rollovers,
 //! MET holds, DYN scale factor changes, UDE custom epochs).
 
+#![allow(
+    clippy::float_cmp,
+    reason = "TAI-UTC offsets are integer literals in f64; bit-exact equality is the spec"
+)]
+
 use astrodyn_time::epoch::{mjd_to_tjt, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use astrodyn_time::leap_second::default_leap_second_table;
 use astrodyn_time::time_converter_tai_tdb;
@@ -499,6 +504,12 @@ fn tier3_time_tt_tdb_relationship() {
 
     let mut max_diff: f64 = 0.0;
     let step = 3600.0; // 1 hour steps
+
+    // 365.25 * 24.0 = 8 766, far below `usize::MAX`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "constant 365.25 * 24.0 = 8766 fits in usize"
+    )]
     let total_steps = (365.25 * 24.0) as usize; // ~1 year
 
     for _ in 0..total_steps {

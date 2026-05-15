@@ -139,6 +139,10 @@ pub fn parse_reference_state_py(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "reference-state parser tests assert bit-exact recovery of literal field values"
+)]
 mod tests {
     use super::*;
     use uom::si::{length::meter, velocity::meter_per_second};

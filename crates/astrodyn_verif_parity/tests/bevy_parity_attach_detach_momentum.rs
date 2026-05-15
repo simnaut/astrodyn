@@ -1,6 +1,16 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy adapter parity for the JEOD attach/detach
 //! momentum-conservation port + detached-subtree ballistic tracking.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "bevy-parity tests assert bit-exact identity between runner and Bevy state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //! Mirrors `models/dynamics/dyn_body/src/dyn_body_attach.cc` and
 //! `dyn_body_detach.cc` in JEOD.
 //!

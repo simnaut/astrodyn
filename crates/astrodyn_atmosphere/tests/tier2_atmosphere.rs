@@ -75,6 +75,13 @@ fn run_csv_test(label: &str, csv_name: &str, tjt: f64, density_tol: f64, tempera
     // it. Detect by exact equality of the geodetic position fields.
     let r0 = &rows[0];
     let r1 = &rows[1];
+    // Detect Trick's row-0 duplicate via bit-exact equality of the
+    // CSV-parsed geodetic fields: if the parser emitted identical bytes
+    // for two adjacent rows, they are by definition the same record.
+    #[allow(
+        clippy::float_cmp,
+        reason = "duplicate-row detector compares CSV-parsed bytes verbatim"
+    )]
     let skip_first = r0.altitude_m == r1.altitude_m
         && r0.latitude_rad == r1.latitude_rad
         && r0.longitude_rad == r1.longitude_rad;

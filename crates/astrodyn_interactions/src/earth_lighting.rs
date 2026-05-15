@@ -298,6 +298,10 @@ fn observation_angle(dir_a: DVec3, dist_a: f64, dir_b: DVec3, dist_b: f64) -> f6
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "circle-overlap tests assert bit-exact zero / full-overlap areas at analytic geometries"
+)]
 mod tests {
     use super::*;
 

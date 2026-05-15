@@ -444,6 +444,10 @@ pub fn compute_frame_derivatives(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "Default-construction tests assert bit-exact zero / literal field values"
+)]
 mod tests {
     use super::*;
 

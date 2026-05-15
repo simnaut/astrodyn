@@ -2,6 +2,11 @@
 //! `PlanetShape` ellipsoid + `astrodyn_math::geodetic` conversion kernels,
 //! seeded by the three explicit test points from JEOD's
 //! `SIM_PFIXPOSN_VERIF` Trick verification sim.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "preset-vs-JEOD field comparison asserts bit-exact preset values"
+)]
 //!
 //! ## Reference
 //!

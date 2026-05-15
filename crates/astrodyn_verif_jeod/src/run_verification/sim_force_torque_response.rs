@@ -1,6 +1,12 @@
 // JEOD_INV: TS.01 — `<SelfRef>` is used here at the typed↔raw kernel-boundary helpers (named-method opt-in; the implicit `From<RotationalState>` / `From<MassProperties>` bypass was removed in #397).
 //! `VerificationCase` constructors for the SIM_force_torque analytical
 //! family (`tier3_sim_force_torque_response`).
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "verif step counts bounded by Tier 3 propagation span (<< usize / f64 mantissa)"
+)]
 //!
 //! JEOD's `models/dynamics/dyn_body/verif/SIM_force_torque/` is an
 //! empty-space test rig that verifies force and torque accumulation,

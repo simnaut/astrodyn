@@ -749,10 +749,20 @@ pub fn composite_mass_system(
             }
             if let Ok(mut live) = writes.get_mut(entity) {
                 let live_untyped = mass_typed_to_raw(&live.0);
-                if live_untyped.mass != core.0.mass
-                    || live_untyped.position != core.0.position
-                    || live_untyped.inertia != core.0.inertia
-                {
+                // Bit-exact change detector for the writeback fast path:
+                // if the recomputed mass would be byte-identical to the
+                // stored mass, we skip `bypass_change_detection` so
+                // Bevy's `Changed<>` query stays correct. A
+                // `(a - b).abs() < eps` window would mark unchanged
+                // values as changed at the chosen tolerance.
+                #[allow(
+                    clippy::float_cmp,
+                    reason = "bit-exact change detector for Bevy writeback skip path"
+                )]
+                let unchanged = live_untyped.mass == core.0.mass
+                    && live_untyped.position == core.0.position
+                    && live_untyped.inertia == core.0.inertia;
+                if !unchanged {
                     // allowed: typed↔raw kernel-boundary lift on the
                     // mass-tree fast-path writeback (named-method
                     // opt-in; see #397).

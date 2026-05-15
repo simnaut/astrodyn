@@ -1,6 +1,16 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy ECS vs `astrodyn_runner::Simulation` parity for the
 //! chained-attach (re-rooting) path, driven through the production
+
+#![allow(
+    clippy::float_cmp,
+    reason = "bevy-parity tests assert bit-exact identity between runner and Bevy state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //! `AttachEvent` surface end-to-end.
 //!
 //! Companion to `bevy_parity_chained_attach_reroot.rs`, which pins the

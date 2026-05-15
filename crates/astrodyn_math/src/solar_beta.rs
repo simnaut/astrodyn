@@ -149,6 +149,10 @@ pub fn compute_body_solar_beta_typed(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
     use astrodyn_quantities::prelude::Vec3Ext;

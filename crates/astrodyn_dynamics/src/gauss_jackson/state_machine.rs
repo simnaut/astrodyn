@@ -6,6 +6,15 @@
 //! Guides the Gauss-Jackson integration through five phases:
 //! Reset → Priming → BootstrapEdit → BootstrapStep → Operational.
 
+// Gauss-Jackson multistep counters (`tour_count`, `steps_since_reset`,
+// `history_length`) are small integers (typically 4-16) bounded by the
+// integrator order at construction; their `usize → f64` casts are
+// lossless for any realistic configuration.
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "Gauss-Jackson tour/step counters bounded by integrator order (<< f64 mantissa)"
+)]
+
 use super::config::GaussJacksonConfig;
 
 /// Finite state machine states for Gauss-Jackson integration.

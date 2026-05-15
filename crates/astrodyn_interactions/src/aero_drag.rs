@@ -258,6 +258,10 @@ pub fn compute_ballistic_drag_typed<P: Planet, V: Vehicle>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "typed-vs-raw drag-config round-trip tests assert bit-exact identity at the type boundary"
+)]
 mod typed_tests {
     use super::*;
     use uom::si::area::square_meter;
@@ -363,6 +367,10 @@ mod typed_tests {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "drag-equation tests assert bit-exact recovery of analytic 0.5·ρ·v²·Cd·A literal"
+)]
 mod tests {
     use super::*;
 

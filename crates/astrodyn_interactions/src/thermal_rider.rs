@@ -279,6 +279,10 @@ pub fn compute_thermal_power_balance(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "thermal-state tests assert bit-exact recovery of literal-built facet temperatures"
+)]
 mod tests {
     use super::*;
 

@@ -1,4 +1,14 @@
 //! Mission-crate ergonomics regression net.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "ergonomics regression tests assert bit-exact recovery of literal-built state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and u32"
+)]
 //!
 //! Phase 11 of #101. This integration test mocks the lifecycle of a
 //! downstream mission crate that depends only on `astrodyn_bevy` — it imports

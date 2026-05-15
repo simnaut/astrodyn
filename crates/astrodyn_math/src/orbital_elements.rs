@@ -750,6 +750,10 @@ pub fn kep_eqtn_b(m: f64) -> f64 {
 // ====================================================================
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "orbital-element typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
     use crate::types::DVec3;

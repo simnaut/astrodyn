@@ -1,4 +1,9 @@
 //! Runtime cover for the typestate `VehicleBuilder`.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "typestate-builder tests assert bit-exact recovery of literal-built mass / Cd values"
+)]
 //!
 //! Compile-fail gating is locked in via `compile_fail` doctests on the
 //! [`vehicle_builder`](astrodyn::vehicle_builder) module — those run via

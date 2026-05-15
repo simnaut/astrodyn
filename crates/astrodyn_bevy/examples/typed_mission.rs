@@ -1,5 +1,15 @@
 //! Typed mission example — demonstrates the typed `astrodyn::VehicleBuilder`
 //! terminating into a Bevy spawn.
+
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "example step counts (hours of propagation) fit exactly in f64 mantissa and usize"
+)]
+#![allow(
+    clippy::float_cmp,
+    reason = "example assertions match literal-built state fields bit-exactly"
+)]
 //!
 //! This is the user-facing demonstration described in #101's end-state for
 //! Phase 9: a mission author composes the vehicle with the typestate

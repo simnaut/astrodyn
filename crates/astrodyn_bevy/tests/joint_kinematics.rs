@@ -1,4 +1,14 @@
 //! Bevy integration test for [`astrodyn_bevy::systems::joint_kinematics_system`].
+
+#![allow(
+    clippy::float_cmp,
+    reason = "joint-kinematics tests assert bit-exact recovery of literal-built state fields"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "test step counts fit exactly in f64 mantissa and usize"
+)]
 //!
 //! Spawns a bare Bevy app with [`astrodyn_bevy::AstrodynPlugin`] and a single
 //! frame entity carrying [`JointKinematicsC`], advances `FixedUpdate`

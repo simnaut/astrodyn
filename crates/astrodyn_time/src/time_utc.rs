@@ -123,6 +123,16 @@ pub fn calendar_to_tjt(cal: &CalendarDate) -> f64 {
 /// field is always in `[0, 60)` — values within 1e-6 of 60.0 are rounded
 /// up to the next minute. A `23:59:60` leap second instant cannot be
 /// produced. This matches JEOD's `calculate_calendar_values()` behavior.
+//
+// JEOD's calendar decomposition operates on small bounded integers
+// (julian day, minute-of-day, quotients of ~365 / ~30.585). Each
+// `f64 → i32` cast feeds an integer that the surrounding arithmetic
+// proves is far below `i32::MAX`, so the truncation lint is silenced
+// at the function boundary rather than at every call site.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "calendar quotients are small bounded integers per JEOD algorithm"
+)]
 pub fn tjt_to_calendar(tjt: f64) -> CalendarDate {
     let mut julian_day = tjt.floor() as i32;
 

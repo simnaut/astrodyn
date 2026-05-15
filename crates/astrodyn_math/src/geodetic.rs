@@ -420,6 +420,10 @@ pub fn geodetic_to_cartesian_typed<P: Planet>(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "geodetic typed-vs-raw parity tests assert bit-exact identity at the type boundary"
+)]
 mod tests {
     use super::*;
     use astrodyn_quantities::ext::F64Ext;
