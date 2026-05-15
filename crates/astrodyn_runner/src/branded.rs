@@ -167,8 +167,23 @@ impl<'sim> BrandedSimulation<'sim> {
     }
 
     /// Read a source's inertial position.
+    ///
+    /// Prefer [`source_position_typed`](Self::source_position_typed) for the
+    /// typed-result path.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
     pub fn source_position(&self, idx: SourceIdx<'sim>) -> DVec3 {
         self.inner.source_position(idx.raw)
+    }
+
+    /// Typed sibling of [`source_position`](Self::source_position). Returns
+    /// the source's inertial-frame position already wrapped in
+    /// `Position<RootInertial>` (the runner-wide convention; mirrors
+    /// `Simulation::source_position_typed`).
+    pub fn source_position_typed(
+        &self,
+        idx: SourceIdx<'sim>,
+    ) -> astrodyn::Position<astrodyn::RootInertial> {
+        self.inner.source_position_typed(idx.raw)
     }
 
     /// Read a body's current state. The body must have been added via

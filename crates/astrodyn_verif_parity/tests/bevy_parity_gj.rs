@@ -128,6 +128,10 @@ fn run_gj_bootstrap_parity(
     time_scale_factor: f64,
     n_steps: usize,
 ) {
+    // Synthetic-state parity probes trip GJ non-convergence; opt in to the
+    // JEOD-faithful warn-and-continue (#485 C1) so the test stays focused on
+    // its actual subject (runner ↔ Bevy bit-identity).
+    let config = config.with_allow_non_convergence(true);
     let trans = sim_gj::gj_initial_state();
 
     // ── Bevy ──

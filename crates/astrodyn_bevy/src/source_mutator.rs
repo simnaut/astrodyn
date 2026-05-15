@@ -107,9 +107,16 @@ impl SourceReader<'_, '_> {
     /// the same storage [`crate::frame_param::FrameOrigin`] and
     /// [`crate::frame_param::RelativeFrameState`] consume.
     ///
+    /// Prefer [`source_position_typed`](Self::source_position_typed) for the
+    /// typed-result path.
+    ///
     /// # Panics
     ///
     /// Panics if `source` is not a registered gravity source.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up — typed sibling
+    // `source_position_typed` is the preferred consumer; this raw variant
+    // is kept for backwards compatibility until the parity-lockstep
+    // follow-on PR removes it (see #485 task 18).
     pub fn source_position(&self, source: Entity) -> DVec3 {
         let fe = self.source_frame_entity(source);
         self.frame_trans
@@ -127,17 +134,40 @@ impl SourceReader<'_, '_> {
             })
     }
 
+    /// Typed sibling of [`source_position`](Self::source_position). Returns
+    /// the source's inertial-frame position already wrapped in
+    /// `Position<F>`. The frame phantom is asserted by the caller via
+    /// turbofish (e.g. `source_position_typed::<RootInertial>` for the
+    /// production-path central convention) — no runtime check is
+    /// performed, mirroring `astrodyn::Position::<F>::from_raw_si`.
+    pub fn source_position_typed<F: astrodyn::Frame>(
+        &self,
+        source: Entity,
+    ) -> astrodyn::Position<F> {
+        // allowed: typed-sibling accessor boundary. The phantom is the
+        // caller's pinned-frame convention attached unchecked, matching
+        // the `Simulation::source_position_typed` shape.
+        astrodyn::Position::<F>::from_raw_si(self.source_position(source))
+    }
+
     /// Get the planet-fixed rotation matrix for `source` (the
     /// `t_parent_this` of the source's pfix frame entity). Returns
     /// `None` if the source has no pfix frame entity (i.e. no
     /// [`PfixFrameEntityC`] — non-rotating source). Mirrors
     /// `astrodyn::source_state::source_pfix_rotation`.
     ///
+    /// Prefer [`source_pfix_rotation_typed`](Self::source_pfix_rotation_typed)
+    /// for typed `FrameTransform<RootInertial, PlanetFixed<P>>`.
+    ///
     /// # Panics
     ///
     /// Panics if `source` is not a registered gravity source. Returns
     /// `None` (not panic) when the source is registered but has no
     /// pfix child — same contract as the arena helper.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up — typed sibling
+    // `source_pfix_rotation_typed::<P>` is the preferred consumer; this
+    // raw variant is kept for backwards compatibility until the
+    // parity-lockstep follow-on PR removes it (see #485 task 18).
     pub fn source_pfix_rotation(&self, source: Entity) -> Option<DMat3> {
         // Verify the entity is a registered gravity source first.
         let _ = self.source_frame_entity(source);
@@ -154,6 +184,21 @@ impl SourceReader<'_, '_> {
             )
         });
         Some(rot.t_parent_this)
+    }
+
+    /// Typed sibling of [`source_pfix_rotation`](Self::source_pfix_rotation).
+    /// Returns the planet-fixed rotation as
+    /// `FrameTransform<RootInertial, PlanetFixed<P>>`, matching the canonical
+    /// shape used by `PlanetFixedRotationC<P>`. The caller asserts via the
+    /// turbofish that `source` resolves to planet `P`'s pfix frame.
+    pub fn source_pfix_rotation_typed<P: astrodyn::Planet>(
+        &self,
+        source: Entity,
+    ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
+        let raw = self.source_pfix_rotation(source);
+        // allowed: typed-sibling accessor boundary. The phantom is the
+        // caller's pinned-planet convention attached unchecked.
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 }
 
@@ -249,9 +294,12 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
     /// the same storage [`crate::frame_param::FrameOrigin`] and
     /// [`crate::frame_param::RelativeFrameState`] consume.
     ///
+    /// Prefer [`source_position_typed`](Self::source_position_typed).
+    ///
     /// # Panics
     ///
     /// Panics if `source` is not a registered gravity source.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
     pub fn source_position(&self, source: Entity) -> DVec3 {
         let fe = self.source_frame_entity(source);
         self.frame_trans
@@ -269,17 +317,30 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
             })
     }
 
+    /// Typed sibling of [`source_position`](Self::source_position).
+    /// See [`SourceReader::source_position_typed`] for semantics.
+    pub fn source_position_typed<F: astrodyn::Frame>(
+        &self,
+        source: Entity,
+    ) -> astrodyn::Position<F> {
+        // allowed: typed-sibling accessor boundary; phantom attached unchecked.
+        astrodyn::Position::<F>::from_raw_si(self.source_position(source))
+    }
+
     /// Get the planet-fixed rotation matrix for `source` (the
     /// `t_parent_this` of the source's pfix frame entity). Returns
     /// `None` if the source has no pfix frame entity (i.e. no
     /// [`PfixFrameEntityC`] — non-rotating source). Mirrors
     /// `astrodyn::source_state::source_pfix_rotation`.
     ///
+    /// Prefer [`source_pfix_rotation_typed`](Self::source_pfix_rotation_typed).
+    ///
     /// # Panics
     ///
     /// Panics if `source` is not a registered gravity source. Returns
     /// `None` (not panic) when the source is registered but has no
     /// pfix child — same contract as the arena helper.
+    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
     pub fn source_pfix_rotation(&self, source: Entity) -> Option<DMat3> {
         // Verify the entity is a registered gravity source first.
         let _ = self.source_frame_entity(source);
@@ -296,6 +357,19 @@ impl<P: Planet> SourceMutator<'_, '_, P> {
             )
         });
         Some(rot.t_parent_this)
+    }
+
+    /// Typed sibling of [`source_pfix_rotation`](Self::source_pfix_rotation).
+    /// Returns the planet-fixed rotation tagged with the `SourceMutator`'s
+    /// `<P: Planet>` phantom — the mutator is already pinned to one planet
+    /// at instantiation, so no per-call turbofish is needed.
+    pub fn source_pfix_rotation_typed(
+        &self,
+        source: Entity,
+    ) -> Option<astrodyn::FrameTransform<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>> {
+        let raw = self.source_pfix_rotation(source);
+        // allowed: typed-sibling accessor boundary; phantom attached unchecked.
+        raw.map(astrodyn::FrameTransform::<astrodyn::RootInertial, astrodyn::PlanetFixed<P>>::from_matrix)
     }
 
     /// Set the inertial position of `source` and sync to the source's

@@ -156,7 +156,12 @@ fn tier3_integ_rkf45_energy_conservation() {
 fn tier3_integ_gj_energy_conservation() {
     let dt = 10.0;
     let (_, _, max_rel_err) = propagate_one_orbit(
-        IntegratorType::GaussJackson(GaussJacksonConfig::with_order(8)),
+        IntegratorType::GaussJackson(
+            // JEOD-faithful warn-and-continue (#485 C1): synthetic
+            // comparison probe trips GJ convergence; JEOD-compatible
+            // behavior is the right semantic for this comparison.
+            GaussJacksonConfig::with_order(8).with_allow_non_convergence(true),
+        ),
         dt,
     );
     println!("GJ-8 max relative energy error: {max_rel_err:.6e}");
@@ -199,7 +204,12 @@ fn tier3_integ_rk4_vs_gj_agreement() {
     let dt = 10.0;
     let (pos_rk4, vel_rk4, _) = propagate_one_orbit(IntegratorType::Rk4, dt);
     let (pos_gj, vel_gj, _) = propagate_one_orbit(
-        IntegratorType::GaussJackson(GaussJacksonConfig::with_order(8)),
+        IntegratorType::GaussJackson(
+            // JEOD-faithful warn-and-continue (#485 C1): synthetic
+            // comparison probe trips GJ convergence; JEOD-compatible
+            // behavior is the right semantic for this comparison.
+            GaussJacksonConfig::with_order(8).with_allow_non_convergence(true),
+        ),
         dt,
     );
 

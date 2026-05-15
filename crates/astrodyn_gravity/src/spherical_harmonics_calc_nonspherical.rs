@@ -132,6 +132,9 @@ pub fn calc_nonspherical(
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
+    // JEOD_INV: GV.04 — degree ≤ source degree. Belt-and-suspenders guard
+    // matching the validation site in `gravity_controls.rs::check_validity`;
+    // protects standalone callers that bypass the manager-level check.
     assert!(
         degree <= data.degree,
         "Requested degree ({degree}) exceeds source max degree ({})",
@@ -157,6 +160,22 @@ pub fn calc_nonspherical(
 /// Same algorithm as [`calc_nonspherical`] but avoids heap
 /// allocation by reusing pre-allocated buffers. The scratch workspace must
 /// have been created with `degree >= ` the requested degree.
+///
+/// # Panics
+///
+/// All of the following preconditions are checked and panic immediately on
+/// violation (in both debug and release builds):
+///
+/// - `degree > data.degree` — requested harmonics exceed the source's
+///   stored coefficient table (`JEOD_INV: GV.04`).
+/// - `order > data.order` — requested order exceeds the source max
+///   (`JEOD_INV: GV.05`).
+/// - `order > degree` — order must not exceed degree (`JEOD_INV: GV.06`).
+/// - `scratch.degree < degree` — the reusable buffer was sized for a
+///   smaller harmonic expansion (`JEOD_INV: GV.21`).
+/// - `posn_pf` is the zero vector — the Gottlieb recurrence divides by
+///   `r`, so zero-position input would silently produce NaN gravity
+///   (`JEOD_INV: GV.22`).
 #[allow(clippy::too_many_arguments)]
 pub fn calc_nonspherical_with_scratch(
     data: &SphericalHarmonicsData,
@@ -170,27 +189,41 @@ pub fn calc_nonspherical_with_scratch(
     delta_c20: f64,
     has_delta_coeffs: bool,
 ) -> GravityAcceleration {
-    // Matching JEOD's check_validity(): these are fatal errors, not silent clamps.
+    // Matching JEOD's check_validity(): these are fatal errors, not silent
+    // clamps. The kernel-side defense duplicates the validation site in
+    // `gravity_controls.rs::check_validity` so standalone callers (and any
+    // future skip-the-manager path) still fail loudly.
+    // JEOD_INV: GV.04 — requested degree must not exceed the source's stored
+    // coefficient table max degree (kernel-side defense for standalone callers).
     assert!(
         degree <= data.degree,
         "Requested degree ({degree}) exceeds source max degree ({})",
         data.degree
     );
+    // JEOD_INV: GV.05 — requested order must not exceed the source's stored
+    // coefficient table max order (kernel-side defense for standalone callers).
     assert!(
         order <= data.order,
         "Requested order ({order}) exceeds source max order ({})",
         data.order
     );
+    // JEOD_INV: GV.06 — requested order must not exceed requested degree
+    // (kernel-side defense for standalone callers; mirrors gravity_controls).
     assert!(
         order <= degree,
         "Requested order ({order}) exceeds requested degree ({degree})"
     );
+    // JEOD_INV: GV.21 — Gottlieb scratch workspace must be sized at least
+    // as large as the requested degree (the recurrence indexes by degree).
     assert!(
         scratch.degree >= degree,
         "GottliebScratch degree ({}) must be >= requested degree ({degree})",
         scratch.degree
     );
 
+    // JEOD_INV: GV.22 — position must be non-zero (division by `r` is
+    // unavoidable in the Gottlieb recurrence; zero-vector input would
+    // silently produce NaN gravity).
     assert!(posn_pf.length_squared() > 0.0, "position must be non-zero");
 
     // If degree < 2, there are no harmonics to compute (only point-mass).

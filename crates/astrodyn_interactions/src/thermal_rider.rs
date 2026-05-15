@@ -180,8 +180,8 @@ pub struct ThermalPowerBalance {
 /// **unit** normal in the same frame. The `max(0, -n·s)` term is the
 /// cosine of the angle between the facet's outward normal and the incoming
 /// flux, clamped at grazing; it is only a cosine if the normals are unit
-/// vectors, so callers must normalize before passing them in. Debug
-/// builds assert this via `debug_assert!(n.length() ≈ 1)`.
+/// vectors, so callers must normalize before passing them in. Both debug
+/// and release builds assert this — see the `# Panics` section below.
 ///
 /// Earth albedo is Sun-reflected broadband solar radiation, so it is
 /// absorbed at the solar-band absorptivity (same coefficient as direct
@@ -195,7 +195,15 @@ pub struct ThermalPowerBalance {
 /// this per-facet balance.
 ///
 /// # Panics
-/// Panics if `structural_normals.len() != facets.len()`.
+/// - `structural_normals.len() != facets.len()`.
+/// - `env.sun_direction` or `env.earth_direction` is not a unit vector
+///   (within `1e-6` of `|v|² = 1`).
+/// - any `structural_normals[i]` is not a unit vector.
+///
+/// The unit-vector preconditions panic in both debug **and release** builds
+/// (#485 H5): the `max(0, -n·s)` cosine term only carries physical meaning
+/// when the inputs are normalized, and silently propagating a non-unit
+/// normal would corrupt the solar / albedo / IR power balance.
 pub fn compute_thermal_power_balance(
     facets: &[ThermalFacet],
     env: &ThermalEnvironment,
@@ -207,12 +215,12 @@ pub fn compute_thermal_power_balance(
         n,
         "structural_normals length must match facets length"
     );
-    debug_assert!(
+    assert!(
         (env.sun_direction.length_squared() - 1.0).abs() < 1e-6,
         "env.sun_direction must be a unit vector (|s|² = {})",
         env.sun_direction.length_squared()
     );
-    debug_assert!(
+    assert!(
         (env.earth_direction.length_squared() - 1.0).abs() < 1e-6,
         "env.earth_direction must be a unit vector (|e|² = {})",
         env.earth_direction.length_squared()
@@ -226,7 +234,7 @@ pub fn compute_thermal_power_balance(
 
     for (i, facet) in facets.iter().enumerate() {
         let n_i = structural_normals[i];
-        debug_assert!(
+        assert!(
             (n_i.length_squared() - 1.0).abs() < 1e-6,
             "structural_normals[{i}] must be a unit vector (|n|² = {})",
             n_i.length_squared()

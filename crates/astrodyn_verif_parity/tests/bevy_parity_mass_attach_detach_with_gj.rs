@@ -84,7 +84,11 @@ fn build_two_body_app(
         velocity: DVec3::new(0.0, 7900.0, 0.0),
     };
 
-    let gj_cfg = GaussJacksonConfig::with_order(8);
+    // Parity test uses synthetic mass-tree state that occasionally trips
+    // GJ corrector non-convergence; opt in to the JEOD-faithful warn-and-
+    // continue path (#485 C1) so the test focuses on parity between runner
+    // and Bevy mass-tree handling rather than the fail-loudly default.
+    let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
     let body_a = app
         .world_mut()
         .spawn((
@@ -246,7 +250,11 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
         position: DVec3::new(9e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 8000.0, 0.0),
     };
-    let gj_cfg = GaussJacksonConfig::with_order(8);
+    // Parity test uses synthetic mass-tree state that occasionally trips
+    // GJ corrector non-convergence; opt in to the JEOD-faithful warn-and-
+    // continue path (#485 C1) so the test focuses on parity between runner
+    // and Bevy mass-tree handling rather than the fail-loudly default.
+    let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
     let mk_body = |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
         app.world_mut()
             .spawn((

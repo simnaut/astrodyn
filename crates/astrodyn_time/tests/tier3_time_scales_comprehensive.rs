@@ -100,7 +100,10 @@ fn tier3_time_all_scales_24h_propagation() {
 ///   2017-01-01 (TAI-UTC: 36 -> 37)
 #[test]
 fn tier3_time_utc_leap_second_boundaries() {
-    let table = default_leap_second_table();
+    // The 2017 boundary is the last entry; probing one second past it
+    // (`utc_tjt_after = 17754 + 1/86400`) is strictly OOR, so opt in to
+    // JEOD-faithful clamp behavior (#485 H2).
+    let table = default_leap_second_table().with_clamp_out_of_range(true);
 
     // Test boundaries: (MJD of leap second, TAI-UTC before, TAI-UTC after)
     let boundaries: &[(f64, f64, f64)] = &[
