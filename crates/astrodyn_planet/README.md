@@ -10,6 +10,42 @@ shape parameters (gravitational parameter, equatorial and polar radii,
 flattening) consumed by gravity, geodetic, atmospheric, and
 frame-rotation code.
 
+## When to use
+
+- **Building a gravity source** — every `astrodyn_gravity` source
+  needs `mu`; `PlanetShape::mu` is the canonical accessor.
+- **Geodetic conversions** — `astrodyn_math::geodetic` needs
+  `r_eq`, `r_pol`, and the flattening for the ellipsoidal latitude
+  / longitude / altitude solver.
+- **Atmosphere models** — MET and the exponential fallback both
+  need the reference radius to compute altitude above the
+  ellipsoid.
+- **Reusing canonical bodies** — `presets::EARTH` / `MOON` /
+  `SUN` / `MARS` give the JEOD-matched parameter blocks so
+  cross-validation tests don't drift from JEOD numerics.
+
+Most mission code reaches the preset constants via the recipe layer
+in `astrodyn::recipes::earth` / `moon` / `mars`; this crate is the
+pure parameter source those recipes wrap.
+
+## Key concepts
+
+`PlanetShape` is a value type — `name`, `mu` (m³/s²), `r_eq` (m),
+`r_pol` (m), `flat_coeff` — plus a small handful of derived helpers
+(`flat_inv`, `e_ellipsoid`). It carries no state and no allocations,
+so it is freely `Copy`-passable through the physics pipeline. There
+is no separate "live planet" struct: the gravity source, the geodetic
+solver, and the frame-rotation models all read from `PlanetShape` and
+combine it with their own model-specific data (gravity coefficients,
+nutation tables) downstream.
+
+`presets::EARTH` follows the GGM05C `mu = 3.986004415e14 m³/s²`
+rather than IERS 2010, which differs by ~3e6 m³/s² — we follow JEOD's
+choice so Tier 3 cross-validation against JEOD trajectories doesn't
+chase a 7-ppm `mu` offset for hundreds of orbits. The other presets
+similarly track the JEOD source data files
+(`planet/data/src/<body>.cc`) verbatim.
+
 ## Layered architecture
 
 ```
