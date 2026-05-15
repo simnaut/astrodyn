@@ -893,4 +893,46 @@ mod tests {
              expected {expected_tangent_dir:?}, got {got_tangent_dir:?}",
         );
     }
+
+    /// `IntegrableObject::advance_intermediate` requires `snapshot`
+    /// to have populated `scratch.temps_snapshot` to the same length
+    /// as `temperatures`. Without the preceding snapshot, the scratch
+    /// length is zero and the integrator would otherwise read past
+    /// the end of the snapshot vector and write truncated state.
+    /// Drive the length-parity assertion by constructing a
+    /// `FlatPlateState` with one plate, skipping the snapshot, and
+    /// calling `advance_intermediate`.
+    #[test]
+    #[should_panic(expected = "temps_snapshot length must equal temperatures length")]
+    fn in_32_panics_on_advance_intermediate_without_snapshot() {
+        // JEOD_INV: IN.32 — snapshot must precede advance_intermediate
+        use crate::SelfRef;
+        use astrodyn_interactions::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+        use astrodyn_quantities::ext::Vec3Ext;
+        use astrodyn_quantities::frame::StructuralFrame;
+
+        let plate = FlatPlate::<SelfRef> {
+            area: 1.0,
+            normal: DVec3::new(1.0, 0.0, 0.0),
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 1.0,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let mut state = FlatPlateState::<SelfRef> {
+            plates: vec![(plate, params, thermal)],
+            temperatures: vec![300.0],
+            t_pow4_cached: vec![300.0_f64.powi(4)],
+            ..Default::default()
+        };
+        // Deliberately omit `state.snapshot()` — `temps_snapshot` stays
+        // empty (len 0) while `temperatures` is len 1.
+        state.advance_intermediate(&[0.0], 0.1);
+    }
 }
