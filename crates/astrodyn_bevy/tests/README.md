@@ -149,6 +149,28 @@ Baselines are **not silently widened**. Loosening a baseline requires a
 PR comment citing the physical justification — a code change that
 legitimately moves the error, not a tolerance papering over a regression.
 
+This is enforced structurally by `scripts/check_baseline_widening.sh`,
+which runs in the `check` CI lane and diffs the working
+`baselines.json` against `origin/main`. For each (test, metric,
+component) tuple it computes a widening ratio and emits a GitHub
+Actions annotation in one of three buckets:
+
+| widening ratio   | bucket  | CI effect                              |
+| ---------------- | ------- | -------------------------------------- |
+| ≤ 1.50x          | silent  | numerical drift, no signal             |
+| 1.50x – 2.00x    | warning | `::warning::` annotation, lane passes  |
+| > 2.00x          | error   | `::error::` annotation, lane fails     |
+
+Tightenings, brand-new test entries, and removed test entries are
+surfaced as `::notice::` lines but never fail the lane. The thresholds
+are overridable via `BASELINE_WARN_RATIO` and `BASELINE_FAIL_RATIO`
+environment variables; the base ref is overridable via
+`BASELINE_BASE_REF` (default `origin/main`). When a refreeze
+legitimately crosses the warning band, name the physical change in
+the PR description; when it crosses the error band, the same applies
+and the PR author should rerun the lane with adjusted thresholds set
+locally to confirm the new ratios before pushing.
+
 The check is automated by `crates/astrodyn_verif_jeod/src/bin/tier3_baseline_diff.rs`:
 
 ```bash
