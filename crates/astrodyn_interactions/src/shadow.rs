@@ -414,41 +414,6 @@ mod tests {
         );
     }
 
-    /// `RadiationThirdBody.radius > 0` is validated during JEOD's
-    /// `RadiationThirdBody::initialize()`. Our stateless kernel must
-    /// reject the same misconfiguration once the geometry is far
-    /// enough into the shadow algorithm that `r_ratio` would otherwise
-    /// be computed against a zero/negative body radius. Drive geometry
-    /// that lands past the early-return branches (vehicle behind, but
-    /// offset enough to enter the penumbra cone) so the assert sites
-    /// in `compute_shadow_fraction` actually fire rather than the
-    /// `r_par < 0` or `r_mag2 <= 0` early returns.
-    #[test]
-    #[should_panic(expected = "body_radius must be positive")]
-    fn in_11_panics_on_zero_third_body_radius() {
-        // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0
-        let sun = DVec3::new(AU, 0.0, 0.0);
-        let body = DVec3::ZERO;
-        // Behind Earth with a y-offset → past Region A and Region B
-        // boundary tests, into the assert region.
-        let vehicle = DVec3::new(-1_000_000.0, EARTH_RADIUS + 1000.0, 0.0);
-        let _ = compute_shadow_fraction(vehicle, sun, body, 0.0, SUN_RADIUS);
-    }
-
-    /// `RadiationSource.radius > 0` is validated during JEOD's
-    /// `RadiationThirdBody::initialize()`. Same rationale as the
-    /// IN.11 sibling: a non-positive source radius reaches the
-    /// assert site rather than any of the geometry early returns.
-    #[test]
-    #[should_panic(expected = "source_radius must be positive")]
-    fn in_12_panics_on_zero_source_radius() {
-        // JEOD_INV: IN.12 — RadiationSource.radius > 0
-        let sun = DVec3::new(AU, 0.0, 0.0);
-        let body = DVec3::ZERO;
-        let vehicle = DVec3::new(-1_000_000.0, EARTH_RADIUS + 1000.0, 0.0);
-        let _ = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, 0.0);
-    }
-
     /// Typed wrapper round-trips bit-identically to the untyped kernel
     /// for representative geometry (a partial-eclipse penumbra case
     /// and a full-sun case).
@@ -484,5 +449,39 @@ mod tests {
         // What matters is the typed wrapper bit-matches the untyped
         // kernel — not what numeric value either produces.
         assert_eq!(typed_sunny.value, untyped_sunny);
+    }
+
+    // `compute_shadow_fraction` rejects a non-positive source radius
+    // before the `body_radius / source_radius` ratio would divide by
+    // zero downstream. JEOD validates this in
+    // `RadiationThirdBody::initialize` against a stored config; our
+    // stateless function asserts at the per-step call site so the
+    // misconfiguration is named at the same call site that triggers
+    // it.
+    // JEOD_INV: IN.12 — RadiationSource.radius > 0 precondition
+    #[test]
+    #[should_panic(expected = "source_radius must be positive")]
+    fn in_12_panics_on_zero_source_radius() {
+        let sun = DVec3::new(AU, 0.0, 0.0);
+        let body = DVec3::ZERO;
+        // Vehicle near Earth — geometry must reach the radius asserts
+        // (region B early-out only fires for vehicles past the
+        // penumbra; place the vehicle on the anti-Sun side).
+        let vehicle = DVec3::new(-7_000_000.0, 0.0, 0.0);
+        let _ = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, 0.0);
+    }
+
+    // Sibling assert: JEOD validates `RadiationThirdBody.radius > 0`
+    // in `RadiationThirdBody::initialize`; we re-check at the kernel
+    // entry so a stale zero on a fresh config can't slip past the
+    // ratio-computation arm.
+    // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0 precondition
+    #[test]
+    #[should_panic(expected = "body_radius must be positive")]
+    fn in_11_panics_on_zero_body_radius() {
+        let sun = DVec3::new(AU, 0.0, 0.0);
+        let body = DVec3::ZERO;
+        let vehicle = DVec3::new(-7_000_000.0, 0.0, 0.0);
+        let _ = compute_shadow_fraction(vehicle, sun, body, 0.0, SUN_RADIUS);
     }
 }

@@ -595,4 +595,21 @@ mod tests {
 
         let _ = abm4_translational_step(&state, accel_fn, 0.0, &mut abm);
     }
+
+    /// IG.34 sibling: the non-finite branch. NaN would propagate through
+    /// the predictor recurrence and silently poison every subsequent
+    /// step; the assert pins the misconfig at the call site rather than
+    /// in a downstream consumer reading NaN-tainted state.
+    #[test]
+    #[should_panic(expected = "abm4_translational_step requires a finite positive dt")]
+    fn ig_34_panics_on_nan_dt() {
+        // JEOD_INV: IG.34 — step dt must be finite and strictly positive
+        let mut abm = Abm4State::new();
+        let state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+        let _ = abm4_translational_step(&state, accel_fn, f64::NAN, &mut abm);
+    }
 }

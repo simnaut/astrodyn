@@ -370,7 +370,7 @@ mod tests {
     }
 
     /// `assert!` panic on a non-unit-determinant input — release-mode
-    /// enforced per the post-#485 policy (the previous `debug_assert!`
+    /// enforced per the fail-loudly policy (the previous `debug_assert!`
     /// was a no-op under `--release`, silently caching a meaningless
     /// quaternion derived from a non-orthonormal matrix and propagating
     /// wrong physics through every subsequent `.apply()` call).
@@ -396,7 +396,7 @@ mod tests {
     // JEOD_INV: RF.12 — drives the `M·Mᵀ ≈ I` assert in `from_matrix`
     // with a unit-determinant shear (det = 1 but skewed). Together
     // with `rf_12_panics_on_non_unit_determinant_matrix` this covers
-    // both arms of the post-#485 release-mode policy.
+    // both arms of the fail-loudly release-mode policy.
     #[test]
     #[should_panic(expected = "orthonormal")]
     fn rf_12_panics_on_non_orthonormal_unit_det_matrix() {

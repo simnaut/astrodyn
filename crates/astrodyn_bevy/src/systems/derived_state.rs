@@ -524,6 +524,7 @@ mod tests {
     /// caller can fix the wiring at spawn time. The bait entity is a
     /// bare `spawn_empty()` (no `PlanetFixedRotationC`), the minimal
     /// misconfiguration shape.
+    // JEOD_INV: AT.03 — planet-fixed rotation required for geodetic altitude
     #[test]
     #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
     fn geodetic_planet_lookup_miss_panics_with_caller_fix() {
