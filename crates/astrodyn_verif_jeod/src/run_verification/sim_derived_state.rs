@@ -293,7 +293,10 @@ pub fn ned_ell_inc() -> VerificationCase {
 
 /// SIM_NED RUN_ell_polar — ellipsoidal Earth, polar orbit, 24h.
 /// Polar singularity: longitude becomes hypersensitive to sub-mm
-/// position drift; tolerance widened per CLAUDE.md.
+/// position drift; tolerance widened per CLAUDE.md. See the
+/// `# Numerical stability at the poles` section on
+/// `astrodyn_math::GeodeticState` for the geometric rationale and the
+/// fixed `~3.3e-5 rad` polar vs `~6.5e-8 rad` inclined tolerance ratio.
 pub fn ned_ell_polar() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_ned_polar",

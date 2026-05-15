@@ -81,6 +81,18 @@ pub struct LvlhFrameC(pub astrodyn::LvlhFrame);
 /// Geodetic state (latitude, longitude, altitude) computed each step.
 ///
 /// Written by `geodetic_system` for entities that also have `GeodeticConfigC`.
+///
+/// # Numerical stability at the poles
+///
+/// The inner [`astrodyn::GeodeticState`] inherits the longitude
+/// instability of the underlying chart: at 89.8° latitude, longitude has
+/// roughly `3.7e-6 rad/m` sensitivity to planet-fixed position drift, and
+/// at the pole itself the kernel assigns `longitude = 0.0` by convention
+/// because all meridians converge. Mission code reading this component
+/// near the poles should treat longitude as low-confidence (the Tier 3 NED
+/// suite uses `~3.3e-5 rad` polar tolerance vs `~6.5e-8 rad` inclined-orbit
+/// tolerance). This is fundamental geometry, not a bug — see
+/// [`astrodyn::GeodeticState`] for the full rationale.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct GeodeticStateC(pub astrodyn::GeodeticState);
 

@@ -29,11 +29,45 @@ use uom::si::length::meter;
 const MAX_ITERATION_LIMIT: usize = 10;
 
 /// Geodetic coordinates on a reference ellipsoid.
+///
+/// # Numerical stability at the poles
+///
+/// Longitude is geometrically undefined at latitudes `±π/2`: all meridians
+/// converge at the pole, so no value of `atan2(y, x)` is more correct than
+/// any other. The conversion kernel returns `0.0` by convention exactly at
+/// the pole (when the equatorial radius `√(x² + y²)` falls within machine
+/// precision of zero) and otherwise applies `atan2(y, x)` to the
+/// planet-fixed coordinates.
+///
+/// `atan2(y, x)` is also numerically unstable in the polar neighborhood: at
+/// 89.8° latitude on Earth, longitude has roughly `3.7e-6 rad/m`
+/// sensitivity to planet-fixed `(x, y)` position drift, so sub-millimeter
+/// trajectory error translates into microradian longitude error. This is a
+/// property of the coordinate chart, not of any specific implementation —
+/// JEOD's `planet_fixed_posn.cc` exhibits the same sensitivity.
+///
+/// Callers near the poles have three options:
+///
+/// 1. Skip longitude entirely (e.g., over-the-pole flyovers where the value
+///    is not load-bearing).
+/// 2. Treat near-pole longitude as low-confidence and widen comparison
+///    tolerances. The Tier 3 NED cross-validation suite uses
+///    `~3.3e-5 rad` for polar-orbit longitude vs `~6.5e-8 rad` for
+///    inclined-orbit longitude (`crates/astrodyn_verif_jeod/src/run_verification/sim_derived_state.rs`).
+/// 3. Use spherical (geocentric) coordinates via [`SphericalState`] when
+///    only an angular distance from the pole is needed.
+///
+/// This is fundamental geometry, **not** a code bug.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeodeticState {
     /// Geodetic latitude in radians (positive north, range `±π/2`).
     pub latitude: f64,
     /// Geodetic longitude in radians (positive east).
+    ///
+    /// Numerically unstable near the poles and assigned `0.0` by convention
+    /// exactly at the pole; see the type-level
+    /// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+    /// section for the recommended caller-side handling.
     pub longitude: f64,
     /// Height above the reference ellipsoid, in meters.
     pub altitude: f64,
@@ -46,6 +80,10 @@ impl GeodeticState {
     /// callers (e.g., NED initializers) where the planet phantom is not
     /// available at the call site. Bit-identical numerics to
     /// [`cartesian_to_geodetic_typed`].
+    ///
+    /// Returned longitude is numerically unstable near the poles; see
+    /// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+    /// for the caller-side handling.
     pub fn from_planet_fixed(cart: DVec3, r_eq: f64, r_pol: f64) -> Self {
         cartesian_to_geodetic_impl(cart, r_eq, r_pol)
     }
@@ -66,6 +104,10 @@ impl GeodeticState {
 /// [`GeodeticState::from_planet_fixed`] (sole owner of the JEOD Borkowski
 /// iteration kernel). Bit-identical numerics to the typed sibling
 /// [`compute_body_geodetic_typed`].
+///
+/// Returned longitude is numerically unstable near the poles; see
+/// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+/// for the caller-side handling.
 pub fn compute_body_geodetic(
     position: DVec3,
     t_inertial_pfix: &DMat3,
@@ -83,6 +125,10 @@ pub fn compute_body_geodetic(
 /// [`GeodeticState::from_planet_fixed`] (sole owner of the JEOD Borkowski
 /// iteration kernel). Returns the f64 [`GeodeticState`] used by Bevy
 /// components; bit-identical to the f64 surface.
+///
+/// Returned longitude is numerically unstable near the poles; see
+/// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+/// for the caller-side handling.
 pub fn compute_body_geodetic_typed<P: Planet>(
     position: Position<astrodyn_quantities::frame::PlanetInertial<P>>,
     t_inertial_pfix: &DMat3,
@@ -97,11 +143,20 @@ pub fn compute_body_geodetic_typed<P: Planet>(
 ///
 /// Companion to [`GeodeticState`] carrying `uom` dimensioned scalars so
 /// signatures expressed with this type are unit-safe.
+///
+/// The polar-singularity behavior is identical to [`GeodeticState`]; see
+/// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+/// for the caller-side handling.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeodeticStateTyped {
     /// Geodetic latitude (positive north, range ±π/2).
     pub latitude: Angle,
     /// Geodetic longitude (positive east).
+    ///
+    /// Numerically unstable near the poles and assigned `0.0` by convention
+    /// exactly at the pole; see
+    /// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+    /// for the recommended caller-side handling.
     pub longitude: Angle,
     /// Height above the reference ellipsoid.
     pub altitude: Length,
@@ -337,6 +392,10 @@ pub(crate) fn geodetic_to_cartesian_impl(geo: &GeodeticState, r_eq: f64, r_pol: 
 /// frame; the ellipsoid dimensions are supplied numerically via `r_eq` /
 /// `r_pol` (matching the existing f64 API). The geodetic representation is
 /// defined with respect to the body-fixed frame of the named planet.
+///
+/// Returned longitude is numerically unstable near the poles; see
+/// [Numerical stability at the poles](GeodeticState#numerical-stability-at-the-poles)
+/// for the caller-side handling.
 pub fn cartesian_to_geodetic_typed<P: Planet>(
     pos: Position<PlanetFixed<P>>,
     r_eq: Length,
