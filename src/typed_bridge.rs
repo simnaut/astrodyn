@@ -150,17 +150,21 @@ mod tests {
 
     /// Bit-exact comparison for `DMat3`. `f64 ==` compares **values**,
     /// not bit patterns, which fails the byte-identity check we want
-    /// here in two opposite directions:
+    /// here in two opposite directions (framed from the perspective of
+    /// `==` as the predicate that *should* return `true` iff the bits
+    /// agree):
     ///
-    /// 1. **Signed-zero false negatives.** `0.0 == -0.0` is `true`
-    ///    despite the two values having distinct bit patterns. A
+    /// 1. **Signed-zero false positives.** `0.0 == -0.0` is `true`
+    ///    despite the two values having distinct bit patterns — `==`
+    ///    claims equality where there is none byte-wise. A
     ///    raw→typed bridge that silently rebuilt a `+0.0` lane as
     ///    `-0.0` would pass a `==` check while still corrupting the
     ///    lowest-mantissa-bit agreement that integrates to
     ///    multi-kilometre position drift on long-arc rotational runs.
-    /// 2. **NaN false positives.** `NaN != NaN` is `true` *even when
+    /// 2. **NaN false negatives.** `NaN != NaN` is `true` *even when
     ///    the two operands share an identical bit pattern* (NaN
-    ///    compares unequal to itself by IEEE-754 rule). A bridge that
+    ///    compares unequal to itself by IEEE-754 rule) — `==` rejects
+    ///    equality where the bits *do* match. A bridge that
     ///    faithfully propagated a deterministic NaN lane through to
     ///    the typed sibling would *fail* an `==` check despite being
     ///    byte-identical — the very property we are asserting.

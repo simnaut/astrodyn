@@ -279,7 +279,7 @@ impl MassProperties {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [`MIN_SAFE_MASS_KG`, `MAX_SAFE_MASS_KG`] does
+    /// safe-range bound [[`MIN_SAFE_MASS_KG`], [`MAX_SAFE_MASS_KG`]] does
     /// not apply. The only requirement on `mass` is that `1/mass` stays
     /// finite — i.e. `mass > 0 && mass.is_finite()`. The inertia tensor
     /// is guarded separately by the scale-invariant inertia-inverse check
@@ -304,17 +304,20 @@ impl MassProperties {
     // JEOD_INV: DB.23 — compute_inverse_inertia enabled (always computed here)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (computed from inertia)
     pub fn with_inertia(mass: f64, inertia: DMat3, position: DVec3) -> Self {
+        let inverse_mass = 1.0 / mass;
         assert!(
-            mass.is_finite() && mass > 0.0,
+            mass.is_finite() && mass > 0.0 && inverse_mass.is_finite(),
             "MassProperties::with_inertia: mass {mass} kg must be \
-             finite and strictly positive (so `1/mass` is finite). \
+             finite and strictly positive, *and* `1/mass` must be finite \
+             (positive subnormals below `1.0 / f64::MAX ≈ 5.6e-309` \
+             satisfy `is_finite() && > 0.0` yet round `1/mass` to `+inf`). \
              Inertia magnitude is checked separately and may live at \
              any non-singular scale."
         );
         let inverse_inertia = checked_inertia_inverse(inertia);
         Self {
             mass,
-            inverse_mass: 1.0 / mass,
+            inverse_mass,
             inertia,
             inverse_inertia,
             position,
@@ -367,14 +370,17 @@ impl MassProperties {
         }
         self.dirty = false;
 
+        let inverse_mass = 1.0 / self.mass;
         assert!(
-            self.mass.is_finite() && self.mass > 0.0,
+            self.mass.is_finite() && self.mass > 0.0 && inverse_mass.is_finite(),
             "MassProperties::recompute_derived: mass {} kg must be \
-             finite and strictly positive (so `1/mass` is finite); \
+             finite and strictly positive, *and* `1/mass` must be finite \
+             (positive subnormals below `1.0 / f64::MAX ≈ 5.6e-309` \
+             satisfy `is_finite() && > 0.0` yet round `1/mass` to `+inf`); \
              the inertia tensor is checked separately.",
             self.mass,
         );
-        self.inverse_mass = 1.0 / self.mass;
+        self.inverse_mass = inverse_mass;
         self.inverse_inertia = checked_inertia_inverse(self.inertia);
     }
 
@@ -505,7 +511,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
     ///
     /// Unlike [`Self::new`], this path accepts a caller-supplied inertia
     /// tensor whose magnitude is independent of `mass`, so the cubic-mass
-    /// safe-range bound [`MIN_SAFE_MASS_KG`, `MAX_SAFE_MASS_KG`] does
+    /// safe-range bound [[`MIN_SAFE_MASS_KG`], [`MAX_SAFE_MASS_KG`]] does
     /// not apply. Only `mass > 0 && mass.is_finite()` is required.
     ///
     /// # Panics
@@ -529,17 +535,20 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         center_of_mass: Position<StructuralFrame<V>>,
     ) -> Self {
         let m = mass.get::<kilogram>();
+        let inverse_mass = 1.0 / m;
         assert!(
-            m.is_finite() && m > 0.0,
+            m.is_finite() && m > 0.0 && inverse_mass.is_finite(),
             "MassPropertiesTyped::with_inertia: mass {m} kg must be \
-             finite and strictly positive (so `1/mass` is finite). \
+             finite and strictly positive, *and* `1/mass` must be finite \
+             (positive subnormals below `1.0 / f64::MAX ≈ 5.6e-309` \
+             satisfy `is_finite() && > 0.0` yet round `1/mass` to `+inf`). \
              Inertia magnitude is checked separately and may live at \
              any non-singular scale."
         );
         let inverse_inertia = checked_inertia_inverse(inertia.as_dmat3());
         Self {
             mass,
-            inverse_mass: 1.0 / m,
+            inverse_mass,
             inertia,
             inverse_inertia,
             center_of_mass,
@@ -587,13 +596,16 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
         }
         self.dirty = false;
         let m = self.mass.get::<kilogram>();
+        let inverse_mass = 1.0 / m;
         assert!(
-            m.is_finite() && m > 0.0,
+            m.is_finite() && m > 0.0 && inverse_mass.is_finite(),
             "MassPropertiesTyped::recompute_derived: mass {m} kg must \
-             be finite and strictly positive (so `1/mass` is finite); \
-             the inertia tensor is checked separately."
+             be finite and strictly positive, *and* `1/mass` must be \
+             finite (positive subnormals below `1.0 / f64::MAX ≈ \
+             5.6e-309` satisfy `is_finite() && > 0.0` yet round `1/mass` \
+             to `+inf`); the inertia tensor is checked separately."
         );
-        self.inverse_mass = 1.0 / m;
+        self.inverse_mass = inverse_mass;
         self.inverse_inertia = checked_inertia_inverse(self.inertia.as_dmat3());
     }
 
@@ -1001,6 +1013,61 @@ mod tests {
     fn typed_new_panics_on_nan_mass() {
         use astrodyn_quantities::frame::TestVehicle;
         let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(f64::NAN));
+    }
+
+    // The next four tests mirror the untyped `MassProperties::new`
+    // coverage for negative, infinite, below-`MIN_SAFE_MASS_KG`, and
+    // above-`MAX_SAFE_MASS_KG` masses. Because `MassPropertiesTyped::new`
+    // is a separate construction path from the untyped sibling, the two
+    // APIs would silently diverge — accepting different sets of inputs —
+    // without these typed-side asserts.
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_negative_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(-1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_infinite_mass() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(f64::INFINITY));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_mass_below_safe_floor_cubic_underflow() {
+        // Same rationale as
+        // `untyped_new_panics_on_mass_below_safe_floor_cubic_underflow`:
+        // `1e-150` is a normal-range f64, but below
+        // `MIN_SAFE_MASS_KG = 1e-100` the placeholder `m³ = 1e-450`
+        // underflows.
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(1e-150));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of safe range")]
+    fn typed_new_panics_on_huge_mass() {
+        // `1e150 > MAX_SAFE_MASS_KG = 1e100`; `m³ = 1e450` overflows.
+        use astrodyn_quantities::frame::TestVehicle;
+        let _ = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(1e150));
+    }
+
+    /// Typed-side mirror of `untyped_new_accepts_safe_extremes`:
+    /// both endpoints of `[MIN_SAFE_MASS_KG, MAX_SAFE_MASS_KG]`
+    /// produce finite caches through `MassPropertiesTyped::new`.
+    #[test]
+    fn typed_new_accepts_safe_extremes() {
+        use astrodyn_quantities::frame::TestVehicle;
+        let lo = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(MIN_SAFE_MASS_KG));
+        let hi = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(MAX_SAFE_MASS_KG));
+        assert!(lo.inverse_mass.is_finite());
+        assert!(hi.inverse_mass.is_finite());
+        assert!(lo.inverse_inertia.is_finite());
+        assert!(hi.inverse_inertia.is_finite());
     }
 
     #[test]
