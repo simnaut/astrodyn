@@ -609,8 +609,10 @@ fn step_q_arr(q_base: [f64; 4], k_qdot: [f64; 4], h: f64) -> [f64; 4] {
 /// # Panics
 /// - Non-zero force without mass properties (JEOD_INV: MA.01)
 /// - `rotational_dynamics=true` without `RotationalState` or `MassProperties` (JEOD_INV: DB.04)
-// JEOD_INV: DB.07 — translational_dynamics gates integration
-// JEOD_INV: DB.08 — rotational_dynamics gates integration
+// JEOD_INV: DB.07 — translational_dynamics gates integration (force collection
+//   runs unconditionally by Bevy schedule design; see catalog row DB.07)
+// JEOD_INV: DB.08 — rotational_dynamics gates integration (torque collection
+//   runs unconditionally by Bevy schedule design; see catalog row DB.08)
 // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: checked when force != 0)
 // JEOD_INV: DB.04 — DynBody always has three frames and mass properties
 #[allow(clippy::too_many_arguments)]
@@ -628,7 +630,9 @@ pub fn integrate_body(
     gj_state: Option<&mut astrodyn_dynamics::GaussJacksonState>,
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
 ) {
-    // JEOD_INV: DB.07 — translational_dynamics gates integration
+    // JEOD_INV: DB.07 — translational_dynamics gates integration (force
+    // collection ran unconditionally upstream; the gate lives here, not at
+    // collection time — see catalog row DB.07).
     if !config.translational_dynamics {
         return;
     }
@@ -652,7 +656,9 @@ pub fn integrate_body(
     // (single_cycle_integration_controls.cc:63-65, standard_integration_controls.cc:80-82)
     let integ_dyndt = dt * time_scale_factor;
 
-    // JEOD_INV: DB.08 — rotational_dynamics gates integration
+    // JEOD_INV: DB.08 — rotational_dynamics gates integration (torque
+    // collection ran unconditionally upstream; the gate lives here, not at
+    // collection time — see catalog row DB.08).
     // 6-DOF path: rotational dynamics enabled AND components present
     if config.rotational_dynamics {
         if let (Some(rot), Some(mass_props)) = (rot, mass) {
@@ -884,8 +890,10 @@ pub struct CoupledStageEval {
 /// # Panics
 /// - Non-zero force without mass properties (JEOD_INV: MA.01)
 /// - `rotational_dynamics=true` without `RotationalState` or `MassProperties` (JEOD_INV: DB.04)
-// JEOD_INV: DB.07 — translational_dynamics gates integration
-// JEOD_INV: DB.08 — rotational_dynamics gates integration
+// JEOD_INV: DB.07 — translational_dynamics gates integration (force collection
+//   runs unconditionally by Bevy schedule design; see catalog row DB.07)
+// JEOD_INV: DB.08 — rotational_dynamics gates integration (torque collection
+//   runs unconditionally by Bevy schedule design; see catalog row DB.08)
 #[allow(clippy::too_many_arguments)]
 pub fn integrate_body_coupled<V: astrodyn_quantities::frame::Vehicle>(
     config: &DynamicsConfig,
@@ -902,7 +910,9 @@ pub fn integrate_body_coupled<V: astrodyn_quantities::frame::Vehicle>(
     dt: f64,
     time_scale_factor: f64,
 ) {
-    // JEOD_INV: DB.07 — translational_dynamics gates integration
+    // JEOD_INV: DB.07 — translational_dynamics gates integration (force
+    // collection ran unconditionally upstream; the gate lives here, not at
+    // collection time — see catalog row DB.07).
     if !config.translational_dynamics {
         return;
     }
