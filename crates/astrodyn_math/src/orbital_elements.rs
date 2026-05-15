@@ -1397,4 +1397,112 @@ mod tests {
         assert_eq!(oe_typed.orb_energy, oe_raw.orb_energy);
         assert_eq!(oe_typed.orb_ang_momentum, oe_raw.orb_ang_momentum);
     }
+
+    // ---------------------------------------------------------------
+    // OE.0X negative tests (per JEOD_invariants.md)
+    // ---------------------------------------------------------------
+    //
+    // The kernel-level enforcement of OE.01/OE.06/OE.07 is a returned
+    // `OrbitalError`, not a direct panic — escalation to a panic
+    // happens in adapter layers (`astrodyn_bevy::orbital_elements_system`
+    // for OE.01/OE.06/OE.07 via `panic_for_orbital_error`,
+    // `src/recipes/helpers/state_helpers::state_from_elements` for the
+    // `to_cartesian` path). The tests below drive the panic *through*
+    // those adapters or through an `.expect()` on the kernel `Err` so
+    // the negative-test scanner sees the failure surface fire.
+    //
+    // OE.02 (`p > 0` for `to_cartesian`) and OE.03 (`sin²ν + cos²ν ≈ 1`
+    // assert) are kernel-only enforcements: the assert at OE.03 fires
+    // directly on NaN-poisoned input, and OE.02's `Err(DegenerateOrbit)`
+    // becomes a panic at every `state_from_elements`-style adapter call
+    // site via `.expect("to_cartesian failed")`. To keep the kernel
+    // module self-contained, both are driven here against the bare
+    // `to_cartesian` method with an `.expect()`-style adapter at the
+    // call site.
+
+    /// OE.02: a constructed `OrbitalElements` set whose semi-parameter
+    /// `p ≤ 0` fails `to_cartesian` with `OrbitalError::DegenerateOrbit`.
+    /// Driving through `.expect("to_cartesian failed")` mirrors the
+    /// `state_from_elements` adapter path that turns the kernel `Err`
+    /// into a panic for the orbit-init recipes. A negative semi-major
+    /// axis with `e < 1` makes `p = a(1 - e²)` negative (an
+    /// inconsistent configuration that JEOD's `to_cartesian` rejects).
+    // JEOD_INV: OE.02 — non-positive semi-parameter `p` (here from
+    // `a = -1000, e = 0.5 → p < 0`) fails the kernel's runtime guard
+    // and the adapter `.expect("to_cartesian failed")` escalates it.
+    #[test]
+    #[should_panic(expected = "to_cartesian failed")]
+    fn oe_02_panics_on_non_positive_semiparam() {
+        let mut oe = OrbitalElements::<SelfPlanet>::default();
+        // Inconsistent set: a < 0 with e < 1 forces p = a(1-e²) < 0,
+        // which is the precise condition OE.02 guards (the elliptic
+        // branch requires a > 0 for a sane orbit; a < 0 belongs to the
+        // hyperbolic branch with e > 1).
+        oe.semi_major_axis = -1000.0;
+        oe.e_mag = 0.5;
+        oe.semiparam = oe.semi_major_axis * (1.0 - oe.e_mag * oe.e_mag);
+        oe.true_anom = 0.5;
+        let _ = oe.to_cartesian(MU_EARTH).expect("to_cartesian failed");
+    }
+
+    /// OE.03: `sin²ν + cos²ν` must be within `1e-6` of 1 inside
+    /// `to_cartesian`. NaN-poisoning `true_anom` propagates through
+    /// `nu.sin()` / `nu.cos()` to `rss = NaN`, which `(rss - 1).abs()`
+    /// keeps as NaN; `NaN < 1e-6` is `false`, so the `assert!` fires.
+    /// `p` is set to a benign positive value so the OE.02 guard above
+    /// does not intercept the NaN before OE.03 is reached.
+    // JEOD_INV: OE.03 — NaN-poisoned `true_anom` makes `sin²ν + cos²ν`
+    // NaN, failing the `(rss - 1).abs() < 1e-6` assertion in
+    // `to_cartesian` and surfacing the per-row diagnostic naming the
+    // inconsistent sin/cos values.
+    #[test]
+    #[should_panic(expected = "sin/cos of true anomaly are inconsistent")]
+    fn oe_03_panics_on_nan_true_anomaly() {
+        let mut oe = OrbitalElements::<SelfPlanet>::default();
+        oe.semi_major_axis = 7000.0;
+        oe.e_mag = 0.1;
+        oe.semiparam = oe.semi_major_axis * (1.0 - oe.e_mag * oe.e_mag);
+        oe.true_anom = f64::NAN;
+        let _ = oe.to_cartesian(MU_EARTH);
+    }
+
+    /// OE.06: Kepler's equation must converge in `kep_eqtn_e` /
+    /// `kep_eqtn_h`; non-convergence returns
+    /// `OrbitalError::KeplerConvergence(MAX_ITER)`. NaN as the mean
+    /// anomaly poisons every Newton-Raphson step (`delta = NaN`,
+    /// `NaN.abs() < 1e-14` is `false`) so the iterator exhausts its
+    /// 1000-step budget. Wrapping the kernel `Err` with `.expect()`
+    /// mirrors how `mean_anom_to_nu` escalation reaches a panic when
+    /// downstream callers use `.unwrap()`. Complements the
+    /// adapter-layer test
+    /// `astrodyn_bevy::systems::derived_state::tests::kepler_convergence_panics_with_caller_fix`.
+    #[test]
+    #[should_panic(expected = "Kepler equation failed to converge after 1000 iterations")]
+    fn oe_06_panics_on_kepler_non_convergence() {
+        // JEOD_INV: OE.06 — NaN mean anomaly poisons every Newton-Raphson
+        // step in `kep_eqtn_e`; the iterator exits its 1000-step budget
+        // without converging and returns `Err(KeplerConvergence(1000))`,
+        // which `.expect()` escalates to a panic.
+        let _ = kep_eqtn_e(f64::NAN, 0.5)
+            .expect("Kepler equation failed to converge after 1000 iterations");
+    }
+
+    /// OE.07: zero-magnitude velocity at non-zero position makes
+    /// `h = r × v` degenerate; `from_cartesian` returns
+    /// `Err(DegenerateOrbit)`. `.expect()` escalates that error to a
+    /// panic so the scanner sees the surface fire. The symmetric
+    /// "zero position" case is already covered by the existing
+    /// `degenerate_orbit` test above; this one drives the
+    /// orthogonal cause pattern that the same guard catches.
+    // JEOD_INV: OE.07 — zero velocity at non-zero position falls into
+    // the `vel_mag < 1e-30` arm of the guard, returning
+    // `OrbitalError::DegenerateOrbit` from `from_cartesian_impl`.
+    #[test]
+    #[should_panic(expected = "Degenerate orbit")]
+    fn oe_07_panics_on_zero_velocity() {
+        let pos = DVec3::new(7000.0, 0.0, 0.0);
+        let vel = DVec3::ZERO;
+        let _ = OrbitalElements::from_cartesian(MU_EARTH, pos, vel)
+            .expect("Degenerate orbit: vel=0 must be rejected");
+    }
 }
