@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "source": "models/environment/time/data/Leap_Second.dat",
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
+  "verbatim_copy": true,
+  "reference_file": "Leap_Second.dat",
+  "reference_file_bytes": 1359,
+  "reference_file_sha256": "6f7bc6a25841bc394f82bdfd5d7bb22ffcd4548ee28e9822f2927a909e4f912f",
+  "note": "Verbatim mirror of a JEOD source file. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation"
+}

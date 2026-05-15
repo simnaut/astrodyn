@@ -248,6 +248,7 @@ dependencies = [
  "astrodyn_time",
  "glam 0.30.10",
  "log",
+ "sha2",
  "uom",
 ]
 
@@ -325,6 +326,7 @@ dependencies = [
  "log",
  "pprof",
  "proptest",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "uom",
@@ -367,6 +369,7 @@ dependencies = [
  "astrodyn_quantities",
  "glam 0.30.10",
  "regex",
+ "sha2",
  "uom",
 ]
 
@@ -413,6 +416,7 @@ dependencies = [
  "log",
  "pprof",
  "regex",
+ "sha2",
  "thiserror 2.0.18",
  "uom",
 ]
@@ -437,6 +441,7 @@ dependencies = [
  "astrodyn_runner",
  "astrodyn_verif_jeod_fixtures",
  "glam 0.30.10",
+ "sha2",
 ]
 
 [[package]]

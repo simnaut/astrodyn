@@ -41,6 +41,11 @@ glam = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 uom = { workspace = true }
+# `sha2` is consumed by the `extract_*` regen binaries (to record
+# SHA-256 of the produced `.bin` fixtures in the per-file JSON sidecars)
+# and by the metadata-integrity test under `tests/`. Lives in regular
+# deps because `src/bin/` binaries cannot link `[dev-dependencies]`.
+sha2 = { workspace = true }
 
 [dev-dependencies]
 astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }

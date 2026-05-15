@@ -38,8 +38,15 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use sha2::{Digest, Sha256};
+
 const NESC_BASE_URL: &str = "https://nescacademy.nasa.gov/flightsim/2023/scn_8";
 const SIM_INDEX: &str = "01"; // sim_01 by convention; see module docs.
+
+/// NESC GN&C 2023 release tag captured in the sidecar. The flightsim
+/// page is a versioned static drop, not a git checkout, so we record
+/// the human-facing release identifier and the upstream URL.
+const NESC_RELEASE: &str = "GN&C 2023";
 
 fn main() {
     let mut nesc_home: Option<PathBuf> = std::env::var_os("NESC_HOME").map(PathBuf::from);
@@ -85,8 +92,72 @@ fn main() {
 
     let canonical = transform_to_canonical(&raw);
 
-    std::fs::write(&out_path, canonical).expect("write canonical CSV");
+    std::fs::write(&out_path, &canonical).expect("write canonical CSV");
+    let canonical_bytes = canonical.as_bytes();
+    let canonical_sha256 = sha256_hex(canonical_bytes);
     eprintln!("extract_nesc: wrote {}", out_path.display());
+
+    // Emit a sidecar with provenance + SHA-256 of the produced CSV so a
+    // downstream auditor can verify which upstream release the
+    // committed CSV was derived from (#503). The committed metadata is
+    // asserted against the committed CSV by `tests/fixture_metadata.rs`.
+    let raw_sha256 = sha256_hex(raw.as_bytes());
+    let source_url = format!("{NESC_BASE_URL}/Lunar_08_sim_{SIM_INDEX}.csv");
+    let generated_utc = utc_now_iso8601();
+    let meta_path = out_dir.join("cc8_nrho_reference.json");
+    let meta = format!(
+        "{{\n  \"schema_version\": 2,\n  \
+         \"source\": \"{source_url}\",\n  \
+         \"nesc_release\": \"{NESC_RELEASE}\",\n  \
+         \"upstream_file_sha256\": \"{raw_sha256}\",\n  \
+         \"generated_utc\": \"{generated_utc}\",\n  \
+         \"reference_file\": \"cc8_nrho_reference.csv\",\n  \
+         \"reference_file_bytes\": {bytes},\n  \
+         \"reference_file_sha256\": \"{canonical_sha256}\",\n  \
+         \"note\": \"NESC CC8 NRHO canonical reference CSV. Regenerate with: cargo run -p astrodyn_verif_nesc --bin extract_nesc\"\n}}\n",
+        bytes = canonical_bytes.len(),
+    );
+    std::fs::write(&meta_path, meta).expect("write sidecar metadata");
+    eprintln!(
+        "extract_nesc: wrote {} (csv sha256 {})",
+        meta_path.display(),
+        canonical_sha256,
+    );
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn utc_now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_unix_utc(secs)
+}
+
+fn format_unix_utc(secs: i64) -> String {
+    let z = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let hour = sod / 3_600;
+    let minute = (sod / 60) % 60;
+    let second = sod % 60;
+
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp.wrapping_sub(9) };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 /// Walk up from `CARGO_MANIFEST_DIR` to the workspace root.

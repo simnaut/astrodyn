@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "source": "models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt",
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
+  "verbatim_copy": true,
+  "reference_file": "grav_geospherical_verif_out.txt",
+  "reference_file_bytes": 12960,
+  "reference_file_sha256": "49e630b46c71b61718a1fe1c3fc5c2e1b3348a04318e489b226c0ae0fee4f3f9",
+  "note": "Verbatim mirror of a JEOD source file. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation"
+}

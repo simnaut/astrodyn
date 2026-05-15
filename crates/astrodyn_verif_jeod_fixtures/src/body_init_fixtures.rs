@@ -192,9 +192,16 @@ fn bundle_cache(vehicle: &str) -> &'static OnceLock<BodyInitBundle> {
     }
 }
 
-/// Schema version this code understands. Bumped whenever the on-disk
-/// JSON shape changes in a way the parser cannot accept.
-const EXPECTED_SCHEMA_VERSION: u64 = 1;
+/// Lowest schema version this code understands. Bumped whenever the
+/// on-disk JSON shape changes in a way the parser cannot accept.
+///
+/// Schema 2 added audit-trail fields (`jeod_version`, `jeod_commit`,
+/// `generated_utc`) — see #503. They are purely additive and ignored by
+/// this parser; the bump is signalling-only so audit tooling can tell
+/// at a glance whether a fixture was emitted before or after the audit
+/// metadata landed.
+const MIN_SCHEMA_VERSION: u64 = 1;
+const MAX_SCHEMA_VERSION: u64 = 2;
 
 /// Hand-rolled JSON parser for a body-init bundle. Mirrors the
 /// no-`serde_json` style of `planet_geodetic_verif.rs`.
@@ -202,10 +209,11 @@ pub(crate) fn parse_bundle_json(s: &str) -> Result<BodyInitBundle, String> {
     let schema_version = parse_num_field(s, "schema_version")
         .ok_or_else(|| "missing top-level \"schema_version\" key".to_string())?
         as u64;
-    if schema_version != EXPECTED_SCHEMA_VERSION {
+    if !(MIN_SCHEMA_VERSION..=MAX_SCHEMA_VERSION).contains(&schema_version) {
         return Err(format!(
             "unsupported schema_version {schema_version}; this build expects \
-             {EXPECTED_SCHEMA_VERSION}. Regenerate with: cargo run -p astrodyn_verif_jeod \
+             {MIN_SCHEMA_VERSION}..={MAX_SCHEMA_VERSION}. Regenerate with: \
+             cargo run -p astrodyn_verif_jeod \
              --bin extract_body_init -- --jeod-home $JEOD_HOME"
         ));
     }

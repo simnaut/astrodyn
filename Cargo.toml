@@ -38,6 +38,12 @@ glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
 
+[dev-dependencies]
+# Workspace-root integration tests under `tests/` (e.g.
+# `fixture_metadata.rs`, which asserts every committed `test_data/`
+# fixture has a recorded SHA-256 sidecar matching its bytes).
+sha2 = { workspace = true }
+
 [workspace]
 resolver = "2"
 members = [
@@ -99,6 +105,7 @@ log = "0.4"
 thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 typenum = "1.20"
+sha2 = "0.10"
 
 # Benchmarking — dev-only deps, opted into per-crate via
 # `[dev-dependencies]` on the crates that own `benches/`. `pprof`

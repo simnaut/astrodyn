@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "source": "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/mass.py",
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
+  "verbatim_copy": true,
+  "reference_file": "iss_mass.py",
+  "reference_file_bytes": 2210,
+  "reference_file_sha256": "664c0ce54f9e800942d7dd5b25ccd419338c621b47e617b2cd31fef904572ec0",
+  "note": "Verbatim mirror of a JEOD source file. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_jeod_validation"
+}

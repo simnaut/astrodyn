@@ -1,10 +1,14 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "label": "ggm05c",
   "source_file": "models/environment/gravity/data/src/earth_GGM05C.cc",
   "source_file_bytes": 10242732,
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
   "binary_file": "ggm05c.bin",
   "binary_file_bytes": 1045497,
+  "binary_file_sha256": "8868f0940f602f3061a0fbd25e95a55494fa9d10d22283e953a7fc7288016b7d",
   "degree": 360,
   "order": 360,
   "radius_m": 6378136.3,
@@ -12,5 +16,5 @@
   "tide_free": false,
   "tide_free_delta": 4.173e-9,
   "generated_by": "cargo run -p astrodyn_gravity --bin extract_grav_coeffs",
-  "note": "Regenerate after a JEOD upgrade or coefficient-file change. The .bin file uses the astrodyn_gravity::coefficients::save_binary format (magic JEOD, version 1)."
+  "note": "Regenerate after a JEOD upgrade or coefficient-file change. The .bin file uses the astrodyn_gravity::coefficients::save_binary format (magic JEOD, version 1). The binary_file_sha256 field is asserted by tests/fixture_metadata.rs to detect drift between the committed binary and its recorded provenance."
 }

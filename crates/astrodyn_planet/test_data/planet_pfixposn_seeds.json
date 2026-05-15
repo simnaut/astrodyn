@@ -1,7 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source": "models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py",
   "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "unknown (pre-#503 baseline)",
   "note": "PlanetFixedPosition verification seeds. Regenerate with: cargo run -p astrodyn_planet --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME",
   "cases": [
     {"kind": "cartesian",  "read_time": 1.0, "cart_m":   [6778136.3, 0.0, 0.0]},
