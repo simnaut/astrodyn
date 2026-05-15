@@ -956,4 +956,76 @@ mod tests {
         assert_eq!(kernel.grav_pot, plain.grav_pot);
         assert_eq!(kernel.grav_grad, plain.grav_grad);
     }
+
+    // ---- fail-loud negative tests (#531 seed gate) -------------------
+    //
+    // Pin the panic sites in `accumulate_gravity` so a future refactor
+    // that converts the `unwrap_or_else(panic!)` to `unwrap_or_default`
+    // or to a silent-skip branch trips a `should_panic` check rather
+    // than producing wrong physics under a missing-source config.
+
+    /// JEOD logs a non-fatal error and skips when a `GravityControl`
+    /// references a source that doesn't exist; we panic instead so the
+    /// silent omission can't propagate to a wrong trajectory.
+    // JEOD_INV: GV.12 — negative test: missing source panics
+    #[test]
+    #[should_panic(expected = "does not exist")]
+    fn accumulate_gravity_panics_on_missing_source() {
+        let controls = GravityControls {
+            controls: vec![GravityControl::new_spherical(
+                0_usize,
+                GravityGradient::Skip,
+            )],
+        };
+        let _ = accumulate_gravity(
+            DVec3::new(7e6, 0.0, 0.0),
+            &controls,
+            DVec3::ZERO,
+            |_id: usize| -> Option<ResolvedSource<'_>> { None },
+        );
+    }
+
+    /// A non-spherical `GravityControl` paired with a
+    /// `SphericalHarmonics` source whose `rotation` is `None` must
+    /// panic: the kernel needs the planet-fixed rotation matrix to
+    /// evaluate Gottlieb. JEOD subscribes to the planet-fixed frame
+    /// unconditionally; we surface the missing rotation as a fatal
+    /// error.
+    // JEOD_INV: GV.13 — negative test: nonspherical without rotation panics
+    #[test]
+    #[should_panic(expected = "no planet-fixed rotation matrix")]
+    fn accumulate_gravity_panics_on_missing_rotation_for_nonspherical() {
+        use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+        let mu = 3.986_004_415e14;
+        let radius = 6_378_137.0;
+        let cnm: Vec<Vec<f64>> = (0..=4).map(|n| vec![0.0_f64; n + 1]).collect();
+        let snm: Vec<Vec<f64>> = (0..=4).map(|n| vec![0.0_f64; n + 1]).collect();
+        let sh = SphericalHarmonicsData::new(4, 4, radius, mu, cnm, snm, true, 0.0);
+        let source = GravitySource {
+            mu,
+            model: GravityModel::SphericalHarmonics(Box::new(sh)),
+        };
+        let controls = GravityControls {
+            controls: vec![GravityControl::new_nonspherical(
+                0_usize,
+                4,
+                4,
+                GravityGradient::Skip,
+            )],
+        };
+        let _ = accumulate_gravity(
+            DVec3::new(7e6, 0.0, 0.0),
+            &controls,
+            DVec3::ZERO,
+            |_id: usize| -> Option<ResolvedSource<'_>> {
+                Some(ResolvedSource {
+                    source: &source,
+                    rotation: None, // ← missing rotation triggers GV.13
+                    position: DVec3::ZERO,
+                    delta_c20: 0.0,
+                    has_delta_coeffs: false,
+                })
+            },
+        );
+    }
 }

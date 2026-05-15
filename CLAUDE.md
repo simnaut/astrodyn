@@ -578,6 +578,22 @@ copy ctors). We catalog every invariant we encounter in
    invariant in the catalog must have at least one source tag, and
    every source tag must reference a catalog entry.
 
+4. **Negative-test coverage** (same file, `enforced_rows_have_negative_tests_or_warn`):
+   every `enforced` catalog row *should* have a `#[should_panic(expected
+   = "…")]` test that drives the misconfiguration and pins the panic
+   message. Recognised by a `// JEOD_INV: XX.YY` tag inside the test
+   function or in the few lines immediately above the `#[should_panic]`
+   attribute. **The bidirectional tag-↔-catalog check only proves the
+   panic site *exists* — the negative test proves it actually fires**;
+   without it a future refactor could neuter an `assert!` to a silent
+   `if … return` and CI would stay green. The gate is informational
+   (warning report, exit 0) in this round and is promoted to a hard
+   assertion in a follow-up PR once the catalog body of negative tests
+   lands per section (DB / RF / IG / GV / TM / …). To add one: write
+   `#[should_panic(expected = "<substring>")]` near the enforcement
+   site, drive the failure with a minimal misconfiguration, and tag
+   the test with `// JEOD_INV: XX.YY`.
+
 ### When you encounter an unrecorded invariant
 
 When reading JEOD source and you find a `MessageHandler::fail()`,

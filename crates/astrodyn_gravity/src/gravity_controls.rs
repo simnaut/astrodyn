@@ -1022,6 +1022,7 @@ mod tests {
     /// caller meant point-mass gravity but did not flip `spherical`.
     /// JEOD silently flips it; we panic so the operator sees the
     /// inconsistency.
+    // JEOD_INV: GV.07 — negative test for degree < 2 with spherical=false
     #[test]
     #[should_panic(
         expected = "Non-spherical gravity (spherical=false) requested with degree=0 (< 2)"
@@ -1043,6 +1044,7 @@ mod tests {
     /// gravity model under the operator. The startup gate rejects it so the
     /// inconsistency between the configured `spherical=false` and the
     /// effectively-point-mass runtime path surfaces immediately.
+    // JEOD_INV: GV.07 — negative test for degree == 1 with spherical=false
     #[test]
     #[should_panic(
         expected = "Non-spherical gravity (spherical=false) requested with degree=1 (< 2)"
@@ -1062,6 +1064,7 @@ mod tests {
     /// silently changes which SH terms contribute to the gradient
     /// tensor and produces a torque trajectory that differs from what
     /// the operator requested.
+    // JEOD_INV: GV.08 — negative test for gradient_degree > degree
     #[test]
     #[should_panic(expected = "Gravity gradient degree (12) > gravity degree (4)")]
     fn check_validity_panics_on_gradient_degree_above_degree() {
@@ -1081,6 +1084,7 @@ mod tests {
     /// `gradient_degree == 1`: Gottlieb returns zero perturbation for
     /// degree < 2, so a gradient_degree of exactly 1 is meaningless.
     /// JEOD resets to 0; we panic so the misconfiguration surfaces.
+    // JEOD_INV: GV.09 — negative test for gradient_degree == 1
     #[test]
     #[should_panic(expected = "Gravity gradient degree must not equal 1")]
     fn check_validity_panics_on_gradient_degree_equal_one() {
@@ -1098,6 +1102,7 @@ mod tests {
     }
 
     /// `gradient_order > gradient_degree`: JEOD clamps; we panic.
+    // JEOD_INV: GV.10 — negative test for gradient_order > gradient_degree
     #[test]
     #[should_panic(expected = "Gravity gradient order (5) > gradient degree (2)")]
     fn check_validity_panics_on_gradient_order_above_gradient_degree() {
@@ -1118,6 +1123,7 @@ mod tests {
     /// `gradient_order` check fires before the `> order` check when
     /// both fail, so this test sets `gradient_order` *below*
     /// `gradient_degree` and *above* `order` to isolate GV.11.
+    // JEOD_INV: GV.11 — negative test for gradient_order > order
     #[test]
     #[should_panic(expected = "Gravity gradient order (4) > gravity order (2)")]
     fn check_validity_panics_on_gradient_order_above_order() {
@@ -1155,6 +1161,7 @@ mod tests {
 
     /// The typed sibling delegates to the untyped validator; the same
     /// misconfiguration must panic on the typed surface too.
+    // JEOD_INV: GV.07 — negative test for the typed surface
     #[test]
     #[should_panic(expected = "Non-spherical gravity (spherical=false) requested with degree=0")]
     fn typed_check_validity_panics_on_zero_degree_with_spherical_false() {
