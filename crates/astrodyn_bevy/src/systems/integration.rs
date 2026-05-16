@@ -1044,8 +1044,13 @@ fn apply_cross_integ_frame_attach<P: Planet>(
 /// 1. snapshots both bodies' pre-attach composite-body inertial state
 ///    (`TranslationalStateC` + `RotationalStateC`) and pre-attach
 ///    composite mass properties,
-/// 2. mutates the [`crate::MassTreeR`] arena (which recomputes composite
-///    mass properties for every affected node),
+/// 2. mutates the [`crate::MassTreeR`] arena via the deferred-recompute
+///    variant ([`astrodyn::MassTree::attach_with_reroot_without_recompute`]);
+///    composite mass properties for every affected node are refreshed
+///    by a single end-of-system [`astrodyn::MassTree::recompute_composites`]
+///    call rather than per-event, collapsing a tick that fires N attach
+///    events from `O(N × num_nodes)` recompute work to
+///    `O(N + num_nodes)`,
 /// 3. runs [`astrodyn::stage_attach_combine`] (the
 ///    momentum-conservation port of JEOD's `combine_states_at_attach`,
 ///    `models/dynamics/dyn_body/src/dyn_body_attach.cc`) to derive the
@@ -1095,8 +1100,12 @@ fn apply_cross_integ_frame_attach<P: Planet>(
 /// 1. captures the about-to-be-detached subtree's instantaneous
 ///    composite-body inertial state via
 ///    [`astrodyn::stage_detach_capture`],
-/// 2. mutates the arena (which recomputes the former parent's composite
-///    mass to reflect the lost subtree),
+/// 2. mutates the arena via the deferred-recompute variant
+///    ([`astrodyn::MassTree::detach_without_recompute`]); the former
+///    parent's composite mass is refreshed by a recompute fence (either
+///    immediately, before the next detach iteration's pre-mutation
+///    composite reads fire, or at end-of-system, before the
+///    composite-mass sync) rather than per-event,
 /// 3. inserts [`crate::DetachedSubtreeStateC`] on the detached entity
 ///    so [`step_detached_system`] can advance the subtree ballistically
 ///    each tick.
@@ -1275,6 +1284,49 @@ pub fn staging_system<P: Planet>(
     // `integrate()` panics with the IG.37 diagnostic rather than
     // silently propagating stale predictor history.
     let mut affected_ids: Vec<astrodyn::MassBodyId> = Vec::new();
+
+    // Tracks whether a `*_without_recompute` topology mutation has
+    // landed in `tree` since the last `recompute_composites` call.
+    //
+    // The two event loops below mutate the `MassTree` via the
+    // deferred-recompute variants
+    // (`attach_with_reroot_without_recompute` / `detach_without_recompute`)
+    // so a tick that processes N staging events runs the post-order
+    // composite walk at most a small constant number of times rather
+    // than N times. The cost model collapses from
+    // `O(num_events × num_nodes)` to `O(num_events + num_nodes)` for
+    // the realistic attach-heavy case (e.g. chained-attach scenarios
+    // that fire two `AttachEvent`s in one tick).
+    //
+    // Recompute fences are placed at every site where a downstream
+    // read of `tree.get(...).composite_properties`,
+    // `composite_wrt_pstr`, or `core_wrt_composite` would otherwise
+    // observe a stale composite:
+    //
+    //   1. Before the detach loop starts (only if the attach loop
+    //      mutated `tree`), so the detach chain walk reads
+    //      post-attach composites — same observability as the prior
+    //      per-call `attach().recompute_composites()` pattern.
+    //   2. At the top of every detach iteration after the first (only
+    //      if the prior iteration mutated `tree`), so each detach's
+    //      pre-mutation chain walk and `parent_pre_composite_props`
+    //      read see the post-prior-detach composites — same
+    //      observability as the prior per-call
+    //      `detach().recompute_composites()` pattern.
+    //   3. After both loops finish (only if any mutation has happened
+    //      since the last recompute), so the trailing composite-mass
+    //      sync / attach-combine / parent-shift loops below all read
+    //      live composites.
+    //
+    // Net: the attach loop reads no composites (only topology
+    // accessors: `tree.children`, `tree.subtree_ids`,
+    // `tree.ancestors_inclusive`, `tree.root_of`, `tree.parent`), so
+    // N back-to-back `AttachEvent`s collapse to a single recompute
+    // when no detach follows. Each subsequent detach iteration still
+    // pays one recompute to match the prior per-event semantics
+    // bit-for-bit; the only saved recompute on the detach side is
+    // the one merged into the trailing fence (3).
+    let mut tree_dirty = false;
 
     // Per-attach work item: captures the pre-attach snapshot needed by
     // `combine_states_at_attach` plus the post-mutation parent entity
@@ -2261,24 +2313,37 @@ pub fn staging_system<P: Planet>(
             cross_integ,
         });
 
-        // `tree.attach_with_reroot` takes raw structural-frame DVec3;
-        // drop the typed phantom at this kernel boundary. The typed
-        // `AttachEvent.offset` field guards the structural-frame
-        // contract at the writer site. The reroot-aware kernel handles
-        // both the simple root-subject case (bit-identical to plain
-        // `attach`) and the chained-attach case (recomputes geometry
-        // and reparents the subject's existing tree root under
-        // `parent_id`). Mirrors JEOD `dyn_body_attach.cc:521-567`'s
-        // `attach_child` path.
+        // `tree.attach_with_reroot_without_recompute` takes raw
+        // structural-frame DVec3; drop the typed phantom at this
+        // kernel boundary. The typed `AttachEvent.offset` field guards
+        // the structural-frame contract at the writer site. The
+        // reroot-aware kernel handles both the simple root-subject
+        // case (bit-identical to plain `attach_without_recompute`) and
+        // the chained-attach case (recomputes geometry and reparents
+        // the subject's existing tree root under `parent_id`). Mirrors
+        // JEOD `dyn_body_attach.cc:521-567`'s `attach_child` path.
+        //
+        // The deferred-recompute variant skips the per-call composite
+        // walk; the `tree_dirty` flag below routes the recompute to
+        // the next consumer fence (start of detach loop / trailing
+        // composite-mass sync) so a tick with N back-to-back
+        // `AttachEvent`s pays one composite recompute, not N. The
+        // attach loop body reads no composite-derived data (only
+        // `tree.children`, `tree.subtree_ids`,
+        // `tree.ancestors_inclusive`, `tree.root_of`, `tree.parent` —
+        // all pure topology) so consecutive iterations see the same
+        // observable tree they would have seen under the
+        // recomputing-each-call path.
         // JEOD_INV: BA.12 — Bevy adapter dispatches every attach through
         // the reroot-aware kernel so chained-attach scenarios pick the
         // JEOD `dyn_body_attach.cc:521-567` path automatically.
-        let _attached_root = tree.attach_with_reroot(
+        let _attached_root = tree.attach_with_reroot_without_recompute(
             child_id,
             parent_id,
             evt.offset.raw_si(),
             evt.t_parent_child.matrix(),
         );
+        tree_dirty = true;
     }
 
     // Per-detach post-mutation work: tree_root entity whose
@@ -2303,6 +2368,30 @@ pub fn staging_system<P: Planet>(
     // `detach_subtree` which indexes `self.bodies` by id directly.
 
     for evt in detach_events.read() {
+        // Recompute fence between deferred-mutation iterations: the
+        // detach loop body's pre-mutation reads
+        // (`parent_pre_composite_props` and the chain walk's
+        // `composite_properties` / `composite_wrt_pstr` accesses)
+        // require live composites. Flush any pending topology
+        // mutations from the attach loop or a prior detach iteration
+        // before the reads fire, so each iteration's observable
+        // composite state matches the prior per-call
+        // `attach().recompute_composites()` /
+        // `detach().recompute_composites()` semantics bit-for-bit.
+        // JEOD_INV: MA.06 — composite reads see post-order recomputed
+        // composites for every prior mutation in this batch.
+        //
+        // No `tree_dirty = false` reset is needed inside this
+        // if-block: the `tree.detach_without_recompute` call at the
+        // tail of every loop body unconditionally sets `tree_dirty =
+        // true`, so the conditional read at the top of the *next*
+        // iteration is unaffected by whether we cleared the flag
+        // here. The trailing recompute fence after the loop reads
+        // the post-final-detach value (always `true` if the loop
+        // ran any iterations) and flushes once.
+        if tree_dirty {
+            tree.recompute_composites();
+        }
         let (_, child_body_id, _, _, _) = bodies.get(evt.child).unwrap_or_else(|_| {
             panic!(
                 "DetachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
@@ -2523,11 +2612,47 @@ pub fn staging_system<P: Planet>(
         // BEFORE mutating the tree.
         affected_ids.push(child_id);
         affected_ids.extend(tree.ancestors_inclusive(tree_root_id));
-        tree.detach(child_id);
+        // Defer the post-detach composite walk to the recompute fence
+        // at the top of the next iteration (or the trailing fence
+        // below if this is the last detach event). The link mutation,
+        // the child's parent-relative reset, and the detached child's
+        // inverse-inertia refresh land here; the surviving parent
+        // tree's composites are written when the fence fires.
+        tree.detach_without_recompute(child_id);
+        tree_dirty = true;
     }
 
     if affected_ids.is_empty() && attach_work.is_empty() && detach_work.is_empty() {
+        // Both loops were no-ops (no staging events landed) so no
+        // deferred-recompute work is outstanding. The `tree_dirty`
+        // flag is structurally `false` in this branch because nothing
+        // could have flipped it without populating one of the
+        // collections above; assert that invariant rather than
+        // silently `return`ing with pending mutations on the tree.
+        assert!(
+            !tree_dirty,
+            "staging_system: pending deferred-recompute mutations but no event work \
+             accumulated — every `attach_without_recompute` / `detach_without_recompute` \
+             call site in this function must populate `attach_work`, `detach_work`, or \
+             `affected_ids` so the trailing recompute fence runs."
+        );
         return;
+    }
+    // Trailing recompute fence: flush any deferred topology mutation
+    // accumulated by the detach loop (or by the attach loop when no
+    // detach event followed) so the composite-mass sync below — and
+    // every other post-loop consumer that reads
+    // `tree.get(...).composite_properties` (the attach-combine kernel
+    // input, the parent-post-detach CoM-shift formula) — sees live
+    // composites. Skipping this flush is the bug the
+    // deferred-recompute split is built to make impossible: with the
+    // fence in place, a tick that fires N staging events runs at
+    // most one composite recompute per consumer-fence boundary
+    // (collapsed from N per-call recomputes). `tree_dirty` is not
+    // read after this fence — every downstream tree read in the rest
+    // of the system sees a live, just-recomputed composite.
+    if tree_dirty {
+        tree.recompute_composites();
     }
     affected_ids.sort_unstable();
     affected_ids.dedup();
