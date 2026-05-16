@@ -401,6 +401,9 @@ dependencies = [
  "astrodyn_quantities",
  "log",
  "proptest",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
  "uom",
 ]
 

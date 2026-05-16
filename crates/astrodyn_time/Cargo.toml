@@ -9,17 +9,40 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+# Cargo defaults to publishing only `src/`; the EOP fixture (~365 KB)
+# must ride along so `include_bytes!` in
+# `src/time_converter_tai_ut1.rs` resolves from the published `.crate`.
+include = [
+    "src/**",
+    "test_data/eop/*.bin",
+    "test_data/eop/*.json",
+    "test_data/Leap_Second.dat",
+    "test_data/Leap_Second.dat.meta.json",
+    "README.md",
+    "Cargo.toml",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+]
 
 [package.metadata.docs.rs]
 all-features = true
 
+[package.metadata.cargo-machete]
+# `sha2` is consumed by the `extract_eop_table` regen binary (records the
+# SHA-256 of the produced fixture in its JSON sidecar). Lives in regular
+# deps because `src/bin/` binaries cannot link `[dev-dependencies]`.
+ignored = ["sha2"]
+
 [dependencies]
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
 log = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"
 
 [lints]
 workspace = true
