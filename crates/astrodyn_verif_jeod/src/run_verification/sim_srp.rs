@@ -605,8 +605,8 @@ fn build_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
     sb = sb.atmosphere(
         astrodyn::AtmosphereConfig {
             model: astrodyn::AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::EARTH.shape.r_eq,
-            r_pol: astrodyn::EARTH.shape.r_pol,
+            r_eq: astrodyn::EARTH.shape.r_eq(),
+            r_pol: astrodyn::EARTH.shape.r_pol(),
             planet_omega: astrodyn::EARTH.omega,
         },
         earth_idx,

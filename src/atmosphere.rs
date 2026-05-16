@@ -69,13 +69,13 @@ impl AtmosphereConfig {
     ///     AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
     ///     &EARTH,
     /// );
-    /// assert_eq!(config.r_eq, EARTH.shape.r_eq);
+    /// assert_eq!(config.r_eq, EARTH.shape.r_eq());
     /// ```
     pub fn from_planet(model: AtmosphereModel, planet: &PlanetConfig) -> Self {
         Self {
             model,
-            r_eq: planet.shape.r_eq,
-            r_pol: planet.shape.r_pol,
+            r_eq: planet.shape.r_eq(),
+            r_pol: planet.shape.r_pol(),
             planet_omega: planet.omega,
         }
     }

@@ -117,8 +117,8 @@ const DT_S: f64 = 0.03125;
 
 /// Earth equatorial radius used for the `attach_to_frame_helper.position`
 /// scaling at t=2600 / t=3400 — same value JEOD's `earth.planet.r_eq`
-/// reports (`astrodyn::EARTH.shape.r_eq` is the GGM05C-anchored constant).
-const R_EQ_EARTH: f64 = EARTH.shape.r_eq;
+/// reports (`astrodyn::EARTH.shape.r_eq()` is the GGM05C-anchored constant).
+const R_EQ_EARTH: f64 = EARTH.shape.r_eq();
 
 /// Number of samples we expect from JEOD's 60 s log cycle over the
 /// 12 000 s `chkpt_restart_times.py::stop_time`.
@@ -319,8 +319,8 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
     sb = sb.atmosphere(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met_model),
-            r_eq: EARTH.shape.r_eq,
-            r_pol: EARTH.shape.r_pol,
+            r_eq: EARTH.shape.r_eq(),
+            r_pol: EARTH.shape.r_pol(),
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
         earth_idx,
@@ -409,7 +409,7 @@ fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 /// `add_read(t=3400)` blocks: scale the planet-fixed cartesian so the
 /// body lands at ~1 m altitude on the surface. Mirrors the Python
 /// snippet in `input.py:113-118` exactly, with `r_eq` from the same
-/// `astrodyn::EARTH.shape.r_eq` constant the rest of the runner uses.
+/// `astrodyn::EARTH.shape.r_eq()` constant the rest of the runner uses.
 fn surface_altitude_scaled(pfix_position: DVec3) -> DVec3 {
     let altitude = pfix_position.length() - R_EQ_EARTH;
     let scale = R_EQ_EARTH / (R_EQ_EARTH + altitude - 1.0);

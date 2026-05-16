@@ -900,8 +900,8 @@ fn build_run7(
         sb = sb.atmosphere(
             AtmosphereConfig {
                 model: AtmosphereModel::Met(met_model),
-                r_eq: EARTH.shape.r_eq,
-                r_pol: EARTH.shape.r_pol,
+                r_eq: EARTH.shape.r_eq(),
+                r_pol: EARTH.shape.r_pol(),
                 planet_omega: OMEGA_EARTH,
             },
             earth,
@@ -1164,8 +1164,8 @@ fn build_run6_drag(
     sb = sb.atmosphere(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met_solar_mean()),
-            r_eq: EARTH.shape.r_eq,
-            r_pol: EARTH.shape.r_pol,
+            r_eq: EARTH.shape.r_eq(),
+            r_pol: EARTH.shape.r_pol(),
             planet_omega: OMEGA_EARTH,
         },
         earth,
@@ -1380,8 +1380,8 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     sb = sb.atmosphere(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met_model),
-            r_eq: EARTH.shape.r_eq,
-            r_pol: EARTH.shape.r_pol,
+            r_eq: EARTH.shape.r_eq(),
+            r_pol: EARTH.shape.r_pol(),
             planet_omega: OMEGA_EARTH,
         },
         earth,
@@ -1445,8 +1445,8 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
     sb = sb.atmosphere(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met_solar_mean()),
-            r_eq: EARTH.shape.r_eq,
-            r_pol: EARTH.shape.r_pol,
+            r_eq: EARTH.shape.r_eq(),
+            r_pol: EARTH.shape.r_pol(),
             planet_omega: OMEGA_EARTH,
         },
         earth,

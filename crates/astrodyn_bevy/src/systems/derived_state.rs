@@ -537,8 +537,8 @@ mod tests {
             }),
             GeodeticConfigC {
                 planet: bad_planet,
-                r_eq: astrodyn::EARTH.shape.r_eq,
-                r_pol: astrodyn::EARTH.shape.r_pol,
+                r_eq: astrodyn::EARTH.shape.r_eq(),
+                r_pol: astrodyn::EARTH.shape.r_pol(),
             },
             GeodeticStateC::default(),
         ));
@@ -607,13 +607,13 @@ mod tests {
             .world_mut()
             .spawn((
                 TranslationalStateC::<Earth>::from_untyped(TranslationalState {
-                    position: DVec3::new(EARTH.shape.r_eq + 400_000.0, 0.0, 0.0),
+                    position: DVec3::new(EARTH.shape.r_eq() + 400_000.0, 0.0, 0.0),
                     velocity: DVec3::new(0.0, 7500.0, 0.0),
                 }),
                 GeodeticConfigC {
                     planet,
-                    r_eq: EARTH.shape.r_eq,
-                    r_pol: EARTH.shape.r_pol,
+                    r_eq: EARTH.shape.r_eq(),
+                    r_pol: EARTH.shape.r_pol(),
                 },
                 GeodeticStateC::default(),
             ))

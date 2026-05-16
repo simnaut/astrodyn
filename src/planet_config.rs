@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn earth_shadow_radius_matches_r_eq() {
-        assert_eq!(EARTH.shadow_radius, EARTH.shape.r_eq);
+        assert_eq!(EARTH.shadow_radius, EARTH.shape.r_eq());
     }
 
     #[test]
