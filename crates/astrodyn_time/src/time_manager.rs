@@ -11,6 +11,7 @@ use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET
 use crate::leap_second::LeapSecondTable;
 use crate::time_converter_tai_tdb;
 use crate::time_converter_tai_tt;
+use crate::time_converter_tai_ut1::EopTable;
 use crate::time_converter_ut1_gmst;
 use crate::time_dyn::DynamicTime;
 use crate::time_gps;
@@ -81,8 +82,20 @@ pub struct TimeManager {
     // --- Infrastructure ---
     /// Leap second table for TAI-UTC conversion.
     pub leap_second_table: LeapSecondTable,
-    /// UT1-TAI offset in seconds (from IERS data).
+    /// UT1-TAI offset in seconds (from IERS data). Recomputed from
+    /// the installed `EopTable` on every `advance()` when one is set
+    /// (via [`Self::with_eop_table`]); otherwise held constant at the
+    /// value installed by [`Self::set_ut1_tai_offset`] (or the default
+    /// `-tai_utc_s` computed at construction).
     pub ut1_tai_offset: f64,
+    /// IERS EOP-driven UT1-TAI lookup. When `Some`, every `advance()`
+    /// re-evaluates `ut1_tai_offset` at the current `tai_tjt` via
+    /// [`EopTable::ut1_minus_tai_seconds`] (linear interpolation
+    /// between adjacent daily samples), matching JEOD
+    /// `time_converter_tai_ut1::convert_a_to_b`. `None` mirrors
+    /// JEOD's `override_data_table=true` mode where a caller-supplied
+    /// constant offset stays put across the run.
+    eop_table: Option<EopTable>,
     /// Cached UTC TJT at simulation epoch (constant, avoids repeated leap-second lookup).
     utc_tjt_at_epoch: f64,
 
@@ -104,6 +117,12 @@ pub struct TimeManager {
 impl TimeManager {
     // JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call update_all() at construction instead
     /// Create a new TimeManager starting at the given TAI TJT.
+    ///
+    /// `ut1_tai_offset` is initialised to `-(TAI - UTC)` (i.e.
+    /// UT1 ≈ UTC at the epoch). For sub-second-correct UT1 across a
+    /// run, install the IERS EOP table via
+    /// [`Self::with_eop_table`](Self::with_eop_table); otherwise the
+    /// offset stays constant across `advance()` calls.
     pub fn new(tai_tjt_at_epoch: f64, leap_table: LeapSecondTable) -> Self {
         let tai_utc_s = leap_table.tai_utc_at_tai_tjt(tai_tjt_at_epoch);
         let ut1_tai_offset = -tai_utc_s;
@@ -122,6 +141,7 @@ impl TimeManager {
             gps_seconds: 0.0,
             leap_second_table: leap_table,
             ut1_tai_offset,
+            eop_table: None,
             utc_tjt_at_epoch,
             dyn_time: DynamicTime::new(),
             simtime: 0.0,
@@ -137,9 +157,39 @@ impl TimeManager {
         Self::new(J2000_TAI_TJT, leap_table)
     }
 
+    /// Install an IERS EOP table so `ut1_tai_offset` is interpolated
+    /// from the table on every `advance()` (and recomputed at install
+    /// time for the current `tai_tjt`). Mirrors JEOD's default
+    /// behaviour where `override_data_table=false` and the converter
+    /// reads from `when_vec`/`val_vec` per call.
+    ///
+    /// Pair with [`crate::default_eop_table`] for the bundled IERS EOP
+    /// 14 C04 fixture.
+    // JEOD_INV: TM.42 — UT1-TAI is interpolated from the IERS EOP table
+    // (not held constant); fail-loud out of range — see EopTable::with_clamp_out_of_range.
+    pub fn with_eop_table(mut self, eop: EopTable) -> Self {
+        self.ut1_tai_offset = eop.ut1_minus_tai_seconds(self.tai_tjt);
+        self.eop_table = Some(eop);
+        self.update_all();
+        self
+    }
+
+    /// Whether a per-step IERS EOP interpolation is active. `false`
+    /// means `ut1_tai_offset` is held constant (JEOD
+    /// `override_data_table=true` mode).
+    pub fn has_eop_table(&self) -> bool {
+        self.eop_table.is_some()
+    }
+
     /// Set the UT1-TAI offset in seconds (from IERS bulletin data).
+    ///
+    /// Mirrors JEOD's `override_data_table=true` mode: the explicit
+    /// override **disables** any installed EOP table so the constant
+    /// stays put across the run. Re-install the table via
+    /// [`Self::with_eop_table`] to resume interpolation.
     pub fn set_ut1_tai_offset(&mut self, offset_seconds: f64) {
         self.ut1_tai_offset = offset_seconds;
+        self.eop_table = None;
         self.update_all();
     }
 
@@ -196,6 +246,14 @@ impl TimeManager {
 
         self.tai_seconds = self.dyn_time.seconds;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
+
+        // JEOD_INV: TM.42 — re-interpolate UT1-TAI from the IERS EOP
+        // table at the new TAI before propagating derived scales.
+        // Mirrors `time_converter_tai_ut1::convert_a_to_b` running
+        // every step. Held constant when `eop_table` is None.
+        if let Some(ref eop) = self.eop_table {
+            self.ut1_tai_offset = eop.ut1_minus_tai_seconds(self.tai_tjt);
+        }
 
         self.update_all();
     }
@@ -406,5 +464,58 @@ mod tests {
         mgr.advance(1000.0);
         assert!((mgr.ude[idx0].seconds - 1000.0).abs() < 1e-15);
         assert!((mgr.ude[idx1].seconds - 500.0).abs() < 1e-15);
+    }
+
+    /// EOP wiring: when an `EopTable` is installed,
+    /// `ut1_tai_offset` updates per-step from the table rather than
+    /// staying constant. Sample at TAI TJT 11178 (1998-12-31; JEOD's
+    /// `val_vec[13513] = -31.2824458`) and one day later (TJT 11179;
+    /// `val_vec[13514] = -31.2835239` per the JEOD source). The
+    /// difference (~1.08 ms/day) is exactly the per-day drift the
+    /// constant-offset path missed.
+    #[test]
+    fn time_manager_with_eop_interpolates_per_step() {
+        use crate::default_eop_table;
+        // 1998-12-31 TAI TJT (matches SIM_4_common_usage epoch).
+        let init_tai_tjt = 11_178.0;
+        let mgr0 = TimeManager::new(init_tai_tjt, default_leap_second_table())
+            .with_eop_table(default_eop_table());
+        let off0 = mgr0.ut1_tai_offset;
+        assert!(
+            (off0 - (-31.2824458)).abs() < 1e-12,
+            "EOP at TJT 11178: got {off0}"
+        );
+
+        // Advance one full day; EOP should re-interpolate to entry 13514.
+        let mut mgr = mgr0.clone();
+        mgr.advance(SECONDS_PER_DAY);
+        let off1 = mgr.ut1_tai_offset;
+        assert!(
+            (off1 - (-31.2835239)).abs() < 1e-12,
+            "EOP at TJT 11179 (after one-day advance): got {off1}"
+        );
+        assert_ne!(off0, off1, "EOP-driven offset must change across the day");
+    }
+
+    /// `set_ut1_tai_offset` must disable the EOP table (mirrors JEOD's
+    /// `override_data_table=true` mode); subsequent advances hold the
+    /// constant value.
+    #[test]
+    fn time_manager_set_ut1_tai_offset_disables_eop() {
+        use crate::default_eop_table;
+        let init_tai_tjt = 11_178.0;
+        let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table())
+            .with_eop_table(default_eop_table());
+        assert!(mgr.has_eop_table());
+
+        mgr.set_ut1_tai_offset(-30.0);
+        assert!(!mgr.has_eop_table(), "explicit override disables EOP");
+        assert_eq!(mgr.ut1_tai_offset, -30.0);
+
+        mgr.advance(SECONDS_PER_DAY);
+        assert_eq!(
+            mgr.ut1_tai_offset, -30.0,
+            "constant offset must hold after explicit override"
+        );
     }
 }

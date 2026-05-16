@@ -41,6 +41,8 @@ upgrade. The `extract_*` regen binaries are distributed by owner crate:
 `crates/astrodyn_gravity/src/bin/` (parsing JEOD `.cc` files into
 `crates/astrodyn_gravity/test_data/gravity/*.bin`),
 `extract_planet_pfixposn` lives in `crates/astrodyn_planet/src/bin/`,
+`extract_eop_table` lives in `crates/astrodyn_time/src/bin/` (parsing
+JEOD's IERS EOP table into `crates/astrodyn_time/test_data/eop/iers_eop_c04.bin`),
 and `extract_body_init` / `extract_jeod_validation` live in
 `crates/astrodyn_verif_jeod/src/bin/`. The verbatim NASA JEOD source
 mirror under `crates/astrodyn_verif_jeod/test_data/jeod_inputs/` is

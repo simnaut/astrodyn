@@ -18,7 +18,9 @@ table.
   than keeping their own clocks.
 - **Converting between scales** — TAI ↔ UTC ↔ UT1 ↔ TT ↔ TDB ↔ GPS
   via the registered `TimeConverter_*` pipeline, plus
-  UT1 → GMST for Earth body-fixed rotation.
+  UT1 → GMST for Earth body-fixed rotation. UT1 ↔ TAI is backed by
+  an IERS EOP table (daily linear interpolation); install via
+  `TimeManager::with_eop_table(default_eop_table())`.
 - **Mission elapsed time / user-defined epoch** —
   `MissionElapsedTime` is the relative-time scale most operators
   log against; `UserDefinedEpoch` is the per-sim zero.
@@ -69,12 +71,30 @@ Bevy dependency.
   atmosphere read from this).
 - `DynamicTime` — dynamics-frame time passed through the integrator.
 - `LeapSecondTable` — JEOD `Leap_Second.dat` parser / lookup.
+- `EopTable`, `default_eop_table` — IERS EOP-driven UT1-TAI
+  interpolator (JEOD `time_converter_tai_ut1.cc` port).
 - `CalendarDate`, `UTC_EPOCH_TAI_TJT` — Gregorian calendar.
 - `UserDefinedEpoch`, `MissionElapsedTime` — sim-defined epoch + MET.
 - `GpsTimeComponents`, `TAI_GPS_OFFSET` — GPS week / time-of-week.
 - Per-pair converters: `time_converter_tai_tdb`,
-  `time_converter_tai_tt`, `time_converter_ut1_gmst`. GMST drives
-  Earth body-fixed rotation in `astrodyn_frames`.
+  `time_converter_tai_tt`, `time_converter_tai_ut1`,
+  `time_converter_ut1_gmst`. GMST drives Earth body-fixed rotation
+  in `astrodyn_frames`.
+
+## Regenerating fixtures
+
+The IERS EOP table is committed as a binary fixture
+(`test_data/eop/iers_eop_c04.bin`, ~365 KB, 23 368 daily entries).
+Refresh it after a JEOD upgrade with:
+
+```bash
+cargo run -p astrodyn_time --bin extract_eop_table
+# or with an explicit checkout:
+cargo run -p astrodyn_time --bin extract_eop_table -- --jeod-home /path/to/jeod
+```
+
+The extractor accepts `$JEOD_HOME` or `--jeod-home <PATH>` and writes
+the binary plus a JSON sidecar (source provenance, JEOD commit, SHA-256).
 
 ## See also
 

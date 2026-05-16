@@ -284,6 +284,7 @@ pub use astrodyn_frames::{
 pub use astrodyn_time::{
     epoch::{J2000_TAI_TJT, J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET},
     leap_second::default_leap_second_table,
+    time_converter_tai_ut1::{default_eop_table, EopLoadError, EopTable},
     time_converter_ut1_gmst::ut1_to_gmst_seconds,
     time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate},
     SimulationTime, TimeManager, TimeScaleId,

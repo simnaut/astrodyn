@@ -24,9 +24,12 @@
 //!   [`MissionElapsedTime`] from [`time_met`], [`GpsTimeComponents`] and
 //!   [`TAI_GPS_OFFSET`] from [`time_gps`], plus the [`epoch`] module.
 //! - **Per-pair time converters**: [`time_converter_tai_tdb`],
-//!   [`time_converter_tai_tt`], and [`time_converter_ut1_gmst`] each port
-//!   one of JEOD's `TimeConverter_*` classes. GMST in particular drives
-//!   Earth's body-fixed rotation in `astrodyn_frames`.
+//!   [`time_converter_tai_tt`], [`time_converter_tai_ut1`], and
+//!   [`time_converter_ut1_gmst`] each port one of JEOD's
+//!   `TimeConverter_*` classes. GMST in particular drives Earth's
+//!   body-fixed rotation in `astrodyn_frames`. The TAI↔UT1 converter
+//!   is backed by an [`EopTable`] (IERS EOP 14 C04 series, daily
+//!   linear interpolation) reachable via [`default_eop_table`].
 //!
 //! JEOD source: `models/environment/time/` (and the
 //! `models/environment/time/data/` subdirectory for `Leap_Second.dat`). Pure
@@ -58,6 +61,7 @@ pub mod leap_second;
 pub mod simulation_time;
 pub mod time_converter_tai_tdb;
 pub mod time_converter_tai_tt;
+pub mod time_converter_tai_ut1;
 pub mod time_converter_ut1_gmst;
 pub mod time_dyn;
 pub mod time_gps;
@@ -69,6 +73,7 @@ pub mod time_utc;
 pub use epoch::*;
 pub use leap_second::LeapSecondTable;
 pub use simulation_time::SimulationTime;
+pub use time_converter_tai_ut1::{default_eop_table, EopLoadError, EopTable};
 pub use time_dyn::DynamicTime;
 pub use time_gps::{GpsTimeComponents, TAI_GPS_OFFSET};
 pub use time_manager::{TimeManager, TimeScaleId};

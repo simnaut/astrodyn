@@ -292,9 +292,9 @@ fn bevy_parity_apollo8_eci_integ() {
 /// as a separate Bevy-adapter bug; lifting the `#[ignore]` is
 /// blocked on that investigation.
 #[test]
-#[ignore = "parity-gap: frame_switch_system + ephemeris-driven Moon \
-            position diverges from runner at the switch tick \
-            (ULP-scale)."]
+#[ignore = "parity-gap (#556): frame_switch_system + ephemeris-driven \
+            SourceInertialPositionC interaction — Moon position diverges \
+            from runner at the switch tick (ULP-scale)."]
 fn bevy_parity_apollo8_frame_switch() {
     let steps = (TOTAL_TIME / DT).round() as usize;
     assert_parity("apollo8_frame_switch", true, steps);
