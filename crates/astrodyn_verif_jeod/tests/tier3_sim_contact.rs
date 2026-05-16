@@ -959,7 +959,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
     );
 
     let mass_props = line_mass_props(); // 200 kg, diag(100, 116.667, 116.667)
-    let earth_radius = astrodyn::EARTH.shape.r_eq;
+    let earth_radius = astrodyn::EARTH.shape.r_eq();
 
     let earth_grav = GravityControls {
         controls: vec![GravityControl::new_spherical(
@@ -1104,7 +1104,7 @@ fn tier3_contact_ground() {
     assert!(!records.is_empty(), "expected at least one CSV record");
 
     let (mut sim, earth_idx) = make_ground_contact_sim();
-    let earth_radius = astrodyn::EARTH.shape.r_eq;
+    let earth_radius = astrodyn::EARTH.shape.r_eq();
     let mat = ground_steel();
     let terrain = Arc::new(SphericalTerrain::new(earth_radius));
     let ground = GroundFacet::new(terrain, 0.0, mat);

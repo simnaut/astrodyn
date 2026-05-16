@@ -13,21 +13,127 @@
 /// Mirrors JEOD's `Planet` struct from `planet.hh`. The `mu` field stores the
 /// geodetic standard gravitational parameter (e.g., WGS84 for Earth). Gravity
 /// models carry their own `mu` in `GravitySource` which may differ slightly.
+///
+/// # Construction
+///
+/// `r_eq` and `r_pol` are stored as private fields so the only way to obtain
+/// a `PlanetShape` is through [`PlanetShape::new`], a `const fn` that
+/// validates the ellipsoid invariants and panics with a fail-loud diagnostic
+/// on violation:
+///
+/// - `r_eq` must be finite and strictly positive,
+/// - `r_pol` must be finite and strictly positive,
+/// - `r_pol <= r_eq` (oblate or spherical — never prolate).
+///
+/// The validating constructor exists so that the Borkowski geodetic-solver
+/// paranoia asserts in
+/// [`astrodyn_math::geodetic`](../../astrodyn_math/geodetic/index.html)
+/// (rows `PF.04` and `PF.05` in `docs/JEOD_invariants.md`) are unreachable by
+/// construction: any caller that holds a `PlanetShape` can rely on the
+/// solver's preconditions being satisfied.
+///
+/// # Why a validating constructor rather than a separate witness type
+///
+/// `r_eq` and `r_pol` are always consumed together in the geodetic kernel
+/// (`cartesian_to_geodetic_impl`, `geodetic_to_cartesian_impl`, the
+/// Borkowski iteration) and never used independently. A separate
+/// `EllipsoidShape` witness embedded in `PlanetShape` would duplicate
+/// structure (`shape.ellipsoid.r_eq()` vs `shape.r_eq()`) without buying
+/// extra typesafety, because `PlanetShape` is itself the per-planet record
+/// downstream code carries. Folding the validation into `PlanetShape::new`
+/// keeps the surface flat.
+///
+/// All four shape parameters (`mu`, `r_eq`, `r_pol`, `flat_coeff`) come from
+/// program-internal JEOD source constants in
+/// [`astrodyn_quantities::body_constants`], not user input, so the
+/// fail-loudly policy maps to `panic!` rather than a `Result` — a violation
+/// here would be a programmer error in our own preset definitions, which
+/// should fail loudly at the construction site.
 #[derive(Debug, Clone, Copy)]
 pub struct PlanetShape {
     /// Planet name.
     pub name: &'static str,
     /// Gravitational parameter (m^3/s^2).
     pub mu: f64,
-    /// Mean equatorial radius (m).
-    pub r_eq: f64,
-    /// Mean polar radius (m).
-    pub r_pol: f64,
+    /// Mean equatorial radius (m). Private; read via [`Self::r_eq`].
+    r_eq: f64,
+    /// Mean polar radius (m). Private; read via [`Self::r_pol`].
+    r_pol: f64,
     /// Flattening coefficient: f = (r_eq - r_pol) / r_eq.
     pub flat_coeff: f64,
 }
 
 impl PlanetShape {
+    /// Construct a validated [`PlanetShape`].
+    ///
+    /// Validates that the ellipsoid radii are physically meaningful:
+    ///
+    /// - `r_eq` is finite and `> 0`,
+    /// - `r_pol` is finite and `> 0`,
+    /// - `r_pol <= r_eq` (oblate or spherical).
+    ///
+    /// Violations panic with a fail-loud diagnostic naming the offending
+    /// field and the violated invariant. This is a `const fn` so that the
+    /// canonical preset constants in [`crate::presets`] (and any future
+    /// `const` planet definition) still compile to compile-time literals
+    /// after validation: a `const PlanetShape = PlanetShape::new(...)`
+    /// failing validation breaks the build, not the test suite.
+    ///
+    /// `flat_coeff` is accepted as-given — it is a presentation-layer
+    /// helper used by `flat_inv()` and the eccentricity accessors, not an
+    /// independent geometric input. Drift between `flat_coeff` and
+    /// `(r_eq - r_pol) / r_eq` is caught by the preset round-trip test
+    /// `polar_radius_consistent_with_flattening` rather than at the
+    /// constructor.
+    pub const fn new(name: &'static str, mu: f64, r_eq: f64, r_pol: f64, flat_coeff: f64) -> Self {
+        // Formatted panics aren't allowed in `const fn`, so each branch
+        // carries its own static diagnostic naming the violated invariant
+        // and the offending field. The caller sees `PlanetShape::new:
+        // <field> <invariant>` in panic output, which together with the
+        // backtrace pins both the value and the construction site.
+        //
+        // `is_finite()` covers NaN and ±Inf in one check; the strict
+        // positivity tests fire on negative and zero values; the
+        // ordering check rules out prolate ellipsoids.
+        if !r_eq.is_finite() {
+            panic!("PlanetShape::new: r_eq must be finite (got NaN or Inf)");
+        }
+        if r_eq <= 0.0 {
+            panic!("PlanetShape::new: r_eq must be strictly positive (got <= 0)");
+        }
+        if !r_pol.is_finite() {
+            panic!("PlanetShape::new: r_pol must be finite (got NaN or Inf)");
+        }
+        if r_pol <= 0.0 {
+            panic!("PlanetShape::new: r_pol must be strictly positive (got <= 0)");
+        }
+        if r_pol > r_eq {
+            panic!(
+                "PlanetShape::new: r_pol must be <= r_eq (got a prolate ellipsoid; \
+                 oblate or spherical only)"
+            );
+        }
+        Self {
+            name,
+            mu,
+            r_eq,
+            r_pol,
+            flat_coeff,
+        }
+    }
+
+    /// Mean equatorial radius (m).
+    #[inline]
+    pub const fn r_eq(&self) -> f64 {
+        self.r_eq
+    }
+
+    /// Mean polar radius (m).
+    #[inline]
+    pub const fn r_pol(&self) -> f64 {
+        self.r_pol
+    }
+
     /// Inverse flattening (e.g., 298.257223563 for Earth).
     pub fn flat_inv(&self) -> f64 {
         1.0 / self.flat_coeff
@@ -68,7 +174,7 @@ impl PlanetShape {
     /// Equatorial radius as a typed `uom::si::f64::Length` (meters).
     ///
     /// Additive typed accessor introduced by Phase 1 of the type-system
-    /// refactor (issue #101). Wraps the existing `r_eq` f64 field; the
+    /// refactor (issue #101). Wraps the equatorial-radius scalar; the
     /// underlying field is unchanged.
     pub fn r_eq_typed(&self) -> uom::si::f64::Length {
         use astrodyn_quantities::ext::F64Ext;
@@ -78,7 +184,7 @@ impl PlanetShape {
     /// Polar radius as a typed `uom::si::f64::Length` (meters).
     ///
     /// Additive typed accessor introduced by Phase 1 of the type-system
-    /// refactor (issue #101). Wraps the existing `r_pol` f64 field; the
+    /// refactor (issue #101). Wraps the polar-radius scalar; the
     /// underlying field is unchanged.
     pub fn r_pol_typed(&self) -> uom::si::f64::Length {
         use astrodyn_quantities::ext::F64Ext;
@@ -105,26 +211,26 @@ mod tests {
     fn earth_r_eq_typed_matches_f64_field() {
         use uom::si::length::meter;
         let r_eq = EARTH.r_eq_typed();
-        assert_eq!(r_eq.get::<meter>(), EARTH.r_eq);
+        assert_eq!(r_eq.get::<meter>(), EARTH.r_eq());
     }
 
     #[test]
     fn earth_r_pol_typed_matches_f64_field() {
         use uom::si::length::meter;
         let r_pol = EARTH.r_pol_typed();
-        assert_eq!(r_pol.get::<meter>(), EARTH.r_pol);
+        assert_eq!(r_pol.get::<meter>(), EARTH.r_pol());
     }
 
     #[test]
     fn polar_radius_consistent_with_flattening() {
         for planet in [EARTH, MOON, SUN, MARS] {
-            let expected_r_pol = planet.r_eq * (1.0 - planet.flat_coeff);
-            let err = (planet.r_pol - expected_r_pol).abs();
+            let expected_r_pol = planet.r_eq() * (1.0 - planet.flat_coeff);
+            let err = (planet.r_pol() - expected_r_pol).abs();
             assert!(
                 err < 1.0, // < 1 m tolerance for rounding
                 "{}: r_pol={} vs r_eq*(1-f)={}, err={}",
                 planet.name,
-                planet.r_pol,
+                planet.r_pol(),
                 expected_r_pol,
                 err
             );
@@ -135,9 +241,13 @@ mod tests {
     fn all_values_positive() {
         for planet in [EARTH, MOON, SUN, MARS] {
             assert!(planet.mu > 0.0, "{}: mu must be positive", planet.name);
-            assert!(planet.r_eq > 0.0, "{}: r_eq must be positive", planet.name);
             assert!(
-                planet.r_pol > 0.0,
+                planet.r_eq() > 0.0,
+                "{}: r_eq must be positive",
+                planet.name
+            );
+            assert!(
+                planet.r_pol() > 0.0,
                 "{}: r_pol must be positive",
                 planet.name
             );
@@ -152,7 +262,7 @@ mod tests {
                 planet.name
             );
             assert!(
-                planet.r_eq >= planet.r_pol,
+                planet.r_eq() >= planet.r_pol(),
                 "{}: r_eq must be >= r_pol",
                 planet.name
             );
@@ -189,13 +299,13 @@ mod tests {
 
     /// Hand-built minimal planet, so the test does not depend on preset
     /// constants (which are exercised separately).
-    const TEST_SHAPE: PlanetShape = PlanetShape {
-        name: "Testopia",
-        mu: 1.5e14,
-        r_eq: 6_400_000.0,
-        r_pol: 6_400_000.0 * (1.0 - 1.0 / 300.0),
-        flat_coeff: 1.0 / 300.0,
-    };
+    const TEST_SHAPE: PlanetShape = PlanetShape::new(
+        "Testopia",
+        1.5e14,
+        6_400_000.0,
+        6_400_000.0 * (1.0 - 1.0 / 300.0),
+        1.0 / 300.0,
+    );
 
     #[test]
     fn shape_struct_field_access_round_trip() {
@@ -203,7 +313,7 @@ mod tests {
         // access must return the literal we stored.
         assert_eq!(TEST_SHAPE.name, "Testopia");
         assert_eq!(TEST_SHAPE.mu, 1.5e14);
-        assert_eq!(TEST_SHAPE.r_eq, 6_400_000.0);
+        assert_eq!(TEST_SHAPE.r_eq(), 6_400_000.0);
         assert_eq!(TEST_SHAPE.flat_coeff, 1.0 / 300.0);
     }
 
@@ -216,14 +326,14 @@ mod tests {
         // comparison to a literal.
         for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
             assert!(
-                planet.r_eq > planet.r_pol,
+                planet.r_eq() > planet.r_pol(),
                 "{}: r_eq={} not > r_pol={}",
                 planet.name,
-                planet.r_eq,
-                planet.r_pol
+                planet.r_eq(),
+                planet.r_pol()
             );
-            let derived_pol = planet.r_eq * (1.0 - planet.flat_coeff);
-            let err = (derived_pol - planet.r_pol).abs();
+            let derived_pol = planet.r_eq() * (1.0 - planet.flat_coeff);
+            let err = (derived_pol - planet.r_pol()).abs();
             assert!(
                 err < 1.0,
                 "{}: r_pol drifted by {err} m from r_eq*(1-f)",
@@ -270,11 +380,72 @@ mod tests {
         // The Copy bound matters for ergonomic use as a const — assert
         // it implicitly via a copy through a function boundary.
         fn take_by_value(s: PlanetShape) -> f64 {
-            s.r_eq
+            s.r_eq()
         }
         let s = TEST_SHAPE;
-        assert_eq!(take_by_value(s), TEST_SHAPE.r_eq);
+        assert_eq!(take_by_value(s), TEST_SHAPE.r_eq());
         // Verify the original is still usable post-copy.
         assert_eq!(s.name, "Testopia");
+    }
+
+    // ── Validating-constructor negative tests ──────────────────────────
+    //
+    // Each enforced invariant in `PlanetShape::new` has a focused
+    // `#[should_panic]` test that proves the panic fires and pins the
+    // diagnostic substring. These provide defense-in-depth for the
+    // type-system guarantee that the Borkowski solver's PF.04/PF.05
+    // paranoia asserts never run with invalid inputs.
+
+    #[test]
+    #[should_panic(expected = "r_eq must be finite")]
+    fn new_panics_on_nan_r_eq() {
+        let _ = PlanetShape::new("X", 1.0, f64::NAN, 1.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_eq must be finite")]
+    fn new_panics_on_inf_r_eq() {
+        let _ = PlanetShape::new("X", 1.0, f64::INFINITY, 1.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_eq must be strictly positive")]
+    fn new_panics_on_zero_r_eq() {
+        let _ = PlanetShape::new("X", 1.0, 0.0, 1.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_eq must be strictly positive")]
+    fn new_panics_on_negative_r_eq() {
+        let _ = PlanetShape::new("X", 1.0, -1.0, 1.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_pol must be finite")]
+    fn new_panics_on_nan_r_pol() {
+        let _ = PlanetShape::new("X", 1.0, 1.0, f64::NAN, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_pol must be strictly positive")]
+    fn new_panics_on_zero_r_pol() {
+        let _ = PlanetShape::new("X", 1.0, 1.0, 0.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "r_pol must be <= r_eq")]
+    fn new_panics_on_prolate_ellipsoid() {
+        // r_pol > r_eq violates the oblate-or-spherical invariant.
+        let _ = PlanetShape::new("X", 1.0, 1.0, 2.0, 0.0);
+    }
+
+    #[test]
+    fn new_accepts_spherical_ellipsoid() {
+        // r_pol == r_eq (degenerate sphere) is a valid edge case and
+        // mirrors the synthetic spherical-Earth fixtures used in
+        // bevy_parity_derived_state.
+        let sphere = PlanetShape::new("Sphere", 1.0, 1.0, 1.0, 0.0);
+        assert_eq!(sphere.r_eq(), 1.0);
+        assert_eq!(sphere.r_pol(), 1.0);
     }
 }

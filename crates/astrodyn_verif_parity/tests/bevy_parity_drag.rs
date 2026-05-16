@@ -63,8 +63,8 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     app.insert_resource(AtmosphereModelR::new(
         AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
             planet_omega: 0.0,
         },
         planet,
@@ -109,8 +109,8 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
-        r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-        r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+        r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+        r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
         planet_omega: 0.0,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
@@ -175,8 +175,8 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     app.insert_resource(AtmosphereModelR::new(
         AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
             planet_omega: 0.0,
         },
         planet,
@@ -215,8 +215,8 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
-        r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-        r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+        r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+        r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
         planet_omega: 0.0,
     });
 
@@ -276,8 +276,8 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     app.insert_resource(AtmosphereModelR::new(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
         planet,
@@ -324,8 +324,8 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-        r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+        r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+        r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
         planet_omega: astrodyn::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
@@ -375,8 +375,8 @@ fn bevy_parity_drag_met_run5a() {
     app.insert_resource(AtmosphereModelR::new(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
         planet,
@@ -427,8 +427,8 @@ fn bevy_parity_drag_met_run5a() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-        r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+        r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+        r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
         planet_omega: astrodyn::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
@@ -486,8 +486,8 @@ fn bevy_parity_drag_run6b() {
     app.insert_resource(AtmosphereModelR::new(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-            r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+            r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+            r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
             planet_omega: astrodyn::planet_config::EARTH.omega,
         },
         planet,
@@ -534,8 +534,8 @@ fn bevy_parity_drag_run6b() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: astrodyn::planet_config::EARTH.shape.r_eq,
-        r_pol: astrodyn::planet_config::EARTH.shape.r_pol,
+        r_eq: astrodyn::planet_config::EARTH.shape.r_eq(),
+        r_pol: astrodyn::planet_config::EARTH.shape.r_pol(),
         planet_omega: astrodyn::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);

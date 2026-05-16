@@ -41,7 +41,7 @@ const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 /// Earth equatorial radius (m) — same const-folded literal the recipe
 /// uses. Tier3 geometric bounds (radius checks, altitude expectations)
 /// resolve against the same bit-pattern that seeded the initial state.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Build the recipe's `Simulation` exactly the way the parity trait
 /// does — call the scenario factory with a default `InitialConditions`,

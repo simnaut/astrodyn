@@ -71,15 +71,15 @@ use uom::si::length::meter;
 /// indirectly. Returns the recovered Cartesian position.
 fn geodetic_round_trip(cart: DVec3) -> (DVec3, GeodeticState) {
     let pos: Position<PlanetFixed<Earth>> = Qty3::from_raw_si(cart);
-    let geo = cartesian_to_geodetic_typed(pos, EARTH.r_eq.m(), EARTH.r_pol.m());
+    let geo = cartesian_to_geodetic_typed(pos, EARTH.r_eq().m(), EARTH.r_pol().m());
     let back: Position<PlanetFixed<Earth>> =
-        geodetic_to_cartesian_typed(geo, EARTH.r_eq.m(), EARTH.r_pol.m());
+        geodetic_to_cartesian_typed(geo, EARTH.r_eq().m(), EARTH.r_pol().m());
     (back.raw_si(), geo.into_raw())
 }
 
 fn spherical_round_trip(cart: DVec3) -> (DVec3, SphericalState) {
-    let sph = cartesian_to_spherical(cart, EARTH.r_eq);
-    let back = spherical_to_cartesian(&sph, EARTH.r_eq);
+    let sph = cartesian_to_spherical(cart, EARTH.r_eq());
+    let back = spherical_to_cartesian(&sph, EARTH.r_eq());
     (back, sph)
 }
 
@@ -187,7 +187,7 @@ fn tier2_planet_geodetic_round_trip_sim_pfixposn_seeds() {
                     latitude: latitude_rad,
                     longitude: longitude_rad,
                 };
-                let cart = spherical_to_cartesian(&seed, EARTH.r_eq);
+                let cart = spherical_to_cartesian(&seed, EARTH.r_eq());
                 let (back_sph_cart, recovered) = spherical_round_trip(cart);
                 let err_cart = (back_sph_cart - cart).length();
                 max.cart_sphere_m = max.cart_sphere_m.max(err_cart);
@@ -218,7 +218,7 @@ fn tier2_planet_geodetic_round_trip_sim_pfixposn_seeds() {
                 };
                 let typed_seed = GeodeticStateTyped::from_raw(seed);
                 let cart_typed: Position<PlanetFixed<Earth>> =
-                    geodetic_to_cartesian_typed(typed_seed, EARTH.r_eq.m(), EARTH.r_pol.m());
+                    geodetic_to_cartesian_typed(typed_seed, EARTH.r_eq().m(), EARTH.r_pol().m());
                 let cart = cart_typed.raw_si();
 
                 let (back_cart, recovered) = geodetic_round_trip(cart);
@@ -325,16 +325,16 @@ fn tier2_planet_geodetic_earth_preset_matches_jeod_default() {
     let jeod_flat_inv = 298.257_223_563_f64;
     let jeod_r_pol_m = jeod_r_eq_m * (1.0 - 1.0 / jeod_flat_inv);
 
-    assert_eq!(EARTH.r_eq, jeod_r_eq_m);
+    assert_eq!(EARTH.r_eq(), jeod_r_eq_m);
     assert!(
         (EARTH.flat_inv() - jeod_flat_inv).abs() < 1e-12,
         "flat_inv differs by {}",
         (EARTH.flat_inv() - jeod_flat_inv).abs(),
     );
     assert!(
-        (EARTH.r_pol - jeod_r_pol_m).abs() < 1e-9,
+        (EARTH.r_pol() - jeod_r_pol_m).abs() < 1e-9,
         "r_pol differs by {} m",
-        (EARTH.r_pol - jeod_r_pol_m).abs(),
+        (EARTH.r_pol() - jeod_r_pol_m).abs(),
     );
 }
 
@@ -350,8 +350,8 @@ fn tier2_planet_geodetic_typed_round_trip_iss_inclined() {
         longitude: 30.0.deg(),
         altitude: 408_000.0.m(),
     };
-    let r_eq = EARTH.r_eq.m();
-    let r_pol = EARTH.r_pol.m();
+    let r_eq = EARTH.r_eq().m();
+    let r_pol = EARTH.r_pol().m();
 
     let cart: Position<PlanetFixed<Earth>> = geodetic_to_cartesian_typed(seed, r_eq, r_pol);
     let recovered = cartesian_to_geodetic_typed(cart, r_eq, r_pol);

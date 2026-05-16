@@ -71,7 +71,7 @@ const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`. Drives the
 /// 400 km LEO orbit radius shared by every recipe in this file.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Sun gravitational parameter (m³/s²) — JEOD `sun_spherical.cc`.
 /// Used only by the third-body recipe.
@@ -414,13 +414,13 @@ fn build_drag_point_mass_monotonic_decay(_init: &InitialConditions) -> Simulatio
             r_eq: R_EARTH,
             // Match the pre-recipe inline expression
             // `R_EARTH * (1.0 - 1.0 / 298.257_223_563)` exactly. The
-            // preset `astrodyn::EARTH.shape.r_pol` evaluates to the
+            // preset `astrodyn::EARTH.shape.r_pol()` evaluates to the
             // same value (the constant in `body_constants.rs` is
             // `EARTH_R_EQ * (1.0 - EARTH_FLAT_COEFF)` with
             // `EARTH_FLAT_COEFF = 1.0 / 298.257_223_563`), so the
             // preset keeps the value bit-identical without hard-coding
             // the flattening literal here.
-            r_pol: astrodyn::EARTH.shape.r_pol,
+            r_pol: astrodyn::EARTH.shape.r_pol(),
             planet_omega: 0.0,
         },
         earth,

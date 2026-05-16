@@ -36,7 +36,7 @@ const OMEGA_EARTH: f64 = astrodyn::planet_config::EARTH.omega;
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Compute semi-major axis from specific energy: a = -mu / (2*E)
 fn semi_major_axis_from_energy(energy: f64, mu: f64) -> f64 {

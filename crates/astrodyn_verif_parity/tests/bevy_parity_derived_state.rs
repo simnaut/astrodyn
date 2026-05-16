@@ -206,8 +206,8 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
             }),
             GeodeticConfigC {
                 planet,
-                r_eq: earth_shape.r_eq,
-                r_pol: earth_shape.r_pol,
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
             },
         ))
         .id();
@@ -247,8 +247,8 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
                 source_idx: earth_idx,
-                r_eq: earth_shape.r_eq,
-                r_pol: earth_shape.r_pol,
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
             }),
             ..Default::default()
         },
@@ -457,14 +457,8 @@ fn bevy_parity_derived_state_polar_geodetic() {
     };
 
     // Spherical-Earth shape: use the canonical r_eq for both axes (flat_coeff=0).
-    let r_sph = astrodyn::EARTH.shape.r_eq;
-    let earth_shape = PlanetShape {
-        name: "Earth",
-        mu: MU_EARTH,
-        r_eq: r_sph,
-        r_pol: r_sph,
-        flat_coeff: 0.0,
-    };
+    let r_sph = astrodyn::EARTH.shape.r_eq();
+    let earth_shape = PlanetShape::new("Earth", MU_EARTH, r_sph, r_sph, 0.0);
 
     // ── Bevy ──
     let mut app = App::new();
@@ -501,8 +495,8 @@ fn bevy_parity_derived_state_polar_geodetic() {
             }),
             GeodeticConfigC {
                 planet,
-                r_eq: earth_shape.r_eq,
-                r_pol: earth_shape.r_pol,
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
             },
         ))
         .id();
@@ -872,17 +866,12 @@ fn bevy_parity_derived_state_lvlh_equ() {
 // ── NED/Geodetic parity ──
 
 fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64) {
-    let earth_shape = PlanetShape {
-        name: "Earth",
-        mu: MU_EARTH,
-        r_eq,
-        r_pol,
-        flat_coeff: if (r_eq - r_pol).abs() < 1.0 {
-            0.0
-        } else {
-            1.0 - r_pol / r_eq
-        },
+    let flat_coeff = if (r_eq - r_pol).abs() < 1.0 {
+        0.0
+    } else {
+        1.0 - r_pol / r_eq
     };
+    let earth_shape = PlanetShape::new("Earth", MU_EARTH, r_eq, r_pol, flat_coeff);
 
     let mut app = new_bevy_app(DT);
     let planet = app
@@ -913,8 +902,8 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             }),
             GeodeticConfigC {
                 planet,
-                r_eq: earth_shape.r_eq,
-                r_pol: earth_shape.r_pol,
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
             },
         ))
         .id();
@@ -975,15 +964,15 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
 
 #[test]
 fn bevy_parity_derived_state_ned_sph_inc() {
-    let r_sph = astrodyn::EARTH.shape.r_eq;
+    let r_sph = astrodyn::EARTH.shape.r_eq();
     run_ned_parity("ned_sph_inc", iss_trans().to_untyped(), r_sph, r_sph);
 }
 
 #[test]
 fn bevy_parity_derived_state_ned_sph_polar() {
-    let r_sph = astrodyn::EARTH.shape.r_eq;
+    let r_sph = astrodyn::EARTH.shape.r_eq();
     let polar_trans = TranslationalState {
-        position: DVec3::new(astrodyn::EARTH.shape.r_eq + 400_000.0, 0.0, 0.0),
+        position: DVec3::new(astrodyn::EARTH.shape.r_eq() + 400_000.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 0.0, 7668.56),
     };
     run_ned_parity("ned_sph_polar", polar_trans, r_sph, r_sph);

@@ -48,7 +48,7 @@ const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
 /// Earth equatorial radius (m) — JEOD `earth.cc`. Same const-folding
 /// rationale as [`MU_EARTH`].
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Integrator step size shared by every full-period recipe. The
 /// hyperbolic case keeps its own short-propagation `dt` because its

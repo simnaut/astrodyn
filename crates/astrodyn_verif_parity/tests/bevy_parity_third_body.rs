@@ -789,7 +789,7 @@ fn bevy_parity_third_body_earth_moon_clem() {
     let initial_sun_pos = sun_initial_pos();
     let initial_moon_pos = moon_initial_pos();
 
-    let r_perigee = astrodyn::EARTH.shape.r_eq + 400_000.0;
+    let r_perigee = astrodyn::EARTH.shape.r_eq() + 400_000.0;
     let v_perigee = 10_500.0;
     let clem_trans = TranslationalState {
         position: DVec3::new(r_perigee, 0.0, 0.0),

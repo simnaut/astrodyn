@@ -51,7 +51,7 @@ use uom::si::time::second;
 const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`.
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Orbit radius for every recipe — 400 km altitude above the equatorial
 /// Earth radius. Matches the constant the pre-recipe tier3 file used so
@@ -146,13 +146,13 @@ fn build_drag_6dof(
             r_eq: R_EARTH,
             // Match the pre-recipe inline expression for `r_pol`
             // exactly: `R_EARTH * (1.0 - 1.0 / 298.257_223_563)`. This
-            // is also what `astrodyn::EARTH.shape.r_pol` evaluates to
+            // is also what `astrodyn::EARTH.shape.r_pol()` evaluates to
             // (the `EARTH_R_POL` constant in `body_constants.rs` is
             // `EARTH_R_EQ * (1.0 - EARTH_FLAT_COEFF)` with
             // `EARTH_FLAT_COEFF = 1.0 / 298.257_223_563`), so using the
             // preset keeps the value bit-identical and avoids
             // hard-coding the flattening literal here.
-            r_pol: astrodyn::EARTH.shape.r_pol,
+            r_pol: astrodyn::EARTH.shape.r_pol(),
             planet_omega: 0.0,
         },
         earth,

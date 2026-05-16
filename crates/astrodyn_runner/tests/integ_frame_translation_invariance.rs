@@ -49,7 +49,7 @@ const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
 const MU_BARYCENTER: f64 = 0.0; // SSB-as-central placeholder: no mass at root
 
 const ALT_M: f64 = 700_000.0; // 700 km altitude
-const RADIUS_M: f64 = EARTH.shape.r_eq + ALT_M;
+const RADIUS_M: f64 = EARTH.shape.r_eq() + ALT_M;
 const SPEED_M_S: f64 = 7_504.567; // ~circular at radius — derived in test
 
 const SSB_TO_EARTH_OFFSET: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
@@ -141,8 +141,8 @@ fn sun_source(position_in_root: DVec3) -> GravitySourceEntry {
 fn atmosphere_config() -> AtmosphereConfig {
     AtmosphereConfig {
         model: AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
-        r_eq: EARTH.shape.r_eq,
-        r_pol: EARTH.shape.r_pol,
+        r_eq: EARTH.shape.r_eq(),
+        r_pol: EARTH.shape.r_pol(),
         // Disable corotation wind so density / drag depend only on
         // altitude — invariant across the two frame topologies.
         planet_omega: 0.0,
@@ -182,8 +182,8 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
     cfg.derived.lvlh = true;
     cfg.derived.geodetic = Some(astrodyn::GeodeticConfig {
         source_idx: gravity_source_idx,
-        r_eq: EARTH.shape.r_eq,
-        r_pol: EARTH.shape.r_pol,
+        r_eq: EARTH.shape.r_eq(),
+        r_pol: EARTH.shape.r_pol(),
     });
     // Solar beta exercises the SRP/lighting structural guard:
     // `compute_body_solar_beta_typed` takes `Position<RootInertial>`, so the

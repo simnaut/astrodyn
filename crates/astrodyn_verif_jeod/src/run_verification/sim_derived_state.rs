@@ -235,9 +235,9 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     let earth = sb.add_source("Earth", point_mass_earth(mu, true));
 
     let (r_eq, r_pol) = if spherical {
-        (EARTH.shape.r_eq, EARTH.shape.r_eq) // spherical: r_pol = r_eq
+        (EARTH.shape.r_eq(), EARTH.shape.r_eq()) // spherical: r_pol = r_eq
     } else {
-        (EARTH.shape.r_eq, EARTH.shape.r_pol) // ellipsoidal (WGS84)
+        (EARTH.shape.r_eq(), EARTH.shape.r_pol()) // ellipsoidal (WGS84)
     };
 
     sb.add_body(VehicleConfig {

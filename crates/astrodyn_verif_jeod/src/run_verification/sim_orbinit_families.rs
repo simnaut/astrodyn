@@ -48,7 +48,7 @@ const MU_EARTH: f64 = astrodyn::EARTH.shape.mu;
 
 /// Earth equatorial radius (m) — JEOD `earth.cc`. Same const-folding
 /// rationale as [`MU_EARTH`].
-const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq;
+const R_EARTH: f64 = astrodyn::EARTH.shape.r_eq();
 
 /// Integrator step size shared by every bound-orbit recipe. The
 /// hyperbolic and near-parabolic flybys keep a shorter step size

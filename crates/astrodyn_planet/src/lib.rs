@@ -33,11 +33,11 @@
 //! use astrodyn_planet::{EARTH, MOON};
 //!
 //! // WGS84 equatorial radius, GGM05C gravitational parameter.
-//! assert!((EARTH.r_eq - 6_378_137.0).abs() < 1.0);
+//! assert!((EARTH.r_eq() - 6_378_137.0).abs() < 1.0);
 //! assert!((EARTH.mu - 3.986_004_415e14).abs() < 1e6);
 //!
 //! // Moon is much smaller and lighter than Earth.
-//! assert!(MOON.r_eq < EARTH.r_eq);
+//! assert!(MOON.r_eq() < EARTH.r_eq());
 //! assert!(MOON.mu < EARTH.mu);
 //! ```
 

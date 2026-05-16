@@ -477,8 +477,8 @@ impl VehicleBuilder<Ready> {
     pub fn geodetic(mut self, source: impl Into<SourceHandle>, planet: &PlanetConfig) -> Self {
         self.derived.geodetic = Some(GeodeticConfig {
             source_idx: source.into().into_raw(),
-            r_eq: planet.shape.r_eq,
-            r_pol: planet.shape.r_pol,
+            r_eq: planet.shape.r_eq(),
+            r_pol: planet.shape.r_pol(),
         });
         self
     }
@@ -498,9 +498,9 @@ impl VehicleBuilder<Ready> {
         sun: &PlanetConfig,
     ) -> Self {
         self.derived.earth_lighting = Some(EarthLightingConfig {
-            earth_radius: earth.shape.r_eq,
-            moon_radius: moon.shape.r_eq,
-            sun_radius: sun.shape.r_eq,
+            earth_radius: earth.shape.r_eq(),
+            moon_radius: moon.shape.r_eq(),
+            sun_radius: sun.shape.r_eq(),
         });
         self
     }
