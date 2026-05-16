@@ -794,4 +794,45 @@ mod tests {
         let inf_input = DVec3::new(f64::INFINITY, 0.0, 0.0);
         let _ = cartesian_to_geodetic(inf_input, EARTH_R_EQ, EARTH_R_POL);
     }
+
+    // JEOD_INV: PF.04 — the Borkowski iteration is provably convergent
+    // for any physically valid ellipsoid (`r_eq > 0`, `0 < r_pol ≤
+    // r_eq`), but a non-physical near-degenerate `r_pol` (e.g. 1 m
+    // against a 6 378 137 m equatorial radius) makes `c → 1` and the
+    // update step shrinks `y` only ~30% per iteration. After
+    // `MAX_ITERATION_LIMIT` passes the iterate still differs from the
+    // previous by ~7e-3 rad — many orders of magnitude above the
+    // 1e-12 rad convergence tolerance — so the assert fires. JEOD
+    // would silently use the last iterate; our port refuses the wrong
+    // answer.
+    #[test]
+    #[should_panic(expected = "did not converge")]
+    fn pf_04_panics_on_non_convergent_ellipsoid() {
+        // JEOD_INV: PF.04 — near-degenerate `r_pol` makes Borkowski's
+        // shrink factor stay near 1, so 10 iterations cannot close the
+        // gap to 1e-12 rad.
+        let bad_r_pol = 1.0;
+        let cart = DVec3::new(EARTH_R_EQ, 0.0, 1_000_000.0);
+        let _ = cartesian_to_geodetic(cart, EARTH_R_EQ, bad_r_pol);
+    }
+
+    // JEOD_INV: PF.05 — the Borkowski denominator `d = 2·(cos(y0−w) −
+    // c·cos(2·y0))` stays comfortably non-zero for any physically
+    // valid ellipsoid. The denominator becomes `NaN` only when its
+    // inputs are themselves degenerate — e.g. `r_pol = 0` with an
+    // equatorial position (`z = 0`), which makes `y0 = atan(a·z /
+    // (b·r)) = atan(0/0) = NaN`. JEOD would divide unconditionally and
+    // propagate `NaN` through the returned latitude/altitude; our port
+    // surfaces the misconfiguration at the kernel rather than letting
+    // it poison downstream derived state.
+    #[test]
+    #[should_panic(expected = "denominator near zero")]
+    fn pf_05_panics_on_degenerate_ellipsoid_denominator() {
+        // JEOD_INV: PF.05 — `r_pol = 0` plus an equatorial `cart`
+        // makes the initial `y0 = atan(0/0)` NaN, which poisons `d` on
+        // the first iteration.
+        let bad_r_pol = 0.0;
+        let cart = DVec3::new(7_000_000.0, 0.0, 0.0);
+        let _ = cartesian_to_geodetic(cart, EARTH_R_EQ, bad_r_pol);
+    }
 }
