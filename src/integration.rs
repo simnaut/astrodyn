@@ -75,6 +75,18 @@ pub struct CoupledIntegScratch {
     // Scratch for per-body contact force/torque outputs populated by
     // `contact_eval` each stage.
     contact_out: Vec<(DVec3, DVec3)>,
+    // Typed-sibling scratch: persistent owned-state buffers for
+    // `integrate_bodies_contact_coupled_typed`. The typed sibling reads
+    // the typed body's position/velocity/force/torque into these owned
+    // vectors, hands the kernel a transient `Vec<CoupledBodyInput<'_>>`
+    // backed by them, then writes the integrated raw state back through
+    // the typed references. Persisting the owned-data vectors here keeps
+    // the heap allocation off the per-step hot path; the borrow-typed
+    // input vector itself is small (one pointer per field per body) and
+    // can stay per-call.
+    typed_raw_trans: Vec<TranslationalState>,
+    typed_forces: Vec<DVec3>,
+    typed_torques: Vec<DVec3>,
 }
 
 impl CoupledIntegScratch {
@@ -362,7 +374,7 @@ pub struct CoupledBodyInputTyped<'a, F: Frame> {
 /// Typed sibling of [`integrate_bodies_contact_coupled`].
 ///
 /// Each body's `trans` flows end-to-end as
-/// [`TranslationalStateTyped<F>`]; the typed sibling allocates a
+/// [`TranslationalStateTyped<F>`]; the typed sibling stages a
 /// transient untyped buffer for the kernel, runs the multi-body RK4
 /// step, and writes the integrated states back through the typed
 /// references. The `gravity_fn` and `contact_eval` closures continue
@@ -372,65 +384,99 @@ pub struct CoupledBodyInputTyped<'a, F: Frame> {
 /// Generic over `F: Frame` so consumers in different integration
 /// frames share a single entry point.
 ///
-/// Takes `Vec<CoupledBodyInputTyped<'a, F>>` by value so each per-body
-/// `&'a mut` reference can be moved out into the parallel arrays the
-/// kernel needs; the typed `trans` references are retained and
-/// re-borrowed for the writeback after the kernel returns.
+/// Takes `Vec<CoupledBodyInputTyped<'a, F>>` by value because the kernel
+/// needs disjoint `&mut` borrows out of each body, and a by-value `Vec`
+/// is the cleanest way to surface that disjointness to the borrow
+/// checker. The heap data the kernel actually manipulates (one untyped
+/// `TranslationalState` per body, plus per-body force/torque snapshots)
+/// is parked in [`CoupledIntegScratch`] across calls so the only
+/// remaining per-call allocation is the small borrow-typed
+/// `Vec<CoupledBodyInput<'_>>` whose lifetime parameter forbids it from
+/// living in long-lived storage.
 #[allow(clippy::too_many_arguments)]
 pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
-    bodies: Vec<CoupledBodyInputTyped<'a, F>>,
+    mut bodies: Vec<CoupledBodyInputTyped<'a, F>>,
     scratch: &mut CoupledIntegScratch,
     gravity_fn: impl FnMut(usize, DVec3, DVec3, f64) -> DVec3,
     contact_eval: impl FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
     dt: f64,
 ) {
-    // allowed: typed-sibling boundary. Build the parallel untyped Vec
-    // the kernel expects, then write back. The kernel internals are
-    // shared with the gateway pipeline; the bypass machinery lives in
-    // the gateway by design (see `integrate_body_typed` for the wider
-    // rationale).
+    // allowed: typed-sibling boundary. Snapshot typed translational
+    // state into the kernel's untyped scratch, run the kernel, then
+    // write back through the typed references. The kernel internals
+    // are shared with the gateway pipeline; the bypass machinery lives
+    // in the gateway by design (see `integrate_body_typed` for the
+    // wider rationale).
     let n = bodies.len();
-    let mut raw_trans: Vec<TranslationalState> = Vec::with_capacity(n);
-    let mut typed_trans_refs: Vec<&'a mut TranslationalStateTyped<F>> = Vec::with_capacity(n);
-    let mut rots: Vec<&'a mut RotationalState> = Vec::with_capacity(n);
-    let mut masses: Vec<&'a MassProperties> = Vec::with_capacity(n);
-    let mut forces: Vec<DVec3> = Vec::with_capacity(n);
-    let mut torques: Vec<DVec3> = Vec::with_capacity(n);
-    for typed in bodies {
+
+    // Move the persistent typed-sibling buffers out of `scratch` so the
+    // kernel below receives a borrow disjoint from the `Vec`s holding
+    // the kernel's untyped per-body state. `mem::take` is O(1) — the
+    // heap allocation moves into the local, not a fresh allocation — and
+    // the buffers are swapped back into `scratch` after the kernel
+    // returns, preserving the cross-step heap reuse.
+    let mut raw_trans = std::mem::take(&mut scratch.typed_raw_trans);
+    let mut forces = std::mem::take(&mut scratch.typed_forces);
+    let mut torques = std::mem::take(&mut scratch.typed_torques);
+
+    // `clear` + `push` reuses the existing heap allocation once the
+    // body count has stabilized.
+    raw_trans.clear();
+    forces.clear();
+    torques.clear();
+    raw_trans.reserve(n);
+    forces.reserve(n);
+    torques.reserve(n);
+    for typed in &bodies {
         // allowed: typed↔raw kernel boundary
         raw_trans.push(TranslationalState {
             position: typed.trans.position.raw_si(),
             velocity: typed.trans.velocity.raw_si(),
         });
-        typed_trans_refs.push(typed.trans);
-        rots.push(typed.rot);
-        masses.push(typed.mass);
         forces.push(typed.non_grav_non_contact_force);
         torques.push(typed.non_contact_torque_body);
     }
+
     {
-        let inputs: Vec<CoupledBodyInput<'_>> = raw_trans
+        // Build the per-call borrow-typed input slice. This vector holds
+        // only references (one pointer per field per body) and is
+        // dropped at the end of this scope; the owned heap data lives
+        // in `raw_trans` / `forces` / `torques` (swapped back into the
+        // persistent `scratch` below) and in `bodies`.
+        let mut inputs: Vec<CoupledBodyInput<'_>> = Vec::with_capacity(n);
+        for ((typed, raw), (force, torque)) in bodies
             .iter_mut()
-            .zip(rots)
-            .enumerate()
-            .map(|(i, (raw, rot))| CoupledBodyInput {
+            .zip(raw_trans.iter_mut())
+            .zip(forces.iter().zip(torques.iter()))
+        {
+            inputs.push(CoupledBodyInput {
                 trans: raw,
-                rot,
-                mass: masses[i],
-                non_grav_non_contact_force: forces[i],
-                non_contact_torque_body: torques[i],
-            })
-            .collect();
-        let mut inputs = inputs;
+                // Reborrow each typed body's disjoint `&'a mut` refs
+                // into a fresh inner lifetime tied to the `iter_mut()`
+                // projection above.
+                rot: &mut *typed.rot,
+                mass: typed.mass,
+                non_grav_non_contact_force: *force,
+                non_contact_torque_body: *torque,
+            });
+        }
         integrate_bodies_contact_coupled(&mut inputs, scratch, gravity_fn, contact_eval, dt);
     }
-    for (typed_ref, raw) in typed_trans_refs.into_iter().zip(raw_trans) {
+
+    // Write the integrated raw state back through the typed references.
+    for (typed, raw) in bodies.into_iter().zip(raw_trans.iter().copied()) {
         // allowed: typed↔raw kernel boundary writeback. See note above.
-        *typed_ref = TranslationalStateTyped::<F> {
+        *typed.trans = TranslationalStateTyped::<F> {
             position: Position::<F>::from_raw_si(raw.position), // allowed: typed↔raw kernel boundary
             velocity: Velocity::<F>::from_raw_si(raw.velocity), // allowed: typed↔raw kernel boundary
         };
     }
+
+    // Park the per-body buffers back in the persistent scratch so the
+    // next step reuses the same heap allocations.
+    scratch.typed_raw_trans = raw_trans;
+    scratch.typed_forces = forces;
+    scratch.typed_torques = torques;
 }
 
 /// Populate one intermediate RK4 stage state from a base state and
