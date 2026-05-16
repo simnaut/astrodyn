@@ -40,28 +40,25 @@ use std::path::Path;
 /// satisfy multiple closely-related tier3 topics, which is why the
 /// raw file counts do not need to match 1:1.
 const DEFERRED_GAPS: &[(&str, &str)] = &[
-    // ── Multi-planet scenarios: the bridge spawns all bodies under a
-    //    single `<P>` today, so cases that integrate in two
-    //    planet-inertial frames need a non-generic dispatch (#389
-    //    risk note).
-    (
-        "apollo8_frame_switch",
-        "multi-planet scenario (Earth ⇄ Moon frame switch) — bridge needs \
-         non-generic Planet dispatch (#389 risk)",
-    ),
-    (
-        "apollo_mass_tree",
-        "Apollo lunar transfer (Earth ⇄ Moon) — same multi-planet gap as \
-         apollo8_frame_switch",
-    ),
+    // ── apollo_trajectory: 12 s SIM_Apollo init sim with 11
+    //    mass-tree attach/detach events scheduled at integer seconds.
+    //    Body integrates in Earth-inertial (single-planet) so the
+    //    bridge generic suffices, but a parity wrapper needs the
+    //    scenario rebuilt as a `SimulationBuilder` (the tier3 test
+    //    uses direct `Simulation::add_*` + `Simulation::detach_subtree`
+    //    / `attach_subtree_aligned` APIs) plus a `pre_step` closure
+    //    that mirrors the 11-event sequence onto both runtimes via
+    //    `BevySimContext::attach` / `detach`. Out of scope for this
+    //    landing — the recipe-factory + pre-step plumbing is the
+    //    same shape as the other deferred `pre_step` rows below.
     (
         "apollo_trajectory",
-        "Apollo lunar transfer (Earth ⇄ Moon) — same multi-planet gap as \
-         apollo8_frame_switch",
-    ),
-    (
-        "earth_moon",
-        "Earth ⇄ Moon dual-body sim — multi-planet gap (#389 risk)",
+        "SIM_Apollo 12 s init sim with 11 mass-tree events — needs a \
+         SimulationBuilder-shaped recipe factory + pre_step closure to \
+         drive the attach/detach sequence through BevySimContext on \
+         both runtimes; the underlying physics is single-planet \
+         (Earth-inertial) so the existing `populate_app::<Earth>` is \
+         sufficient.",
     ),
     // ── Pre-recipe tier3 siblings: the `VerificationCase` factory
     //    doesn't exist yet, so the parity trait has nothing to drive.
@@ -123,6 +120,17 @@ const PERMANENT_GAPS: &[(&str, &str)] = &[
         "attach_mass",
         "structural mass-tree composition test — no trajectory CSV, \
          doesn't fit VerificationCase shape",
+    ),
+    (
+        "apollo_mass_tree",
+        "Apollo stack mass-tree composition test — validates composite \
+         mass / CoM / inertia at each of 12 phases via `MassTree` \
+         attach/detach operations; no `Simulation::step()` call, no \
+         JEOD trajectory CSV. Sibling to `attach_mass` / \
+         `complex_attach_detach` already in this list — same \
+         structural-only shape that the parity trait was never meant \
+         to cover. The propagation half of SIM_Apollo lives in \
+         `apollo_trajectory` (see DEFERRED_GAPS).",
     ),
     (
         "complex_attach_detach",
