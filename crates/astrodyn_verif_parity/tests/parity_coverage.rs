@@ -65,12 +65,18 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling — drag-family recipe factory not yet defined \
          (#389 follow-up)",
     ),
-    (
-        "lsode",
-        "pre-recipe sibling for LSODE integrator — recipe factory not yet \
-         defined (#389 follow-up); LSODE integrator may need its own \
-         per-step state component on the Bevy side",
-    ),
+    // `lsode` (tier3_sim_lsode.rs) covered by
+    // `bevy_parity_lsode_abm4.rs`: the `RUN_abm4` half of the tier3
+    // file (the half whose JEOD reference uses our ABM4 implementation
+    // on both sides) runs lockstep through both runtimes and asserts
+    // bit-identical state at every checkpoint. The `RUN_lsode` half
+    // documents the drift between our fixed-order ABM4 and JEOD's
+    // adaptive LSODE — there is no Bevy-side LSODE to assert parity
+    // against until LSODE itself is ported (see
+    // `crates/astrodyn_dynamics/src/abm4.rs` doc rationale for the
+    // future-work scoping). The prefix-match in `is_covered_by_parity`
+    // satisfies this entry implicitly, so the topic is not listed
+    // here.
     (
         "time_docker",
         "pre-recipe sibling exercising time-scale conversions — recipe \
