@@ -40,26 +40,17 @@ use std::path::Path;
 /// satisfy multiple closely-related tier3 topics, which is why the
 /// raw file counts do not need to match 1:1.
 const DEFERRED_GAPS: &[(&str, &str)] = &[
-    // ── apollo_trajectory: 12 s SIM_Apollo init sim with 11
-    //    mass-tree attach/detach events scheduled at integer seconds.
-    //    Body integrates in Earth-inertial (single-planet) so the
-    //    bridge generic suffices, but a parity wrapper needs the
-    //    scenario rebuilt as a `SimulationBuilder` (the tier3 test
-    //    uses direct `Simulation::add_*` + `Simulation::detach_subtree`
-    //    / `attach_subtree_aligned` APIs) plus a `pre_step` closure
-    //    that mirrors the 11-event sequence onto both runtimes via
-    //    `BevySimContext::attach` / `detach`. Out of scope for this
-    //    landing — the recipe-factory + pre-step plumbing is the
-    //    same shape as the other deferred `pre_step` rows below.
-    (
-        "apollo_trajectory",
-        "SIM_Apollo 12 s init sim with 11 mass-tree events — needs a \
-         SimulationBuilder-shaped recipe factory + pre_step closure to \
-         drive the attach/detach sequence through BevySimContext on \
-         both runtimes; the underlying physics is single-planet \
-         (Earth-inertial) so the existing `populate_app::<Earth>` is \
-         sufficient.",
-    ),
+    // `apollo_trajectory` covered by
+    // `bevy_parity_apollo_trajectory.rs`: shared `apollo_trajectory`
+    // recipe builds the SimulationBuilder once, the 11 mass-tree
+    // events fire through `SimContext::detach_subtree` /
+    // `attach_subtree_aligned` on both runtimes (the runner
+    // dispatches to `Simulation::detach_subtree` /
+    // `attach_subtree_aligned`; the Bevy adapter fires the existing
+    // `DetachEvent` / `AttachEvent` against the mass-only entities
+    // it spawns for the seven tree-only stack bodies). Listed here
+    // for the audit trail since this was the headline blocker the
+    // prior #413 partial close left open.
     // ── Pre-recipe tier3 siblings: the `VerificationCase` factory
     //    doesn't exist yet, so the parity trait has nothing to drive.
     //    Recipe migration is tracked as a follow-up to #389. Each

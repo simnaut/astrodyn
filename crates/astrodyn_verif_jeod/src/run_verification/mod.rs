@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+pub mod sim_apollo_trajectory;
 pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
 pub mod sim_drag_6dof;
@@ -203,6 +204,98 @@ impl SimContext for Simulation {
         };
         Simulation::attach_to_frame(self, body_idx, frame_id, offset, t_parent_child);
     }
+
+    fn detach_subtree(&mut self, subtree_root: astrodyn::MassBodyId) {
+        // `Simulation::detach_subtree` takes the integrated body index
+        // explicitly because the algorithm needs to know which `SimBody`
+        // owns the tree root **iff the parent is integrated**: when the
+        // current tree root above `subtree_root` is a SimBody, that body's
+        // `body.trans` / `body.rot` is shifted by the post-detach CoM
+        // delta; when the tree root sits inside `detached_subtrees`, the
+        // algorithm reads from the HashMap entry instead and
+        // `integrated_body_idx` is unused (but still indexed into for
+        // the `parent_is_integrated` equality check, so it must be a
+        // valid body index). Resolve the index in two steps: if the
+        // current tree root is backed by a SimBody, use that body's
+        // index; otherwise fall back to any registered integrated body
+        // (the parent_is_integrated check will return false and the
+        // body's state is left untouched). Mirrors the runner's
+        // root-walk plus the Bevy adapter's `staging_system`
+        // `id_to_entity` lookup.
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("SimContext::detach_subtree: no mass tree configured");
+        let mut root_id = subtree_root;
+        while let Some(p) = tree.parent(root_id) {
+            root_id = p;
+        }
+        let integrated_body_idx = pick_integrated_body_idx(self, root_id, "detach_subtree");
+        Simulation::detach_subtree(self, integrated_body_idx, subtree_root);
+    }
+
+    fn attach_subtree_aligned(
+        &mut self,
+        subtree_root: astrodyn::MassBodyId,
+        subtree_point: &str,
+        parent: astrodyn::MassBodyId,
+        parent_point: &str,
+    ) {
+        // Same integrated-body resolution rule as detach_subtree: the
+        // parent's pre-attach composite state is read from a SimBody
+        // when the tree root above `parent` is integrated, otherwise
+        // from `detached_subtrees`. For the integrated branch the
+        // resolved body's `body.trans` is also where the combined
+        // composite is written back.
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("SimContext::attach_subtree_aligned: no mass tree configured");
+        let mut root_id = parent;
+        while let Some(p) = tree.parent(root_id) {
+            root_id = p;
+        }
+        let integrated_body_idx = pick_integrated_body_idx(self, root_id, "attach_subtree_aligned");
+        Simulation::attach_subtree_aligned(
+            self,
+            integrated_body_idx,
+            subtree_root,
+            subtree_point,
+            parent,
+            parent_point,
+        );
+    }
+}
+
+/// Resolve a SimBody index for the runner-side
+/// `Simulation::detach_subtree` / `attach_subtree_aligned` call. If the
+/// tree root above the subtree is backed by an integrated SimBody, that
+/// body's index is the load-bearing answer (it's where the combine
+/// kernel writes back the merged composite). Otherwise the parent is a
+/// detached subtree and the index only feeds the
+/// `parent_is_integrated` boolean — any registered integrated body is
+/// safe to pass.
+fn pick_integrated_body_idx(sim: &Simulation, tree_root: astrodyn::MassBodyId, op: &str) -> usize {
+    if let Some(idx) = (0..sim.num_bodies()).find(|&i| sim.body_mass_id(i) == Some(tree_root)) {
+        return idx;
+    }
+    // Tree root is a detached subtree (no SimBody backs it). Fall back
+    // to any body that has a `mass_body_id` so the runner's pre-call
+    // `self.bodies[integrated_body_idx].mass_body_id` read succeeds —
+    // the parent_is_integrated comparison against `tree_root` returns
+    // false in this branch, so the body's state is never read.
+    (0..sim.num_bodies())
+        .find(|&i| sim.body_mass_id(i).is_some())
+        .unwrap_or_else(|| {
+            panic!(
+                "SimContext::{op}: no SimBody is registered in the mass tree. \
+                 The runner's subtree-detach / -attach algorithm requires at \
+                 least one integrated body to anchor the `parent_is_integrated` \
+                 check. Register the integration root via `add_body_to_tree` \
+                 (or `SimulationBuilder::register_in_mass_tree`) before firing \
+                 subtree events."
+            )
+        })
 }
 
 /// Per-family typed records held alongside the [`StateLog`] vec so

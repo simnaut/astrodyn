@@ -118,6 +118,31 @@ impl<'w, P: Planet> BevySimContext<'w, P> {
         })
     }
 
+    fn entity_for_mass_id(&mut self, mass_id: astrodyn::MassBodyId, op: &str) -> Entity {
+        // Linear scan over body entities is the same shape as
+        // `staging_system`'s pre-event `id_to_entity` map builder. The
+        // scenarios that hit this surface (apollo: 1 dyn + 7 tree-only
+        // bodies) are small enough that the scan cost is negligible
+        // versus building a HashMap in the context constructor — the
+        // SimContext is created fresh per `pre_step` invocation, so any
+        // setup cost amortises poorly. Bevy `Query` against
+        // `&MassBodyIdC` is the canonical iterator; using the world's
+        // `query` helper avoids requiring callers to pre-pack the map
+        // alongside the body / source entity slices.
+        let mut q = self.world.query::<(Entity, &astrodyn_bevy::MassBodyIdC)>();
+        for (entity, body_id) in q.iter(self.world) {
+            if body_id.0 == mass_id {
+                return entity;
+            }
+        }
+        panic!(
+            "BevySimContext::{op}: mass_body_id {mass_id:?} has no matching ECS entity. \
+             Every mass-tree node referenced by a subtree event must be backed by an entity \
+             carrying `MassBodyIdC` — spawn a mass-only entity for tree-only mass bodies \
+             before firing the event."
+        );
+    }
+
     fn frame_entity(&self, source: Entity) -> Entity {
         self.world
             .get::<FrameEntityC>(source)
@@ -455,6 +480,129 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
                 )
             });
         rot.0.q_inertial_body.as_witness().inner().to_glam()
+    }
+
+    fn detach_subtree(&mut self, subtree_root: astrodyn::MassBodyId) {
+        // Subtree-detach against the Bevy world: resolve the subtree
+        // root's `MassBodyId` to its backing entity (mass-only or
+        // dynamic) and fire the existing `DetachEvent` against it. The
+        // staging-system handler already walks up to the tree root,
+        // composes the rigid-body state via `propagate_forward`,
+        // captures the subtree's composite-body inertial state, and
+        // inserts `DetachedSubtreeStateC` so `step_detached_system`
+        // advances it ballistically — exactly mirroring the runner's
+        // `Simulation::detach_subtree` data flow. No new event needed.
+        let child = self.entity_for_mass_id(subtree_root, "detach_subtree");
+        let mut messages = self.world.resource_mut::<Messages<DetachEvent>>();
+        messages.write(DetachEvent { child });
+        // Remove the ECS-native `MassChildOf` edge on the detached
+        // subtree root so `propagate_state_from_root_system`'s post-
+        // detach walks stop deriving the subtree's pose from the
+        // now-stale arena topology. Mirrors the same removal in the
+        // single-body `BevySimContext::detach` sibling: the staging
+        // system updates the arena tree (the source of truth for the
+        // composite-mass and detach-shift kernels), and the
+        // ECS-component `MassChildOf` is kept in sync from the call
+        // site so the kinematic-walk and wrench-aggregation systems
+        // see the same shape.
+        self.world.entity_mut(child).remove::<MassChildOf>();
+    }
+
+    fn attach_subtree_aligned(
+        &mut self,
+        subtree_root: astrodyn::MassBodyId,
+        subtree_point: &str,
+        parent: astrodyn::MassBodyId,
+        parent_point: &str,
+    ) {
+        // Look up the named mass points in the live arena and reduce
+        // them to the structural-frame `(offset, t_parent_child)` pair
+        // the existing `AttachEvent` carries. The reduction is JEOD's
+        // canonical chain (`mass_attach.cc:103-115`): invert the
+        // subtree's point, apply the 180° docking yaw, then compose
+        // through the parent's point. Performing the lookup here keeps
+        // the Bevy adapter's `AttachEvent` shape unchanged — the
+        // staging-system handler doesn't need to know about named
+        // points, mirroring the runner where
+        // `MassTree::attach_aligned` calls `MassTree::attach` after
+        // the same reduction.
+        let child = self.entity_for_mass_id(subtree_root, "attach_subtree_aligned/child");
+        let parent_entity = self.entity_for_mass_id(parent, "attach_subtree_aligned/parent");
+        let (offset, t_parent_child) = {
+            let tree = &self.world.resource::<astrodyn_bevy::MassTreeR>().0;
+            let child_pt = tree
+                .find_mass_point(subtree_root, subtree_point)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BevySimContext::attach_subtree_aligned: mass point '{subtree_point}' not \
+                     found on subtree body {subtree_root:?}. Declare the named attachment \
+                     point via `MassTreeR.0.add_mass_point(...)` before firing the event."
+                    )
+                });
+            let parent_pt = tree
+                .find_mass_point(parent, parent_point)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BevySimContext::attach_subtree_aligned: mass point '{parent_point}' not \
+                     found on parent body {parent:?}. Declare the named attachment point via \
+                     `MassTreeR.0.add_mass_point(...)` before firing the event."
+                    )
+                });
+            // JEOD mass_attach.cc:103-115. The 180° yaw is JEOD's
+            // hardcoded docking convention: two attachment points face
+            // each other with opposite X/Y axes.
+            let inv_pos = -(child_pt.t_parent_this * child_pt.position);
+            let inv_t = child_pt.t_parent_this.transpose();
+            let t_yaw = DMat3::from_cols(
+                DVec3::new(-1.0, 0.0, 0.0),
+                DVec3::new(0.0, -1.0, 0.0),
+                DVec3::new(0.0, 0.0, 1.0),
+            );
+            let pos_after_yaw = t_yaw * inv_pos;
+            let offset = parent_pt.t_parent_this.transpose() * pos_after_yaw + parent_pt.position;
+            let t_parent_child = inv_t * t_yaw * parent_pt.t_parent_this;
+            (offset, t_parent_child)
+        };
+        let event = AttachEvent::<SelfRef, SelfRef> {
+            child,
+            parent: parent_entity,
+            offset: offset.m_at::<StructuralFrame<SelfRef>>(),
+            t_parent_child:
+                FrameTransform::<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>::from_matrix(
+                    t_parent_child,
+                ),
+        };
+        let mut messages = self
+            .world
+            .resource_mut::<Messages<AttachEvent<SelfRef, SelfRef>>>();
+        messages.write(event);
+        // `MassChildOf` is intentionally NOT installed here. The
+        // staging-system reads the **child's** `TranslationalStateC`
+        // for the combine kernel's child-side composite; if the
+        // pre_step inserted `MassChildOf` linking the child back to
+        // the parent, the same-tick `propagate_state_from_root_system`
+        // pass (which runs `.before(Environment)`, ahead of staging)
+        // would derive the child's `TranslationalStateC` from the
+        // parent's *pre-combine* state — overwriting the
+        // detached-subtree value `step_detached_system` had written
+        // and feeding the combine kernel garbage. Leaving the child
+        // as a tree root keeps `propagate_state_from_root_system` from
+        // touching its state, and staging gets the correct
+        // detached-subtree value for the combine input. The runner's
+        // `attach_subtree_aligned` faces no such timing because it
+        // reads the subtree's state from the
+        // `detached_subtrees` HashMap directly (a separate channel
+        // unaffected by per-tick frame-tree walks).
+        //
+        // The Bevy-side cost of not installing the edge: lm's
+        // `TranslationalStateC` (and any descendants') will not be
+        // refreshed by `propagate_state_from_root_system` next tick.
+        // Apollo's parity assertion only reads the integrated cm
+        // body's state, so the stale lm value is benign. Subsequent
+        // subtree mutations against lm walk the arena tree directly
+        // through `tree.parent()` / `tree.root_of()`, not the ECS
+        // `MassChildOf` chain — both `BevySimContext::detach_subtree`
+        // and `attach_subtree_aligned` resolve through the arena.
     }
 
     fn attach_to_frame(
