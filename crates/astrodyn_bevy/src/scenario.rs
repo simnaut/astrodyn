@@ -70,19 +70,24 @@
 //! scenario. Bit-identity is the contract; see
 //! `crates/astrodyn_verif_parity/tests/bevy_parity_*.rs`.
 //!
-//! ## Single-planet limitation
+//! ## Single-planet today
 //!
-//! The bridge is **single-planet today**: every body in the scenario
-//! integrates in the `<P>`-tagged
+//! The bridge is **single-planet** by construction: every body in the
+//! scenario integrates in the `<P>`-tagged
 //! [`PlanetInertial`](astrodyn::PlanetInertial) frame chosen at the
-//! `populate_app::<P>` call site. Multi-planet scenarios that need
-//! Earth-and-Moon (Apollo, `earth_moon`) or Heliocentric variants
-//! (Mercury, Mars, broad `planetary`) integrate in two distinct
-//! planet-inertial frames and don't fit the generic. Those scenarios
-//! are tracked as `KNOWN_PARITY_GAPS` in
-//! `crates/astrodyn_verif_parity/tests/parity_coverage.rs` until a
-//! non-generic dispatch lands. Until then, mission code (and the
-//! parity trait) must keep `<P>` consistent across the whole scenario.
+//! `populate_app::<P>` call site. Mission code (and parity tests)
+//! must keep `<P>` consistent across the whole scenario.
+//!
+//! In practice every shipped Tier 3 scenario is single-body, so the
+//! constraint reduces to picking the body's central planet at the
+//! call site — `<Earth>` for Earth-centric scenarios (`apollo*`,
+//! dyncomp, lvlh, …), `<Moon>` for Moon-centric ones (`earth_moon`
+//! Clementine, NESC CC8), `<Sun>` for heliocentric (`mercury`),
+//! `<Mars>` for Mars-centric (`mars_orbit`). A future genuine
+//! multi-body-multi-planet scenario (two bodies integrating in
+//! different planet-inertial frames within one run) would need a
+//! per-body dispatch sibling — until such a scenario lands, the
+//! single-`<P>` shape is sufficient.
 
 use bevy::prelude::*;
 use glam::DVec3;
@@ -144,15 +149,15 @@ pub struct ScenarioHandles {
 /// `examples/typed_mission.rs` for that complementary pattern.
 ///
 /// `<P: Planet>` selects the planet whose
-/// [`PlanetInertial`](astrodyn::PlanetInertial) frame **every** body in
-/// the scenario integrates in. Today's bridge is single-planet by
-/// construction: scenarios that need two distinct planet-inertial
-/// integration frames within one run (`apollo*` Earth ⇄ Moon transfer,
-/// `earth_moon` dual-body, `mars_orbit`, `mercury`, `planetary`) don't
-/// fit this generic and are tracked as `KNOWN_PARITY_GAPS` entries
-/// until a non-generic dispatch lands. Mission code that targets one
-/// of those scenarios must keep `<P>` consistent across the whole
-/// scenario or wait for the multi-planet dispatch.
+/// [`PlanetInertial`](astrodyn::PlanetInertial) frame **every** body
+/// in the scenario integrates in. Today's bridge is single-planet by
+/// construction; every shipped Tier 3 scenario is single-body, so the
+/// constraint reduces to picking the body's central planet at the
+/// call site (Earth / Moon / Mars / Sun, …). A future genuine
+/// multi-body-multi-planet scenario — two bodies integrating in
+/// distinct planet-inertial frames within one run — would need a
+/// per-body dispatch sibling on this method; until such a scenario
+/// lands the single-`<P>` shape covers every recipe.
 ///
 /// # Returns
 ///
