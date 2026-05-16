@@ -241,6 +241,66 @@ pub trait SimContext {
              path (e.g. FrameAttachEvent on the Bevy bus)"
         );
     }
+
+    /// Detach the subtree rooted at `subtree_root` from its current
+    /// parent in the mass tree. Mirrors the runner's
+    /// [`Simulation::detach_subtree`](https://docs.rs/astrodyn_runner/latest/astrodyn_runner/simulation/struct.Simulation.html#method.detach_subtree)
+    /// runtime entry point used by Apollo's staged separation events
+    /// (S-IC drop, LM extraction, …): the subtree's composite-body
+    /// inertial state is captured at the separation instant, the
+    /// parent's composite-CoM-shift is propagated through its
+    /// integrated state, and the subtree advances ballistically from
+    /// then on until the matching [`Self::attach_subtree_aligned`]
+    /// re-merges it. Addressed by `MassBodyId` rather than body index
+    /// because the subtree root is typically a tree-only body (no
+    /// `SimBody` / no Bevy dynamic entity), e.g. the apollo LM /
+    /// service module sub-stages.
+    ///
+    /// The default implementation panics so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that own the
+    /// subtree-detach surface (runner's `Simulation::detach_subtree`,
+    /// the Bevy adapter's `DetachEvent` against a mass-only entity)
+    /// override this.
+    fn detach_subtree(&mut self, subtree_root: astrodyn::MassBodyId) {
+        let _ = subtree_root;
+        panic!(
+            "detach_subtree not supported by this SimContext implementation; \
+             provide a SimContext impl that drives the adapter's subtree-detach \
+             path (e.g. DetachEvent on the Bevy bus against a mass-only entity)"
+        );
+    }
+
+    /// Re-attach `subtree_root` (previously detached via
+    /// [`Self::detach_subtree`]) under `parent` in the mass tree using
+    /// named attachment points, running JEOD's
+    /// `combine_states_at_attach` momentum-conservation kernel so the
+    /// merged composite-body state is bit-identical to the runner's
+    /// [`Simulation::attach_subtree_aligned`](https://docs.rs/astrodyn_runner/latest/astrodyn_runner/simulation/struct.Simulation.html#method.attach_subtree_aligned).
+    /// The mass-tree must already contain the named mass points on
+    /// both bodies (typically declared at scenario-build time); the
+    /// adapter looks them up and computes the structural-frame offset
+    /// and rotation chain (`mass_attach.cc:103-115` — invert the child
+    /// point, apply 180° docking yaw, compose with the parent point)
+    /// internally so callers only carry around the symbolic names.
+    ///
+    /// The default implementation panics so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that own the
+    /// subtree-attach surface override this.
+    fn attach_subtree_aligned(
+        &mut self,
+        subtree_root: astrodyn::MassBodyId,
+        subtree_point: &str,
+        parent: astrodyn::MassBodyId,
+        parent_point: &str,
+    ) {
+        let _ = (subtree_root, subtree_point, parent, parent_point);
+        panic!(
+            "attach_subtree_aligned not supported by this SimContext implementation; \
+             provide a SimContext impl that drives the adapter's subtree-attach \
+             path (e.g. AttachEvent against a mass-only entity with offset / \
+             rotation derived from named mass points)"
+        );
+    }
 }
 
 /// Which of a gravity source's reference frames to attach to.
