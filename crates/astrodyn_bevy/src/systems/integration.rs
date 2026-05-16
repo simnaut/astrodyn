@@ -311,6 +311,7 @@ pub fn integration_system<P: Planet>(
             Option<&PlanetFixedRotationC<P>>,
             &SourceInertialPositionC,
             Option<&SourceInertialVelocityC>,
+            Option<&TranslationalStateC<P>>,
             Option<&TidalDeltaC20C>,
             Option<&TidalConfigC>,
         ),
@@ -382,45 +383,50 @@ pub fn integration_system<P: Planet>(
         let typed_abs_vel = Velocity::<RootInertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
         let typed_origin = Position::<RootInertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
-        // Helper: resolve a source's effective velocity from the
-        // typed `SourceInertialVelocityC` (which is
-        // `Velocity<RootInertial>` — planet-agnostic). Sources that
-        // lack this component coast at zero velocity within the step.
+        // Helper: resolve a source's effective velocity, mirroring
+        // [`sync_source_to_frame_system`]'s precedence so per-stage
+        // gravity interpolation and PPN corrections read the same
+        // value the source's frame entity carries:
         //
-        // `SourceInertialVelocityC` is opt-in: `PlanetBundle`,
-        // `SunBundle`, and `MoonBundle` do not insert it, and
-        // `ephemeris_update_system` only writes through it when it is
-        // already present (it does not auto-insert from
-        // `EphemerisBodyC`). Callers who want a moving source for
-        // per-stage gravity interpolation or relativistic source
-        // resolution must attach `SourceInertialVelocityC` explicitly.
+        // 1. [`SourceInertialVelocityC`] when present — the explicit
+        //    per-source velocity component (`Velocity<RootInertial>`,
+        //    planet-agnostic).
+        // 2. Otherwise [`TranslationalStateC<P>`]'s velocity —
+        //    `ephemeris_update_system` writes through it for
+        //    ephemeris-driven sources that don't carry the standalone
+        //    velocity component (Sun / Moon via `SunBundle` /
+        //    `MoonBundle`). The `<P>` tag is the body-side phantom
+        //    (per `spawn_source`'s convention) — at this kernel
+        //    boundary we extract `raw_si()` and treat the value as
+        //    the source's root-inertial velocity, matching what
+        //    `sync_source_to_frame_system` writes into the source's
+        //    `FrameTransC.velocity` and what
+        //    `astrodyn_runner::run_integration` reads from
+        //    `frame_tree.get(source_inertial).state.trans.velocity`.
+        // 3. Otherwise treat the source as stationary within the step.
         //
-        // No `TranslationalStateC<P>` fallback is offered here. The
-        // `<P>` instantiation runs gravity-computation in
-        // `PlanetInertial<P>` for the body's planet, and a Sun /
-        // ephemeris source's `TranslationalStateC<P>` carries that
-        // body-side `<P>` tag (per `SunBundle` / `MoonBundle`'s
-        // construction-time convention) — so the velocity it stores
-        // is "Sun's velocity tagged as the central planet's inertial
-        // frame," which has no well-defined source-motion meaning.
-        // Treating the source as stationary when no
-        // `SourceInertialVelocityC` is present matches
-        // `sync_source_to_frame_system`'s precedence: explicit
-        // velocity component first, otherwise treat as no source-
-        // motion contribution to the per-step kernel.
-        let source_vel = |v: Option<&SourceInertialVelocityC>| -> DVec3 {
-            v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO)
-        };
+        // Without the fallback, post-frame-switch integration drops
+        // each ephemeris-driven source's per-stage position
+        // interpolation (the `sub_dt != 0` branch below), so a
+        // Moon-centered body whose third bodies include
+        // ephemeris-driven Sun / Earth diverges from the runner at
+        // ULP scale once the body's integ frame starts moving.
+        let source_vel =
+            |v: Option<&SourceInertialVelocityC>, t: Option<&TranslationalStateC<P>>| -> DVec3 {
+                v.map(|v| v.0.raw_si())
+                    .or_else(|| t.map(|t| t.0.velocity.raw_si()))
+                    .unwrap_or(DVec3::ZERO)
+            };
 
         let typed_accel = astrodyn::accumulate_gravity_typed(
             typed_abs_pos,
             &controls.0,
             typed_origin,
             |source_entity| match sources.get(source_entity) {
-                Ok((s, r, p, v, tidal, tidal_config)) => {
+                Ok((s, r, p, v, t, tidal, tidal_config)) => {
                     let base_pos = p.0.raw_si();
                     let stage_pos = if sub_dt != 0.0 {
-                        base_pos + source_vel(v) * sub_dt
+                        base_pos + source_vel(v, t) * sub_dt
                     } else {
                         base_pos
                     };
@@ -452,16 +458,19 @@ pub fn integration_system<P: Planet>(
             typed_abs_vel,
             &controls.0,
             |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                    // Step-start values for PPN — runner does the
-                    // same (snapshots `src_pos`/`src_vel` outside
-                    // the per-stage closure).
-                    astrodyn::ResolvedRelativisticSource {
-                        mu: s.mu,
-                        position: p.0.raw_si(),
-                        velocity: source_vel(v),
-                    }
-                })
+                sources
+                    .get(source_entity)
+                    .ok()
+                    .map(|(s, _, p, v, t, _, _)| {
+                        // Step-start values for PPN — runner does the
+                        // same (snapshots `src_pos`/`src_vel` outside
+                        // the per-stage closure).
+                        astrodyn::ResolvedRelativisticSource {
+                            mu: s.mu,
+                            position: p.0.raw_si(),
+                            velocity: source_vel(v, t),
+                        }
+                    })
             },
         );
         accel += rel.raw_si();

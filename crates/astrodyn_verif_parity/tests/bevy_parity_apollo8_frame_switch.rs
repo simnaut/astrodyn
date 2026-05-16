@@ -14,9 +14,7 @@
 //! * [`bevy_parity_apollo8_frame_switch`] — same scenario plus a
 //!   distance-based [`FrameSwitchConfig`] that reparents the body
 //!   from Earth-inertial to Moon-inertial when the body approaches
-//!   within 66.1 Mm of the Moon. Currently `#[ignore]`d on a known
-//!   ULP-scale Bevy-adapter divergence at the switch tick (see the
-//!   per-test attribute reason).
+//!   within 66.1 Mm of the Moon. Bit-identical between runtimes.
 //!
 //! Single-planet bridge note: the `<P>` tag stays `<Earth>` across the
 //! frame switch — `TranslationalStateC<P>` is the scenario-wide
@@ -26,7 +24,7 @@
 //! velocity values in Moon-centered coordinates, identically to the
 //! runner's `evaluate_and_apply_frame_switch` path. See
 //! `bevy_parity_frame_switch.rs` for the simpler synthetic-Moon
-//! version of the same machinery, which is bit-identical.
+//! version of the same machinery.
 
 #![allow(
     clippy::float_cmp,
@@ -275,26 +273,13 @@ fn bevy_parity_apollo8_eci_integ() {
 
 /// Frame-switch parity: same baseline scenario plus a distance-based
 /// `FrameSwitchConfig` that reparents the body to Moon-inertial on
-/// approach (≤ 66.1 Mm).
-///
-/// Currently `#[ignore]`d: ULP-scale drift appears at the switch tick
-/// (≈ tick 80, velocity component ≈ 2 ns/m) when the Moon's
-/// `SourceInertialPositionC` is driven by `ephemeris_update_system`.
-/// The synthetic-Moon variant in `bevy_parity_frame_switch.rs` (Moon
-/// position pinned via `SourceMutator` rather than DE405-driven) is
-/// bit-identical, isolating the failure mode to the
-/// frame_switch_system ↔ ephemeris_update_system interaction. The
-/// baseline `apollo8_eci_integ` case above passes bit-identically,
-/// confirming the ephemeris path itself is parity-safe; the
-/// divergence is specific to how the frame-switch transformation
-/// reads the Moon's post-ephemeris-update position relative to where
-/// the runner's `evaluate_and_apply_frame_switch` reads it. Tracked
-/// as a separate Bevy-adapter bug; lifting the `#[ignore]` is
-/// blocked on that investigation.
+/// approach (≤ 66.1 Mm). Post-switch the body integrates in
+/// Moon-inertial — i.e. the integ origin is now moving — so the
+/// per-stage gravity interpolation for ephemeris-driven third bodies
+/// (Sun, Earth) exercises the source-velocity path that the
+/// pre-switch root-integrated baseline (`apollo8_eci_integ`) leaves
+/// dormant.
 #[test]
-#[ignore = "parity-gap (#556): frame_switch_system + ephemeris-driven \
-            SourceInertialPositionC interaction — Moon position diverges \
-            from runner at the switch tick (ULP-scale)."]
 fn bevy_parity_apollo8_frame_switch() {
     let steps = (TOTAL_TIME / DT).round() as usize;
     assert_parity("apollo8_frame_switch", true, steps);
