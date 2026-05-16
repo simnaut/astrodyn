@@ -76,15 +76,6 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling exercising time-scale conversions — recipe \
          factory not yet defined (#389 follow-up)",
     ),
-    (
-        "time_reversal",
-        "pre-recipe sibling exercising time reversal — recipe factory \
-         not yet defined (#389 follow-up)",
-    ),
-    (
-        "timescale",
-        "pre-recipe sibling — recipe factory not yet defined (#389 follow-up)",
-    ),
     // ── dyncomp run3-run10: most have recipe factories
     //    (sim_dyncomp::run3a_sh4x4, run4_3rd_body, run7a_*, run10a_*, …)
     //    but several rely on `pre_step` for ephemeris updates and the

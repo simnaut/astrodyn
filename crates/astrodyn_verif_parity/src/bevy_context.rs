@@ -40,8 +40,16 @@
 //!   but explicit insertion here matches the runner's
 //!   call-site-synchronous semantics so the integrator-skip is in
 //!   place before the next FixedUpdate runs.
+//! - **Time-scale mutation** ([`SimContext::set_time_scale_factor`])
+//!   — write `SimulationTimeR.0.time_scale_factor`. The runner mirrors
+//!   the same field write on its `Simulation.time`. Used by the
+//!   time-reversal scenario (forward then `factor = -1.0` reverse)
+//!   where both runtimes must flip at the same lockstep tick so the
+//!   next FixedUpdate's `time_advance_system` and `integration_system`
+//!   read the same `time_scale_factor` and integrate with the same
+//!   signed dynamic `dt`.
 //!
-//! All five methods preserve the runner's "pre-step only" contract:
+//! All methods preserve the runner's "pre-step only" contract:
 //! the closure runs before `step_n`/`run_schedule(FixedUpdate)`, so a
 //! mid-step reentrant attach is structurally impossible.
 
@@ -51,7 +59,7 @@ use astrodyn::{
 };
 use astrodyn_bevy::{
     AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameAttachEvent, FrameEntityC,
-    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, RotationalStateC,
+    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, RotationalStateC, SimulationTimeR,
     SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::{SimContext, SourceFrameKind};
@@ -660,6 +668,24 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
         };
         let mut messages = self.world.resource_mut::<Messages<FrameAttachEvent>>();
         messages.write(event);
+    }
+
+    fn set_time_scale_factor(&mut self, factor: f64) {
+        // The Bevy adapter mirrors the runner's `SimulationTime` through
+        // the `SimulationTimeR` resource (initialised in `populate_app`
+        // from the `SimulationBuilder.time` value). Writing the scale
+        // factor here matches the runner's `self.time.time_scale_factor
+        // = factor` field write: `time_advance_system` reads the
+        // resource at the top of the next FixedUpdate and propagates
+        // the sign change through TAI / TDB / TT / GMST, while the
+        // integration system reads it via
+        // `sim_time.0.time_scale_factor` to compute `integ_dt = dt *
+        // time_scale_factor` for ballistic and dynamic propagation.
+        // Both runtimes flip on the same tick, so the next integration
+        // step sees the same `integ_dt` sign and bit-identity holds
+        // across the reversal boundary.
+        let mut sim_time = self.world.resource_mut::<SimulationTimeR>();
+        sim_time.0.time_scale_factor = factor;
     }
 }
 

@@ -301,6 +301,31 @@ pub trait SimContext {
              rotation derived from named mass points)"
         );
     }
+
+    /// Set the simulation's `time_scale_factor` on the underlying
+    /// `SimulationTime`. Mirrors the runner's
+    /// `sim.time.time_scale_factor = factor` field write. Used by
+    /// `pre_step` closures that schedule a time-direction flip (the
+    /// SIM_7_time_reversal pattern: forward propagation until the
+    /// reversal instant, then `factor = -1.0` so the dynamic time
+    /// scales TAI / TT / TDB / GMST reverse while `simtime` keeps
+    /// advancing monotonically).
+    ///
+    /// The default implementation panics with an explicit
+    /// "set_time_scale_factor not supported" message so existing
+    /// `SimContext` implementors stay source-compatible. Adapters
+    /// that own a `SimulationTime` surface (the runner's
+    /// `Simulation::time`, the Bevy adapter's `SimulationTimeR`
+    /// resource) override this.
+    fn set_time_scale_factor(&mut self, factor: f64) {
+        let _ = factor;
+        panic!(
+            "set_time_scale_factor not supported by this SimContext implementation; \
+             provide a SimContext impl that writes the adapter's SimulationTime \
+             scale factor (e.g. `SimulationTimeR.0.time_scale_factor = factor` \
+             on the Bevy resource)"
+        );
+    }
 }
 
 /// Which of a gravity source's reference frames to attach to.
