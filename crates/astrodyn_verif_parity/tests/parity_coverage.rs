@@ -63,20 +63,6 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
         "earth_moon",
         "Earth ⇄ Moon dual-body sim — multi-planet gap (#389 risk)",
     ),
-    (
-        "mars_orbit",
-        "Mars-centered scenario — bridge today fixes <P=Earth> across the \
-         scenario; multi-planet generic dispatch tracked as #389 follow-up",
-    ),
-    (
-        "mercury",
-        "Heliocentric Mercury orbit — same single-planet bridge gap as \
-         mars_orbit (#389 risk)",
-    ),
-    (
-        "planetary",
-        "Multi-planet planetary integration sim — bridge gap (#389 risk)",
-    ),
     // ── Pre-recipe tier3 siblings: the `VerificationCase` factory
     //    doesn't exist yet, so the parity trait has nothing to drive.
     //    Recipe migration is tracked as a follow-up to #389. Each

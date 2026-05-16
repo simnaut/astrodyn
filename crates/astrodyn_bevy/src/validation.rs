@@ -92,15 +92,23 @@ pub(crate) fn is_root_equivalent_entity(
 ///
 /// Two scopes participate:
 ///
-/// * **Global state checks** (Sun/Moon marker counts, tidal-config pairing
-///   on gravity sources) iterate the *unfiltered* `derived_state_markers`
-///   and `tidal_sources` queries, so they re-evaluate the entire world's
-///   marker/source set on every trigger. Adding a stray second
-///   `SunMarker` mid-mission is therefore caught the next tick a body
-///   with `GravityControlsC` is added. In multi-planet configs these
-///   global checks run once per registered planet — wasteful but
-///   idempotent (each pass evaluates the same world state and reaches
-///   the same conclusion).
+/// * **Per-`<P>` global state checks** (Sun/Moon marker counts, tidal-config
+///   pairing on gravity sources) iterate the unfiltered `derived_state_markers`
+///   and `tidal_sources` queries, then narrow each entity to those whose
+///   `TranslationalStateC<P>` matches *this* validator's `<P>`. The
+///   marker count therefore counts only Sun/Moon entities tagged for
+///   this planet's integration frame. Adding a stray second
+///   `<P>`-tagged `SunMarker` mid-mission is caught the next tick a
+///   body with `GravityControlsC` is added under the same `<P>`. In
+///   multi-planet configs each `<P>` validator counts only its own
+///   `<P>`-tagged markers — the `<Mars>` validator catches a duplicate
+///   Mars-tagged Sun, the `<Earth>` validator catches a duplicate
+///   Earth-tagged Sun, neither steps on the other. Without this
+///   `<P>`-scoping, the `<Earth>` validator that `AstrodynPlugin::build`
+///   registers by default would panic on a Sun tagged for any other
+///   planet's frame — the marker check would observe the marker
+///   without an `<Earth>`-tagged trans even though the matching
+///   `<Mars>` validator owned the assertion.
 /// * **Per-body invariant checks** (SRP mutual exclusion, the full
 ///   `astrodyn::validate_body` pass, gravity-control `check_validity`)
 ///   iterate the `Added`-filtered `bodies` query, so they validate only
@@ -222,35 +230,56 @@ pub fn validate_jeod_invariants<P: Planet>(
     // Matches Simulation::validate() which errors on missing sun_source/moon_source.
     // Count markers and validate they have TranslationalStateC (required by
     // solar_beta_system/earth_lighting_system queries).
+    //
+    // The marker-trans assertion is scoped to entities whose `TranslationalStateC<P>`
+    // matches *this* validator's `<P>`. In a multi-planet world the Sun /
+    // Moon entity is tagged with the scenario's chosen integration frame
+    // (e.g. `TranslationalStateC<Mars>` in a Mars-central scenario); the
+    // `<Earth>` validator instance — which `AstrodynPlugin::build` registers
+    // by default — would otherwise observe the marker without an
+    // `<Earth>`-tagged trans and panic, even though the `<Mars>` validator
+    // that `register_planet_systems::<Mars>` installs is the one
+    // responsible for that entity. Skipping when this `<P>` has no trans
+    // hands ownership of the assertion to the validator whose `<P>` does
+    // match. A truly-bare SunMarker entity with no `TranslationalStateC<P>`
+    // for any registered planet is caught downstream when
+    // `solar_beta_system::<P>` / `earth_lighting_system::<P>` (or any
+    // `Query<&TranslationalStateC<P>, With<SunMarker>>`) finds an empty
+    // query result.
     let mut sun_count = 0;
     let mut moon_count = 0;
-    for (entity, _, _, sun, moon, trans) in &derived_state_markers {
+    for (_entity, _, _, sun, moon, trans) in &derived_state_markers {
+        if trans.is_none() {
+            continue;
+        }
         if sun.is_some() {
             sun_count += 1;
-            assert!(
-                trans.is_some(),
-                "Entity {entity:?}: SunMarker present but TranslationalStateC is missing. \
-                 Sun entity requires TranslationalStateC for position queries."
-            );
         }
         if moon.is_some() {
             moon_count += 1;
-            assert!(
-                trans.is_some(),
-                "Entity {entity:?}: MoonMarker present but TranslationalStateC is missing. \
-                 Moon entity requires TranslationalStateC for position queries."
-            );
         }
     }
     assert!(
         sun_count <= 1,
-        "Multiple SunMarker entities found. JEOD assumes exactly one Sun body."
+        "Multiple SunMarker entities found with TranslationalStateC for this validator's planet. \
+         JEOD assumes exactly one Sun body per integration frame."
     );
     assert!(
         moon_count <= 1,
-        "Multiple MoonMarker entities found. JEOD assumes exactly one Moon body."
+        "Multiple MoonMarker entities found with TranslationalStateC for this validator's planet. \
+         JEOD assumes exactly one Moon body per integration frame."
     );
-    for (entity, solar_beta, earth_lighting, _, _, _) in &derived_state_markers {
+    // SolarBetaC / EarthLightingConfigC consumers are themselves
+    // generic over `<P>` and query `Query<&TranslationalStateC<P>, With<SunMarker>>`.
+    // Only bodies tagged for *this* validator's `<P>` can reach those
+    // queries, so the "must have a Sun / Moon" precondition is also
+    // scoped to `<P>`-tagged bodies. A `<Mars>`-tagged body with
+    // `SolarBetaC` is validated by the `<Mars>` validator (which finds
+    // the `<Mars>`-tagged Sun); this `<P>` validator skips it.
+    for (entity, solar_beta, earth_lighting, _, _, body_trans) in &derived_state_markers {
+        if body_trans.is_none() {
+            continue;
+        }
         if solar_beta.is_some() && sun_count == 0 {
             panic!(
                 "Entity {entity:?}: SolarBetaC present but no SunMarker entity exists. \
