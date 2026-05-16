@@ -749,65 +749,49 @@ mod tests {
         }
     }
 
-    // ====================================================================
-    // PF section negative tests (#535 sweep)
-    // ====================================================================
+    // =======================================================================
+    // Negative tests for the PF section. Each drives the misconfiguration
+    // through a public conversion entry point so a future refactor that
+    // neuters one of the kernel asserts would be caught by CI rather than
+    // silently propagating NaN / a wrong-by-default geodetic state.
+    // =======================================================================
 
-    /// Pins the `r_local > r_eq · 1e-10` assert at the entry of
-    /// `cartesian_to_spherical`. The spherical conversion divides by
-    /// `r_local` to recover latitude/longitude; a position within
-    /// `1e-10 · r_eq` of the planet center is geometrically meaningless
-    /// (interior to the smallest representable orbit) and would silently
-    /// produce NaN angles via `asin(z/0)` and `atan2(0, 0)`.
-    // JEOD_INV: PF.01 — negative test: position at planet center rejected (spherical path)
+    // JEOD_INV: PF.01 — `cartesian_to_spherical` rejects positions within
+    // `r_eq · 1e-10` of the planet center; without this guard the unit
+    // direction `cart / r_local` is undefined and `asin(z / r_local)`
+    // returns NaN.
     #[test]
-    #[should_panic(expected = "position too close to planet center")]
-    fn pf_01_panics_on_position_at_center_into_cartesian_to_spherical() {
-        // JEOD_INV: PF.01 — zero PCPF position into the spherical conversion.
+    #[should_panic(expected = "too close to planet center")]
+    fn pf_01_panics_on_spherical_near_center() {
         let _ = cartesian_to_spherical(DVec3::ZERO, EARTH_R_EQ);
     }
 
-    /// Same invariant as the spherical site, but pins the second
-    /// enforcement site inside `cartesian_to_geodetic_impl`. JEOD's
-    /// `planet_fixed_posn.cc:100-121` rejects positions inside the small
-    /// radius limit before entering the Borkowski iteration; we mirror
-    /// that with an `assert!(r_ellipse > r_eq · 1e-10)`.
-    // JEOD_INV: PF.01 — negative test: position at planet center rejected (geodetic path)
+    // JEOD_INV: PF.01 — same precondition on the geodetic entry point;
+    // the sibling assert here protects the Borkowski iteration from a
+    // degenerate `r_ellipse` that would zero-divide `c`'s denominator.
     #[test]
-    #[should_panic(expected = "position too close to planet center")]
-    fn pf_01_panics_on_position_at_center_into_cartesian_to_geodetic() {
-        // JEOD_INV: PF.01 — zero PCPF position into the geodetic conversion.
-        let _ = cartesian_to_geodetic_impl(DVec3::ZERO, EARTH_R_EQ, EARTH_R_POL);
+    #[should_panic(expected = "too close to planet center")]
+    fn pf_01_panics_on_geodetic_near_center() {
+        let _ = cartesian_to_geodetic(DVec3::ZERO, EARTH_R_EQ, EARTH_R_POL);
     }
 
-    /// Pins the `cart.{x,y,z}.is_finite()` assert at the entry of
-    /// `cartesian_to_geodetic_impl`. A NaN position would propagate
-    /// through `x_ellipse_sq`, the Borkowski iteration, and the final
-    /// `atan2`/`asin` calls without surfacing a NaN at the call site —
-    /// the geodetic state would silently come back as NaN-valued
-    /// latitude/longitude/altitude and poison every downstream derived
-    /// state. JEOD's `planet_fixed_posn.cc:155-162` checks the same
-    /// precondition implicitly via its `BasicMath::is_finite` guard.
-    // JEOD_INV: PF.02 — negative test: NaN PCPF position rejected
+    // JEOD_INV: PF.02 — NaN in the input would silently propagate through
+    // the iteration; the assert at the kernel entry point fails loud so
+    // the misconfiguration is named at the call site.
     #[test]
-    #[should_panic(expected = "input contains NaN or Inf")]
-    fn pf_02_panics_on_nan_position_into_cartesian_to_geodetic() {
-        // JEOD_INV: PF.02 — NaN component poisons the entry of the geodetic conversion.
-        let bad = DVec3::new(f64::NAN, 0.0, 0.0);
-        let _ = cartesian_to_geodetic_impl(bad, EARTH_R_EQ, EARTH_R_POL);
+    #[should_panic(expected = "NaN or Inf")]
+    fn pf_02_panics_on_nan_input() {
+        let nan_input = DVec3::new(f64::NAN, 0.0, 0.0);
+        let _ = cartesian_to_geodetic(nan_input, EARTH_R_EQ, EARTH_R_POL);
     }
 
-    /// Companion to the NaN test for the infinity branch of PF.02.
-    /// `f64::INFINITY` would propagate through the squared-magnitude
-    /// computation and yield `r_ellipse = Inf` (subsequently `Inf >
-    /// r_eq · 1e-10`, so the PF.01 assert wouldn't catch it); only the
-    /// `is_finite` guard rejects it at the boundary.
-    // JEOD_INV: PF.02 — negative test: infinite PCPF position rejected
+    // JEOD_INV: PF.02 — infinity is the second non-finite class the
+    // PF.02 assert catches; both `NaN` and `±∞` trip the same `is_finite`
+    // check, so we drive each independently to pin both branches.
     #[test]
-    #[should_panic(expected = "input contains NaN or Inf")]
-    fn pf_02_panics_on_infinite_position_into_cartesian_to_geodetic() {
-        // JEOD_INV: PF.02 — `+Inf` component poisons the entry of the geodetic conversion.
-        let bad = DVec3::new(0.0, f64::INFINITY, 0.0);
-        let _ = cartesian_to_geodetic_impl(bad, EARTH_R_EQ, EARTH_R_POL);
+    #[should_panic(expected = "NaN or Inf")]
+    fn pf_02_panics_on_inf_input() {
+        let inf_input = DVec3::new(f64::INFINITY, 0.0, 0.0);
+        let _ = cartesian_to_geodetic(inf_input, EARTH_R_EQ, EARTH_R_POL);
     }
 }

@@ -1601,4 +1601,65 @@ mod tests {
         assert_eq!(u_force, force);
         assert_eq!(u_torque, torque);
     }
+
+    /// IG.38 corrector path: when the Gauss-Jackson corrector fails its
+    /// convergence test on a regular step and `allow_non_convergence` is
+    /// `false` (the fail-loudly default), `integrate_body` panics with a
+    /// diagnostic naming the opt-in flag.
+    ///
+    /// Driving the failure: tight zero tolerances make every
+    /// `test_for_convergence` call return `passed = false`. With
+    /// `with_order(2)` the priming phase is one RK4 cycle and the
+    /// bootstrap edits drain in two iterations
+    /// (`max_correction_iterations = 1`), so the first `result.passed
+    /// == false` reported back to `integrate_body` is the corrector
+    /// step on the way to or in `Operational`. The corrector arm fires
+    /// before the bootstrap arm because `result.passed` is checked
+    /// per-step inside the loop while the bootstrap-counter delta is
+    /// checked once after the loop returns.
+    #[test]
+    #[should_panic(expected = "GaussJackson integration step did not converge")]
+    fn ig_38_panics_on_gj_corrector_non_convergence() {
+        // JEOD_INV: IG.38 — corrector non-convergence policy (fail-loudly default)
+        let config = DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        };
+        let mass = astrodyn_dynamics::MassProperties::new(500.0);
+        let mu = 3.986004418e14;
+
+        let mut gj_cfg = astrodyn_dynamics::GaussJacksonConfig::with_order(2);
+        gj_cfg.max_correction_iterations = 1;
+        gj_cfg.absolute_tolerance = 0.0;
+        gj_cfg.relative_tolerance = 0.0;
+        // allow_non_convergence remains false — the fail-loudly default.
+
+        let mut gj = astrodyn_dynamics::GaussJacksonState::new(gj_cfg);
+        let mut trans = TranslationalState {
+            position: DVec3::new(6.778e6, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7672.0, 0.0),
+        };
+
+        // Step until the kernel panics. The cap is generous so the test
+        // fails the build with a meaningful "did not panic" message if a
+        // future refactor reorders the FSM such that this configuration
+        // converges instead of failing.
+        for _ in 0..200 {
+            integrate_body(
+                &config,
+                &mut trans,
+                None,
+                Some(&mass),
+                |pos, _vel, _time_frac| -mu / pos.length().powi(3) * pos,
+                DVec3::ZERO,
+                DVec3::ZERO,
+                1.0,
+                1.0,
+                IntegratorType::GaussJackson(crate::GaussJacksonConfig::from(gj_cfg)),
+                Some(&mut gj),
+                None,
+            );
+        }
+    }
 }

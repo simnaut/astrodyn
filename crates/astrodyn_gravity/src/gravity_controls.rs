@@ -1176,6 +1176,120 @@ mod tests {
         ctrl.check_validity(&src);
     }
 
+    /// `degree > source.degree`: the requested expansion exceeds the
+    /// stored coefficient table. JEOD clamps via
+    /// `MessageHandler::error`; we panic so a control configured for
+    /// (say) 70x70 against an 8x8 source does not silently degenerate
+    /// to 8x8 and produce a quietly-wrong trajectory.
+    // JEOD_INV: GV.04 — negative test: degree > source.degree
+    #[test]
+    #[should_panic(
+        expected = "Gravity field degree requested (12) is greater than max gravity field degree (8)."
+    )]
+    fn gv_04_panics_on_degree_above_source_degree() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 12,
+            order: 8,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `order > source.order`: the requested order exceeds the stored
+    /// coefficient table. Source is built with `order < degree` so the
+    /// GV.05 check fires before the GV.06 `order <= degree` check.
+    // JEOD_INV: GV.05 — negative test: order > source.order
+    #[test]
+    #[should_panic(
+        expected = "Gravity field order requested (6) is greater than max gravity field order (4)."
+    )]
+    fn gv_05_panics_on_order_above_source_order() {
+        // Source: degree=8, order=4 (sectorial truncation).
+        let src = dummy_sh_source(8, 4);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 6,
+            order: 6,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// `order > degree`: order exceeds the requested degree even though
+    /// both are within the source's bounds. JEOD clamps; we panic — a
+    /// silently-clamped order would change which sectorial harmonics
+    /// contribute to acceleration.
+    // JEOD_INV: GV.06 — negative test: order > degree
+    #[test]
+    #[should_panic(expected = "Gravity field order (5) is greater than gravity field degree (4).")]
+    fn gv_06_panics_on_order_above_degree() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 5,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// Source-side degree clamp at initialization: a request whose
+    /// degree exceeds the stored coefficient table fails before the
+    /// kernel runs. JEOD's
+    /// `SphericalHarmonicsGravitySource::initialize_source` clamps
+    /// `degree`/`order` to `max_degree` at startup; we enforce the same
+    /// bound at `check_validity` and fail loudly rather than clamping,
+    /// so an out-of-table request surfaces as a configuration error.
+    /// Shares the panic site with GV.04 — same `assert!` — and is
+    /// catalogued separately to mirror JEOD's source-side line.
+    // JEOD_INV: GV.19 — negative test: source-side degree clamp
+    #[test]
+    #[should_panic(
+        expected = "Gravity field degree requested (50) is greater than max gravity field degree (8)."
+    )]
+    fn gv_19_panics_on_degree_above_source_max() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 50,
+            order: 8,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        ctrl.check_validity(&src);
+    }
+
+    /// Active nonspherical control must subscribe to the planet-fixed
+    /// rotation: `evaluate_inner` panics when `eff_degree > 0` and the
+    /// caller passes `None` for the rotation matrix. JEOD subscribes
+    /// to the planet-fixed frame unconditionally for non-spherical
+    /// gravity (`gravity_controls.cc::initialize_control` registers the
+    /// subscription as a structural pre-step). We surface the missing
+    /// rotation as a fatal error rather than producing zero / NaN
+    /// acceleration silently. Shares the runtime enforcement site
+    /// with GV.13 but the catalog tracks the subscription invariant
+    /// separately.
+    // JEOD_INV: GV.17 — negative test: active nonspherical control without rotation
+    #[test]
+    #[should_panic(
+        expected = "Non-spherical gravity (degree=4/order=4) requires planet-fixed rotation matrix."
+    )]
+    fn gv_17_panics_on_nonspherical_without_rotation() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+        };
+        // `evaluate` (not `accumulate_gravity`) drives the kernel-level
+        // assert in `evaluate_inner` directly; this test pins the
+        // panic site closest to where the rotation matrix is consumed.
+        let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        let _ = ctrl.evaluate(&src, pos, None, 0.0, false);
+    }
+
     // ---- proptest round-trips (#398) ----------------------------------
 
     use proptest::prelude::*;

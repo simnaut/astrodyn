@@ -609,3 +609,76 @@ pub fn calc_nonspherical_typed<P: Planet>(
     );
     GravityAccelerationTyped::<PlanetFixed<P>>::from_untyped_unchecked(&untyped)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+
+    /// Build a small SH source for kernel-precondition tests. The
+    /// coefficient arrays follow the triangular `cnm[n].len() == n+1`
+    /// shape that `SphericalHarmonicsData::new` expects. Numerics are
+    /// irrelevant — these tests drive the panic preconditions before
+    /// the recurrence runs.
+    fn dummy_sh(degree: usize, order: usize) -> SphericalHarmonicsData {
+        let mu = 3.986_004_415e14;
+        let radius = 6_378_137.0;
+        let cnm: Vec<Vec<f64>> = (0..=degree).map(|n| vec![0.0_f64; n + 1]).collect();
+        let snm: Vec<Vec<f64>> = (0..=degree).map(|n| vec![0.0_f64; n + 1]).collect();
+        SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, true, 0.0)
+    }
+
+    /// Scratch sized smaller than the requested degree: the recurrence
+    /// indexes `pnm[ii]` for `ii <= degree`, so a buffer allocated for
+    /// (say) degree-2 cannot serve a degree-8 request without writing
+    /// out of bounds. JEOD's `calc_nonspherical` keeps its own scratch
+    /// owned by the source, so the size invariant is structural there;
+    /// our `calc_nonspherical_with_scratch` exposes the buffer to
+    /// callers (RK4 reuse), so the invariant must be runtime-checked
+    /// at the kernel boundary.
+    // JEOD_INV: GV.21 — negative test: scratch smaller than requested degree
+    #[test]
+    #[should_panic(expected = "GottliebScratch degree (2) must be >= requested degree (8)")]
+    fn gv_21_panics_on_scratch_smaller_than_degree() {
+        let data = dummy_sh(8, 8);
+        let mut scratch = GottliebScratch::new(2);
+        let _ = calc_nonspherical_with_scratch(
+            &data,
+            DVec3::new(7e6, 0.0, 0.0),
+            8, // requested degree exceeds scratch.degree
+            8,
+            false,
+            0,
+            0,
+            &mut scratch,
+            0.0,
+            false,
+        );
+    }
+
+    /// Zero-vector position: the Gottlieb recurrence normalizes by
+    /// `r = |posn_pf|`, so a zero input would silently produce
+    /// `NaN`/`inf` acceleration. JEOD's documentation calls out the
+    /// origin singularity in `spherical_harmonics_calc_nonspherical.cc`;
+    /// we assert at the kernel boundary so the caller sees the
+    /// configuration error rather than a quietly-poisoned trajectory.
+    // JEOD_INV: GV.22 — negative test: zero-vector input position
+    #[test]
+    #[should_panic(expected = "position must be non-zero")]
+    fn gv_22_panics_on_zero_position() {
+        let data = dummy_sh(4, 4);
+        let mut scratch = GottliebScratch::new(4);
+        let _ = calc_nonspherical_with_scratch(
+            &data,
+            DVec3::ZERO, // ← zero-length input
+            4,
+            4,
+            false,
+            0,
+            0,
+            &mut scratch,
+            0.0,
+            false,
+        );
+    }
+}

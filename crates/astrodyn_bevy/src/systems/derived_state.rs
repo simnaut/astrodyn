@@ -422,6 +422,11 @@ mod tests {
     /// Non-positive μ on the configured `GravitySourceC` panics the
     /// orbital-elements system with the `InvalidMu` diagnostic instead
     /// of silently writing zero orbital elements.
+    // JEOD_INV: OE.01 — non-positive μ in `from_cartesian_impl` returns
+    // `OrbitalError::InvalidMu`, which the Bevy adapter escalates via
+    // `panic_for_orbital_error` (per-cause diagnostic), so this test
+    // drives the runtime failure end-to-end through
+    // `orbital_elements_system::<Earth>`.
     #[test]
     #[should_panic(expected = "source gravity has \u{3bc} <= 0")]
     fn invalid_mu_panics_with_caller_fix() {
@@ -441,6 +446,11 @@ mod tests {
     /// when triggered by the other r × v = 0 cause patterns (radial
     /// trajectory, parallel r and v) — the user-facing message lists
     /// all three.
+    // JEOD_INV: OE.07 — zero velocity at non-zero position degenerates
+    // `h = r × v` to ‖h‖ ≈ 0; `from_cartesian_impl` returns
+    // `OrbitalError::DegenerateOrbit`, which the Bevy adapter escalates
+    // via `panic_for_orbital_error`. Same kernel guard also fires for
+    // the symmetric (zero position) case from OE.07's catalog row.
     #[test]
     #[should_panic(expected = "|h| \u{2248} 0")]
     fn degenerate_orbit_panics_with_caller_fix() {
@@ -460,10 +470,17 @@ mod tests {
     /// iteration count from the carrier, and the "inspect …
     /// orbit input" caller fix. The world built by `add_test_app`
     /// gives `Entity::PLACEHOLDER` a real ECS provenance for the
-    /// formatter's `{entity:?}` debug print.
+    /// formatter's `{entity:?}` debug print. Complements the
+    /// kernel-layer panic test
+    /// `astrodyn_math::orbital_elements::tests::oe_06_panics_on_kepler_non_convergence`,
+    /// which drives the `Err` path via NaN-poisoned Newton iteration.
     #[test]
     #[should_panic(expected = "Kepler iteration failed to converge after 1234 iterations")]
     fn kepler_convergence_panics_with_caller_fix() {
+        // JEOD_INV: OE.06 — `OrbitalError::KeplerConvergence` (raised by
+        // `kep_eqtn_e` / `kep_eqtn_h` after 1000 non-converging
+        // Newton-Raphson iterations) routes through
+        // `panic_for_orbital_error` for the adapter-layer escalation.
         let mut app = add_test_app();
         let entity = app.world_mut().spawn_empty().id();
         panic_for_orbital_error(entity, OrbitalError::KeplerConvergence(1234));
@@ -507,6 +524,7 @@ mod tests {
     /// caller can fix the wiring at spawn time. The bait entity is a
     /// bare `spawn_empty()` (no `PlanetFixedRotationC`), the minimal
     /// misconfiguration shape.
+    // JEOD_INV: AT.03 — planet-fixed rotation required for geodetic altitude
     #[test]
     #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
     fn geodetic_planet_lookup_miss_panics_with_caller_fix() {

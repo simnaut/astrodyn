@@ -1322,6 +1322,45 @@ mod tests {
         tree.add_mass_point(pid, "", DVec3::ZERO, DMat3::IDENTITY);
     }
 
+    // JEOD_INV: MA.09 — mass point names must be unique per body; adding
+    // a second mass point with a name already in use on the same body
+    // must fire the `find_mass_point().is_none()` assert. Mirrors JEOD
+    // `mass.cc:359-368` which calls `MessageHandler::fail` on the same
+    // condition.
+    #[test]
+    #[should_panic(expected = "duplicate mass point name 'dock' on body 'parent'")]
+    fn add_mass_point_rejects_duplicate_name() {
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        tree.add_mass_point(pid, "dock", DVec3::ZERO, DMat3::IDENTITY);
+        tree.add_mass_point(pid, "dock", DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "Detached child 'child' has singular composite inertia")]
+    fn detach_rejects_singular_composite_inertia() {
+        // JEOD_INV: MA.15 — detach recomputes inverse inertia for the
+        // detached child; the recomputation guards against a singular
+        // composite inertia (det ≈ 0) so the new root cannot quietly
+        // carry an `inf`/`NaN` `inverse_inertia` into the next
+        // rotational step. The post-attach `composite_properties` is
+        // corrupted directly via `get_mut` to a zero matrix; detach
+        // must then fire the named diagnostic. (The legitimate
+        // construction surface for a singular inertia is blocked
+        // upstream by `MassProperties::with_inertia` and by
+        // `compute_node_composite`, so a direct mutation is the only
+        // way to reach the detach-side guard from a unit test.)
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let cid = tree.add_body("child".into(), MassProperties::new(5.0));
+        tree.attach(cid, pid, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        // Corrupt the child's composite inertia to a singular matrix
+        // post-attach but pre-detach. `mass` stays positive so detach
+        // enters the inversion branch and the determinant guard fires.
+        tree.get_mut(cid).composite_properties.inertia = DMat3::ZERO;
+        tree.detach(cid);
+    }
+
     #[test]
     fn attach_aligned_identity_points() {
         // Two bodies with points at their origins, identity rotation.
@@ -1655,6 +1694,10 @@ mod tests {
 
     /// `attach_to_frame_offset` panics with an actionable diagnostic
     /// when the named subject point does not exist on the body.
+    // JEOD_INV: MA.21 — named attachment point must exist on the body;
+    // the lookup miss must fire the `find_mass_point().unwrap_or_else`
+    // panic with the body name in the message so a mission engineer can
+    // locate the offending call site.
     #[test]
     #[should_panic(expected = "mass point 'missing' not found on body 'body'")]
     fn attach_to_frame_offset_missing_point_panics() {
@@ -1964,9 +2007,22 @@ mod tests {
     /// Same-tree guard: subject's existing root is exactly `parent_id`.
     /// This is the simple "single-edge cycle" case — `attach_with_reroot`
     /// must reject it before attempting the reroot.
+    // JEOD_INV: BA.12 — chained attach (`attach_with_reroot`) must reject
+    // a same-tree parent before recomputing the (offset, rotation) for
+    // the rerooted edge. Without this fail-loud guard the chained-attach
+    // would fall through to `attach`'s cycle walk with a less informative
+    // diagnostic.
     #[test]
     #[should_panic(expected = "already in the same tree")]
     fn attach_with_reroot_rejects_same_tree_parent_is_root() {
+        // JEOD_INV: MA.08 — no cycle in mass tree (the same-tree
+        // rejection is the loud-fail surface of the cycle check at the
+        // reroot entry point).
+        // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention);
+        // `attach_with_reroot` compares the *roots* of the two bodies
+        // (a check that only compared `child_root` to `parent_id`
+        // would miss sibling-parent cases — see the sibling-parent
+        // test below).
         let mut tree = MassTree::new();
         let a = tree.add_root("a".into(), MassProperties::new(1.0));
         let b = tree.add_root("b".into(), MassProperties::new(1.0));
@@ -1985,6 +2041,10 @@ mod tests {
     /// `attach`'s cycle walk which fires with a less informative
     /// message. JEOD's `attach_validate_parent` (`mass_attach.cc:373`)
     /// rejects this via `parent.get_root_body() == get_root_body()`.
+    // JEOD_INV: BA.12 — chained-attach same-tree guard, sibling variant.
+    // Confirms `attach_with_reroot` walks both subject *and* parent up
+    // to their roots before accepting the chained attach, not just the
+    // simple "parent == root_of(subject)" case.
     #[test]
     #[should_panic(expected = "already in the same tree")]
     fn attach_with_reroot_rejects_same_tree_parent_is_sibling() {
@@ -2003,5 +2063,68 @@ mod tests {
         // message. The fix detects same-tree here and panics with the
         // intended diagnostic naming the shared root.
         let _ = tree.attach_with_reroot(b, c, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    // =======================================================================
+    // BA.03 / BA.04 negative tests — `attach` direct guards.
+    //
+    // BA.03 — JEOD `body_attach.cc:58-71` rejects attachment with a
+    // null parent reference. In our port the parent is a `MassBodyId`
+    // (non-null by type), and the two runtime guards in `attach` are:
+    //
+    //   (1) the subject must be unparented (`parent[child_id].is_none()`),
+    //   (2) self-attachment is forbidden (`child_id != parent_id`).
+    //
+    // Both panics are reachable from a single user-facing entry point
+    // — `MassTree::attach` — and both are part of the BA.03 contract.
+    //
+    // BA.04 — JEOD `mass_attach.cc:166-177` forbids cycles; our walk-up
+    // from `parent_id` panics if it ever encounters `child_id`.
+    // =======================================================================
+
+    #[test]
+    #[should_panic(expected = "cannot attach a body to itself")]
+    fn ba_03_panics_on_self_attach() {
+        // JEOD_INV: BA.03 — `attach` rejects `child_id == parent_id`
+        // before mutating the tree. The misconfiguration would otherwise
+        // produce a single-node cycle and infinite walks downstream.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        tree.attach(a, a, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "already attached to a parent")]
+    fn ba_03_panics_when_child_already_parented() {
+        // JEOD_INV: BA.03 — `attach` requires the subject to be a root.
+        // Re-attaching a non-root child without first detaching would
+        // produce a body with two parents and break the tree invariant.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        tree.attach(b, a, DVec3::ZERO, DMat3::IDENTITY);
+        // b is now parented under a. A second `attach(b, c, ...)` must
+        // panic instead of silently overwriting the parent edge.
+        tree.attach(b, c, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "would create cycle")]
+    fn ba_04_panics_on_cyclic_attach() {
+        // JEOD_INV: BA.04 — attaching a body under its own descendant
+        // would close a cycle in the mass tree. The walk-up check from
+        // `parent_id` must encounter `child_id` and panic before the
+        // structural edge is recorded.
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        // Build (a ← b); b is now a descendant of a.
+        tree.attach(b, a, DVec3::ZERO, DMat3::IDENTITY);
+        // First detach `a` from itself — `a` is already a root, but we
+        // need a *fresh* root subject whose descendant is `parent_id`.
+        // Concretely: attach root `a` under `b` (which is a descendant
+        // of `a`). The walk-up from `b` reaches `a` and must panic.
+        tree.attach(a, b, DVec3::ZERO, DMat3::IDENTITY);
     }
 }

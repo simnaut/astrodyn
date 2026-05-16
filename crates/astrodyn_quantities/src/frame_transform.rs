@@ -369,12 +369,45 @@ mod tests {
         assert_eq!(v_out.raw_si(), m * v_raw);
     }
 
-    /// `debug_assert!` panic on a non-orthonormal input (in debug builds).
+    /// `assert!` panic on a non-unit-determinant input — release-mode
+    /// enforced per the fail-loudly policy (the previous `debug_assert!`
+    /// was a no-op under `--release`, silently caching a meaningless
+    /// quaternion derived from a non-orthonormal matrix and propagating
+    /// wrong physics through every subsequent `.apply()` call).
+    // JEOD_INV: RF.12 — drives the `det ≈ 1` assert in `from_matrix`
+    // with a uniform scaling matrix (det = 2). Pinned to the
+    // "determinant" substring so a future message rephrase that still
+    // names the violated condition stays compatible, but a silent
+    // drop-back to `debug_assert!` (or a removal of the check) trips
+    // this test in release builds.
     #[test]
-    #[cfg(debug_assertions)]
     #[should_panic(expected = "determinant")]
-    fn from_matrix_rejects_non_unit_determinant() {
+    fn rf_12_panics_on_non_unit_determinant_matrix() {
         let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0)); // det = 2
+        let _: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
+    }
+
+    /// `assert!` panic on a det≈1 but non-orthonormal input — a shear
+    /// matrix has determinant 1 but `M · Mᵀ ≠ I`, so the determinant
+    /// check passes and the orthonormality check is the one that has
+    /// to fire. Drives the second `assert!` in `from_matrix`
+    /// independently of the first to prove both release-mode guards
+    /// are wired.
+    // JEOD_INV: RF.12 — drives the `M·Mᵀ ≈ I` assert in `from_matrix`
+    // with a unit-determinant shear (det = 1 but skewed). Together
+    // with `rf_12_panics_on_non_unit_determinant_matrix` this covers
+    // both arms of the fail-loudly release-mode policy.
+    #[test]
+    #[should_panic(expected = "orthonormal")]
+    fn rf_12_panics_on_non_orthonormal_unit_det_matrix() {
+        // Shear: det = 1, but M*M^T != I. Columns (1, a, 0), (0, 1, 0),
+        // (0, 0, 1). The shear parameter `a = 0.1` is well above the
+        // 1e-9 drift tolerance.
+        let m = DMat3::from_cols(
+            DVec3::new(1.0, 0.1, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
         let _: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
     }
 

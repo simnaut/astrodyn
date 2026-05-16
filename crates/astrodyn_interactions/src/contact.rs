@@ -1609,24 +1609,60 @@ mod tests {
         assert!(runtime.is_none());
     }
 
+    // Inactive ground facets must not silently contribute zero force;
+    // JEOD's silent-skip path is exactly the wrong-by-default behaviour
+    // the fail-loudly rule forbids. We panic at the geometry
+    // computation entry so a misconfigured active flag is named at the
+    // per-tick call site, not buried in a downstream sum-over-pairs
+    // that quietly produces zero force.
+    // JEOD_INV: IN.35 — inactive ground facet panic (fail-loud rather than silent skip)
     #[test]
-    fn ground_facet_inactive_panics() {
+    #[should_panic(expected = "ground_facet must be active")]
+    fn in_35_panics_on_inactive_ground_facet() {
         let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
         let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
         let mut ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
         ground.active = false;
         let pos = DVec3::new(6378137.0, 0.0, 0.0);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            compute_ground_contact_geometry(
-                &vehicle,
-                &ground,
-                pos,
-                DMat3::IDENTITY,
-                DMat3::IDENTITY,
-                DMat3::IDENTITY,
-                Phase::Initialization,
-            )
-        }));
-        assert!(result.is_err(), "inactive ground facet should panic");
+        let _ = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Phase::Initialization,
+        );
+    }
+
+    // JEOD_INV: IN.36 — `GroundFacet::new` rejects a non-finite
+    // `alt_offset`. A `NaN` or `±∞` here would propagate through
+    // the body-frame ground-point comparison and produce undefined
+    // contact-detection behaviour.
+    #[test]
+    #[should_panic(expected = "alt_offset must be finite")]
+    fn in_36_panics_on_nan_alt_offset() {
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
+        let _ = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), f64::NAN, mat);
+    }
+
+    // JEOD_INV: IN.37 — `SphericalTerrain::new` rejects a non-positive
+    // radius. Radius ≤ 0 collapses the ground point to the planet
+    // center and yields a `NaN` outward normal; the assert at the
+    // constructor catches this before any geometry is computed.
+    #[test]
+    #[should_panic(expected = "radius must be finite and > 0")]
+    fn in_37_panics_on_zero_radius() {
+        let _ = SphericalTerrain::new(0.0);
+    }
+
+    // JEOD_INV: IN.37 — sibling test for the negative-radius branch.
+    // The single assert covers both `<= 0` and `!is_finite()`; we drive
+    // each independently so a future predicate weakening (e.g. losing
+    // the `is_finite` half) can't slip through.
+    #[test]
+    #[should_panic(expected = "radius must be finite and > 0")]
+    fn in_37_panics_on_negative_radius() {
+        let _ = SphericalTerrain::new(-100.0);
     }
 }

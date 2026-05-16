@@ -407,4 +407,46 @@ mod tests {
             );
         }
     }
+
+    /// Pins the `assert!(qmagsq > 0.0)` guard at the entry of the private
+    /// `normalize_integ` helper (the integration-safe variant that
+    /// preserves scalar sign). A zero-magnitude quaternion is
+    /// algebraically unrecoverable — the Padé fast path divides by
+    /// `1 + qmagsq` and the sqrt path divides by `qmagsq.sqrt()`, both
+    /// of which silently yield `1.0` or `inf` for a zero input and
+    /// propagate a degenerate rotation through every downstream
+    /// `left_quat_to_transformation` / `left_quat_transform` call. The
+    /// assert is the fail-loudly equivalent of JEOD's
+    /// `quat_norm.cc` precondition that the integrator never feeds it a
+    /// zero quaternion.
+    // JEOD_INV: QT.04 — negative test: zero-magnitude quaternion rejected by normalize_integ
+    #[test]
+    #[should_panic(expected = "produced zero-magnitude quaternion")]
+    fn qt_04_panics_on_zero_quaternion_into_normalize_integ() {
+        // JEOD_INV: QT.04 — zero-magnitude quaternion at the integration-safe normalize entry.
+        let mut q = JeodQuat::from_array([0.0, 0.0, 0.0, 0.0]);
+        normalize_integ(&mut q);
+    }
+
+    /// Pins the same guard via the public `advance_under_body_rate`
+    /// entry point — the path actual integrators take. A non-finite
+    /// `dt` propagates `half_angle = NaN` → `sin/cos = NaN` → the
+    /// internally-built delta quaternion has all-NaN components → the
+    /// product with `self.q.inner()` is all-NaN → `qmagsq = NaN` →
+    /// `NaN > 0.0` is `false` and the QT.04 assert fires with the
+    /// `BodyAttitude::advance_under_body_rate produced zero-magnitude
+    /// quaternion` diagnostic. Confirms the public attitude advance
+    /// surface can never silently propagate a degenerate rotation
+    /// past a poisoned `dt` input.
+    // JEOD_INV: QT.04 — negative test: non-finite dt panics at the normalize_integ guard
+    #[test]
+    #[should_panic(expected = "produced zero-magnitude quaternion")]
+    fn qt_04_panics_on_non_finite_dt_into_advance_under_body_rate() {
+        // JEOD_INV: QT.04 — NaN dt poisons the inline-built delta quaternion
+        // and trips the zero-magnitude guard inside normalize_integ.
+        let a: BodyAttitude<SelfRef> = BodyAttitude::identity();
+        let omega: AngularVelocity<BodyFrame<SelfRef>> =
+            Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
+        let _ = a.advance_under_body_rate(omega, f64::NAN);
+    }
 }

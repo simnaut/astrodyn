@@ -154,3 +154,34 @@ pub fn collect_and_resolve_forces_typed<V: Vehicle>(
         FrameDerivativesTyped::<RootInertial, V>::from_untyped_unchecked(&derivs),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// aero drag requires body orientation. JEOD's `aero_drag()`
+    /// takes `T_inertial_struct` as a mandatory parameter derived
+    /// from the body's rotational state. If a body carries a
+    /// non-zero aerodynamic force but no `RotationalState`, the
+    /// structural→inertial transform collapses to identity and the
+    /// rotated force vector silently lands in a wrong frame. Reject
+    /// loudly at the collection boundary.
+    #[test]
+    #[should_panic(expected = "Non-zero aerodynamic force but no RotationalState")]
+    fn in_15_panics_on_aero_force_without_rotational_state() {
+        // JEOD_INV: IN.15 — aero drag requires body orientation
+        let aero = AerodynamicForce {
+            force: DVec3::new(1.0, 0.0, 0.0),
+            torque: DVec3::ZERO,
+        };
+        let _ = collect_and_resolve_forces(
+            Some(&aero),
+            None,
+            None,
+            None, // no RotationalState — triggers the panic
+            DMat3::IDENTITY,
+            None,
+            DVec3::ZERO,
+        );
+    }
+}
