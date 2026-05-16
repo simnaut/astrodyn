@@ -21,7 +21,7 @@
 
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
-use astrodyn::default_leap_second_table;
+use astrodyn::{default_eop_table, default_leap_second_table};
 use astrodyn::{TimeManager, TimeScaleId};
 
 const SECONDS_PER_DAY: f64 = 86400.0;
@@ -305,10 +305,20 @@ fn tier3_time_v4_common() {
     let init_ut1_tjt = init.ut1_tjt.expect("SIM_4 CSV must log UT1 TJT");
     let init_tai_seconds = init.tai_seconds.expect("SIM_4 CSV must log TAI seconds");
 
-    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table());
-    // JEOD reports a UT1-TAI offset from IERS data; derive it from t=0.
-    let ut1_tai_offset = (init_ut1_tjt - init_tai_tjt) * SECONDS_PER_DAY;
-    mgr.set_ut1_tai_offset(ut1_tai_offset);
+    // Wire the IERS EOP table so UT1-TAI is interpolated linearly
+    // between adjacent daily samples per JEOD's
+    // `time_converter_tai_ut1.cc::convert_a_to_b`. The CSV's t=0
+    // UT1-TJT is used purely as a sanity check on the table value at
+    // the epoch; we do not feed it back as a constant override.
+    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table())
+        .with_eop_table(default_eop_table());
+    let init_eop_offset = mgr.ut1_tai_offset;
+    let csv_offset = (init_ut1_tjt - init_tai_tjt) * SECONDS_PER_DAY;
+    assert!(
+        (init_eop_offset - csv_offset).abs() < 1e-3,
+        "EOP table at t=0 ({init_eop_offset} s) disagrees with JEOD CSV \
+         ({csv_offset} s); check the EOP fixture against the JEOD source"
+    );
 
     let dt = if rows.len() > 1 {
         rows[1].time - rows[0].time
@@ -356,14 +366,11 @@ fn tier3_time_v4_common() {
         max_utc_tjt_err < 1e-6,
         "UTC TJT error {max_utc_tjt_err:.4e} s"
     );
-    // UT1-TAI drifts ~1 ms/day per IERS EOP tables; JEOD linearly interpolates
-    // `tai_to_ut1.cc` (46k entries). Our `ut1_tai_offset` is a constant taken
-    // at t=0, so over 86400 s we accumulate the full day's drift. Porting the
-    // IERS EOP table with linear interpolation is out of scope for this
-    // verification and is tracked as a follow-up. Tolerance is sized to the
-    // observed drift over this run (1.08 ms + 5%).
+    // UT1 is interpolated from the IERS EOP table per `EopTable`, so
+    // the day-long drift the constant-offset path missed is gone; the
+    // residual is at table-precision noise level.
     assert!(
-        max_ut1_tjt_err < 1.14e-3,
+        max_ut1_tjt_err < 1e-6,
         "UT1 TJT error {max_ut1_tjt_err:.4e} s"
     );
     assert!(

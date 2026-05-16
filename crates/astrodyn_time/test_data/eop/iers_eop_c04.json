@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "label": "iers_eop_c04",
+  "source_file": "models/environment/time/data/src/tai_to_ut1.cc",
+  "source_file_bytes": 3117354,
+  "jeod_version": "5.4",
+  "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "generated_utc": "2026-05-16T06:25:17Z",
+  "binary_file": "iers_eop_c04.bin",
+  "binary_file_bytes": 373904,
+  "binary_file_sha256": "e28bef62197e2d23a65bc4d357472075d0004bdb8056ef7f0d193c307a3686d4",
+  "entry_count": 23368,
+  "tai_tjt_first": -2335.0,
+  "tai_tjt_last": 21032.0,
+  "generated_by": "cargo run -p astrodyn_time --bin extract_eop_table",
+  "note": "Regenerate after a JEOD upgrade or IERS EOP refresh. The .bin file uses the EopTable::save_binary format (magic EOPT, version 1). The IERS source series is EOP 14 C04 (jeod/models/environment/time/data/eopc04_14_IAU2000.62-now); JEOD's parser.py converts UT1-UTC to UT1-TAI by subtracting the day's leap-second value."
+}
