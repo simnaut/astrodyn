@@ -310,11 +310,54 @@ impl MassTree {
         offset: DVec3,
         t_parent_child: DMat3,
     ) -> MassBodyId {
+        let attached_root =
+            self.attach_with_reroot_link_only(child_id, parent_id, offset, t_parent_child);
+        self.recompute_composites();
+        attached_root
+    }
+
+    /// Same as [`Self::attach_with_reroot`], but defers the
+    /// composite-property recomputation to the caller.
+    ///
+    /// Mirrors the [`Self::attach_without_recompute`] contract for the
+    /// reroot-aware path: link / parent / structure-point mutations are
+    /// applied in place, but every node's `composite_properties`,
+    /// `composite_wrt_pstr`, and `core_wrt_composite` are left in their
+    /// pre-call state. The caller takes responsibility for invoking
+    /// [`Self::recompute_composites`] before any consumer reads composite
+    /// data — see [`Self::attach_without_recompute`] for the full
+    /// invariant statement and the intended batch-mutation use case.
+    ///
+    /// # Panics
+    /// Panics on the same conditions as [`Self::attach_with_reroot`]
+    /// (cycle, self-attach, same-tree reroot).
+    // JEOD_INV: BA.12 — chained attach re-roots the subject's existing tree under the new parent
+    pub fn attach_with_reroot_without_recompute(
+        &mut self,
+        child_id: MassBodyId,
+        parent_id: MassBodyId,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) -> MassBodyId {
+        self.attach_with_reroot_link_only(child_id, parent_id, offset, t_parent_child)
+    }
+
+    /// Reroot-aware link mutation shared by [`Self::attach_with_reroot`]
+    /// and [`Self::attach_with_reroot_without_recompute`]. Performs the
+    /// same-tree / cycle validation, the geometric reroot, and the
+    /// underlying `attach_link_only` call — but never touches composites.
+    fn attach_with_reroot_link_only(
+        &mut self,
+        child_id: MassBodyId,
+        parent_id: MassBodyId,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) -> MassBodyId {
         // Subject case A: child is itself a root → no reroot needed,
-        // delegate to the plain `attach` (which handles the cycle and
-        // self-attach checks already).
+        // delegate to the plain link-only attach (which handles the
+        // cycle and self-attach checks already).
         if self.parent[child_id].is_none() {
-            self.attach(child_id, parent_id, offset, t_parent_child);
+            self.attach_link_only(child_id, parent_id, offset, t_parent_child);
             return child_id;
         }
 
@@ -363,7 +406,7 @@ impl MassTree {
         //  i.e. xyz_rstr_wrt_pstr -= T_pstr_to_rstr^T · subj_in_root.position).
         let xyz_rstr_wrt_pstr = offset - t_pstr_to_rstr.transpose() * subj_in_root.position;
 
-        self.attach(child_root, parent_id, xyz_rstr_wrt_pstr, t_pstr_to_rstr);
+        self.attach_link_only(child_root, parent_id, xyz_rstr_wrt_pstr, t_pstr_to_rstr);
         child_root
     }
 
@@ -627,6 +670,54 @@ impl MassTree {
         offset: DVec3,
         t_parent_child: DMat3,
     ) {
+        self.attach_link_only(child_id, parent_id, offset, t_parent_child);
+        self.recompute_composites();
+    }
+
+    /// Same as [`Self::attach`], but defers the composite-property
+    /// recomputation to the caller.
+    ///
+    /// Use this when applying a batch of mass-tree mutations
+    /// (multiple attaches and/or detaches) within a single tick where
+    /// the per-call `recompute_composites` walks would each redo work
+    /// the next mutation will invalidate. The caller takes
+    /// responsibility for invoking [`Self::recompute_composites`]
+    /// **before any consumer reads composite-derived data**
+    /// (`composite_properties`, `composite_wrt_pstr`,
+    /// `core_wrt_composite`) for any node in the affected forest.
+    /// Until that final recompute fires, the topology mutation is
+    /// in place but every composite field reflects the pre-call
+    /// state — reads against it will silently see stale composites.
+    ///
+    /// Default mass-tree edits should keep using [`Self::attach`] —
+    /// the deferred-recompute variant is intended for batch mutators
+    /// (e.g. the Bevy adapter's `staging_system`) that own the
+    /// recompute lifecycle for the whole batch.
+    ///
+    /// # Panics
+    /// Panics on the same conditions as [`Self::attach`] (child
+    /// already has a parent, self-attach, cycle).
+    pub fn attach_without_recompute(
+        &mut self,
+        child_id: MassBodyId,
+        parent_id: MassBodyId,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        self.attach_link_only(child_id, parent_id, offset, t_parent_child);
+    }
+
+    /// Link mutation shared by [`Self::attach`] and
+    /// [`Self::attach_without_recompute`]. Performs the cycle /
+    /// self-attach validation and writes the parent / children /
+    /// `structure_point` slots — but never touches composite properties.
+    fn attach_link_only(
+        &mut self,
+        child_id: MassBodyId,
+        parent_id: MassBodyId,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
         // JEOD_INV: BA.03 — attachment requires non-null parent; the `parent_id` argument
         // is `MassBodyId` (non-null by type); invalid IDs panic at the index site below.
         assert!(
@@ -662,8 +753,6 @@ impl MassTree {
             position: offset,
             t_parent_this: t_parent_child,
         };
-
-        self.recompute_composites();
     }
 
     /// Detach `child_id` from its parent.
@@ -676,6 +765,42 @@ impl MassTree {
     ///
     /// Panics if the child has no parent.
     pub fn detach(&mut self, child_id: MassBodyId) {
+        self.detach_link_only(child_id);
+        // Recompute composites for the tree the parent still belongs to.
+        self.recompute_composites();
+    }
+
+    /// Same as [`Self::detach`], but defers the composite-property
+    /// recomputation to the caller.
+    ///
+    /// The link mutation, the child's `structure_point` /
+    /// `composite_wrt_pstr` reset, and the new-root inverse-inertia
+    /// refresh are all applied in place; only the post-mutation
+    /// `recompute_composites` walk over the forest is skipped. The
+    /// caller takes responsibility for invoking
+    /// [`Self::recompute_composites`] **before any consumer reads
+    /// composite-derived data** for the former parent's surviving tree
+    /// — until then, the parent's composite still reflects the
+    /// pre-detach mass distribution. See
+    /// [`Self::attach_without_recompute`] for the full
+    /// batch-mutator contract.
+    ///
+    /// # Panics
+    /// Panics on the same conditions as [`Self::detach`] (child has no
+    /// parent; or the detached child's composite inertia is singular).
+    // JEOD_INV: MA.15 — detach recomputes inverse inertia for new root
+    pub fn detach_without_recompute(&mut self, child_id: MassBodyId) {
+        self.detach_link_only(child_id);
+    }
+
+    /// Link mutation shared by [`Self::detach`] and
+    /// [`Self::detach_without_recompute`]. Removes the parent edge,
+    /// resets the child's parent-relative fields, and refreshes the
+    /// detached child's inverse inertia (JEOD's `detach_update_properties`
+    /// per-child step) — but never recomputes the surviving parent
+    /// tree's composites.
+    // JEOD_INV: MA.15 — detach recomputes inverse inertia for new root
+    fn detach_link_only(&mut self, child_id: MassBodyId) {
         let parent_id = self.parent[child_id].expect("detach called on a body with no parent");
 
         self.children[parent_id].retain(|&c| c != child_id);
@@ -685,7 +810,6 @@ impl MassTree {
         self.nodes[child_id].structure_point = MassPointState::default();
         self.nodes[child_id].composite_wrt_pstr = MassPointState::default();
 
-        // JEOD_INV: MA.15 — detach recomputes inverse inertia for new root
         // Recompute inverse inertia on detached child (JEOD mass_detach.cc:328-335).
         let child = &mut self.nodes[child_id];
         if child.composite_properties.mass > 0.0 {
@@ -700,9 +824,6 @@ impl MassTree {
         } else {
             child.composite_properties.inverse_inertia = DMat3::ZERO;
         }
-
-        // Recompute composites for the tree the parent still belongs to.
-        self.recompute_composites();
     }
 
     // -- composite recomputation (JEOD algorithm) ---------------------------
@@ -2126,5 +2247,248 @@ mod tests {
         // Concretely: attach root `a` under `b` (which is a descendant
         // of `a`). The walk-up from `b` reaches `a` and must panic.
         tree.attach(a, b, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    // =======================================================================
+    // Deferred-recompute parity: the `*_without_recompute` variants must
+    // produce a tree whose final composite-property state (after the
+    // caller's mandatory `recompute_composites`) is bit-identical to the
+    // sequential `attach` / `detach` path. The attach loop in the Bevy
+    // adapter's `staging_system` relies on this equivalence to batch
+    // composite recomputation across multiple staged events without
+    // perturbing downstream physics.
+    //
+    // Each test sets up a non-trivial tree where every node carries a
+    // distinct mass, every edge carries a non-identity offset, and at
+    // least one edge carries a non-trivial rotation — so any divergence
+    // in the composite walk shows up in mass / CoM / inertia bits. The
+    // bit-exact `==` checks (rather than approximate) guard that the
+    // deferred path is the same arithmetic in the same order.
+    // =======================================================================
+
+    /// Two-edge attach batch (chained-attach pattern from
+    /// `bevy_parity_chained_attach_reroot.rs`): the deferred variant
+    /// followed by a single recompute must produce bit-identical
+    /// composite properties to two sequential `attach` calls.
+    #[test]
+    fn attach_without_recompute_batch_matches_sequential() {
+        let parent_core = MassProperties::new(10.0);
+        let mid_core = MassProperties::new(7.0);
+        let leaf_core = MassProperties::new(3.0);
+
+        let mid_offset = DVec3::new(2.0, -1.0, 0.5);
+        let mid_t = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let leaf_offset = DVec3::new(0.5, 0.0, -0.25);
+        let leaf_t = DMat3::IDENTITY;
+
+        // Sequential reference: each attach recomputes internally.
+        let mut tree_ref = MassTree::new();
+        let p_ref = tree_ref.add_root("parent".into(), parent_core);
+        let m_ref = tree_ref.add_body("middle".into(), mid_core);
+        let l_ref = tree_ref.add_body("leaf".into(), leaf_core);
+        tree_ref.attach(m_ref, p_ref, mid_offset, mid_t);
+        tree_ref.attach(l_ref, m_ref, leaf_offset, leaf_t);
+
+        // Deferred batch: link mutations only, then a single end-of-batch
+        // recompute. Final composite must match the reference bit-for-bit.
+        let mut tree_def = MassTree::new();
+        let p_def = tree_def.add_root("parent".into(), parent_core);
+        let m_def = tree_def.add_body("middle".into(), mid_core);
+        let l_def = tree_def.add_body("leaf".into(), leaf_core);
+        tree_def.attach_without_recompute(m_def, p_def, mid_offset, mid_t);
+        tree_def.attach_without_recompute(l_def, m_def, leaf_offset, leaf_t);
+        tree_def.recompute_composites();
+
+        for (id_ref, id_def) in [(p_ref, p_def), (m_ref, m_def), (l_ref, l_def)] {
+            let r = tree_ref.get(id_ref);
+            let d = tree_def.get(id_def);
+            assert_eq!(
+                r.composite_properties.mass, d.composite_properties.mass,
+                "composite mass mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.position, d.composite_properties.position,
+                "composite position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inertia, d.composite_properties.inertia,
+                "composite inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inverse_inertia, d.composite_properties.inverse_inertia,
+                "composite inverse_inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_wrt_pstr.position, d.composite_wrt_pstr.position,
+                "composite_wrt_pstr.position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_wrt_pstr.t_parent_this, d.composite_wrt_pstr.t_parent_this,
+                "composite_wrt_pstr.t_parent_this mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.core_wrt_composite.position, d.core_wrt_composite.position,
+                "core_wrt_composite.position mismatch on {}",
+                r.name
+            );
+        }
+    }
+
+    /// Detach with deferred recompute must match the sequential
+    /// `detach` path bit-for-bit on every node — including the
+    /// detached child's `inverse_inertia` (which `detach_link_only`
+    /// refreshes inline) and the surviving parent's composite.
+    #[test]
+    fn detach_without_recompute_matches_sequential() {
+        let parent_core = MassProperties::new(10.0);
+        let child_core = MassProperties::new(4.0);
+        let offset = DVec3::new(1.5, 0.0, -0.25);
+        let t_parent_child = DMat3::from_cols(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+            DVec3::new(0.0, -1.0, 0.0),
+        );
+
+        // Sequential reference.
+        let mut tree_ref = MassTree::new();
+        let p_ref = tree_ref.add_root("parent".into(), parent_core);
+        let c_ref = tree_ref.add_body("child".into(), child_core);
+        tree_ref.attach(c_ref, p_ref, offset, t_parent_child);
+        tree_ref.detach(c_ref);
+
+        // Deferred batch: detach without recompute, then a single
+        // end-of-batch recompute over the surviving forest.
+        let mut tree_def = MassTree::new();
+        let p_def = tree_def.add_root("parent".into(), parent_core);
+        let c_def = tree_def.add_body("child".into(), child_core);
+        tree_def.attach(c_def, p_def, offset, t_parent_child);
+        tree_def.detach_without_recompute(c_def);
+        tree_def.recompute_composites();
+
+        for (id_ref, id_def) in [(p_ref, p_def), (c_ref, c_def)] {
+            let r = tree_ref.get(id_ref);
+            let d = tree_def.get(id_def);
+            assert_eq!(
+                r.composite_properties.mass, d.composite_properties.mass,
+                "composite mass mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.position, d.composite_properties.position,
+                "composite position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inertia, d.composite_properties.inertia,
+                "composite inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inverse_inertia, d.composite_properties.inverse_inertia,
+                "composite inverse_inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.structure_point.position, d.structure_point.position,
+                "structure_point.position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_wrt_pstr.position, d.composite_wrt_pstr.position,
+                "composite_wrt_pstr.position mismatch on {}",
+                r.name
+            );
+        }
+    }
+
+    /// `attach_with_reroot_without_recompute` followed by a single
+    /// recompute must match `attach_with_reroot` bit-for-bit on the
+    /// chained-attach (re-root) path. Mirrors the
+    /// `bevy_parity_chained_attach_reroot.rs` topology.
+    #[test]
+    fn attach_with_reroot_without_recompute_matches_sequential() {
+        let top_core = MassProperties::new(8.0);
+        let middle_core = MassProperties::new(5.0);
+        let leaf_core = MassProperties::new(2.0);
+        let middle_leaf_offset = DVec3::new(0.4, 0.1, 0.0);
+        let middle_leaf_t = DMat3::IDENTITY;
+        let middle_top_offset = DVec3::new(1.0, 0.0, 0.5);
+        let middle_top_t = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        // Sequential reference. The (leaf → middle) attach builds the
+        // subject tree first, then the chained (middle → top) reroot
+        // attach pulls (middle, leaf) under top.
+        let mut tree_ref = MassTree::new();
+        let top_ref = tree_ref.add_root("top".into(), top_core);
+        let mid_ref = tree_ref.add_root("middle".into(), middle_core);
+        let leaf_ref = tree_ref.add_body("leaf".into(), leaf_core);
+        tree_ref.attach(leaf_ref, mid_ref, middle_leaf_offset, middle_leaf_t);
+        let _ = tree_ref.attach_with_reroot(mid_ref, top_ref, middle_top_offset, middle_top_t);
+
+        // Deferred batch: replicates the topology + offsets via the
+        // `_without_recompute` variants, then fires one recompute.
+        let mut tree_def = MassTree::new();
+        let top_def = tree_def.add_root("top".into(), top_core);
+        let mid_def = tree_def.add_root("middle".into(), middle_core);
+        let leaf_def = tree_def.add_body("leaf".into(), leaf_core);
+        tree_def.attach_without_recompute(leaf_def, mid_def, middle_leaf_offset, middle_leaf_t);
+        let _ = tree_def.attach_with_reroot_without_recompute(
+            mid_def,
+            top_def,
+            middle_top_offset,
+            middle_top_t,
+        );
+        tree_def.recompute_composites();
+
+        for (id_ref, id_def) in [(top_ref, top_def), (mid_ref, mid_def), (leaf_ref, leaf_def)] {
+            let r = tree_ref.get(id_ref);
+            let d = tree_def.get(id_def);
+            assert_eq!(
+                r.composite_properties.mass, d.composite_properties.mass,
+                "composite mass mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.position, d.composite_properties.position,
+                "composite position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inertia, d.composite_properties.inertia,
+                "composite inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.composite_properties.inverse_inertia, d.composite_properties.inverse_inertia,
+                "composite inverse_inertia mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.structure_point.position, d.structure_point.position,
+                "structure_point.position mismatch on {}",
+                r.name
+            );
+            assert_eq!(
+                r.structure_point.t_parent_this, d.structure_point.t_parent_this,
+                "structure_point.t_parent_this mismatch on {}",
+                r.name
+            );
+        }
+        assert_eq!(tree_ref.parent(mid_ref), tree_def.parent(mid_def));
+        assert_eq!(tree_ref.parent(leaf_ref), tree_def.parent(leaf_def));
     }
 }
