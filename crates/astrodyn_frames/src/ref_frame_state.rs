@@ -212,19 +212,25 @@ impl RefFrameState {
     /// compute and return S_{A:C}.
     ///
     /// Ported from JEOD `ref_frame_state.cc` incr_right / compose_state.
-    /// The identity-rotation fast-path mirrors
-    /// `models/utils/ref_frames/src/ref_frame_state.cc:360-381`'s
-    /// `if(!Numerical::compare_exact(rot.Q_parent_this.scalar, 1.0))`
-    /// branch (and its `else` shortcut). When `self.rot.q_parent_this`
-    /// is bit-exactly identity, `T_{A:B}^T = I` and `Q_{A:B}` is
-    /// identity, so the quaternion-multiply + normalize +
-    /// matrix-rebuild round-trip would just reproduce `s_bc`'s
-    /// rotation with f64 round-off. Copying instead preserves bits
-    /// and gives walks through identity hops the hop-count
-    /// invariance JEOD's `compute_relative_state` algorithm assumes
-    /// (see issue #562 for the case where the absence of this
-    /// shortcut produced ~30 ULP body-position drift between the
-    /// 1-hop runner and 2-hop Bevy frame-tree shapes).
+    /// The identity-rotation fast-path mirrors the `Numerical::compare_exact(
+    /// rot.Q_parent_this.scalar, 1.0)` shortcut at
+    /// `models/utils/ref_frames/src/ref_frame_state.cc:267-302` (`incr_left`,
+    /// the function JEOD uses in `compute_relative_state`). When
+    /// `self.rot.q_parent_this` is bit-exactly identity, `T_{A:B}^T = I` and
+    /// `Q_{A:B}` is identity, so the quaternion-multiply + normalize +
+    /// matrix-rebuild round-trip would just reproduce `s_bc`'s rotation with
+    /// f64 round-off. Copying instead preserves bits and gives walks through
+    /// identity hops the hop-count invariance JEOD's `compute_relative_state`
+    /// algorithm assumes (see issue #562 for the case where the absence of
+    /// this shortcut produced ~30 ULP body-position drift between the 1-hop
+    /// runner and 2-hop Bevy frame-tree shapes).
+    ///
+    /// Velocity composition retains the `omega_{A:B} × x_{B:C}` term — this
+    /// matches JEOD's `incr_left` identity branch (`:293-295`) and our own
+    /// non-fast-path. JEOD's separate `incr_right` identity branch
+    /// (`:376-381`) drops that term, but is documented in JEOD as an untested
+    /// utility "not used in the Reference Frame Model at any point"
+    /// (`:309-311`); we don't propagate that inconsistency.
     pub fn incr_right(&self, s_bc: &RefFrameState) -> RefFrameState {
         if self.rot.q_parent_this.is_exact_identity_rotation() {
             // Identity-rotation fast-path. T_{A:B} = I, Q_{A:B} = identity.
