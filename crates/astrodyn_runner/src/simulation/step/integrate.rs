@@ -130,34 +130,27 @@ impl Simulation {
         // velocity * (time_frac * dt), matching JEOD's behavior of evaluating
         // gravity using the current sub-stage source state.
         //
-        // Snapshot base source positions and velocities for sub-stage interpolation.
+        // Snapshot base source positions and velocities for sub-stage
+        // interpolation. Pre-#567 these short-circuited when the source's
+        // inertial frame aliased to root (the central body); #567 made
+        // every source's inertial frame a structurally-distinct child of
+        // root, so the short-circuit is gone — the frame-tree lookup
+        // returns the same `DVec3::ZERO` for the central body anyway,
+        // and it's a single arena index.
         let base_positions: Vec<DVec3> = self
             .source_frame_ids
             .iter()
-            .map(|sfids| {
-                if sfids.inertial == self.root_frame_id {
-                    DVec3::ZERO
-                } else {
-                    self.frame_tree.get(sfids.inertial).state.trans.position
-                }
-            })
+            .map(|sfids| self.frame_tree.get(sfids.inertial).state.trans.position)
             .collect();
         let base_velocities: Vec<DVec3> = self
             .source_frame_ids
             .iter()
-            .map(|sfids| {
-                if sfids.inertial == self.root_frame_id {
-                    DVec3::ZERO
-                } else {
-                    self.frame_tree.get(sfids.inertial).state.trans.velocity
-                }
-            })
+            .map(|sfids| self.frame_tree.get(sfids.inertial).state.trans.velocity)
             .collect();
 
         let gravity_data = &self.gravity_data;
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
-        let root_fid = self.root_frame_id;
 
         // Precompute per-body relativistic "other source" lists outside the
         // closures to avoid heap allocation at every RK4 stage.
@@ -180,11 +173,7 @@ impl Simulation {
                     .filter_map(|ctrl| {
                         let grav = gravity_data.get(ctrl.source_name)?;
                         let sfids = &source_frame_ids[ctrl.source_name];
-                        let src_pos = if sfids.inertial == root_fid {
-                            DVec3::ZERO
-                        } else {
-                            frame_tree.get(sfids.inertial).state.trans.position
-                        };
+                        let src_pos = frame_tree.get(sfids.inertial).state.trans.position;
                         let src_vel = grav.velocity;
                         let other: Vec<_> = controls
                             .controls
@@ -193,11 +182,7 @@ impl Simulation {
                             .filter_map(|c| {
                                 let g = gravity_data.get(c.source_name)?;
                                 let sf = &source_frame_ids[c.source_name];
-                                let pos = if sf.inertial == root_fid {
-                                    DVec3::ZERO
-                                } else {
-                                    frame_tree.get(sf.inertial).state.trans.position
-                                };
+                                let pos = frame_tree.get(sf.inertial).state.trans.position;
                                 Some(astrodyn::relativistic::RelativisticSource {
                                     mu: g.source.mu,
                                     position: pos,
@@ -628,26 +613,29 @@ impl Simulation {
             // would need this matrix.
             //
             // Defense-in-depth: ground contact's terrain query assumes
-            // the planet center is at the inertial origin
+            // the planet sits at the heliocentric origin
             // (`compute_ground_contact_geometry` projects
             // `vehicle_pos_inertial` directly into pfix without any
-            // planet-translation subtraction). `validate()` catches
+            // planet-translation subtraction). Pre-#567 this asserted
+            // `inertial == root` as a proxy for "central body"; #567
+            // made every source's inertial frame structurally distinct
+            // from root, so the check now consults the explicit
+            // `central` flag — same semantic. `validate()` catches
             // non-central planets via
             // `ValidationError::GroundContactNonCentralPlanet`, but
             // assert here too in case a caller skips validation.
             let ground_t_inertial_pfix: DMat3 =
                 if let Some(planet_idx) = self.ground_contact_planet_source {
                     let sfids = &self.source_frame_ids[planet_idx];
-                    assert_eq!(
-                        sfids.inertial, self.root_frame_id,
-                        "ground contact requires the planet source's inertial frame to be \
-                         the root frame (`compute_ground_contact_geometry` projects \
-                         vehicle inertial position into pfix as if the planet center \
-                         were at the inertial origin); planet_source={planet_idx} has \
-                         inertial frame {} but root is {}. Use a central planet for \
-                         ground contact, or call `Simulation::validate()` to surface \
-                         this as a configuration error before stepping.",
-                        sfids.inertial, self.root_frame_id
+                    assert!(
+                        sfids.central,
+                        "ground contact requires a central planet \
+                         (`compute_ground_contact_geometry` projects vehicle inertial \
+                         position into pfix as if the planet center were at the \
+                         inertial origin); planet_source={planet_idx} is not central. \
+                         Use a central planet for ground contact, or call \
+                         `Simulation::validate()` to surface this as a configuration \
+                         error before stepping."
                     );
                     if let Some(pfix_id) = sfids.pfix {
                         self.frame_tree.get(pfix_id).state.rot.t_parent_this

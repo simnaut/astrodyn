@@ -251,9 +251,14 @@ impl Simulation {
             }
         }
 
-        // Ephemeris mapping on root-frame sources — would silently discard position.
+        // Ephemeris mapping on central sources — would silently discard
+        // position (the central body is pinned at the heliocentric origin).
+        // Pre-#567 this used the `inertial == root_frame_id` alias as a
+        // proxy for "is central"; now we consult the explicit `central`
+        // flag, since #567 made the central source's inertial frame
+        // structurally distinct from root.
         for (i, ephem) in self.source_ephem_bodies.iter().enumerate() {
-            if ephem.is_some() && self.source_frame_ids[i].inertial == self.root_frame_id {
+            if ephem.is_some() && self.source_frame_ids[i].central {
                 all_errors.push(ValidationError::EphemerisOnRootSource { source_idx: i });
             }
         }
@@ -336,7 +341,13 @@ impl Simulation {
                 }
                 if let Some(planet_source) = self.ground_contact_planet_source {
                     let sfids = &self.source_frame_ids[planet_source];
-                    if sfids.inertial != self.root_frame_id {
+                    // Pre-#567 used `inertial != root` as a proxy for "this
+                    // planet is non-central"; #567 made every source's
+                    // inertial frame structurally distinct from root, so
+                    // consult the explicit `central` flag instead. Same
+                    // semantic: ground contact requires the planet sit at
+                    // the heliocentric origin (central body).
+                    if !sfids.central {
                         all_errors.push(ValidationError::GroundContactNonCentralPlanet {
                             pair_idx,
                             planet_source,

@@ -32,46 +32,58 @@ impl Simulation {
         let idx = self.gravity_data.len();
         let name = name.into();
 
-        // Central bodies map to the root frame; third bodies get child frames.
-        // Only one central source is allowed (the root can't be shared).
-        let inertial_name = format!("{name}.inertial");
-        let inertial_id = if entry.central {
+        // Allocate a distinct inertial frame node as a child of root for
+        // every gravity source — including the central body, which has
+        // zero position relative to root. Mirrors JEOD's canonical
+        // `BasePlanet { inertial, pfix }` structure
+        // (`models/environment/planet/include/base_planet.hh:109,121`)
+        // and the Bevy adapter's existing layout.
+        //
+        // Pre-#567 the runner aliased the central source's inertial frame
+        // to `root_frame_id` as a one-hop optimization, which gave the
+        // runner a structurally-different frame tree than Bevy. With
+        // `JEOD_INV: RF.13` (#566) in place — the identity-rotation
+        // fast-path in `RefFrameState::incr_right` / `::negate` — the
+        // extra hop through an identity intermediate preserves f64 bits,
+        // so the canonical-JEOD structural alignment between the
+        // runtimes is safe.
+        //
+        // Only one central source is allowed per simulation: enforce
+        // via the `central` flag on `SourceFrameIds` rather than the
+        // pre-#567 root-id alias check.
+        if entry.central {
             assert!(
-                !self
-                    .source_frame_ids
-                    .iter()
-                    .any(|sf| sf.inertial == self.root_frame_id),
-                "add_source: a central source already maps to root_frame_id. \
+                !self.source_frame_ids.iter().any(|sf| sf.central),
+                "add_source: a central source has already been added. \
                  Only one central source is allowed per simulation."
             );
             assert!(
                 entry.position.raw_si() == DVec3::ZERO,
-                "add_source: central sources must have zero position because they map \
-                 directly to root_frame_id."
+                "add_source: central sources must have zero position relative to root."
             );
-            // Central body: use the root frame directly. Rename to match.
-            // `entry.velocity` is stored in `gravity_data` for relativistic
-            // corrections, but is not applied as root-frame kinematics.
-            self.frame_tree.get_mut(self.root_frame_id).name = inertial_name;
-            self.root_frame_id
-        } else {
-            self.frame_tree.add_child(
-                self.root_frame_id,
-                inertial_name,
-                RefFrameKind::Inertial,
-                RefFrameState {
-                    trans: RefFrameTrans {
-                        // RefFrameTrans is the runtime arena's untyped storage —
-                        // unwrap the typed entry value at this documented
-                        // boundary (RF.10 catalog row notes the frame tree is
-                        // runtime-typed by design).
-                        position: entry.position.raw_si(),
-                        velocity: entry.velocity.raw_si(),
-                    },
-                    rot: RefFrameRot::default(),
+        }
+        let inertial_name = format!("{name}.inertial");
+        let inertial_id = self.frame_tree.add_child(
+            self.root_frame_id,
+            inertial_name,
+            RefFrameKind::Inertial,
+            RefFrameState {
+                trans: RefFrameTrans {
+                    // RefFrameTrans is the runtime arena's untyped storage —
+                    // unwrap the typed entry value at this documented
+                    // boundary (RF.10 catalog row notes the frame tree is
+                    // runtime-typed by design).
+                    position: entry.position.raw_si(),
+                    velocity: entry.velocity.raw_si(),
                 },
-            )
-        };
+                // Central sources land at identity rotation (zero position,
+                // identity quaternion); non-central sources do the same by
+                // default and are written into by ephemeris updates each
+                // step. Identity rotation here triggers `RF.13`'s
+                // composition fast-paths during frame-tree walks.
+                rot: RefFrameRot::default(),
+            },
+        );
 
         // Create a planet-fixed child when the source has a rotation model or
         // an explicit inertial-to-pfix transform. This ensures a fixed initial
@@ -111,6 +123,7 @@ impl Simulation {
         self.source_frame_ids.push(SourceFrameIds {
             inertial: inertial_id,
             pfix: pfix_id,
+            central: entry.central,
         });
         self.gravity_data.push(GravityData {
             source: entry.source,

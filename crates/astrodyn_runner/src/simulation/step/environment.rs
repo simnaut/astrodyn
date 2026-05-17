@@ -13,8 +13,6 @@
 //! the `Position<PlanetInertial<SelfPlanet>>` relabel below are the
 //! storage-boundary uses sanctioned by row TS.01.
 
-use glam::DVec3;
-
 use astrodyn::atmosphere::{run_atmosphere_stage, AtmosphereBodyInputs};
 use astrodyn::gravity::{run_gravity_stage, GravityBodyInputs};
 use astrodyn::IntegOrigin;
@@ -39,17 +37,17 @@ impl Simulation {
         let gravity_data = &self.gravity_data;
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
-        let root_fid = self.root_frame_id;
+        // Pre-#567 these closures short-circuited the position lookup when
+        // `sfids.inertial == root_fid` (the central body alias). With #567
+        // making every source's inertial frame structurally distinct from
+        // root, the frame-tree lookup returns the same `DVec3::ZERO` for
+        // the central body anyway — read directly.
         let resolve_source =
             |_body_idx: usize, source_id: usize| -> Option<astrodyn::ResolvedSource<'_>> {
                 let grav = gravity_data.get(source_id)?;
                 let sfids = &source_frame_ids[source_id];
                 let src_node = frame_tree.get(sfids.inertial);
-                let position = if sfids.inertial == root_fid {
-                    DVec3::ZERO
-                } else {
-                    src_node.state.trans.position
-                };
+                let position = src_node.state.trans.position;
                 let rotation = sfids
                     .pfix
                     .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
@@ -65,11 +63,7 @@ impl Simulation {
             |_body_idx: usize, source_id: usize| -> Option<astrodyn::ResolvedRelativisticSource> {
                 let grav = gravity_data.get(source_id)?;
                 let sfids = &source_frame_ids[source_id];
-                let position = if sfids.inertial == root_fid {
-                    DVec3::ZERO
-                } else {
-                    frame_tree.get(sfids.inertial).state.trans.position
-                };
+                let position = frame_tree.get(sfids.inertial).state.trans.position;
                 Some(astrodyn::ResolvedRelativisticSource {
                     mu: grav.source.mu,
                     position,
