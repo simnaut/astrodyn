@@ -10,6 +10,17 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+# Promote Bevy schedule ambiguity detection to `LogLevel::Error` on every
+# schedule the plugin populates. Any unordered conflicting access between
+# two systems panics on `App` build with the offending pair named.
+# Off by default — production builds keep Bevy's default
+# `LogLevel::Ignore`, which has zero runtime cost. The dedicated
+# `schedule-audit` CI job (`.github/workflows/ci.yml`) exercises the full
+# test suite with this feature on as a regression fence against future
+# additions that introduce a new ambiguity. See issue #562.
+schedule_audit = ["bevy/debug"]
+
 [dependencies]
 astrodyn = { path = "../..", version = "0.1.0" }
 glam = { workspace = true }

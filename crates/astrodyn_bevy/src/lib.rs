@@ -397,11 +397,14 @@ impl Plugin for AstrodynPlugin {
         app.add_systems(
             Startup,
             (
-                systems::register_source_frames_system::<astrodyn::Earth>,
+                systems::register_source_frames_system::<astrodyn::Earth>
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_pfix_frames_system::<astrodyn::Earth>
-                    .after(systems::register_source_frames_system::<astrodyn::Earth>),
+                    .after(systems::register_source_frames_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_body_frames_system::<astrodyn::Earth>
-                    .after(systems::register_pfix_frames_system::<astrodyn::Earth>),
+                    .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Maintain `MassPointRef` ↔ `MassPropertiesC` invariant
                 // for bodies that gain or lose mass after the one-time
                 // body-frame registration pass.
@@ -463,11 +466,14 @@ impl Plugin for AstrodynPlugin {
         app.add_systems(
             PreUpdate,
             (
-                systems::register_source_frames_system::<astrodyn::Earth>,
+                systems::register_source_frames_system::<astrodyn::Earth>
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_pfix_frames_system::<astrodyn::Earth>
-                    .after(systems::register_source_frames_system::<astrodyn::Earth>),
+                    .after(systems::register_source_frames_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_body_frames_system::<astrodyn::Earth>
-                    .after(systems::register_pfix_frames_system::<astrodyn::Earth>),
+                    .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
             ),
@@ -492,17 +498,20 @@ impl Plugin for AstrodynPlugin {
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
                 systems::register_source_frames_system::<astrodyn::Earth>
-                    .before(AstrodynSet::EphemerisUpdate),
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Late-attached `PlanetFixedRotationC` → pfix child node
                 // (see `register_pfix_frames_system` doc).
                 systems::register_pfix_frames_system::<astrodyn::Earth>
                     .after(systems::register_source_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate),
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Catch dynamically-spawned bodies (after source registration so
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system::<astrodyn::Earth>
                     .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate),
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Late-acquired / late-lost `MassPropertiesC` →
                 // insert / remove `MassPointRef` for bodies that have
                 // already passed through `register_body_frames_system`.
@@ -527,7 +536,20 @@ impl Plugin for AstrodynPlugin {
                 // the frame-tree wiring.
                 validation::validate_jeod_invariants::<astrodyn::Earth>
                     .after(systems::register_body_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate),
+                    // Validator reads `MassPropertiesC`, `RotationalStateC`,
+                    // `TranslationalStateC<Earth>` to check JEOD invariants; it
+                    // must observe the post-update state, after
+                    // `body_action_system` has applied any queued state /
+                    // mass replacements and after `mass_update_system` +
+                    // `composite_mass_system` have refreshed the
+                    // per-entity and composite mass caches. Without these
+                    // edges the validator's read race with those writers
+                    // gives indeterminate ordering. See #562.
+                    .after(body_action::body_action_system::<astrodyn::Earth>)
+                    .after(systems::mass_update_system)
+                    .after(mass_tree::composite_mass_system)
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // After ephemeris_update_system writes new source
                 // position / velocity, mirror the values into the
                 // source's frame entity so frame-tree consumers
@@ -535,17 +557,40 @@ impl Plugin for AstrodynPlugin {
                 // frame-switch evaluation) see the latest state.
                 systems::sync_source_to_frame_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>())
                     .after(systems::ephemeris_update_system::<astrodyn::Earth>)
                     .after(systems::planet_fixed_rotation_system::<astrodyn::Earth>),
-                // Planet-fixed rotation (RNP)
+                // Planet-fixed rotation (RNP).
+                //
+                // The `Query<&mut FrameRotC>` / `Query<&mut FrameAngVelC>`
+                // accesses are structurally disjoint by entity from the
+                // four `*_joint_kinematics_system`s in the same set:
+                // this system writes only to the planet's `PfixFrameEntityC`
+                // target (one entity per planet), while the joint
+                // kinematics systems write only to entities carrying a
+                // `JointKinematicsC` / `SinusoidalJointKinematicsC` /
+                // `ClosureJointKinematicsC` / `MultiDofJointKinematicsC`
+                // component (joint frame entities). No entity carries
+                // both `PfixFrameEntityC` (as a target) and a joint
+                // kinematics component, so the writes never collide.
+                // Marked `.ambiguous_with` because an explicit
+                // `.before/.after` would imply an ordering relationship
+                // the physics does not require. See #562.
                 systems::planet_fixed_rotation_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::EphemerisUpdate),
+                    .in_set(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>())
+                    .ambiguous_with(systems::joint_kinematics_system)
+                    .ambiguous_with(systems::sinusoidal_joint_kinematics_system)
+                    .ambiguous_with(systems::closure_joint_kinematics_system)
+                    .ambiguous_with(systems::multi_dof_joint_kinematics_system),
                 // Ephemeris position updates (DE4xx)
                 systems::ephemeris_update_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::EphemerisUpdate),
+                    .in_set(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Tidal ΔC20 (must run after planet-fixed rotation)
                 systems::tidal_update_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>())
                     .after(systems::planet_fixed_rotation_system::<astrodyn::Earth>),
                 // Mass update: recompute inverse_mass/inverse_inertia each step.
                 systems::mass_update_system
@@ -566,16 +611,19 @@ impl Plugin for AstrodynPlugin {
                     .before(AstrodynSet::EphemerisUpdate),
                 // Gravity pre-computation
                 systems::gravity_computation_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::Environment),
+                    .in_set(AstrodynSet::Environment)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Atmosphere evaluation
                 systems::atmosphere_update_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::Environment),
+                    .in_set(AstrodynSet::Environment)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Interactions
                 // Mass tree staging (attach/detach) — runs before interactions
                 // so mass changes affect the current step's forces and integration.
                 systems::staging_system::<astrodyn::Earth>
                     .after(AstrodynSet::Environment)
-                    .before(AstrodynSet::Interaction),
+                    .before(AstrodynSet::Interaction)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Detached-subtree ballistic propagation: advance every
                 // entity carrying `DetachedSubtreeStateC` by `dt` under
                 // free-flight kinematics (no force, no torque). Runs in
@@ -594,12 +642,30 @@ impl Plugin for AstrodynPlugin {
                 // frame entity reflects the post-step body state.
                 systems::step_detached_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::Integration)
+                    // Structurally disjoint by entity from `integration_system`:
+                    // the integrator's body query filters
+                    // `Without<DetachedSubtreeStateC>`, while this system's
+                    // body query requires `&mut DetachedSubtreeStateC`.
+                    // No entity is in both populations, so the
+                    // `Query<&mut TranslationalStateC<P>>` conflict
+                    // Bevy detects has no runtime collision.
+                    // `.ambiguous_with` rather than `.before/.after`
+                    // because the design intent (see the block comment
+                    // above) is that the two can run in parallel. See #562.
+                    .ambiguous_with(systems::integration_system::<astrodyn::Earth>)
                     .before(systems::sync_body_to_frame_system::<astrodyn::Earth>)
-                    .before(systems::frame_switch_system::<astrodyn::Earth>),
-                systems::aero_drag_system::<astrodyn::Earth>.in_set(AstrodynSet::Interaction),
+                    .before(systems::frame_switch_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::aero_drag_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::Interaction)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::gravity_torque_system.in_set(AstrodynSet::Interaction),
-                systems::flat_plate_srp_system::<astrodyn::Earth>.in_set(AstrodynSet::Interaction),
-                systems::cannonball_srp_system::<astrodyn::Earth>.in_set(AstrodynSet::Interaction),
+                systems::flat_plate_srp_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::Interaction)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::cannonball_srp_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::Interaction)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
             ),
         );
         app.add_systems(
@@ -659,7 +725,8 @@ impl Plugin for AstrodynPlugin {
                 // `Simulation::step_internal`.
                 frame_attach_system::frame_attach_system::<astrodyn::Earth>
                     .after(AstrodynSet::EphemerisUpdate)
-                    .before(AstrodynSet::Environment),
+                    .before(AstrodynSet::Environment)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Frame-attached body kinematic propagation. Derives
                 // every `FrameAttachedC` body's `TranslationalStateC`
                 // / `RotationalStateC` from its parent frame entity's
@@ -677,7 +744,8 @@ impl Plugin for AstrodynPlugin {
                 // tick they were attached.
                 frame_attach_system::propagate_frame_attached_state_system::<astrodyn::Earth>
                     .after(frame_attach_system::frame_attach_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::Environment),
+                    .before(AstrodynSet::Environment)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Body-action lifecycle: drain `BodyActionEvent`
                 // (`Add` / `Remove` variants) into `BodyActionsR`,
                 // then apply every ready action. Runs before
@@ -711,7 +779,8 @@ impl Plugin for AstrodynPlugin {
                     .after(AstrodynSet::TimeUpdate)
                     .after(systems::sync_body_mass_point_ref_system)
                     .before(systems::mass_update_system)
-                    .before(AstrodynSet::EphemerisUpdate),
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Fail-loud fence on unregistered-planet adds. Runs
                 // after the Earth intake (so the well-formed Earth
                 // adds have already been claimed) and before any
@@ -744,7 +813,8 @@ impl Plugin for AstrodynPlugin {
                     .after(body_action::body_action_intake_system::<astrodyn::Earth>)
                     .after(body_action::body_action_unregistered_planet_fence_system)
                     .before(systems::mass_update_system)
-                    .before(AstrodynSet::EphemerisUpdate),
+                    .before(AstrodynSet::EphemerisUpdate)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Pre-integration kinematic state propagation: walks
                 // MassChildOf chains pre-order from each root and
                 // overwrites every kinematic child's `RotationalStateC`
@@ -767,7 +837,8 @@ impl Plugin for AstrodynPlugin {
                     .after(
                         frame_attach_system::propagate_frame_attached_state_system::<astrodyn::Earth>,
                     )
-                    .before(AstrodynSet::Environment),
+                    .before(AstrodynSet::Environment)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Force collection and integration
                 systems::force_collection_system.in_set(AstrodynSet::ForceCollection),
                 // Composite-rigid-body wrench aggregation: walk
@@ -784,20 +855,24 @@ impl Plugin for AstrodynPlugin {
                 wrench::wrench_aggregation_system
                     .in_set(AstrodynSet::ForceCollection)
                     .after(systems::force_collection_system),
-                systems::integration_system::<astrodyn::Earth>.in_set(AstrodynSet::Integration),
+                systems::integration_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::Integration)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // After integration, sync the body's typed state into
                 // its frame entity's `FrameTransC` so frame-switch
                 // evaluation and downstream `RelativeFrameState` /
                 // `FrameOrigin` queries see current distances.
                 systems::sync_body_to_frame_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::Integration)
-                    .after(systems::integration_system::<astrodyn::Earth>),
+                    .after(systems::integration_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Evaluate distance-based frame switches and reparent
                 // the body's frame entity in the ECS hierarchy on
                 // trigger.
                 systems::frame_switch_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::Integration)
-                    .after(systems::sync_body_to_frame_system::<astrodyn::Earth>),
+                    .after(systems::sync_body_to_frame_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Post-integration frame-attached body propagation.
                 // Symmetric to the pre-integration sweep above: the
                 // integrator just produced fresh source-body state and
@@ -824,7 +899,8 @@ impl Plugin for AstrodynPlugin {
                     astrodyn::Earth,
                 >
                     .in_set(AstrodynSet::Integration)
-                    .after(systems::frame_switch_system::<astrodyn::Earth>),
+                    .after(systems::frame_switch_system::<astrodyn::Earth>)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Post-integration kinematic state propagation
                 // (root → leaves). The integrator just produced fresh
                 // root-body state; rerun the kinematic walk so every
@@ -840,7 +916,8 @@ impl Plugin for AstrodynPlugin {
                     .in_set(AstrodynSet::Integration)
                     .after(
                         frame_attach_system::propagate_frame_attached_state_post_integration_system::<astrodyn::Earth>,
-                    ),
+                    )
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
             ),
         );
         // Third `add_systems` call: derived-state systems live here only
@@ -852,15 +929,54 @@ impl Plugin for AstrodynPlugin {
             (
                 // Derived states
                 systems::orbital_elements_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::DerivedState),
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::euler_angles_system.in_set(AstrodynSet::DerivedState),
-                systems::lvlh_system::<astrodyn::Earth>.in_set(AstrodynSet::DerivedState),
-                systems::geodetic_system::<astrodyn::Earth>.in_set(AstrodynSet::DerivedState),
-                systems::solar_beta_system::<astrodyn::Earth>.in_set(AstrodynSet::DerivedState),
-                systems::earth_lighting_system::<astrodyn::Earth>.in_set(AstrodynSet::DerivedState),
+                systems::lvlh_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::geodetic_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::solar_beta_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::earth_lighting_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
             ),
         );
+
+        install_schedule_audit(app);
     }
+}
+
+/// Promote Bevy schedule ambiguity detection to `LogLevel::Error` on
+/// every schedule the plugin has populated so far. No-op unless the
+/// `schedule_audit` Cargo feature is on. See the feature comment in
+/// `crates/astrodyn_bevy/Cargo.toml` and issue #562 for the rationale.
+///
+/// Called at the end of `AstrodynPlugin::build` and at the end of
+/// `register_planet_systems::<P>` so the settings apply after every
+/// `add_systems` call this crate makes. `Schedules::configure_schedules`
+/// mutates schedules already present; the persistence of the settings
+/// across subsequent `add_systems` calls (which only mutate the
+/// schedule's system list, not its build settings) makes "configure at
+/// the end of each entry point" sufficient coverage.
+fn install_schedule_audit(app: &mut App) {
+    #[cfg(feature = "schedule_audit")]
+    {
+        use bevy::ecs::schedule::{LogLevel, ScheduleBuildSettings};
+        app.world_mut()
+            .resource_mut::<bevy::ecs::schedule::Schedules>()
+            .configure_schedules(ScheduleBuildSettings {
+                ambiguity_detection: LogLevel::Error,
+                ..Default::default()
+            });
+    }
+    // Silence the `unused_variables` warning when the feature is off:
+    // the parameter exists only to gate the cfg block above.
+    let _ = app;
 }
 
 /// Register the planet-generic system instantiations needed for a
@@ -906,6 +1022,45 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     // (already wired by `AstrodynPlugin::build`) does not double-init the
     // queue.
     app.init_resource::<body_action::BodyActionsR<P>>();
+    // Cross-planet ambiguity: declare `PerPlanetSet::of::<P>()`
+    // structurally disjoint from every previously-registered planet's
+    // set in all three schedules `register_planet_systems` writes to
+    // (Startup, PreUpdate, FixedUpdate). The cross-planet pairs of
+    // per-planet systems (e.g. `body_action_system<Earth>` vs
+    // `body_action_system<Mars>`) share read/write access on
+    // non-generic components (`RotationalStateC`, `FrameTransC`, …)
+    // but operate on disjoint entity populations via `<P>`-typed
+    // witnesses (`TranslationalStateC<P>`, etc.). Bevy's static
+    // ambiguity analysis can't see the witness-based filter, so
+    // every cross-planet system pair would otherwise panic the
+    // `schedule_audit` gate. Each pair gets a structurally-justified
+    // `.ambiguous_with` here.
+    //
+    // Runs *before* the `RegisteredPlanetsR::register::<P>()` call
+    // below so the registry-walk reflects pre-self planets only.
+    // The filter on `tid != TypeId::of::<P>()` guards against an
+    // idempotent re-registration where Earth's `register::<Earth>`
+    // already inserted Earth into the registry (see
+    // `AstrodynPlugin::build` at lib.rs:359-361, and the doc
+    // comment at lib.rs:1021-1023 that documents idempotency).
+    // See #562 Option B.
+    {
+        let existing: Vec<std::any::TypeId> = app
+            .world()
+            .resource::<body_action::RegisteredPlanetsR>()
+            .planets
+            .iter()
+            .copied()
+            .filter(|tid| *tid != std::any::TypeId::of::<P>())
+            .collect();
+        let this = PerPlanetSet::of::<P>();
+        for old in existing {
+            let other = PerPlanetSet(old);
+            app.configure_sets(Startup, this.clone().ambiguous_with(other.clone()));
+            app.configure_sets(PreUpdate, this.clone().ambiguous_with(other.clone()));
+            app.configure_sets(FixedUpdate, this.clone().ambiguous_with(other));
+        }
+    }
     // Track this planet in the registry consulted by the
     // `BodyActionEvent::Add` writer surfaces (the
     // `BodyActionCommandsExt::add_body_action_for::<P>` call-site
@@ -922,33 +1077,53 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     app.add_systems(
         Startup,
         (
-            systems::register_source_frames_system::<P>,
+            systems::register_source_frames_system::<P>.in_set(PerPlanetSet::of::<P>()),
             systems::register_pfix_frames_system::<P>
-                .after(systems::register_source_frames_system::<P>),
+                .after(systems::register_source_frames_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::register_body_frames_system::<P>
-                .after(systems::register_pfix_frames_system::<P>),
+                .after(systems::register_pfix_frames_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
         ),
     );
     app.add_systems(
         PreUpdate,
         (
-            systems::register_source_frames_system::<P>,
+            systems::register_source_frames_system::<P>.in_set(PerPlanetSet::of::<P>()),
             systems::register_pfix_frames_system::<P>
-                .after(systems::register_source_frames_system::<P>),
+                .after(systems::register_source_frames_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
+            // `.before(sync_body_mass_point_ref_system)` mirrors the
+            // Earth-block's `.after(register_body_frames_system::<Earth>)`
+            // edge on the shared `sync_body_mass_point_ref_system`
+            // (at lib.rs:471-477). The Earth edge is hardcoded to
+            // `<astrodyn::Earth>`, so non-Earth `<P>` instantiations
+            // would otherwise sit unordered against the downstream
+            // `body_action_intake_system::<P>` /
+            // `body_action_system::<P>` chain. See #562 Option B fix.
             systems::register_body_frames_system::<P>
-                .after(systems::register_pfix_frames_system::<P>),
+                .after(systems::register_pfix_frames_system::<P>)
+                .before(systems::sync_body_mass_point_ref_system)
+                .in_set(PerPlanetSet::of::<P>()),
         ),
     );
     app.add_systems(
         FixedUpdate,
         (
-            systems::register_source_frames_system::<P>.before(AstrodynSet::EphemerisUpdate),
+            systems::register_source_frames_system::<P>
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::register_pfix_frames_system::<P>
                 .after(systems::register_source_frames_system::<P>)
-                .before(AstrodynSet::EphemerisUpdate),
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
+            // `.before(sync_body_mass_point_ref_system)` — see the
+            // PreUpdate block above for the rationale. #562 Option B fix.
             systems::register_body_frames_system::<P>
                 .after(systems::register_pfix_frames_system::<P>)
-                .before(AstrodynSet::EphemerisUpdate),
+                .before(systems::sync_body_mass_point_ref_system)
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             // Per-planet validator instantiation. Mirrors the schedule
             // slot of the Earth registration in `AstrodynPlugin::build`:
             // after `register_body_frames_system::<P>` so the body's
@@ -957,30 +1132,62 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
             // `AstrodynSet::EphemerisUpdate` so any gravity-control
             // misconfiguration trips the validator's panic before the
             // first ephemeris/gravity evaluation runs.
+            // See the Earth-block sibling for the rationale; mirrored
+            // here so non-Earth planets get the same ordering guarantees.
             validation::validate_jeod_invariants::<P>
                 .after(systems::register_body_frames_system::<P>)
-                .before(AstrodynSet::EphemerisUpdate),
+                .after(body_action::body_action_system::<P>)
+                .after(systems::mass_update_system)
+                .after(mass_tree::composite_mass_system)
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::sync_source_to_frame_system::<P>
                 .in_set(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>())
                 .after(systems::ephemeris_update_system::<P>)
                 .after(systems::planet_fixed_rotation_system::<P>),
-            systems::planet_fixed_rotation_system::<P>.in_set(AstrodynSet::EphemerisUpdate),
-            systems::ephemeris_update_system::<P>.in_set(AstrodynSet::EphemerisUpdate),
+            // See the Earth-block sibling for the structural-disjointness
+            // rationale.
+            systems::planet_fixed_rotation_system::<P>
+                .in_set(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>())
+                .ambiguous_with(systems::joint_kinematics_system)
+                .ambiguous_with(systems::sinusoidal_joint_kinematics_system)
+                .ambiguous_with(systems::closure_joint_kinematics_system)
+                .ambiguous_with(systems::multi_dof_joint_kinematics_system),
+            systems::ephemeris_update_system::<P>
+                .in_set(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::tidal_update_system::<P>
                 .in_set(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>())
                 .after(systems::planet_fixed_rotation_system::<P>),
-            systems::gravity_computation_system::<P>.in_set(AstrodynSet::Environment),
-            systems::atmosphere_update_system::<P>.in_set(AstrodynSet::Environment),
+            systems::gravity_computation_system::<P>
+                .in_set(AstrodynSet::Environment)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::atmosphere_update_system::<P>
+                .in_set(AstrodynSet::Environment)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::staging_system::<P>
                 .after(AstrodynSet::Environment)
-                .before(AstrodynSet::Interaction),
+                .before(AstrodynSet::Interaction)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::step_detached_system::<P>
                 .in_set(AstrodynSet::Integration)
+                // See Earth-block sibling for structural-disjointness rationale.
+                .ambiguous_with(systems::integration_system::<P>)
                 .before(systems::sync_body_to_frame_system::<P>)
-                .before(systems::frame_switch_system::<P>),
-            systems::aero_drag_system::<P>.in_set(AstrodynSet::Interaction),
-            systems::flat_plate_srp_system::<P>.in_set(AstrodynSet::Interaction),
-            systems::cannonball_srp_system::<P>.in_set(AstrodynSet::Interaction),
+                .before(systems::frame_switch_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::aero_drag_system::<P>
+                .in_set(AstrodynSet::Interaction)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::flat_plate_srp_system::<P>
+                .in_set(AstrodynSet::Interaction)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::cannonball_srp_system::<P>
+                .in_set(AstrodynSet::Interaction)
+                .in_set(PerPlanetSet::of::<P>()),
         ),
     );
     app.add_systems(
@@ -1001,44 +1208,67 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
                 .after(systems::sync_body_mass_point_ref_system)
                 .before(body_action::body_action_unregistered_planet_fence_system)
                 .before(systems::mass_update_system)
-                .before(AstrodynSet::EphemerisUpdate),
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             body_action::body_action_system::<P>
                 .after(AstrodynSet::TimeUpdate)
                 .after(body_action::body_action_intake_system::<P>)
                 .after(body_action::body_action_unregistered_planet_fence_system)
                 .before(systems::mass_update_system)
-                .before(AstrodynSet::EphemerisUpdate),
+                .before(AstrodynSet::EphemerisUpdate)
+                .in_set(PerPlanetSet::of::<P>()),
             frame_attach_system::frame_attach_system::<P>
                 .after(AstrodynSet::EphemerisUpdate)
-                .before(AstrodynSet::Environment),
+                .before(AstrodynSet::Environment)
+                .in_set(PerPlanetSet::of::<P>()),
             frame_attach_system::propagate_frame_attached_state_system::<P>
                 .after(frame_attach_system::frame_attach_system::<P>)
-                .before(AstrodynSet::Environment),
+                .before(AstrodynSet::Environment)
+                .in_set(PerPlanetSet::of::<P>()),
             kinematic_propagation::propagate_state_from_root_system::<P>
                 .after(frame_attach_system::propagate_frame_attached_state_system::<P>)
-                .before(AstrodynSet::Environment),
-            systems::integration_system::<P>.in_set(AstrodynSet::Integration),
+                .before(AstrodynSet::Environment)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::integration_system::<P>
+                .in_set(AstrodynSet::Integration)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::sync_body_to_frame_system::<P>
                 .in_set(AstrodynSet::Integration)
-                .after(systems::integration_system::<P>),
+                .after(systems::integration_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::frame_switch_system::<P>
                 .in_set(AstrodynSet::Integration)
-                .after(systems::sync_body_to_frame_system::<P>),
+                .after(systems::sync_body_to_frame_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
             frame_attach_system::propagate_frame_attached_state_post_integration_system::<P>
                 .in_set(AstrodynSet::Integration)
-                .after(systems::frame_switch_system::<P>),
+                .after(systems::frame_switch_system::<P>)
+                .in_set(PerPlanetSet::of::<P>()),
             kinematic_propagation::propagate_state_from_root_post_integration_system::<P>
                 .in_set(AstrodynSet::Integration)
                 .after(
                     frame_attach_system::propagate_frame_attached_state_post_integration_system::<P>,
-                ),
-            systems::orbital_elements_system::<P>.in_set(AstrodynSet::DerivedState),
-            systems::lvlh_system::<P>.in_set(AstrodynSet::DerivedState),
-            systems::geodetic_system::<P>.in_set(AstrodynSet::DerivedState),
-            systems::solar_beta_system::<P>.in_set(AstrodynSet::DerivedState),
-            systems::earth_lighting_system::<P>.in_set(AstrodynSet::DerivedState),
+                )
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::orbital_elements_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::lvlh_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::geodetic_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::solar_beta_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
+            systems::earth_lighting_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
         ),
     );
+
+    install_schedule_audit(app);
 }
 
 // ── Bevy spawn helpers for the typestate VehicleBuilder ──

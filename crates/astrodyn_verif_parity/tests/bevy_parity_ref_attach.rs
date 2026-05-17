@@ -59,23 +59,34 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// JEOD ≈ Bevy transitivity holds within tolerance even though the
 /// strict bit-identity gate doesn't.
 ///
-/// Closing this gap is a Bevy-side schedule investigation: the
-/// 3-record-out-of-50 pattern points at a non-deterministic
-/// ordering between systems that don't have explicit
-/// `.before/.after` constraints (most likely candidates: the
-/// post-integration kinematic walk vs. the post-integration
-/// frame-attach propagation, or the order in which `FrameTransC` /
-/// `FrameRotC` writes land on the pfix entity at those records).
+/// Investigation done under issue #562 ruled out a Bevy schedule
+/// ambiguity as the cause. The `astrodyn_bevy/schedule_audit` Cargo
+/// feature configures every `AstrodynPlugin`-built schedule with
+/// `ambiguity_detection: LogLevel::Error`; running this test under
+/// the feature surfaces zero ambiguous pairs after the eight ordering
+/// edges that #562 landed (validator-vs-action / mass writers,
+/// `planet_fixed_rotation_system` vs each of the four
+/// joint-kinematics systems, and `integration_system` vs
+/// `step_detached_system`). The audit gate is clean yet the drift
+/// persists deterministically at the same three records — so the
+/// remaining cause is *not* parallel-system ordering. Likely
+/// suspects, to dig into next: an algorithmic delta between the
+/// runner's `propagate_frame_attached_state` call site and the
+/// Bevy adapter's `propagate_frame_attached_state_system`, or a
+/// difference in how `FrameTransC`/`FrameRotC` for Earth.pfix is
+/// composed via `RelativeFrameState` at certain time samples (the
+/// failing records are not adjacent — they fall at t=70, 73, 82 —
+/// so the trigger is time-state-dependent, not lattice-aligned).
 /// The presence of this wrapper file (with `#[ignore]`) is itself
 /// the structural marker that `parity_coverage.rs` uses to satisfy
 /// the superset invariant, so no `KNOWN_PARITY_GAPS` entry is
-/// needed — re-enable the test once the Bevy schedule order is
-/// pinned to produce bit-identical pfix state at every record the
-/// runner observes.
+/// needed — re-enable the test once the residual drift closes.
 #[test]
 #[ignore = "Bevy adapter produces sub-ULP drift (~30 ULPs on unitless \
             matrix elements of magnitude ~1.0) in Earth.pfix at 3-of-50 \
-            post-attach records; Bevy-side schedule investigation pending"]
+            post-attach records; ruled out as a schedule ambiguity in \
+            #562 (audit gate clean under astrodyn_bevy/schedule_audit), \
+            cause now suspected algorithmic / frame-composition"]
 fn bevy_parity_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert_parity::<astrodyn::Earth>();
 }

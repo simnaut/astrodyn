@@ -203,6 +203,39 @@ jobs:
       - name: Run all bevy_parity_* tests
         run: cargo nextest run --workspace -E 'test(bevy_parity)'
 
+  schedule-audit:
+    # Regression fence on Bevy schedule ambiguities. The
+    # `astrodyn_bevy/schedule_audit` feature configures every
+    # `AstrodynPlugin`-touched schedule with
+    # `ScheduleBuildSettings { ambiguity_detection: LogLevel::Error, .. }`,
+    # so any pair of systems with conflicting component / resource access
+    # and no explicit `.before` / `.after` / `.ambiguous_with` edge
+    # panics on App build. The job exercises that gate against every
+    # example (one App build per example) and every `astrodyn_bevy` unit
+    # test (each `App::new()` site re-validates). Issue #562 introduced
+    # the feature; future PRs that add a system without an ordering
+    # edge fail loudly here instead of producing intermittent ULP drift
+    # at runtime.
+    #
+    # Examples cover the single-planet (Earth) and multi-planet
+    # (Earth + Moon + Sun) registration paths. `cargo nextest`
+    # exercises the unit-test App-build sites.
+    name: Schedule ambiguity audit (LogLevel::Error)
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Smoke-run examples under schedule_audit
+        run: |
+          cargo run -p astrodyn_bevy --features schedule_audit --example kepler_orbit -- --steps 1
+          cargo run -p astrodyn_bevy --features schedule_audit --example typed_mission -- --steps 1
+          cargo run -p astrodyn_bevy --features schedule_audit --example multi_body_scenario -- --steps 1
+      - name: Run astrodyn_bevy unit tests under schedule_audit
+        run: cargo nextest run -p astrodyn_bevy --features schedule_audit
+
   test-tier3:
     name: Test (Tier 3 fast)
     runs-on: ubuntu-latest
