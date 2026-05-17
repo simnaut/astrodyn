@@ -527,6 +527,18 @@ impl Plugin for AstrodynPlugin {
                 // the frame-tree wiring.
                 validation::validate_jeod_invariants::<astrodyn::Earth>
                     .after(systems::register_body_frames_system::<astrodyn::Earth>)
+                    // Validator reads `MassPropertiesC`, `RotationalStateC`,
+                    // `TranslationalStateC<Earth>` to check JEOD invariants; it
+                    // must observe the post-update state, after
+                    // `body_action_system` has applied any queued state /
+                    // mass replacements and after `mass_update_system` +
+                    // `composite_mass_system` have refreshed the
+                    // per-entity and composite mass caches. Without these
+                    // edges the validator's read race with those writers
+                    // gives indeterminate ordering. See #562.
+                    .after(body_action::body_action_system::<astrodyn::Earth>)
+                    .after(systems::mass_update_system)
+                    .after(mass_tree::composite_mass_system)
                     .before(AstrodynSet::EphemerisUpdate),
                 // After ephemeris_update_system writes new source
                 // position / velocity, mirror the values into the
@@ -537,9 +549,28 @@ impl Plugin for AstrodynPlugin {
                     .in_set(AstrodynSet::EphemerisUpdate)
                     .after(systems::ephemeris_update_system::<astrodyn::Earth>)
                     .after(systems::planet_fixed_rotation_system::<astrodyn::Earth>),
-                // Planet-fixed rotation (RNP)
+                // Planet-fixed rotation (RNP).
+                //
+                // The `Query<&mut FrameRotC>` / `Query<&mut FrameAngVelC>`
+                // accesses are structurally disjoint by entity from the
+                // four `*_joint_kinematics_system`s in the same set:
+                // this system writes only to the planet's `PfixFrameEntityC`
+                // target (one entity per planet), while the joint
+                // kinematics systems write only to entities carrying a
+                // `JointKinematicsC` / `SinusoidalJointKinematicsC` /
+                // `ClosureJointKinematicsC` / `MultiDofJointKinematicsC`
+                // component (joint frame entities). No entity carries
+                // both `PfixFrameEntityC` (as a target) and a joint
+                // kinematics component, so the writes never collide.
+                // Marked `.ambiguous_with` because an explicit
+                // `.before/.after` would imply an ordering relationship
+                // the physics does not require. See #562.
                 systems::planet_fixed_rotation_system::<astrodyn::Earth>
-                    .in_set(AstrodynSet::EphemerisUpdate),
+                    .in_set(AstrodynSet::EphemerisUpdate)
+                    .ambiguous_with(systems::joint_kinematics_system)
+                    .ambiguous_with(systems::sinusoidal_joint_kinematics_system)
+                    .ambiguous_with(systems::closure_joint_kinematics_system)
+                    .ambiguous_with(systems::multi_dof_joint_kinematics_system),
                 // Ephemeris position updates (DE4xx)
                 systems::ephemeris_update_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::EphemerisUpdate),
@@ -594,6 +625,17 @@ impl Plugin for AstrodynPlugin {
                 // frame entity reflects the post-step body state.
                 systems::step_detached_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::Integration)
+                    // Structurally disjoint by entity from `integration_system`:
+                    // the integrator's body query filters
+                    // `Without<DetachedSubtreeStateC>`, while this system's
+                    // body query requires `&mut DetachedSubtreeStateC`.
+                    // No entity is in both populations, so the
+                    // `Query<&mut TranslationalStateC<P>>` conflict
+                    // Bevy detects has no runtime collision.
+                    // `.ambiguous_with` rather than `.before/.after`
+                    // because the design intent (see the block comment
+                    // above) is that the two can run in parallel. See #562.
+                    .ambiguous_with(systems::integration_system::<astrodyn::Earth>)
                     .before(systems::sync_body_to_frame_system::<astrodyn::Earth>)
                     .before(systems::frame_switch_system::<astrodyn::Earth>),
                 systems::aero_drag_system::<astrodyn::Earth>.in_set(AstrodynSet::Interaction),
@@ -860,7 +902,37 @@ impl Plugin for AstrodynPlugin {
                 systems::earth_lighting_system::<astrodyn::Earth>.in_set(AstrodynSet::DerivedState),
             ),
         );
+
+        install_schedule_audit(app);
     }
+}
+
+/// Promote Bevy schedule ambiguity detection to `LogLevel::Error` on
+/// every schedule the plugin has populated so far. No-op unless the
+/// `schedule_audit` Cargo feature is on. See the feature comment in
+/// `crates/astrodyn_bevy/Cargo.toml` and issue #562 for the rationale.
+///
+/// Called at the end of `AstrodynPlugin::build` and at the end of
+/// `register_planet_systems::<P>` so the settings apply after every
+/// `add_systems` call this crate makes. `Schedules::configure_schedules`
+/// mutates schedules already present; the persistence of the settings
+/// across subsequent `add_systems` calls (which only mutate the
+/// schedule's system list, not its build settings) makes "configure at
+/// the end of each entry point" sufficient coverage.
+fn install_schedule_audit(app: &mut App) {
+    #[cfg(feature = "schedule_audit")]
+    {
+        use bevy::ecs::schedule::{LogLevel, ScheduleBuildSettings};
+        app.world_mut()
+            .resource_mut::<bevy::ecs::schedule::Schedules>()
+            .configure_schedules(ScheduleBuildSettings {
+                ambiguity_detection: LogLevel::Error,
+                ..Default::default()
+            });
+    }
+    // Silence the `unused_variables` warning when the feature is off:
+    // the parameter exists only to gate the cfg block above.
+    let _ = app;
 }
 
 /// Register the planet-generic system instantiations needed for a
@@ -957,14 +1029,26 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
             // `AstrodynSet::EphemerisUpdate` so any gravity-control
             // misconfiguration trips the validator's panic before the
             // first ephemeris/gravity evaluation runs.
+            // See the Earth-block sibling for the rationale; mirrored
+            // here so non-Earth planets get the same ordering guarantees.
             validation::validate_jeod_invariants::<P>
                 .after(systems::register_body_frames_system::<P>)
+                .after(body_action::body_action_system::<P>)
+                .after(systems::mass_update_system)
+                .after(mass_tree::composite_mass_system)
                 .before(AstrodynSet::EphemerisUpdate),
             systems::sync_source_to_frame_system::<P>
                 .in_set(AstrodynSet::EphemerisUpdate)
                 .after(systems::ephemeris_update_system::<P>)
                 .after(systems::planet_fixed_rotation_system::<P>),
-            systems::planet_fixed_rotation_system::<P>.in_set(AstrodynSet::EphemerisUpdate),
+            // See the Earth-block sibling for the structural-disjointness
+            // rationale.
+            systems::planet_fixed_rotation_system::<P>
+                .in_set(AstrodynSet::EphemerisUpdate)
+                .ambiguous_with(systems::joint_kinematics_system)
+                .ambiguous_with(systems::sinusoidal_joint_kinematics_system)
+                .ambiguous_with(systems::closure_joint_kinematics_system)
+                .ambiguous_with(systems::multi_dof_joint_kinematics_system),
             systems::ephemeris_update_system::<P>.in_set(AstrodynSet::EphemerisUpdate),
             systems::tidal_update_system::<P>
                 .in_set(AstrodynSet::EphemerisUpdate)
@@ -976,6 +1060,8 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
                 .before(AstrodynSet::Interaction),
             systems::step_detached_system::<P>
                 .in_set(AstrodynSet::Integration)
+                // See Earth-block sibling for structural-disjointness rationale.
+                .ambiguous_with(systems::integration_system::<P>)
                 .before(systems::sync_body_to_frame_system::<P>)
                 .before(systems::frame_switch_system::<P>),
             systems::aero_drag_system::<P>.in_set(AstrodynSet::Interaction),
@@ -1039,6 +1125,8 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
             systems::earth_lighting_system::<P>.in_set(AstrodynSet::DerivedState),
         ),
     );
+
+    install_schedule_audit(app);
 }
 
 // ── Bevy spawn helpers for the typestate VehicleBuilder ──
