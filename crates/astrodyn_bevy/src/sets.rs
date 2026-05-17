@@ -63,9 +63,41 @@ use bevy::prelude::*;
 /// schedule audit (under the `schedule_audit` Cargo feature) flagged
 /// cross-planet pairs of per-planet systems racing on shared
 /// non-generic component types (`RotationalStateC`, `FrameTransC`,
-/// …). Those pairs are filter-disjoint by entity (a body carries
-/// `TranslationalStateC<Earth>` *or* `TranslationalStateC<Mars>`, never
-/// both), and `PerPlanetSet` is how we communicate that to Bevy.
+/// `MassPropertiesC`, …). The cross-planet pairs are runtime-disjoint
+/// by entity, but the *mechanism* of disjointness varies by system,
+/// and `PerPlanetSet` is how we communicate either route to Bevy:
+///
+/// 1. **Required-query-item filtering.** Systems like
+///    [`crate::systems::integration_system::<P>`] and
+///    [`crate::systems::flat_plate_srp_system::<P>`] take
+///    `&mut TranslationalStateC<P>` as a required query item. Their
+///    query only matches entities that carry the `<P>`-tagged
+///    storage, which by construction is a single planet's. Bodies
+///    carry `TranslationalStateC<Earth>` *or*
+///    `TranslationalStateC<Mars>`, never both, so the `<Earth>` and
+///    `<Mars>` instantiations of these systems iterate disjoint
+///    entity subsets.
+///
+/// 2. **Queue partitioning.** Systems like
+///    [`crate::body_action::body_action_system::<P>`] take
+///    `Option<&mut TranslationalStateC<P>>` and filter only by
+///    `With<DynamicsConfigC>`, so the query itself *could* match a
+///    body of either planet. The runtime disjointness comes from the
+///    per-planet `BodyActionsR<P>` queue: actions are routed to
+///    `<P>`'s queue at submit time via
+///    `BodyActionCommandsExt::add_body_action_for::<P>` and the
+///    `body_action_unregistered_planet_fence_system` panics on a
+///    `<P>` whose `TypeId` isn't in `RegisteredPlanetsR`. The
+///    `<Mars>` apply pass walks `BodyActionsR<Mars>` and reaches
+///    only Mars-tagged bodies — Earth-tagged bodies are reached
+///    only via `BodyActionsR<Earth>` from the `<Earth>` apply pass.
+///
+/// Both routes produce the same runtime invariant (no two
+/// per-planet `<P>` systems write the same entity in the same tick)
+/// but Bevy's static analysis sees only the shared mutable component
+/// access. `.ambiguous_with` is the right mechanism for both
+/// because the structural justification is symmetric: we know
+/// runtime-disjoint, Bevy doesn't.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PerPlanetSet(pub TypeId);
 
