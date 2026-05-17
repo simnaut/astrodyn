@@ -31,7 +31,50 @@
 //! a JEOD-specific construct, and no current scenario in this workspace
 //! uses it; the single-`FixedUpdate` model covers every shipped sim.
 
+use std::any::TypeId;
+
 use bevy::prelude::*;
+
+/// One per-planet `SystemSet` per registered [`astrodyn::Planet`] type,
+/// keyed by [`TypeId`].
+///
+/// Every `<P>`-typed system in `AstrodynPlugin::build` (Earth) and in
+/// [`crate::register_planet_systems::<P>`] (every other planet) is added
+/// to its planet's `PerPlanetSet`. Cross-planet sets are declared
+/// `.ambiguous_with` each other inside `register_planet_systems`,
+/// which walks [`crate::body_action::RegisteredPlanetsR`] to find every
+/// prior planet and marks the cross-set pair safe.
+///
+/// `TypeId` keying (rather than a generic
+/// `PerPlanetSet<P>(PhantomData<P>)`) is what makes the cross-planet
+/// walk expressible. Reading a `TypeId` out of `RegisteredPlanetsR`
+/// does not give us the concrete planet type back, so a generic
+/// `PerPlanetSet<P>` would not be constructible from runtime data.
+/// `TypeId` is `Send + Sync + 'static + Debug + Clone + Eq + Hash`, so
+/// the `SystemSet` derive accepts the newtype.
+///
+/// Intra-planet ordering inside one `PerPlanetSet` continues to be
+/// expressed with the existing `.before` / `.after` edges — set
+/// membership is solely a cross-planet structural-disjointness
+/// declaration, not an ordering construct.
+///
+/// See issue #562 / PR #565 for the motivation: the multi-planet unit
+/// tests in `astrodyn_bevy` register both Earth and Mars and the static
+/// schedule audit (under the `schedule_audit` Cargo feature) flagged
+/// cross-planet pairs of per-planet systems racing on shared
+/// non-generic component types (`RotationalStateC`, `FrameTransC`,
+/// …). Those pairs are filter-disjoint by entity (a body carries
+/// `TranslationalStateC<Earth>` *or* `TranslationalStateC<Mars>`, never
+/// both), and `PerPlanetSet` is how we communicate that to Bevy.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PerPlanetSet(pub TypeId);
+
+impl PerPlanetSet {
+    /// Construct the set for planet `P`.
+    pub fn of<P: 'static>() -> Self {
+        Self(TypeId::of::<P>())
+    }
+}
 
 /// Bevy system-set partition mirroring JEOD's per-step pipeline. Stages
 /// run in declaration order; `AstrodynPlugin::build` configures the ordering
