@@ -52,17 +52,22 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// `q.multiply(...).normalize()` + `q.left_quat_to_transformation()`
 /// round-trip when the operand is bit-exactly identity — a
 /// no-op mathematically but a ~1–30 ULP perturbation in f64.
-/// Walking through an identity intermediate frame (Bevy's distinct
-/// `Earth.inertial` entity between root and pfix; the runner has
-/// no such intermediate because Earth at the heliocentric origin
-/// parents `Earth.pfix` directly under root) without the
-/// fast-path introduced the divergence at GMST values where the
-/// round-trip's ULP drift crossed a representable-value boundary.
-/// Porting JEOD's fast-path into `incr_right` and `negate` makes
-/// the composition hop-count-invariant — 1-hop walks and 2-hop
-/// walks through identity intermediates produce bit-identical
+/// Pre-#566 the runner and Bevy adapter disagreed on hop count for
+/// Earth-at-the-heliocentric-origin: the runner aliased Earth's
+/// inertial directly to root and walked one hop, the Bevy adapter
+/// always carried the distinct `Earth.inertial` intermediate and
+/// walked two. Without the fast-path the extra round-trip drifted
+/// at GMST values where its ULP error crossed a representable-value
+/// boundary. Porting JEOD's fast-path into `incr_right` and `negate`
+/// makes the composition hop-count-invariant — 1-hop walks and
+/// 2-hop walks through identity intermediates produce bit-identical
 /// `RefFrameState`s, which is the contract `JEOD_INV: RF.13`
-/// documents.
+/// documents. PR #567 then aligned the runner's frame tree to the
+/// canonical `BasePlanet { inertial, pfix }` shape the Bevy adapter
+/// has always used, so both runtimes now agree on the 2-hop walk;
+/// the fast-path stays in place as the bit-identity contract for
+/// walks through identity intermediates regardless of which runtime
+/// constructed the tree.
 #[test]
 fn bevy_parity_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert_parity::<astrodyn::Earth>();

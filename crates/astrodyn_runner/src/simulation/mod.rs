@@ -153,9 +153,10 @@ pub struct Simulation {
     /// read-only access.
     frame_tree: FrameTree,
     /// Root inertial frame ID for this simulation. This is the integration-origin
-    /// frame to which all positions are relative, and it is not necessarily
-    /// `Earth.inertial` (for example, it may be renamed to match the configured
-    /// central body, such as `Mars.inertial`).
+    /// frame to which all positions are relative. It is named `"root"` and is
+    /// not associated with any particular planet — the central body's inertial
+    /// frame is a distinct child of root (post-#567), matching JEOD's canonical
+    /// `BasePlanet { inertial, pfix }` shape and the Bevy adapter's frame tree.
     pub root_frame_id: FrameId,
     /// Per-source frame tree node IDs (parallel to `gravity_data`).
     source_frame_ids: Vec<SourceFrameIds>,
@@ -285,13 +286,13 @@ pub struct Simulation {
 impl Simulation {
     /// Create a new simulation with the given initial time and timestep.
     ///
-    /// Creates a frame tree whose root is initially named "Earth.inertial"
-    /// and may be renamed when a central source is added via
-    /// [`Self::add_source`].
-    /// All positions are relative to this root frame regardless of its name.
+    /// Creates a frame tree whose root is named `"root"` and is the
+    /// simulation's integration origin. Per-source inertial frames (one
+    /// per gravity source — including the central body) are added as
+    /// distinct children of root by [`Self::add_source`].
     pub fn new(time: SimulationTime, dt: f64) -> Self {
         let mut frame_tree = FrameTree::new();
-        let root_frame_id = frame_tree.add_root("Earth.inertial".into(), RefFrameKind::Inertial);
+        let root_frame_id = frame_tree.add_root("root".into(), RefFrameKind::Inertial);
         Self {
             time,
             bodies: Vec::new(),

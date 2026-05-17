@@ -580,26 +580,36 @@ impl Simulation {
                  ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
                  when contact pairs are active",
             );
-            // Contact pair states must share the root inertial frame, since
-            // the coupled contact evaluator uses each body's stage state
-            // directly without any per-step frame transform. `validate()`
-            // catches this at config time (both for inter-body
+            // Contact pair states must share a root-equivalent integration
+            // frame, since the coupled contact evaluator uses each body's
+            // stage state directly without any per-step frame transform.
+            // `validate()` catches this at config time (both for inter-body
             // `contact_pairs` and for `ground_contact_pairs` —
             // `ValidationError::ContactPairNonRootFrame` /
             // `GroundContactPairNonRootFrame`); the asserts here are
             // defense-in-depth for callers that skip validation.
+            //
+            // Root-equivalence (rather than literal `== root_frame_id`)
+            // covers the case where a body integrates in the central
+            // source's inertial frame: post-#567 that frame is a
+            // structurally-distinct child of root, but it sits at identity
+            // rotation and zero position relative to root, and
+            // `JEOD_INV: RF.13`'s composition fast-path keeps walks
+            // through it bit-identical to walks through root. The two
+            // bodies in a pair must agree on the choice so the contact
+            // geometry is evaluated in a single shared origin.
             assert!(
                 self.contact_pairs.iter().all(|p| {
                     let fa = self.bodies[p.body_a].integ_frame_id;
                     let fb = self.bodies[p.body_b].integ_frame_id;
-                    fa == fb && fa == self.root_frame_id
+                    fa == fb && self.is_root_equivalent_frame(fa)
                 }),
                 "inter-body contact pair bodies must share the root inertial integration frame"
             );
             assert!(
                 self.ground_contact_pairs
                     .iter()
-                    .all(|p| self.bodies[p.body_a].integ_frame_id == self.root_frame_id),
+                    .all(|p| self.is_root_equivalent_frame(self.bodies[p.body_a].integ_frame_id)),
                 "ground-contact pair bodies must integrate in the root inertial frame"
             );
 
