@@ -42,51 +42,28 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 /// composition is reset from `Earth.pfix` each step so a per-tick
 /// drift cannot accumulate across the 50 s post-attach window.
 ///
-/// **Currently `#[ignore]`'d**: a small number of post-attach records
-/// (observed: t=70 / t=73 / t=82) exhibit sub-ULP drift in the
-/// Earth.pfix rotation matrix sampled at those specific records —
-/// ≤30 ULPs on unitless matrix elements of magnitude ~1.0, i.e.
-/// ~6.7e-15 (dimensionless). Multiplied through the matrix-attach
-/// recipe's 10 m structural offset that drift surfaces as
-/// ~10 m × 6.7e-15 ≈ 6.7e-14 m of post-attach position disagreement
-/// at those records (matrix-attach reference CSV position magnitudes
-/// run ~10 m, matching the configured offset). The two runtimes
-/// share the same rotation kernel
-/// ([`astrodyn::compute_t_parent_this_from_tjt_with_polar`]), and
-/// pre-attach state plus most post-attach records *are* bit-identical
-/// — the runner-vs-JEOD `tier3_sim_ref_attach_matrix` tolerance (16 m
-/// position, 1.5e-3 m/s velocity) is unaffected, so the runner ↔
-/// JEOD ≈ Bevy transitivity holds within tolerance even though the
-/// strict bit-identity gate doesn't.
-///
-/// Investigation done under issue #562 ruled out a Bevy schedule
-/// ambiguity as the cause. The `astrodyn_bevy/schedule_audit` Cargo
-/// feature configures every `AstrodynPlugin`-built schedule with
-/// `ambiguity_detection: LogLevel::Error`; running this test under
-/// the feature surfaces zero ambiguous pairs after the eight ordering
-/// edges that #562 landed (validator-vs-action / mass writers,
-/// `planet_fixed_rotation_system` vs each of the four
-/// joint-kinematics systems, and `integration_system` vs
-/// `step_detached_system`). The audit gate is clean yet the drift
-/// persists deterministically at the same three records — so the
-/// remaining cause is *not* parallel-system ordering. Likely
-/// suspects, to dig into next: an algorithmic delta between the
-/// runner's `propagate_frame_attached_state` call site and the
-/// Bevy adapter's `propagate_frame_attached_state_system`, or a
-/// difference in how `FrameTransC`/`FrameRotC` for Earth.pfix is
-/// composed via `RelativeFrameState` at certain time samples (the
-/// failing records are not adjacent — they fall at t=70, 73, 82 —
-/// so the trigger is time-state-dependent, not lattice-aligned).
-/// The presence of this wrapper file (with `#[ignore]`) is itself
-/// the structural marker that `parity_coverage.rs` uses to satisfy
-/// the superset invariant, so no `KNOWN_PARITY_GAPS` entry is
-/// needed — re-enable the test once the residual drift closes.
+/// **Bit-identical at every record post #562.** Issue #562's
+/// investigation traced the previously-observed ~30 ULP drift at
+/// t=70 / t=73 / t=82 to a missing identity-rotation fast-path in
+/// `astrodyn_frames`'s `RefFrameState::incr_right` and `::negate`
+/// composition primitives. JEOD's
+/// `models/utils/ref_frames/src/ref_frame_state.cc` checks
+/// `Numerical::compare_exact(q.scalar, 1.0)` and skips the
+/// `q.multiply(...).normalize()` + `q.left_quat_to_transformation()`
+/// round-trip when the operand is bit-exactly identity — a
+/// no-op mathematically but a ~1–30 ULP perturbation in f64.
+/// Walking through an identity intermediate frame (Bevy's distinct
+/// `Earth.inertial` entity between root and pfix; the runner has
+/// no such intermediate because Earth at the heliocentric origin
+/// parents `Earth.pfix` directly under root) without the
+/// fast-path introduced the divergence at GMST values where the
+/// round-trip's ULP drift crossed a representable-value boundary.
+/// Porting JEOD's fast-path into `incr_right` and `negate` makes
+/// the composition hop-count-invariant — 1-hop walks and 2-hop
+/// walks through identity intermediates produce bit-identical
+/// `RefFrameState`s, which is the contract `JEOD_INV: RF.13`
+/// documents.
 #[test]
-#[ignore = "Bevy adapter produces sub-ULP drift (~30 ULPs on unitless \
-            matrix elements of magnitude ~1.0) in Earth.pfix at 3-of-50 \
-            post-attach records; ruled out as a schedule ambiguity in \
-            #562 (audit gate clean under astrodyn_bevy/schedule_audit), \
-            cause now suspected algorithmic / frame-composition"]
 fn bevy_parity_ref_attach_matrix() {
     sim_ref_attach::run_matrix().run_and_assert_parity::<astrodyn::Earth>();
 }

@@ -128,6 +128,43 @@ impl RefFrameState {
     pub fn negate(source: &RefFrameState) -> RefFrameState {
         // JEOD_INV: RF.03 — quaternion normalized after every composition
         // JEOD_INV: RF.04 — T_parent_this recomputed from quaternion (canonical source of truth)
+        // JEOD_INV: RF.13 — identity-rotation fast-path preserves f64 bits.
+        // Identity-rotation fast-path mirroring JEOD
+        // `ref_frame_state.cc:196-202`'s `else` branch. When `source.rot.
+        // q_parent_this` is bit-exactly identity, `T_source = I` so no
+        // rotation transforms apply. The expensive code path's
+        // `q.conjugate().normalize()` and `q.left_quat_to_transformation()`
+        // round-trip produces a result that is *mathematically* identity
+        // but may differ from `DMat3::IDENTITY` by a few ULPs, which then
+        // propagates into every downstream caller composing a non-identity
+        // sibling state through this identity hop (see issue #562 for the
+        // 1-hop-vs-2-hop walk discrepancy that surfaced as ~30 ULPs in
+        // `bevy_parity_ref_attach_matrix`).
+        if source.rot.q_parent_this.is_exact_identity_rotation() {
+            // Mirror JEOD's `ref_frame_state.cc:196-225` "copy, accumulate
+            // omega-cross-pos correction (if ang_vel != 0), then negate"
+            // order — the final negate ensures the result's f64 zeros
+            // carry a `-0.0` sign bit that matches the non-fast-path's
+            // output bit-for-bit. (The non-fast-path computes
+            // `-(I * src.vel) = -src.vel`, which is `-0` per component
+            // when src.vel is `+0`; the fast-path must produce the same
+            // bit pattern to satisfy the contract.)
+            let omega_cross_pos = source.rot.ang_vel_this.cross(source.trans.position);
+            let vel_before_negate = source.trans.velocity - omega_cross_pos;
+            return RefFrameState {
+                trans: RefFrameTrans {
+                    position: -source.trans.position,
+                    velocity: -vel_before_negate,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: JeodQuat::identity(),
+                    t_parent_this: glam::DMat3::IDENTITY,
+                    ang_vel_this: -source.rot.ang_vel_this,
+                },
+            };
+        }
+
+        // Non-identity source: full math.
         // Rotation: conjugate + normalize, then derive T from Q
         let mut q_new = source.rot.q_parent_this.conjugate();
         q_new.normalize();
@@ -167,13 +204,60 @@ impl RefFrameState {
 
     // JEOD_INV: RF.03 — quaternion normalized after every composition
     // JEOD_INV: RF.04 — T_parent_this recomputed from quaternion (canonical source of truth)
+    // JEOD_INV: RF.13 — identity-rotation fast-path preserves f64 bits
+    //   through identity intermediate frames.
     /// Compose self (A->B) with s_bc (B->C) to produce A->C.
     ///
     /// "Increment right": given self = S_{A:B} and s_bc = S_{B:C},
     /// compute and return S_{A:C}.
     ///
     /// Ported from JEOD `ref_frame_state.cc` incr_right / compose_state.
+    /// The identity-rotation fast-path mirrors
+    /// `models/utils/ref_frames/src/ref_frame_state.cc:360-381`'s
+    /// `if(!Numerical::compare_exact(rot.Q_parent_this.scalar, 1.0))`
+    /// branch (and its `else` shortcut). When `self.rot.q_parent_this`
+    /// is bit-exactly identity, `T_{A:B}^T = I` and `Q_{A:B}` is
+    /// identity, so the quaternion-multiply + normalize +
+    /// matrix-rebuild round-trip would just reproduce `s_bc`'s
+    /// rotation with f64 round-off. Copying instead preserves bits
+    /// and gives walks through identity hops the hop-count
+    /// invariance JEOD's `compute_relative_state` algorithm assumes
+    /// (see issue #562 for the case where the absence of this
+    /// shortcut produced ~30 ULP body-position drift between the
+    /// 1-hop runner and 2-hop Bevy frame-tree shapes).
     pub fn incr_right(&self, s_bc: &RefFrameState) -> RefFrameState {
+        if self.rot.q_parent_this.is_exact_identity_rotation() {
+            // Identity-rotation fast-path. T_{A:B} = I, Q_{A:B} = identity.
+            //   T_{A:C} = T_{B:C} * I = T_{B:C}
+            //   Q_{A:C} = Q_{B:C} * identity = Q_{B:C}
+            //   x_{A:C} = x_{A:B} + I^T * x_{B:C} = x_{A:B} + x_{B:C}
+            //   v_{A:C} = v_{A:B} + I^T * (v_{B:C} + omega_{A:B} X x_{B:C})
+            //           = v_{A:B} + v_{B:C} + omega_{A:B} X x_{B:C}
+            //   w_{A:C} = T_{B:C} * omega_{A:B} + omega_{B:C}
+            //
+            // The angular-velocity formula still needs the `T_{B:C} *
+            // omega_{A:B}` rotation (T_{B:C} may itself be
+            // non-identity) — only the parts that read T_{A:B}^T are
+            // simplified. q_parent_this and t_parent_this are copied
+            // straight from s_bc, which is the bit-exact behavior
+            // JEOD's `rot.copy(s_bc.rot)` at ref_frame_state.cc:380
+            // produces.
+            let omega_cross_pos = self.rot.ang_vel_this.cross(s_bc.trans.position);
+            return RefFrameState {
+                trans: RefFrameTrans {
+                    position: self.trans.position + s_bc.trans.position,
+                    velocity: self.trans.velocity + s_bc.trans.velocity + omega_cross_pos,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: s_bc.rot.q_parent_this,
+                    t_parent_this: s_bc.rot.t_parent_this,
+                    ang_vel_this: s_bc.rot.t_parent_this * self.rot.ang_vel_this
+                        + s_bc.rot.ang_vel_this,
+                },
+            };
+        }
+
+        // Non-identity self: full math.
         // Quaternion: Q_{A:C} = Q_{B:C} * Q_{A:B}, then normalize
         let mut q_ac = s_bc.rot.q_parent_this.multiply(&self.rot.q_parent_this);
         q_ac.normalize();
@@ -1338,5 +1422,268 @@ mod typed_tests {
             &s.rot.t_parent_this,
             1e-10
         ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // JEOD_INV: RF.13 — identity-rotation fast-path bit-exact tests.
+    //
+    // The fast-path in `incr_right` and `negate` skips the
+    // `q.multiply(...).normalize()` + `q.left_quat_to_transformation()`
+    // round-trip when the operand's `q_parent_this.scalar` equals `1.0`
+    // bit-exactly. The tests below pin the bit-exact contract that
+    // composing through an identity-rotation hop preserves f64 bits —
+    // which is what makes a 2-hop walk through an identity intermediate
+    // bit-identical to a 1-hop walk that skips the same intermediate.
+    // Without this contract, the runner's 1-hop frame tree and the Bevy
+    // adapter's 2-hop frame tree (with an explicit `Earth.inertial`
+    // intermediate) diverged by ~30 ULPs at certain GMST values — the
+    // surface symptom of issue #562.
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn identity_state() -> RefFrameState {
+        RefFrameState {
+            trans: RefFrameTrans {
+                position: DVec3::ZERO,
+                velocity: DVec3::ZERO,
+            },
+            rot: RefFrameRot {
+                q_parent_this: JeodQuat::identity(),
+                t_parent_this: DMat3::IDENTITY,
+                ang_vel_this: DVec3::ZERO,
+            },
+        }
+    }
+
+    /// `s.incr_right(identity)` is `s` (no compose work to do).
+    /// Verified bit-exact because the identity has nothing to contribute.
+    #[test]
+    fn incr_right_with_identity_s_bc_is_self() {
+        let s = make_state(
+            0.42,
+            DVec3::new(7e6, -1.2e6, 5.5e5),
+            DVec3::new(123.4, -5.5, 8.8),
+            DVec3::new(0.001, 0.002, -0.003),
+        );
+        let result = s.incr_right(&identity_state());
+        assert_eq!(
+            result.trans.position.to_array().map(f64::to_bits),
+            s.trans.position.to_array().map(f64::to_bits),
+        );
+        assert_eq!(
+            result.trans.velocity.to_array().map(f64::to_bits),
+            s.trans.velocity.to_array().map(f64::to_bits),
+        );
+        assert_eq!(
+            result.rot.ang_vel_this.to_array().map(f64::to_bits),
+            s.rot.ang_vel_this.to_array().map(f64::to_bits),
+        );
+        // q and t go through `multiply`/`normalize` even when s_bc is identity,
+        // since the fast-path only fires when *self* is identity. Confirm via
+        // approximate equality only.
+        assert!(approx_eq_mat3(
+            &result.rot.t_parent_this,
+            &s.rot.t_parent_this,
+            1e-15
+        ));
+    }
+
+    /// **Hop-count invariance.** Composing pfix → root through an
+    /// identity-rotation Earth.inertial intermediate (2 hops) must
+    /// produce bit-identical state to composing pfix → root directly
+    /// (1 hop). This is the property issue #562 needs: runner's frame
+    /// tree has the 1-hop shape, Bevy's has the 2-hop shape with an
+    /// explicit identity intermediate.
+    ///
+    /// Construct a non-trivial pfix state, then exercise `compose_to_ancestor`'s
+    /// per-hop semantics: `composed.incr_left(intermediate)` for the
+    /// 2-hop walk versus leaving `composed = pfix_state` alone for the
+    /// 1-hop walk. With JEOD's identity-rotation fast-path in
+    /// `incr_right` (which `incr_left` delegates to), the two are
+    /// bit-identical.
+    #[test]
+    fn hop_count_invariance_through_identity_intermediate_bit_identical() {
+        let pfix_state = make_state(
+            0.71,
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 7.292_115e-5),
+        );
+
+        // 1-hop walk: composed starts at pfix's state, no intermediate.
+        let one_hop = pfix_state;
+
+        // 2-hop walk: composed starts at pfix's state, then incr_left with
+        // identity intermediate (which delegates to `identity.incr_right(composed)`,
+        // taking the RF.13 fast-path).
+        let mut two_hop = pfix_state;
+        two_hop.incr_left(&identity_state());
+
+        // Bit-exact comparison via `to_bits()` — the contract is
+        // bit-identity, not approximate equality.
+        assert_eq!(
+            two_hop.trans.position.x.to_bits(),
+            one_hop.trans.position.x.to_bits(),
+            "trans.position.x bits differ"
+        );
+        assert_eq!(
+            two_hop.trans.position.y.to_bits(),
+            one_hop.trans.position.y.to_bits(),
+            "trans.position.y bits differ"
+        );
+        assert_eq!(
+            two_hop.trans.position.z.to_bits(),
+            one_hop.trans.position.z.to_bits(),
+            "trans.position.z bits differ"
+        );
+        assert_eq!(
+            two_hop.rot.q_parent_this.scalar().to_bits(),
+            one_hop.rot.q_parent_this.scalar().to_bits(),
+            "q_parent_this.scalar bits differ"
+        );
+        assert_eq!(
+            two_hop
+                .rot
+                .q_parent_this
+                .vector()
+                .to_array()
+                .map(f64::to_bits),
+            one_hop
+                .rot
+                .q_parent_this
+                .vector()
+                .to_array()
+                .map(f64::to_bits),
+            "q_parent_this.vector bits differ"
+        );
+        assert_eq!(
+            two_hop
+                .rot
+                .t_parent_this
+                .x_axis
+                .to_array()
+                .map(f64::to_bits),
+            one_hop
+                .rot
+                .t_parent_this
+                .x_axis
+                .to_array()
+                .map(f64::to_bits),
+            "t_parent_this col 0 bits differ"
+        );
+        assert_eq!(
+            two_hop
+                .rot
+                .t_parent_this
+                .y_axis
+                .to_array()
+                .map(f64::to_bits),
+            one_hop
+                .rot
+                .t_parent_this
+                .y_axis
+                .to_array()
+                .map(f64::to_bits),
+            "t_parent_this col 1 bits differ"
+        );
+        assert_eq!(
+            two_hop
+                .rot
+                .t_parent_this
+                .z_axis
+                .to_array()
+                .map(f64::to_bits),
+            one_hop
+                .rot
+                .t_parent_this
+                .z_axis
+                .to_array()
+                .map(f64::to_bits),
+            "t_parent_this col 2 bits differ"
+        );
+        assert_eq!(
+            two_hop.rot.ang_vel_this.to_array().map(f64::to_bits),
+            one_hop.rot.ang_vel_this.to_array().map(f64::to_bits),
+            "ang_vel_this bits differ"
+        );
+    }
+
+    /// `negate(identity)` is identity — bit-exact, since the
+    /// identity-rotation fast-path skips the `conjugate().normalize()` +
+    /// `left_quat_to_transformation()` round-trip.
+    #[test]
+    fn negate_identity_is_identity_bit_exact() {
+        let result = RefFrameState::negate(&identity_state());
+        assert_eq!(
+            result.rot.q_parent_this.scalar().to_bits(),
+            JeodQuat::identity().scalar().to_bits(),
+        );
+        assert_eq!(
+            result
+                .rot
+                .q_parent_this
+                .vector()
+                .to_array()
+                .map(f64::to_bits),
+            JeodQuat::identity().vector().to_array().map(f64::to_bits),
+        );
+        assert_eq!(
+            result.rot.t_parent_this.x_axis.to_array().map(f64::to_bits),
+            DMat3::IDENTITY.x_axis.to_array().map(f64::to_bits),
+        );
+        assert_eq!(
+            result.rot.t_parent_this.y_axis.to_array().map(f64::to_bits),
+            DMat3::IDENTITY.y_axis.to_array().map(f64::to_bits),
+        );
+        assert_eq!(
+            result.rot.t_parent_this.z_axis.to_array().map(f64::to_bits),
+            DMat3::IDENTITY.z_axis.to_array().map(f64::to_bits),
+        );
+        // All three trans/rotational components are `-0.0` per IEEE 754
+        // (sign-flip of `+0.0` via the final negate). Matches the
+        // non-fast-path which computes `-(I * src) = -0` for each.
+        let neg_zero = (-0.0_f64).to_bits();
+        assert_eq!(
+            result.trans.position.to_array().map(f64::to_bits),
+            [neg_zero; 3],
+        );
+        assert_eq!(
+            result.trans.velocity.to_array().map(f64::to_bits),
+            [neg_zero; 3],
+        );
+        assert_eq!(
+            result.rot.ang_vel_this.to_array().map(f64::to_bits),
+            [neg_zero; 3],
+        );
+    }
+
+    /// Non-identity input must still go through the full math —
+    /// the fast-path doesn't change anything for non-identity inputs.
+    /// Regression check that the gating predicate is correct.
+    #[test]
+    fn non_identity_paths_unchanged_by_fast_path() {
+        let s_ab = make_state(
+            0.3,
+            DVec3::new(1e6, 2e6, 0.0),
+            DVec3::new(100.0, 50.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.01),
+        );
+        let s_bc = make_state(
+            -0.7,
+            DVec3::new(5e5, 0.0, 1e5),
+            DVec3::new(20.0, 10.0, 5.0),
+            DVec3::new(0.001, 0.0, 0.002),
+        );
+        // Neither is identity, so both paths exercise the existing math.
+        let result = s_ab.incr_right(&s_bc);
+        let result_neg = RefFrameState::negate(&s_ab);
+
+        // Just sanity-check that the result is "real" (non-zero, finite).
+        assert!(result.trans.position.length() > 0.0);
+        assert!(result.trans.position.is_finite());
+        assert!(result_neg.trans.position.length() > 0.0);
+        assert!(result_neg.trans.position.is_finite());
+        // And that the rotation is non-identity.
+        assert!(!result.rot.q_parent_this.is_exact_identity_rotation());
+        assert!(!result_neg.rot.q_parent_this.is_exact_identity_rotation());
     }
 }

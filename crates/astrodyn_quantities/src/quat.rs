@@ -282,6 +282,34 @@ impl JeodQuat {
         self.norm_squared()
     }
 
+    /// Bit-exact identity-rotation check matching JEOD's
+    /// `Numerical::compare_exact(q.scalar, 1.0)` pattern (see
+    /// `models/utils/ref_frames/src/ref_frame_state.cc:188, 267, 360, 411`).
+    ///
+    /// Returns `true` when the scalar component's bit pattern equals
+    /// `1.0_f64`'s bit pattern. JEOD relies on the implicit invariant that
+    /// identity quaternions are constructed as `(1, 0, 0, 0)` and remain
+    /// so until intentionally modified — under that invariant the scalar
+    /// component being bit-exactly `1.0` uniquely identifies a pristine
+    /// identity, and the vector components are implicitly `0`. The check
+    /// gates fast-paths in `astrodyn_frames`'s `RefFrameState`
+    /// composition primitives that skip the matrix / quaternion math
+    /// entirely for identity intermediate frames, which
+    /// is what makes those composition operations bit-exact through
+    /// identity hops (the renormalize + matrix-rebuild loop introduces
+    /// f64 round-off even when one input is pristine identity).
+    ///
+    /// Use `to_bits()` comparison rather than `==` so a `clippy::float_cmp`
+    /// suppression isn't needed and the intent — bit-exact, not
+    /// epsilon-near — is explicit at the call site.
+    // JEOD_INV: RF.13 — identity-rotation fast-path: hops through frames
+    // whose scalar quaternion component is exactly `1.0` skip the
+    // composition math and preserve f64 bits.
+    #[inline]
+    pub fn is_exact_identity_rotation(&self) -> bool {
+        self.scalar().to_bits() == 1.0_f64.to_bits()
+    }
+
     // ----------------------------------------------------------------
     // Conversions to/from glam::DQuat
     // ----------------------------------------------------------------
