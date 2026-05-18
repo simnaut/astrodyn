@@ -26,6 +26,7 @@
 use astrodyn::Vec3Ext;
 use std::path::PathBuf;
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, PreStepCadence, PreStepClosure, Tolerances,
     VerificationCase,
@@ -63,11 +64,6 @@ fn bsp_path() -> PathBuf {
     let p = astrodyn::ephemeris_assets::de421_path();
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
     p
-}
-
-fn load_mu_earth() -> f64 {
-    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    astrodyn::gravity_fixtures::load_ggm05c().mu
 }
 
 fn earth_point_mass(mu: f64) -> GravitySourceEntry {

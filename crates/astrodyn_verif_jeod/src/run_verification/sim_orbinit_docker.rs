@@ -37,6 +37,7 @@
 //! `crates/astrodyn_verif_jeod/test_data/body_init/{iss,sts_114}.json`,
 //! parsed once per call via [`astrodyn_verif_jeod_fixtures::orbital_init`].
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     calendar_to_tjt, compute_t_parent_this_from_tjt, default_leap_second_table,
@@ -69,14 +70,6 @@ const ORBINIT_DAY: i32 = 28;
 const ORBINIT_HOUR: i32 = 10;
 const ORBINIT_MINUTE: i32 = 9;
 const ORBINIT_SECOND: f64 = 59.0;
-
-fn load_mu_earth() -> f64 {
-    // Cache the decoded `mu` for the lifetime of the test process —
-    // every `build_*` call would otherwise re-parse the full GGM05C
-    // coefficient table (~12 KiB) just to read a single scalar.
-    static MU_EARTH: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *MU_EARTH.get_or_init(|| astrodyn::gravity_fixtures::load_ggm05c().mu)
-}
 
 /// Compute the inertial-to-planet-fixed rotation matrix at the
 /// SIM_orbinit epoch. SIM_orbinit uses `initializer = "UT1"` with

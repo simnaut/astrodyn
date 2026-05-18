@@ -12,6 +12,7 @@
 //! SIM_Planetary stores them inline rather than in a separate
 //! Modified_data file.
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     default_leap_second_table, GravityControl, GravityControls, GravityGradient, GravityModel,
@@ -22,11 +23,6 @@ use uom::si::f64::Time;
 use uom::si::time::second;
 
 const SIM_PLANETARY: &str = "models/dynamics/derived_state/verif/SIM_Planetary";
-
-fn load_mu_earth() -> f64 {
-    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
-    astrodyn::gravity_fixtures::load_ggm05c().mu
-}
 
 fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
     let dt = crate::s_define::load_dynamics_dt(

@@ -8,6 +8,7 @@
 //! `DerivedStateConfig` flag is enabled and which CSV columns the
 //! extras comparator reads.
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{
     CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
 };
@@ -33,14 +34,6 @@ const SIM_EULER_DIR: &str = "models/dynamics/derived_state/verif/SIM_Euler";
 /// rather than a sim config file — keep this constant in sync if the
 /// upstream verif sim's epoch ever changes.
 const NED_UT1_TAI_S: f64 = -25.381_221_5;
-
-fn load_mu_earth() -> f64 {
-    // Earth mu sourced from the committed `test_data/gravity/ggm05c.bin`
-    // fixture (Wave 1 of #232). Matches the value in JEOD's
-    // `models/environment/gravity/data/src/earth_GGM05C.cc` exactly so
-    // baselines stay bit-stable.
-    astrodyn::gravity_fixtures::load_ggm05c().mu
-}
 
 fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
     GravitySourceEntry {
