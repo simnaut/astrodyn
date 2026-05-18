@@ -376,15 +376,25 @@ For the recurring "bit-exact" rationales that show up verbatim across
 multiple files (typed-vs-raw boundary parity, Tier 3 literal/analytic
 recovery, `bevy_parity_*` state/time identity), the canonical phrasings
 are catalogued in
-[`astrodyn_quantities::lint_reasons::clippy_float_cmp`] so a future
-edit catches all sites at once. The `reason = "..."` attribute itself
-requires a string literal (the compiler rejects const paths and macro
-invocations on its RHS), so each site still spells the phrasing
-verbatim — copy the exact string from the catalog rather than coining a
-new one. The coverage test
-`crates/astrodyn_quantities/tests/lint_reasons_catalog.rs` asserts
-every cataloged string still appears in at least two `reason = "..."`
-literals, failing CI if the catalog drifts.
+[`astrodyn_quantities::lint_reasons::clippy_float_cmp`]. The
+`reason = "..."` attribute requires a string literal (the compiler
+rejects const paths and macro invocations on its RHS), so each site
+still spells the phrasing verbatim — copy the exact string from the
+catalog rather than coining a new one.
+
+The coverage test
+`crates/astrodyn_quantities/tests/lint_reasons_catalog.rs` iterates
+over `clippy_float_cmp::ALL` and asserts every registered string still
+appears in at least two `reason = "..."` attribute literals. That
+catches stale catalog entries (a constant whose phrasing no longer
+matches any real bypass site) and renames or typos applied at *most*
+sites of a small cluster. It does **not** catch partial drift in a
+larger cluster — three reworded sites out of six still leave three
+matches, satisfying the `≥ 2` threshold — nor a paraphrased call site
+that uses a near-miss of the canonical phrasing. Uniform wording is
+enforced by review: copy the catalog string verbatim, and when you
+edit a catalog string, grep the workspace for the old wording and
+update every match.
 
 [`astrodyn_quantities::lint_reasons::clippy_float_cmp`]: https://docs.rs/astrodyn_quantities/latest/astrodyn_quantities/lint_reasons/clippy_float_cmp/index.html
 

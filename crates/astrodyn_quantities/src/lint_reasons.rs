@@ -1,11 +1,13 @@
 //! Canonical lint-rationale catalog.
 //!
-//! `#[allow(clippy::float_cmp, reason = "...")]` is denied workspace-wide by
-//! the numerics-half policy in the root `Cargo.toml` (`workspace.lints`); the
-//! audit-log requirement in `CLAUDE.md` §"Lints & invariants" mandates a
-//! `reason = "..."` justification at every bypass. This module catalogs the
-//! recurring justifications so that the canonical phrasings live in one
-//! audit-able place rather than being re-invented per site.
+//! `clippy::float_cmp` is denied workspace-wide by the numerics-half
+//! policy in the root `Cargo.toml` (`workspace.lints`); the per-site
+//! `#[allow(clippy::float_cmp, reason = "...")]` attribute is the
+//! documented bypass, and the audit-log requirement in `CLAUDE.md`
+//! §"Lints & invariants" mandates a `reason = "..."` justification at
+//! every such bypass. This module catalogs the recurring justifications
+//! so that the canonical phrasings live in one audit-able place rather
+//! than being re-invented per site.
 //!
 //! Three recurring sub-themes have a single canonical phrasing repeated
 //! verbatim across many files; this catalog pins each:
@@ -57,13 +59,40 @@
 //! literal. This module is the **canonical reference** for the recurring
 //! phrasings: when you add a new bit-exact `#[allow]` whose rationale
 //! matches one of the catalog sub-themes, copy the exact string from one
-//! of the constants below rather than coining a new one. The
-//! `astrodyn_quantities` test `tests/lint_reasons_catalog.rs` walks the
-//! workspace and asserts every cataloged string still appears in at least
-//! two `#[allow(...)]` `reason = "..."` attribute literals (the
-//! minimum-cluster threshold that justifies centralization), so a stale
-//! catalog entry — or a sub-theme that has shrunk back below the
-//! centralization threshold — fails CI rather than drifting silently.
+//! of the constants below rather than coining a new one.
+//!
+//! ## What the coverage test does — and doesn't — catch
+//!
+//! The `astrodyn_quantities` test `tests/lint_reasons_catalog.rs` walks
+//! the workspace, iterates over [`clippy_float_cmp::ALL`], and asserts
+//! every cataloged string still appears in at least two `#[allow(...)]`
+//! `reason = "..."` attribute literals (the minimum-cluster threshold
+//! that justifies centralization).
+//!
+//! It catches:
+//!
+//! - A catalog string dropping below `MIN_OCCURRENCES = 2` — e.g. a
+//!   rename or typo applied at *most* sites that shrinks the verbatim
+//!   cluster to one or zero remaining matches.
+//! - A catalog entry with zero matching attribute literals — a stale
+//!   constant that no longer corresponds to any real bypass site.
+//!
+//! It does **not** catch:
+//!
+//! - Partial drift in a large cluster: if a sub-theme is used at six
+//!   call sites and a refactor rewords three of them, the remaining
+//!   three still satisfy `≥ MIN_OCCURRENCES` and the test stays green.
+//!   The catalog string is then technically still accurate for those
+//!   three sites, but the other three have silently diverged.
+//! - A call site that mistakenly uses a *paraphrased* version of the
+//!   canonical phrasing — the test scans for the exact catalog string,
+//!   so a near-miss at a fresh site is invisible to it.
+//!
+//! Treat the test as a stale-catalog detector and a low-bar typo trip,
+//! not as a uniform-wording enforcer. The uniform-wording invariant is
+//! enforced by review: when you copy a string from the catalog, copy it
+//! verbatim, and when you edit a catalog string, grep the workspace for
+//! the old wording and update every match.
 //!
 //! ## Adding a new entry
 //!
@@ -73,10 +102,11 @@
 //! 2. The constant name should describe the *invariant being tested*, not
 //!    the lint being suppressed (which is always `clippy::float_cmp` in
 //!    this submodule).
-//! 3. Add the const here and extend the coverage check in
-//!    `tests/lint_reasons_catalog.rs` so a future refactor that
-//!    accidentally tweaks the wording at one site (but not the rest)
-//!    fails CI loudly.
+//! 3. Add the const here **and** add a `("NAME", NAME)` row to
+//!    [`clippy_float_cmp::ALL`] so the coverage test in
+//!    `tests/lint_reasons_catalog.rs` picks it up automatically. A const
+//!    that is missing from `ALL` will not be checked — see `ALL`'s doc
+//!    comment for the contract.
 
 /// Canonical rationales for `#[allow(clippy::float_cmp, ...)]` sites.
 ///
@@ -130,4 +160,28 @@ pub mod clippy_float_cmp {
     /// translational state. Same lockstep transitivity argument.
     pub const BEVY_PARITY_TIME_FIELDS: &str =
         "bevy-parity tests assert bit-exact identity between runner and Bevy time fields";
+
+    /// Every cataloged rationale, as `(name, value)` pairs.
+    ///
+    /// The coverage test in `tests/lint_reasons_catalog.rs` iterates
+    /// over this slice rather than hand-duplicating the catalog, so
+    /// adding a new `pub const` above and registering it here is the
+    /// single source of truth for what gets checked.
+    ///
+    /// **Contract**: every `pub const X: &str` in this module must
+    /// appear in this slice as `("X", X)`. A const that exists but is
+    /// missing from `ALL` is silently excluded from the coverage check
+    /// — there is no automated detector for the omission (Rust's macro
+    /// hygiene and stable-feature surface don't give a clean
+    /// build-time way to enumerate module items), so the contract is
+    /// enforced by review. The `name` string is used only in the
+    /// failure diagnostic; keep it identical to the const's Rust
+    /// identifier so a grep on the failure message lands at the
+    /// definition.
+    pub const ALL: &[(&str, &str)] = &[
+        ("TYPED_RAW_PARITY", TYPED_RAW_PARITY),
+        ("TIER3_LITERAL_ANALYTIC", TIER3_LITERAL_ANALYTIC),
+        ("BEVY_PARITY_STATE_FIELDS", BEVY_PARITY_STATE_FIELDS),
+        ("BEVY_PARITY_TIME_FIELDS", BEVY_PARITY_TIME_FIELDS),
+    ];
 }

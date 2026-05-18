@@ -1,17 +1,33 @@
 //! Coverage test for the `astrodyn_quantities::lint_reasons` catalog.
 //!
-//! Every canonical string in [`astrodyn_quantities::lint_reasons`] must
+//! Every canonical string registered in
+//! [`astrodyn_quantities::lint_reasons::clippy_float_cmp::ALL`] must
 //! still appear verbatim in at least [`MIN_OCCURRENCES`] (= 2) `reason
 //! = "..."` literals inside real `#[allow(...)]` / `#![allow(...)]`
-//! attributes in the workspace. If a future refactor renames a
-//! sub-theme at the call sites but forgets to update the catalog, this
-//! test fails — preventing a stale catalog entry from silently drifting
-//! away from the actual audit-log strings.
+//! attributes in the workspace.
 //!
-//! Conversely, this is also a *minimum-cluster* check: catalog entries
-//! only exist for sub-themes that actually recur verbatim across the
-//! workspace. The [`MIN_OCCURRENCES`] threshold protects against
-//! single-site rationales being centralized for no benefit.
+//! What this test catches:
+//!
+//! - A catalog string dropping below `MIN_OCCURRENCES` — e.g. a rename
+//!   or typo applied at *most* sites that shrinks the verbatim cluster
+//!   to one or zero matches.
+//! - A catalog entry with zero matching attribute literals — a stale
+//!   constant that no longer corresponds to any real bypass site.
+//!
+//! What this test does **not** catch:
+//!
+//! - Partial drift in a large cluster: a sub-theme used at six sites
+//!   stays green even if three are reworded, because the remaining
+//!   three still satisfy `≥ MIN_OCCURRENCES`. The catalog string is
+//!   then technically still accurate for those three, but the others
+//!   have silently diverged.
+//! - A paraphrased call site: the scan is a verbatim substring match,
+//!   so a near-miss at a fresh site is invisible to it.
+//!
+//! Treat this test as a stale-catalog detector and a low-bar typo
+//! trip, not a uniform-wording enforcer. Uniform wording is enforced by
+//! review (copy the catalog string verbatim; when you edit a catalog
+//! string, grep the workspace for the old wording).
 //!
 //! Matches are counted only inside parsed attribute spans, not by raw
 //! substring search, so a `reason = "..."` literal that appears in a
@@ -22,7 +38,6 @@
 //! matching the audit-log semantics ("two real bypass sites").
 
 use astrodyn_quantities::lint_reasons::clippy_float_cmp;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,24 +52,13 @@ fn every_catalog_entry_has_at_least_min_occurrences() {
     let workspace_root = find_workspace_root();
     let rust_files = collect_rust_files(&workspace_root);
 
-    let catalog: BTreeMap<&str, &str> = BTreeMap::from([
-        ("TYPED_RAW_PARITY", clippy_float_cmp::TYPED_RAW_PARITY),
-        (
-            "TIER3_LITERAL_ANALYTIC",
-            clippy_float_cmp::TIER3_LITERAL_ANALYTIC,
-        ),
-        (
-            "BEVY_PARITY_STATE_FIELDS",
-            clippy_float_cmp::BEVY_PARITY_STATE_FIELDS,
-        ),
-        (
-            "BEVY_PARITY_TIME_FIELDS",
-            clippy_float_cmp::BEVY_PARITY_TIME_FIELDS,
-        ),
-    ]);
-
+    // Iterate over the catalog's own `ALL` slice rather than
+    // hand-duplicating it here. A new `pub const` added to
+    // `clippy_float_cmp` only enters the coverage check once it's also
+    // registered in `ALL` — see that slice's doc comment for the
+    // contract.
     let mut failures = Vec::new();
-    for (name, value) in &catalog {
+    for (name, value) in clippy_float_cmp::ALL {
         // We only count `reason = "<value>"` literals that live inside a
         // real `#[allow(...)]` or `#![allow(...)]` attribute span (see
         // `count_reason_in_allow_attrs`). A raw substring search would
