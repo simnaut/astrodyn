@@ -60,8 +60,10 @@
 //! of the constants below rather than coining a new one. The
 //! `astrodyn_quantities` test `tests/lint_reasons_catalog.rs` walks the
 //! workspace and asserts every cataloged string still appears in at least
-//! one `reason = "..."` literal, so a stale catalog entry fails CI rather
-//! than drifting silently.
+//! two `#[allow(...)]` `reason = "..."` attribute literals (the
+//! minimum-cluster threshold that justifies centralization), so a stale
+//! catalog entry — or a sub-theme that has shrunk back below the
+//! centralization threshold — fails CI rather than drifting silently.
 //!
 //! ## Adding a new entry
 //!
