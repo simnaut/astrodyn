@@ -886,11 +886,9 @@ fn tier3_contact_point_off_center() {
     //
     // After both fixes, oblique trajectory error drops from ~2.7 cm to
     // ~2.5 mm (and head-on tests reach machine precision). The residual
-    // ~120 μN per-RK4-stage force divergence scales with ω², attributable
-    // to JEOD's per-stage `Q_parent_this.normalize_integ()` +
-    // `compute_transformation()` recomputation
-    // (`dyn_body_integration.cc:380-383`) that our coupled-RK4 kernel
-    // does not currently mirror. Tracked for follow-up.
+    // ~120 μN per-RK4-stage force divergence scales with ω². See #560
+    // for the Direction 1 audit (rel-vel formula, falsified) and the
+    // current Direction 2 hypothesis (per-body stage interleaving).
     assert!(
         max_pos_err < 2.7e-3,
         "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
