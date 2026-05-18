@@ -32,10 +32,15 @@
 //!    crate. Collapsing N integration-test files into a single
 //!    `tests/bevy_parity.rs` umbrella binary that `mod`s each former
 //!    file would empty this scan (a single file stem of `bevy_parity`
-//!    leaves no topic after the prefix strip), and every Tier 3 topic
-//!    would immediately report "uncovered". The coverage gate would
-//!    have to be rewritten to scan test function names from compiled
-//!    binary metadata before the umbrella restructure is safe.
+//!    leaves no topic after the prefix strip). The coverage loop then
+//!    skips any topic listed in [`DEFERRED_GAPS`] or [`PERMANENT_GAPS`]
+//!    before pushing to `uncovered`, so the resulting failure mode is
+//!    "every Tier 3 topic *not already gap-listed* fires uncovered" —
+//!    with today's gap lists that's the bulk of the parity matrix,
+//!    a substantial but per-topic-aware failure rather than a total
+//!    one. The coverage gate would still have to be rewritten to scan
+//!    test function names from compiled binary metadata before the
+//!    umbrella restructure is safe.
 //!
 //! 2. **CI heavy/fast split** (`.github/workflows/ci.yml`,
 //!    `test-parity-trajectory` job). The PR-lane exclusion filter uses
