@@ -5,6 +5,9 @@ use core::marker::PhantomData;
 use glam::DVec3;
 use uom::si::{Dimension, Quantity, SI};
 
+use crate::derive_utils::{
+    impl_clone_phantom, impl_copy_phantom, impl_debug_phantom, impl_partial_eq_phantom,
+};
 use crate::frame::Frame;
 
 /// Componentwise 3-vector: each of `x`, `y`, `z` carries the dimension `D`,
@@ -114,42 +117,31 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
     }
 }
 
-// Manual Copy/Clone/PartialEq to avoid the derive macro demanding `D: Copy`.
-impl<D: ?Sized + Dimension, F: Frame> Copy for Qty3<D, F> {}
-
-impl<D: ?Sized + Dimension, F: Frame> Clone for Qty3<D, F> {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<D: ?Sized + Dimension, F: Frame> core::fmt::Debug for Qty3<D, F> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // `F::NAME` is the *kind* of the frame (e.g. "BodyFrame"). For
-        // vehicle- or planet-parameterized frames that alone can't
-        // distinguish `BodyFrame<Iss>` from `BodyFrame<Mir>`. Use
-        // `type_name::<F>()` so the output carries the full phantom tag
-        // — the cost is a single opaque string, no allocations.
-        write!(
-            f,
-            "Qty3<{}>({}, {}, {})",
-            core::any::type_name::<F>(),
-            self.x.value,
-            self.y.value,
-            self.z.value
-        )
-    }
-}
-
-impl<D: ?Sized + Dimension, F: Frame> PartialEq for Qty3<D, F> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.x.value == other.x.value
-            && self.y.value == other.y.value
-            && self.z.value == other.z.value
-    }
-}
+// Phantom-only generic: `#[derive]` would wrongly demand `D: Copy`,
+// `F: Copy + Debug + PartialEq`, etc.
+impl_copy_phantom!([D: ?Sized + Dimension, F: Frame] Qty3[D, F]);
+impl_clone_phantom!([D: ?Sized + Dimension, F: Frame] Qty3[D, F]);
+// `F::NAME` is the *kind* of the frame (e.g. "BodyFrame"). For vehicle- or
+// planet-parameterized frames that alone can't distinguish `BodyFrame<Iss>`
+// from `BodyFrame<Mir>`. Use `type_name::<F>()` so the output carries the
+// full phantom tag — the cost is a single opaque string, no allocations.
+impl_debug_phantom!(
+    [D: ?Sized + Dimension, F: Frame] Qty3[D, F],
+    |this, f| write!(
+        f,
+        "Qty3<{}>({}, {}, {})",
+        core::any::type_name::<F>(),
+        this.x.value,
+        this.y.value,
+        this.z.value
+    )
+);
+impl_partial_eq_phantom!(
+    [D: ?Sized + Dimension, F: Frame] Qty3[D, F],
+    |this, other| this.x.value == other.x.value
+        && this.y.value == other.y.value
+        && this.z.value == other.z.value
+);
 
 /// `Default` returns the zero vector of dimension `D` in frame `F`. Manual
 /// impl rather than derive, because `derive(Default)` would demand

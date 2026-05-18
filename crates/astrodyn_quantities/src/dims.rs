@@ -24,6 +24,9 @@ use core::marker::PhantomData;
 use typenum::{N1, N2, P1, P2, P3, Z0};
 use uom::si::{Quantity, ISQ, SI};
 
+use crate::derive_utils::{
+    impl_clone_phantom, impl_copy_phantom, impl_debug_phantom, impl_partial_eq_phantom,
+};
 use crate::frame::{Planet, SelfPlanet};
 
 /// Gravitational parameter μ = GM (L³T⁻²). Base SI unit: m³/s².
@@ -193,34 +196,24 @@ impl GravParam<SelfPlanet> {
     }
 }
 
-// Manual impls — the derive macros would demand `P: Default`/`P: Copy`/...
-// which is wrong for a phantom-only type parameter.
-impl<P: Planet> Copy for GravParam<P> {}
-
-impl<P: Planet> Clone for GravParam<P> {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+// Phantom-only generic: `#[derive]` would wrongly demand `P: Copy + Clone +
+// PartialEq + Debug`. `Default` is hand-rolled because the zero μ delegates
+// to `Self::from_si`.
+impl_copy_phantom!([P: Planet] GravParam[P]);
+impl_clone_phantom!([P: Planet] GravParam[P]);
+impl_partial_eq_phantom!(
+    [P: Planet] GravParam[P],
+    |this, other| this.value == other.value
+);
+// `Planet::NAME` carries the per-planet identifier (e.g. "Earth").
+impl_debug_phantom!(
+    [P: Planet] GravParam[P],
+    |this, f| write!(f, "GravParam<{}>({} m^3/s^2)", P::NAME, this.value)
+);
 
 impl<P: Planet> Default for GravParam<P> {
     #[inline]
     fn default() -> Self {
         Self::from_si(0.0)
-    }
-}
-
-impl<P: Planet> PartialEq for GravParam<P> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-impl<P: Planet> core::fmt::Debug for GravParam<P> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // `Planet::NAME` carries the per-planet identifier (e.g. "Earth").
-        write!(f, "GravParam<{}>({} m^3/s^2)", P::NAME, self.value)
     }
 }

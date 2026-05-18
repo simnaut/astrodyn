@@ -163,6 +163,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod derive_utils;
 mod sealed;
 
 pub mod aliases;
