@@ -1939,15 +1939,17 @@ mod tests {
     /// residual was bit-identical to four significant figures
     /// (`max pos = 2.538e-3 m`, `max vel = 5.352e-4 m/s` either way).
     /// The reason is fixed by arithmetic: at the contact test regime
-    /// (`dt = 0.01 s`, `|ω| ≲ 5e-4 rad/s`), the per-stage
-    /// `||q|² − 1|` drift is bounded by `(ω·dt)² ≈ 2.5e-11`, so the
-    /// resulting per-component `Qdot` perturbation
-    /// `0.5·|ω|·(||q|²−1|)` is `≲ 6e-15` — already at f64 round-off,
-    /// well below the `120 μN` per-stage force divergence that motivates
-    /// the audit. The bound this layer pins (`1.5e-12`) sits a few
-    /// orders of magnitude above the analytic `6e-15` to absorb
-    /// cross-platform FP-rounding variance while staying tight enough
-    /// to fire if a future refactor pushes the operating envelope.
+    /// (`dt = 0.01 s`, `|ω| ≲ 1.3e-3 rad/s` for this fixture), the
+    /// per-stage `||q|² − 1|` drift is bounded by
+    /// `(ω·dt)² ≈ 1.8e-10`, so the resulting per-component `Qdot`
+    /// perturbation `0.5·|ω|·(||q|²−1|)` is `≈ 1.2e-13` — roughly nine
+    /// orders of magnitude below the `120 μN` (≈ `1.2e-4`) per-stage
+    /// force divergence that motivates the audit. The bound this layer
+    /// pins (`1.5e-12`) sits about an order of magnitude above the
+    /// analytic `1.2e-13` to absorb the worst-case `2 · stage_drift_bound`
+    /// scaling this test injects below plus cross-platform FP-rounding
+    /// variance, while staying tight enough to fire if a future refactor
+    /// pushes the operating envelope past the documented regime.
     ///
     /// What this test pins, in three layers:
     ///
@@ -1997,11 +1999,14 @@ mod tests {
 
         // Two bodies with non-zero angular velocity so the raw RK4
         // stage quaternion *does* drift off the unit sphere. With
-        // |ω| ≈ 5e-4 rad/s (matching the contact-pair operating
-        // regime) and dt = 0.01 s, the per-stage |q|² − 1 drift is
-        // O((ω·dt)²) ≈ 2.5e-11 — large enough to discriminate from
-        // round-off, small enough to confirm the documented
-        // operating-envelope bound on Qdot perturbation.
+        // |ω| ≈ 1.3e-3 rad/s (≈ 0.075 deg/s, well within the
+        // contact-pair operating regime) and dt = 0.01 s, the
+        // per-stage |q|² − 1 drift is O((ω·dt)²) ≈ 1.8e-10 — large
+        // enough to discriminate from round-off, small enough that
+        // the resulting analytic Qdot perturbation
+        // 0.5·|ω|·(||q|²−1|) ≈ 1.2e-13 remains nine orders of
+        // magnitude below the ~120 μN per-stage contact residual that
+        // motivates this audit layer.
         let mut trans0 = TranslationalState {
             position: DVec3::new(0.0, 0.0, 0.0),
             velocity: DVec3::new(0.05, -0.1, 0.02),
@@ -2150,7 +2155,7 @@ mod tests {
         // confirm the resulting Qdot-perturbation is still within
         // 1.5e-12 — the magnitude annotated in the issue body. ──
         let omega_max = snaps[0].omegas[0].length().max(snaps[0].omegas[1].length()) + 5.0e-4;
-        let stage_drift_bound = (omega_max * dt).powi(2); // ~6e-11 for this fixture
+        let stage_drift_bound = (omega_max * dt).powi(2); // ~3.4e-10 for this fixture
         for snap in &snaps {
             for (q_norm, omega) in snap.quats_for_eval.iter().zip(snap.omegas.iter()) {
                 // Synthesize a raw stage Q with the maximum drift the
