@@ -20,13 +20,13 @@ use std::time::Duration;
 use astrodyn::{
     AngularVelocity, BodyAttitude, BodyFrame, Ephemeris, EphemerisBody, GravityControl,
     GravityControls, GravityGradient, GravityModel, GravitySource, InertiaTensor,
-    MassPropertiesTyped, Position, RootInertial, RotationalStateTyped, SelfRef, SixDofState,
-    StructuralFrame, TranslationalState, TranslationalStateTyped, Velocity,
+    MassPropertiesTyped, Position, RootInertial, RotationalStateTyped, SelfRef, SimulationTime,
+    SixDofState, StructuralFrame, TranslationalState, TranslationalStateTyped, Velocity,
 };
 use astrodyn::{GravitySourceEntry, VehicleConfig};
 use astrodyn_bevy::{
-    AstrodynPlugin, GravitySourceC, IntegrationDtR, RotationalStateC, SourceInertialPositionC,
-    TranslationalStateC,
+    AstrodynPlugin, GravitySourceC, IntegrationDtR, RotationalStateC, SimulationTimeR,
+    SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_runner::Simulation;
 use bevy::prelude::*;
@@ -415,4 +415,122 @@ pub fn moon_initial_pos() -> DVec3 {
         .get_earth_centered_state_typed(EphemerisBody::Moon, J2000_JD)
         .expect("Moon state at J2000");
     pos.raw_si()
+}
+
+// ── Time-pipeline parity helpers ─────────────────────────────────────────
+//
+// Shared between `bevy_parity_timescale.rs` and `bevy_parity_time_docker.rs`
+// (and any future body-less time-pipeline parity wrappers). The two helpers
+// snapshot the Bevy-side `SimulationTimeR` and assert bit-identity against
+// the runner-side `Simulation.time` across the 13 `SimulationTime` fields
+// the Bevy pipeline actually carries — UDE / MET / EOP-interpolated UT1
+// live on `TimeManager` (not surfaced through `SimulationTimeR`) and are
+// out of scope.
+
+/// Snapshot the Bevy app's `SimulationTimeR` resource into a fresh
+/// `SimulationTime` clone. Cloning avoids holding a long-lived `Res`
+/// across the next mutable world access in a parity loop body.
+pub fn bevy_sim_time(app: &App) -> SimulationTime {
+    app.world().resource::<SimulationTimeR>().0.clone()
+}
+
+/// Assert every load-bearing `SimulationTime` field matches bit-for-bit
+/// between the runner-side `Simulation.time` and the Bevy-side
+/// `SimulationTimeR.0`. `gmst_radians` follows `gmst_seconds` through
+/// `recompute_derived` so both are checked independently;
+/// `leap_second_table` is `Copy`-by-value and seeded from the same
+/// `default_leap_second_table()` on both runtimes, so only its derived
+/// scalars (`tai_seconds`, `utc_seconds`, …) need per-tick assertion.
+///
+/// `t` and `label` flow into the panic message so a failure pinpoints
+/// the tick and SIM-case (e.g. `"SIM_4_common tick 5 t=300.000s"`).
+pub fn assert_simulation_time_bits_eq(
+    t: f64,
+    label: &str,
+    runner: &SimulationTime,
+    bevy: &SimulationTime,
+) {
+    fn bits_eq(t: f64, label: &str, field: &str, r: f64, b: f64) {
+        assert!(
+            r.to_bits() == b.to_bits(),
+            "{label} at t={t:.6}s diverged on {field}:\n  \
+             runner: {r} (bits={:#018x})\n  \
+             bevy:   {b} (bits={:#018x})",
+            r.to_bits(),
+            b.to_bits(),
+        );
+    }
+    bits_eq(
+        t,
+        label,
+        "tai_seconds",
+        runner.tai_seconds,
+        bevy.tai_seconds,
+    );
+    bits_eq(t, label, "tai_tjt", runner.tai_tjt, bevy.tai_tjt);
+    bits_eq(
+        t,
+        label,
+        "tai_tjt_at_epoch",
+        runner.tai_tjt_at_epoch,
+        bevy.tai_tjt_at_epoch,
+    );
+    bits_eq(
+        t,
+        label,
+        "utc_seconds",
+        runner.utc_seconds,
+        bevy.utc_seconds,
+    );
+    bits_eq(
+        t,
+        label,
+        "ut1_seconds",
+        runner.ut1_seconds,
+        bevy.ut1_seconds,
+    );
+    bits_eq(t, label, "tt_seconds", runner.tt_seconds, bevy.tt_seconds);
+    bits_eq(
+        t,
+        label,
+        "tdb_seconds",
+        runner.tdb_seconds,
+        bevy.tdb_seconds,
+    );
+    bits_eq(
+        t,
+        label,
+        "gmst_seconds",
+        runner.gmst_seconds,
+        bevy.gmst_seconds,
+    );
+    bits_eq(
+        t,
+        label,
+        "gmst_radians",
+        runner.gmst_radians,
+        bevy.gmst_radians,
+    );
+    bits_eq(
+        t,
+        label,
+        "gps_seconds",
+        runner.gps_seconds,
+        bevy.gps_seconds,
+    );
+    bits_eq(t, label, "simtime", runner.simtime, bevy.simtime);
+    bits_eq(
+        t,
+        label,
+        "ut1_tai_offset",
+        runner.ut1_tai_offset,
+        bevy.ut1_tai_offset,
+    );
+    bits_eq(
+        t,
+        label,
+        "time_scale_factor",
+        runner.time_scale_factor,
+        bevy.time_scale_factor,
+    );
 }

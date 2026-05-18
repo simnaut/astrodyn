@@ -35,10 +35,13 @@
 use std::time::Duration;
 
 use astrodyn::{SimulationBuilder, SimulationTime};
-use astrodyn_bevy::{SimulationBuilderBevyExt, SimulationTimeR};
+use astrodyn_bevy::SimulationBuilderBevyExt;
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 use bevy::prelude::*;
+
+mod common;
+use common::{assert_simulation_time_bits_eq, bevy_sim_time};
 
 const SECONDS_PER_DAY: f64 = 86400.0;
 
@@ -149,7 +152,7 @@ fn bevy_parity_timescale() {
     // cheap to verify and gives a clear failure site if a future
     // refactor of `populate_app` drifts the initial `SimulationTimeR`
     // from the runner's `Simulation.time`.
-    assert_time_bits_eq(0.0, "init", &runner.time, &bevy_time(&app));
+    assert_simulation_time_bits_eq(0.0, "init", &runner.time, &bevy_sim_time(&app));
 
     let n_steps = (WINDOW_S / dt).round() as usize;
     assert!(n_steps >= 1, "window {WINDOW_S}s must be >= dt {dt}s");
@@ -163,109 +166,7 @@ fn bevy_parity_timescale() {
         app.world_mut().run_schedule(FixedUpdate);
         t += dt;
 
-        let bevy = bevy_time(&app);
-        assert_time_bits_eq(t, &format!("tick {step_idx}"), &runner.time, &bevy);
+        let bevy = bevy_sim_time(&app);
+        assert_simulation_time_bits_eq(t, &format!("tick {step_idx}"), &runner.time, &bevy);
     }
-}
-
-/// Snapshot the Bevy app's `SimulationTimeR` resource into a fresh
-/// `SimulationTime` clone the assertions can compare field-by-field
-/// against the runner's. Cloning avoids holding a long-lived `Res`
-/// across the next mutable world access in the loop body.
-fn bevy_time(app: &App) -> SimulationTime {
-    app.world().resource::<SimulationTimeR>().0.clone()
-}
-
-/// Assert every load-bearing `SimulationTime` field matches bit-for-bit
-/// between the runner and the Bevy resource. `gmst_radians` follows
-/// `gmst_seconds` through `recompute_derived` so checking the seconds
-/// variant covers both; `leap_second_table` is `Copy`-by-value seeded
-/// from the same `default_leap_second_table()` on both runtimes, and
-/// `ut1_tai_offset` / `tai_tjt_at_epoch` were written from the same
-/// JEOD CSV row 0 via `build_timescale_builder`. Asserting the derived
-/// scalars at each tick is the actual divergence detector.
-fn assert_time_bits_eq(t: f64, label: &str, runner: &SimulationTime, bevy: &SimulationTime) {
-    fn bits_eq(t: f64, label: &str, field: &str, r: f64, b: f64) {
-        assert!(
-            r.to_bits() == b.to_bits(),
-            "bevy_parity_timescale: {label} at t={t:.6}s diverged on {field}:\n  \
-             runner: {r} (bits={:#018x})\n  \
-             bevy:   {b} (bits={:#018x})",
-            r.to_bits(),
-            b.to_bits(),
-        );
-    }
-    bits_eq(
-        t,
-        label,
-        "tai_seconds",
-        runner.tai_seconds,
-        bevy.tai_seconds,
-    );
-    bits_eq(t, label, "tai_tjt", runner.tai_tjt, bevy.tai_tjt);
-    bits_eq(
-        t,
-        label,
-        "tai_tjt_at_epoch",
-        runner.tai_tjt_at_epoch,
-        bevy.tai_tjt_at_epoch,
-    );
-    bits_eq(
-        t,
-        label,
-        "utc_seconds",
-        runner.utc_seconds,
-        bevy.utc_seconds,
-    );
-    bits_eq(
-        t,
-        label,
-        "ut1_seconds",
-        runner.ut1_seconds,
-        bevy.ut1_seconds,
-    );
-    bits_eq(t, label, "tt_seconds", runner.tt_seconds, bevy.tt_seconds);
-    bits_eq(
-        t,
-        label,
-        "tdb_seconds",
-        runner.tdb_seconds,
-        bevy.tdb_seconds,
-    );
-    bits_eq(
-        t,
-        label,
-        "gmst_seconds",
-        runner.gmst_seconds,
-        bevy.gmst_seconds,
-    );
-    bits_eq(
-        t,
-        label,
-        "gmst_radians",
-        runner.gmst_radians,
-        bevy.gmst_radians,
-    );
-    bits_eq(
-        t,
-        label,
-        "gps_seconds",
-        runner.gps_seconds,
-        bevy.gps_seconds,
-    );
-    bits_eq(t, label, "simtime", runner.simtime, bevy.simtime);
-    bits_eq(
-        t,
-        label,
-        "ut1_tai_offset",
-        runner.ut1_tai_offset,
-        bevy.ut1_tai_offset,
-    );
-    bits_eq(
-        t,
-        label,
-        "time_scale_factor",
-        runner.time_scale_factor,
-        bevy.time_scale_factor,
-    );
 }
