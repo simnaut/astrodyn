@@ -4,7 +4,7 @@
 //! ~325 lines and is a distinct concern from the per-step pipeline.
 
 use astrodyn::validation::ValidationError;
-use astrodyn::TranslationalState;
+use astrodyn::{FrameId, TranslationalState};
 use uom::si::mass::kilogram;
 
 use super::Simulation;
@@ -28,6 +28,17 @@ impl Simulation {
     // JEOD_INV: GV.03 — check_validity() called at startup
     pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let num_sources = self.gravity_data.len();
+        // Precompute root-equivalent frame predicate inputs before the
+        // body iteration's mutable borrow — `is_root_equivalent_frame`
+        // would borrow `self` immutably and conflict with `iter_mut`.
+        let root_frame_id = self.root_frame_id;
+        let central_inertial: Option<FrameId> = self
+            .source_frame_ids
+            .iter()
+            .find(|sf| sf.central)
+            .map(|sf| sf.inertial);
+        let is_root_equivalent =
+            |frame_id: FrameId| frame_id == root_frame_id || Some(frame_id) == central_inertial;
         let mut all_errors = Vec::new();
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             let plate_counts = body.flat_plate_state.as_ref().map(|fps| {
@@ -182,14 +193,23 @@ impl Simulation {
             // that assume root-inertial coordinates. JEOD evaluates these
             // derived states in the central-body inertial frame; they will
             // produce incorrect results in other frames.
+            //
+            // Both predicates ask "is this frame the root inertial
+            // origin?" — pre-#567 that was the `inertial == root_frame_id`
+            // alias; post-#567 every source's inertial frame is structurally
+            // distinct from root, so the alias has lost its meaning.
+            // [`Simulation::is_root_equivalent_frame`] folds the central
+            // source's inertial back onto root (it's identity-related per
+            // `JEOD_INV: RF.13`), and `SourceFrameIds::central` distinguishes
+            // the central source for frame-switch targets.
             {
-                let non_root_integ = body.integ_frame_id != self.root_frame_id;
+                let non_root_integ = !is_root_equivalent(body.integ_frame_id);
                 let non_root_switch = body.frame_switches.iter().any(|sw| {
                     sw.active
                         && self
                             .source_frame_ids
                             .get(sw.target_source)
-                            .is_some_and(|frame| frame.inertial != self.root_frame_id)
+                            .is_some_and(|frame| !frame.central)
                 });
                 if non_root_integ || non_root_switch {
                     let has_root_dependent_feature = body.drag.is_some()
@@ -251,9 +271,14 @@ impl Simulation {
             }
         }
 
-        // Ephemeris mapping on root-frame sources — would silently discard position.
+        // Ephemeris mapping on central sources — would silently discard
+        // position (the central body is pinned at the heliocentric origin).
+        // Pre-#567 this used the `inertial == root_frame_id` alias as a
+        // proxy for "is central"; now we consult the explicit `central`
+        // flag, since #567 made the central source's inertial frame
+        // structurally distinct from root.
         for (i, ephem) in self.source_ephem_bodies.iter().enumerate() {
-            if ephem.is_some() && self.source_frame_ids[i].inertial == self.root_frame_id {
+            if ephem.is_some() && self.source_frame_ids[i].central {
                 all_errors.push(ValidationError::EphemerisOnRootSource { source_idx: i });
             }
         }
@@ -286,7 +311,8 @@ impl Simulation {
             // frame. For pair-level consistency (and to match the no-transform
             // convention in `evaluate_contact_pair`), both bodies must share
             // the same integration frame, and that frame must be the root
-            // inertial frame.
+            // inertial frame (or the central source's inertial — which is
+            // identity-related to root per `JEOD_INV: RF.13`).
             for (pair_idx, pair) in self.contact_pairs.iter().enumerate() {
                 let frame_a = self.bodies[pair.body_a].integ_frame_id;
                 let frame_b = self.bodies[pair.body_b].integ_frame_id;
@@ -300,7 +326,7 @@ impl Simulation {
                     });
                     continue;
                 }
-                if frame_a != self.root_frame_id {
+                if !self.is_root_equivalent_frame(frame_a) {
                     // frame_a == frame_b at this point, so both bodies
                     // share the same non-root frame. Emit one error per
                     // body so debuggers see the full set.
@@ -326,7 +352,7 @@ impl Simulation {
         if !self.ground_contact_pairs.is_empty() {
             for (pair_idx, pair) in self.ground_contact_pairs.iter().enumerate() {
                 let frame = self.bodies[pair.body_a].integ_frame_id;
-                if frame != self.root_frame_id {
+                if !self.is_root_equivalent_frame(frame) {
                     all_errors.push(ValidationError::GroundContactPairNonRootFrame {
                         pair_idx,
                         body_idx: pair.body_a,
@@ -336,7 +362,13 @@ impl Simulation {
                 }
                 if let Some(planet_source) = self.ground_contact_planet_source {
                     let sfids = &self.source_frame_ids[planet_source];
-                    if sfids.inertial != self.root_frame_id {
+                    // Pre-#567 used `inertial != root` as a proxy for "this
+                    // planet is non-central"; #567 made every source's
+                    // inertial frame structurally distinct from root, so
+                    // consult the explicit `central` flag instead. Same
+                    // semantic: ground contact requires the planet sit at
+                    // the heliocentric origin (central body).
+                    if !sfids.central {
                         all_errors.push(ValidationError::GroundContactNonCentralPlanet {
                             pair_idx,
                             planet_source,

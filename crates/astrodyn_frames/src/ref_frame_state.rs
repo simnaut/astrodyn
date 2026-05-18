@@ -1613,9 +1613,17 @@ mod typed_tests {
         );
     }
 
-    /// `negate(identity)` is identity — bit-exact, since the
-    /// identity-rotation fast-path skips the `conjugate().normalize()` +
-    /// `left_quat_to_transformation()` round-trip.
+    /// `negate(identity)` produces an identity rotation with negated
+    /// position/velocity/angular-velocity. Rotation components are
+    /// bit-exact identity (the fast-path skips the
+    /// `conjugate().normalize()` + `left_quat_to_transformation()`
+    /// round-trip and assigns identity directly). Translational
+    /// components come out as `-0.0` per IEEE 754: negating `+0.0`
+    /// flips the sign bit. This matches the non-fast-path code's
+    /// behavior (`-(I * 0) = -0`), so the fast-path preserves bits
+    /// across the JEOD vs non-JEOD math equivalence — the test
+    /// pins the contract by comparing against `-0.0_f64`'s bit
+    /// pattern (`0x8000_0000_0000_0000`).
     #[test]
     fn negate_identity_is_identity_bit_exact() {
         let result = RefFrameState::negate(&identity_state());

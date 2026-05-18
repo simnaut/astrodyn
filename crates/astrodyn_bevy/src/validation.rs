@@ -200,9 +200,14 @@ pub fn validate_jeod_invariants<P: Planet>(
     source_frames: Query<&FrameEntityC, With<GravitySourceC>>,
     parents: Query<&ChildOf>,
     frame_states: Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
-    // Needed by `is_root_equivalent_entity` to fold Bevy's "every
-    // source is a child of root" topology back onto the runner's
-    // "central body's inertial == root" semantics.
+    // Needed by `is_root_equivalent_entity` to recognise a central
+    // source's inertial frame entity (a direct child of root with
+    // identity state) as root-equivalent for downstream warnings.
+    // Both runtimes now share the "every source is a child of root"
+    // topology (`astrodyn` post #567 — see `JEOD_INV: RF.13`); the
+    // function's job is to fold a `ChildOf(root)` identity-state
+    // node back onto root for the purpose of "is this body
+    // integrating in root inertial?" semantics.
     root_frame_entity: Option<Res<RootFrameEntityR>>,
     // Root-dependent features. Presence of any of these on a body that
     // integrates in (or switches into) a non-root frame produces a
