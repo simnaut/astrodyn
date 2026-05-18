@@ -394,15 +394,10 @@ mod tests {
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, TotalForceC,
     };
     use crate::mass_tree::composite_mass_system;
+    use crate::test_utils::create_minimal_test_app;
     use crate::wrench::wrench_aggregation_system;
     use astrodyn::{MassProperties, RotationalState};
     use glam::{DMat3, DVec3};
-
-    fn add_test_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app
-    }
 
     /// Run the realistic per-tick sequence: composite recomputation,
     /// then kinematic propagation, then wrench aggregation. Mirrors
@@ -434,7 +429,7 @@ mod tests {
     /// link" after one App::update().
     #[test]
     fn rotated_attach_child_tracks_parent_through_link() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         // Parent attitude: 60° about Z. Parent ang_vel along Z at
         // 0.001 rad/s.
@@ -567,7 +562,7 @@ mod tests {
     ///   add positional drift when there's no arm.
     #[test]
     fn three_body_chain_propagates_through_middle_to_leaf() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         let parent_pos = DVec3::new(7e6, 0.0, 0.0);
         let parent_vel = DVec3::ZERO;
@@ -716,7 +711,7 @@ mod tests {
     /// the JEOD-faithful answer.
     #[test]
     fn rotated_chain_with_propagation_succeeds() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         let parent_q = astrodyn::JeodQuat::left_quat_from_eigen_rotation(
             std::f64::consts::FRAC_PI_4,
@@ -812,7 +807,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "kinematic propagation needs entity")]
     fn missing_state_on_mass_tree_node_panics() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         let parent = app
             .world_mut()

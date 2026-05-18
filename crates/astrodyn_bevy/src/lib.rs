@@ -24,6 +24,8 @@ pub mod scenario;
 pub mod sets;
 pub mod source_mutator;
 pub mod systems;
+#[cfg(test)]
+mod test_utils;
 pub mod validation;
 pub mod wrench;
 

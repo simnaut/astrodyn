@@ -382,14 +382,9 @@ mod tests {
         GeodeticConfigC, GeodeticStateC, GravitySourceC, OrbitalElementsC, OrbitalElementsConfigC,
         SolarBetaC, TranslationalStateC,
     };
+    use crate::test_utils::create_minimal_test_app;
     use astrodyn::{Earth, GravityModel, GravitySource, TranslationalState};
     use glam::DVec3;
-
-    fn add_test_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app
-    }
 
     /// Spawn a gravity source entity carrying `mu`, then a vehicle
     /// entity with the given (position, velocity) wired to that
@@ -397,7 +392,7 @@ mod tests {
     /// `Update` schedule that runs `orbital_elements_system::<Earth>`
     /// are enough to drive the system.
     fn spawn_vehicle_with_state(mu: f64, pos: DVec3, vel: DVec3) -> App {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         let source = app
             .world_mut()
             .spawn(GravitySourceC(GravitySource {
@@ -481,7 +476,7 @@ mod tests {
         // `kep_eqtn_e` / `kep_eqtn_h` after 1000 non-converging
         // Newton-Raphson iterations) routes through
         // `panic_for_orbital_error` for the adapter-layer escalation.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         let entity = app.world_mut().spawn_empty().id();
         panic_for_orbital_error(entity, OrbitalError::KeplerConvergence(1234));
     }
@@ -500,7 +495,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "does not resolve to a GravitySourceC component")]
     fn orbital_gravity_source_lookup_miss_panics_with_caller_fix() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         let bad_source = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
@@ -528,7 +523,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
     fn geodetic_planet_lookup_miss_panics_with_caller_fix() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         let bad_planet = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
@@ -559,7 +554,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "no SunMarker entity exists in the World")]
     fn solar_beta_missing_sun_marker_panics_with_caller_fix() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         let root_frame_e = app.world_mut().spawn_empty().id();
         app.insert_resource(crate::RootFrameEntityR(root_frame_e));
         app.world_mut().spawn((
@@ -593,7 +588,7 @@ mod tests {
         use crate::components::{GeodeticConfigC, GeodeticStateC, PlanetFixedRotationC};
         use astrodyn::{FrameTransform, EARTH};
 
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         // Planet entity carries `PlanetFixedRotationC<P>` (what
         // `spawn_source` inserts when `rotation_model != None`) but
         // *not* `PlanetC` (what `PlanetBundle::from_config` inserts).

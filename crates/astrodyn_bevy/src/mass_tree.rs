@@ -945,18 +945,13 @@ fn build_view_from_cores(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::create_minimal_test_app;
     use astrodyn::MassProperties;
     use glam::{DMat3, DVec3};
 
-    fn add_test_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app
-    }
-
     #[test]
     fn single_root_leaves_props_unchanged() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let core = MassProperties::new(10.0);
@@ -976,7 +971,7 @@ mod tests {
         // Build the same parent + child topology in both Bevy
         // (MassChildOf) and the arena MassTree, run composition on
         // each, assert the parent composite matches.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         // Parent at origin, mass 10; child mass 5 attached at
@@ -1028,7 +1023,7 @@ mod tests {
     #[test]
     fn no_mass_children_fast_path_no_panic() {
         // Empty world: composite_mass_system must not panic.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
         app.update();
     }
@@ -1044,7 +1039,7 @@ mod tests {
         // and propagate it through to the parent's composite — the
         // previous "seeded once and frozen" cache silently dropped
         // mid-sim edits.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent_core = MassProperties::new(10.0);
@@ -1083,7 +1078,7 @@ mod tests {
         // PR #283 review thread PRRT_kwDORtae6c5_KBwP: a
         // `MassChildOf` whose parent has no MassPropertiesC must
         // panic, not silently treat the child as a root.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         // Spawn a "parent" entity *without* MassPropertiesC.
@@ -1109,7 +1104,7 @@ mod tests {
         // and wrote the stale cache back for any entity where
         // `live != core`, undoing the mission edit until a later
         // tick repaired the cache.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         // Tick 1 seeds CoreMassPropertiesC with the original 10.0
@@ -1160,7 +1155,7 @@ mod tests {
         // accidentally suppress while fixing case (a).
         use bevy::ecs::system::RunSystemOnce;
 
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent_core = MassProperties::new(10.0);
@@ -1212,7 +1207,7 @@ mod tests {
         // must not touch MassPropertiesC at all (every body is its
         // own composite). Bevy's change-detection ticks would
         // otherwise mark the components as changed every frame.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let core = MassProperties::new(10.0);
@@ -1269,7 +1264,7 @@ mod tests {
         // This test pins the fix: when no mission code edits any
         // `MassPropertiesC`, the core cache and the resulting
         // composite must be byte-identical across ticks.
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         // Schedule the two systems in their production order.
         app.add_systems(
             Update,
@@ -1411,7 +1406,7 @@ mod tests {
         // correctness fires here.
         use bevy::ecs::system::RunSystemOnce;
 
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         let parent = app
             .world_mut()
@@ -1463,7 +1458,7 @@ mod tests {
     /// counterpart so call sites read clearly.
     #[test]
     fn mass_tree_queries_core_vs_composite_split() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent_core = MassProperties::with_inertia(
@@ -1567,7 +1562,7 @@ mod tests {
     /// and the test fails.
     #[test]
     fn gate_skips_walk_on_static_chain() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         // 3-body chain: a → b → c, all mass 1.
@@ -1676,7 +1671,7 @@ mod tests {
     /// is the only signal for that case.
     #[test]
     fn gate_does_not_skip_on_detach() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent = app
@@ -1748,7 +1743,7 @@ mod tests {
     ///   correct composite (15).
     #[test]
     fn build_view_uses_core_cache_to_avoid_double_count() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent_core = MassProperties::new(10.0);
@@ -1819,7 +1814,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "carries MassChildOf")]
     fn child_without_mass_properties_panics_in_system() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent = app
@@ -1839,7 +1834,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "carries MassChildOf")]
     fn child_without_mass_properties_panics_in_from_queries() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
 
         let parent = app
             .world_mut()
@@ -1866,7 +1861,7 @@ mod tests {
     /// deferred to the next `composite_mass_system` run.
     #[test]
     fn core_mass_reflects_midtick_edit_on_leaf() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let leaf = app
@@ -1914,7 +1909,7 @@ mod tests {
     /// pre-edit core and the next composite ignores the edit.
     #[test]
     fn build_view_reflects_midtick_edit_on_leaf() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         app.add_systems(Update, composite_mass_system);
 
         let parent = app
@@ -1983,7 +1978,7 @@ mod tests {
     /// and that two calls on the same view return identical orders.
     #[test]
     fn iter_entities_is_deterministic_across_views() {
-        let mut app = add_test_app();
+        let mut app = create_minimal_test_app();
         // Spawn a handful of entities with mass properties + parent
         // links so the view has both leaf and internal nodes.
         let root = app
