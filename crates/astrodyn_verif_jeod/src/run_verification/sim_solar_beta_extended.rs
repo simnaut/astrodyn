@@ -27,6 +27,7 @@
 //! `SimulationBuilder` to materialize, and a hand-rolled tier3 test
 //! that constructs a `Simulation` directly has no bridge entry point.
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::Vec3Ext;
 use astrodyn::{
@@ -64,18 +65,6 @@ const R_LEO_M: f64 = 6_778_137.0;
 /// keeps the recipe and the analytical assertion driving identical
 /// initial states.
 const R_MID_M: f64 = 7_000_000.0;
-
-fn load_mu_earth() -> f64 {
-    // Cache the decoded `mu` for the lifetime of the test process.
-    // The fixture decode parses the entire GGM05C coefficient table
-    // (≈12 KiB serialized) just to read a single scalar; without
-    // caching, every `*_num_steps()` and every `build_*` call would
-    // pay that cost again, noticeably inflating the parity/tier3
-    // suite. The decoded `mu` is a pure function of the embedded
-    // bytes, so caching is sound.
-    static MU_EARTH: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *MU_EARTH.get_or_init(|| astrodyn::gravity_fixtures::load_ggm05c().mu)
-}
 
 /// Shared scenario builder for every recipe. Parameterised by:
 ///   * `mu_earth` — Earth's gravitational parameter (point-mass);
