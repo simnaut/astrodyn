@@ -269,10 +269,10 @@ impl SimContext for Simulation {
     fn set_time_scale_factor(&mut self, factor: f64) {
         // Runner owns `SimulationTime` as a public field on
         // `Simulation`; the trait method is just a forwarding write,
-        // matching `sim.time.time_scale_factor = factor` at the call
+        // matching `sim.time.set_scale_factor(factor)` at the call
         // site of `tier3_sim_time_reversal_run1` and the bespoke
         // gj_dt10 path.
-        self.time.time_scale_factor = factor;
+        self.time.set_scale_factor(factor);
     }
 }
 

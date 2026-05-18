@@ -64,7 +64,7 @@ fn build_gj_scenario(
     time_scale_factor: f64,
 ) -> SimulationBuilder {
     let mut time = SimulationTime::at_j2000(default_leap_second_table());
-    time.time_scale_factor = time_scale_factor;
+    time.set_scale_factor(time_scale_factor);
     let mut b = SimulationBuilder::new(time, sim_dt);
     let earth = GravitySourceEntry {
         source: GravitySource {

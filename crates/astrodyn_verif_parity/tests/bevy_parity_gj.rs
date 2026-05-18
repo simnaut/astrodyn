@@ -143,7 +143,7 @@ fn run_gj_bootstrap_parity(
     app.world_mut()
         .resource_mut::<SimulationTimeR>()
         .0
-        .time_scale_factor = time_scale_factor;
+        .set_scale_factor(time_scale_factor);
 
     let planet = app
         .world_mut()
@@ -174,7 +174,7 @@ fn run_gj_bootstrap_parity(
 
     // ── Simulation ──
     let mut time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
-    time.time_scale_factor = time_scale_factor;
+    time.set_scale_factor(time_scale_factor);
     let mut sim = Simulation::new(time, sim_dt);
     let mut earth_entry = GravitySourceEntry::new(
         GravitySource {

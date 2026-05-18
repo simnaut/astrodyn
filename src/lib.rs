@@ -277,17 +277,18 @@ pub use astrodyn_frames::{
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that the
 // Bevy adapter and mission code consume through `SimulationTime` /
-// `default_leap_second_table()`. `TimeManager` + `TimeScaleId` are the
-// multi-scale time API; `time_utc::{calendar_to_tjt, tjt_to_calendar,
-// CalendarDate}` are the civil-time conversion helpers used by JEOD
-// orbital-init and time-verification cross-validation.
+// `default_leap_second_table()`. `SimulationTime` + `TimeScaleId` are the
+// multi-scale time API (mirrors JEOD's `TimeManager` aggregate);
+// `time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate}` are the
+// civil-time conversion helpers used by JEOD orbital-init and
+// time-verification cross-validation.
 pub use astrodyn_time::{
     epoch::{J2000_TAI_TJT, J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET},
     leap_second::default_leap_second_table,
     time_converter_tai_ut1::{default_eop_table, EopLoadError, EopTable},
     time_converter_ut1_gmst::ut1_to_gmst_seconds,
     time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate},
-    SimulationTime, TimeManager, TimeScaleId,
+    SimulationTime, TimeScaleId,
 };
 
 // astrodyn_frames: planet rotation (used by ephemeris stage and mission

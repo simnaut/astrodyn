@@ -149,8 +149,8 @@ fn tier3_sim_time_reversal_run1() {
         }
 
         // Switch to reverse at the reversal point
-        if i == reversal_idx + 1 && sim.time.time_scale_factor > 0.0 {
-            sim.time.time_scale_factor = -1.0;
+        if i == reversal_idx + 1 && sim.time.scale_factor() > 0.0 {
+            sim.time.set_scale_factor(-1.0);
         }
 
         sim.step_until(rec.time).expect("step_until failed");
@@ -218,8 +218,8 @@ fn run_reversal_time_only(label: &str, csv_name: &str) {
     for (i, rec) in records.iter().enumerate() {
         if i > 0 {
             let sim_dt = rec.time - records[i - 1].time;
-            if i == reversal_idx + 1 && sim_time.time_scale_factor > 0.0 {
-                sim_time.time_scale_factor = -1.0;
+            if i == reversal_idx + 1 && sim_time.scale_factor() > 0.0 {
+                sim_time.set_scale_factor(-1.0);
             }
             sim_time.advance(sim_dt);
         }

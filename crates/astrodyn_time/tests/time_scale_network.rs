@@ -2,7 +2,7 @@
 //!
 //! Phase 5 tests: TAI↔UTC round-trip across leap second boundary,
 //! GPS = TAI - 19s at multiple epochs, MET from configured epoch,
-//! calendar↔JD round-trip, TimeManager full propagation.
+//! calendar↔JD round-trip, SimulationTime full propagation.
 
 #![allow(
     clippy::float_cmp,
@@ -14,7 +14,7 @@ use astrodyn_time::leap_second::default_leap_second_table;
 use astrodyn_time::time_gps;
 use astrodyn_time::time_met::MissionElapsedTime;
 use astrodyn_time::time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate};
-use astrodyn_time::{TimeManager, TimeScaleId};
+use astrodyn_time::{SimulationTime, TimeScaleId};
 
 /// TAI→UTC round-trip across the 2016-12-31 23:59:60 leap second boundary.
 ///
@@ -161,10 +161,10 @@ fn calendar_jd_round_trip() {
     }
 }
 
-/// TimeManager: register all scales, advance TAI, verify all update correctly.
+/// SimulationTime: register all scales, advance TAI, verify all update correctly.
 #[test]
-fn time_manager_full_propagation() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+fn simulation_time_full_propagation() {
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     mgr.add_met(0.0); // MET epoch at simulation start
     mgr.add_ude(3600.0); // UDE epoch at TAI=3600s
 
@@ -230,7 +230,7 @@ fn time_manager_full_propagation() {
 
     // GMST should have advanced from its initial value
     let gmst_initial = {
-        let fresh = TimeManager::at_j2000(default_leap_second_table());
+        let fresh = SimulationTime::at_j2000(default_leap_second_table());
         fresh.get_seconds(TimeScaleId::GMST)
     };
     let gmst_delta = mgr.get_seconds(TimeScaleId::GMST) - gmst_initial;
@@ -245,10 +245,10 @@ fn time_manager_full_propagation() {
     assert!((mgr.simtime - dt).abs() < 1e-15, "simtime should be {}", dt);
 }
 
-/// TimeManager: UTC seconds track correctly through the simulation.
+/// SimulationTime: UTC seconds track correctly through the simulation.
 #[test]
-fn time_manager_utc_advances() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+fn simulation_time_utc_advances() {
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     // At J2000, TAI-UTC = 32s. Over a span with no leap seconds,
     // UTC seconds ≈ TAI seconds (both count elapsed time).
     mgr.advance(3600.0);
@@ -262,10 +262,10 @@ fn time_manager_utc_advances() {
     );
 }
 
-/// TimeManager with DYN scale factor reversal.
+/// SimulationTime with DYN scale factor reversal.
 #[test]
-fn time_manager_dyn_reversal_round_trip() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+fn simulation_time_dyn_reversal_round_trip() {
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     // Forward 1 hour
     mgr.advance(3600.0);
