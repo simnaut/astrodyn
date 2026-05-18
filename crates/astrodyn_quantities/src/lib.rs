@@ -173,6 +173,7 @@ pub mod dims;
 pub mod ext;
 pub mod frame;
 pub mod frame_transform;
+pub mod guard_macros;
 pub mod harmonic;
 pub mod inertia;
 pub mod integ_origin;
