@@ -449,7 +449,7 @@ fn assert_time_scale_bits_eq(label: &str, t: f64, runner: &Simulation, app: &App
     bits_eq(
         label,
         t,
-        "time_scale_factor",
+        "scale_factor",
         runner_time.scale_factor(),
         bevy.scale_factor(),
     );

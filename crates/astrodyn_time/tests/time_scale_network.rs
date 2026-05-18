@@ -163,7 +163,7 @@ fn calendar_jd_round_trip() {
 
 /// SimulationTime: register all scales, advance TAI, verify all update correctly.
 #[test]
-fn time_manager_full_propagation() {
+fn simulation_time_full_propagation() {
     let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     mgr.add_met(0.0); // MET epoch at simulation start
     mgr.add_ude(3600.0); // UDE epoch at TAI=3600s
@@ -247,7 +247,7 @@ fn time_manager_full_propagation() {
 
 /// SimulationTime: UTC seconds track correctly through the simulation.
 #[test]
-fn time_manager_utc_advances() {
+fn simulation_time_utc_advances() {
     let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     // At J2000, TAI-UTC = 32s. Over a span with no leap seconds,
     // UTC seconds ≈ TAI seconds (both count elapsed time).
@@ -264,7 +264,7 @@ fn time_manager_utc_advances() {
 
 /// SimulationTime with DYN scale factor reversal.
 #[test]
-fn time_manager_dyn_reversal_round_trip() {
+fn simulation_time_dyn_reversal_round_trip() {
     let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     // Forward 1 hour

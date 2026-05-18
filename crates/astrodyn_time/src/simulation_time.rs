@@ -13,9 +13,10 @@
 //! The 7 standard scales (TAI/TT/TDB/UTC/UT1/GMST/GPS) plus `simtime`
 //! are always present. The optional [`Option<EopTable>`](EopTable)
 //! drives per-step IERS UT1 interpolation; [`MissionElapsedTime`] and
-//! [`UserDefinedEpoch`] are opt-in via [`Self::add_met`] and
-//! [`Self::add_ude`]. The integration clock is governed by a private
-//! [`DynamicTime`] reachable through [`Self::set_scale_factor`].
+//! [`UserDefinedEpoch`] are opt-in via [`SimulationTime::add_met`] and
+//! [`SimulationTime::add_ude`]. The integration clock is governed by a
+//! private [`DynamicTime`] reachable through
+//! [`SimulationTime::set_scale_factor`].
 
 use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use crate::leap_second::LeapSecondTable;

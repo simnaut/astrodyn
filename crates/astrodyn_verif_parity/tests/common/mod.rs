@@ -530,7 +530,7 @@ pub fn assert_simulation_time_bits_eq(
     bits_eq(
         t,
         label,
-        "time_scale_factor",
+        "scale_factor",
         runner.scale_factor(),
         bevy.scale_factor(),
     );

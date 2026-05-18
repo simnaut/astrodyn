@@ -598,7 +598,7 @@ fn tier3_time_gmst_increases_with_ut1() {
 /// GPS epoch, 1980-01-06). Since the offset is fixed (no leap seconds in GPS),
 /// this relationship must hold exactly at every propagation step.
 #[test]
-fn tier3_time_gps_through_manager() {
+fn tier3_time_gps_through_simulation_time() {
     let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     // Check at t=0 as well as throughout propagation.
