@@ -284,7 +284,7 @@ fn line_mass_props() -> MassProperties {
 // Head-on scenarios match JEOD to machine precision (~1e-15 m position
 // over 10 s); the off-center oblique case sits at ~2.5 mm trajectory
 // drift / ~0.55 mm/s velocity drift, traced to a ω²-scaled per-stage
-// force residual of ~120 μN. Three directions have been algebraically
+// force residual of ~120 μN. Four directions have been algebraically
 // falsified with permanent regression guards:
 //
 // - **Direction 1 — rel-vel kinematic formula:** matches JEOD's
@@ -305,13 +305,28 @@ fn line_mass_props() -> MassProperties {
 //   Guard:
 //   `integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`
 //   in `src/integration.rs`.
+// - **Direction 4-C — subject-body-frame vs inertial-frame contact
+//   eval:** [`evaluate_contact_pair`] is frame-covariant — rotating
+//   every input by an arbitrary inertial-frame rotation `R` produces
+//   an output force `R · force_baseline` to f64 round-off
+//   (~1e-13 N, nine orders of magnitude below the residual). The
+//   systematic frame-conversion ordering between our inertial-frame
+//   pipeline and JEOD's subject-vehicle_point → structure → inertial
+//   chain (per the JEOD source walk in `point_contact_pair.cc:47-88`,
+//   `spring_pair_interaction.cc:57-128`, and `dyn_body_collect.cc:
+//   219-221`) cannot account for the residual. Guard:
+//   `evaluate_contact_pair_is_frame_covariant` in
+//   `src/interactions.rs`.
 //
-// **Direction 4 — open candidate list, prioritized.** Each candidate
-// names a JEOD source site, the falsification sketch, and an
-// arithmetic bound on its plausible contribution. None has been
-// directly tested; the order reflects how much divergence each could
-// plausibly contribute given the documented ~5e-4 rad/s peak ω and
-// 0.01 s dt.
+// **Direction 4 — remaining open candidate list, prioritized.** Each
+// candidate names a JEOD source site, the falsification sketch, and
+// an arithmetic bound on its plausible contribution. Of the six D4
+// candidates originally catalogued, D4-C is now falsified above; the
+// five below are remaining open. Note: peak ω during the contact
+// event is now bounded at ~4e-2 rad/s by direct CSV inspection (peak
+// torque ~34 N·m, inertia 40 kg·m², contact duration ~0.05 s); the
+// catalog's original "~5e-4 rad/s" was an underestimate by ~80×.
+// Re-scaled bounds on each candidate are noted where they shift.
 //
 // **D4-A — Lie-group RK4 vs quaternion-Euler RK4 for rotation.**
 // JEOD's `RestartableSO3SecondOrderODEIntegrator` defaults to the
@@ -360,35 +375,15 @@ fn line_mass_props() -> MassProperties {
 // (70 N·s/m) — ~7e-14 N. **Likelihood:** very low (~5 %).
 //
 // **D4-C — Contact-frame coordinate system (subject-body vs
-// inertial).** JEOD's `point_contact_pair.cc::in_contact` computes
-// rel_velocity in the **subject body frame**
-// (`models/interactions/contact/src/point_contact_pair.cc:55-87`):
-// the relative position from
-// `rel_state.rel_state.trans.position` is rotated by the relative
-// `T_parent_this` (subject → target) to find the target contact
-// point, then `rel_velocity = ang_vel_subject × subject_contact_point
-// - rel_state.rel_state.trans.velocity`. Our `evaluate_contact_pair`
-// builds the same physical quantity in the **inertial frame**
-// (`src/interactions.rs:516-534`), then later applies torque arms in
-// inertial and rotates only the torque output back to body frame
-// (`src/interactions.rs:551-557`). Algebraically the two formulations
-// are equivalent; numerically they differ in floating-point order of
-// operations and in which matrix products eat the round-off. **Falsify:**
-// port the JEOD formulation verbatim (do the cross-product in
-// subject body frame, then rotate the resulting force back to
-// inertial) and rerun `tier3_contact_point_off_center`. If the
-// residual drops, the ω²-scaling comes from `T(ω·dt/2)^T · v -
-// T(ω·dt/2)^T · v_jeod_computation_order` — a cancellation that
-// the subject-frame formulation arranges differently than ours.
-// **Bound:** body-frame vs inertial-frame round-off on a c · ω × r
-// term sits at machine ε · (c · |ω × r|) ≈ 1e-16 · 70 · 5e-4 ≈
-// 3.5e-18 N per operation, but the **systematic** difference
-// between two algebraically-equivalent-but-numerically-distinct
-// orderings of the matrix products around ω × r could in principle
-// scale as ω² · h · c ≈ (5e-4)² · 0.01 · 70 ≈ 1.75e-7 N — within an
-// order of magnitude of the 120 μN residual. **Likelihood:**
-// medium-high (~40 %), and the cheapest to test (parallel local
-// reimplementation, no integrator-state change).
+// inertial).** **Falsified** (see the bullet in the falsified list
+// above and `evaluate_contact_pair_is_frame_covariant` in
+// `src/interactions.rs`). Re-scoring under the corrected peak-ω
+// estimate (4e-2 rad/s, not 5e-4) lifts the ω²·h·c bound to ~1.1 mN,
+// still high enough in principle to bracket the 120 μN residual —
+// but the covariance witness demonstrates the inertial-frame
+// pipeline produces output `R · force_baseline` to ~1e-13 N for any
+// rotation `R` of the inertial-frame inputs, so no systematic
+// ordering effect can survive at the residual scale.
 //
 // **D4-D — vehicle_point propagation cadence.** JEOD's
 // `DynBody::integrate(...)` ends with `propagate_state()` after
@@ -458,17 +453,23 @@ fn line_mass_props() -> MassProperties {
 // per stage in JEOD either. **Likelihood:** negligible (~1 %),
 // listed only to mark it as ruled out by inspection.
 //
-// **Direction 4 priority order:** D4-C → D4-D → D4-B → D4-A →
-// D4-E → D4-F. D4-C is the only candidate whose arithmetic bound
-// brackets the observed residual; the others are most likely
-// orders of magnitude too small.
-//
-// The remaining off-center trajectory drift is roughly one order of
-// magnitude better than the pre-#117 envelope (2.7 cm → 2.5 mm) but
-// not at head-on parity (~12 orders of magnitude separate 2.5 mm from
-// the head-on cases' ~1e-15 m machine-precision floor); the
-// structural source remains under investigation, with the candidate
-// catalog above scoping the next round of audits.
+// **Direction 4 priority order (remaining):** D4-D → D4-B → D4-A →
+// D4-E → D4-F. With D4-C falsified, no remaining candidate's
+// arithmetic bound brackets the 120 μN observed residual — every
+// remaining bullet sits at 10× to 10⁹× below the residual. The next
+// audit round should either widen the search beyond the D4 catalog
+// entirely (e.g., audit the friction-magnitude rebalancing law
+// `mu · |F_total| · |v_tang| / |v_total|` for non-covariance with
+// JEOD's identical formula at full f64 precision; audit JEOD's
+// `Vector3::zero_small(1e-10, penetration_vector)` clip vs ours, or
+// audit the inertia-tensor application path in the rotational ODE)
+// or accept the off-center envelope as a known residual and freeze
+// the current tolerances. The remaining off-center trajectory drift
+// is roughly one order of magnitude better than the pre-#117
+// envelope (2.7 cm → 2.5 mm) but not at head-on parity (~12 orders
+// of magnitude separate 2.5 mm from the head-on cases' ~1e-15 m
+// machine-precision floor); the structural source remains
+// unidentified within the D4 catalog.
 const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
 
 // `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
@@ -1047,12 +1048,15 @@ fn tier3_contact_point_off_center() {
     // `src/interactions.rs::evaluate_contact_pair`, the oblique
     // trajectory drift sits at ~2.5 mm (head-on tests reach machine
     // precision). The residual is a ω²-scaled per-RK4-stage force
-    // divergence of ~120 μN; the rel-vel kinematics, per-body stage
-    // interleaving, and per-stage quaternion normalization have all
-    // been audited as the source and falsified (see
+    // divergence of ~120 μN; four hypotheses have been audited as the
+    // source and falsified (rel-vel kinematics, per-body stage
+    // interleaving, per-stage quaternion normalization, and the
+    // inertial-frame vs subject-body-frame ordering of the contact
+    // eval). See:
     // `src/interactions.rs::evaluate_contact_pair_matches_jeod_subject_frame_formula`,
     // `src/integration.rs::integrate_bodies_contact_coupled_evaluates_in_lockstep`,
-    // and `src/integration.rs::integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`).
+    // `src/integration.rs::integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`,
+    // and `src/interactions.rs::evaluate_contact_pair_is_frame_covariant`.
     assert!(
         max_pos_err < 2.7e-3,
         "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
