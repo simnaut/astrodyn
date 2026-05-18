@@ -422,10 +422,11 @@ pub fn moon_initial_pos() -> DVec3 {
 // Shared between `bevy_parity_timescale.rs` and `bevy_parity_time_docker.rs`
 // (and any future body-less time-pipeline parity wrappers). The two helpers
 // snapshot the Bevy-side `SimulationTimeR` and assert bit-identity against
-// the runner-side `Simulation.time` across the 13 `SimulationTime` fields
-// the Bevy pipeline actually carries — UDE / MET / EOP-interpolated UT1
-// live on `TimeManager` (not surfaced through `SimulationTimeR`) and are
-// out of scope.
+// the runner-side `Simulation.time` across every `SimulationTime` field
+// the Bevy pipeline carries — including the optional MET / UDE scales and
+// the EOP-table presence flag. After the #577 unification both runtimes
+// drive the same `astrodyn::SimulationTime`, so the parity surface covers
+// everything the production resource carries.
 
 /// Snapshot the Bevy app's `SimulationTimeR` resource into a fresh
 /// `SimulationTime` clone. Cloning avoids holding a long-lived `Res`
@@ -529,8 +530,45 @@ pub fn assert_simulation_time_bits_eq(
     bits_eq(
         t,
         label,
-        "time_scale_factor",
-        runner.time_scale_factor,
-        bevy.time_scale_factor,
+        "scale_factor",
+        runner.scale_factor(),
+        bevy.scale_factor(),
+    );
+
+    // MET: presence + seconds parity. Differing presence between the two
+    // runtimes is a setup bug — surface it directly rather than letting
+    // a `None`-vs-`Some` slip through with a 0.0 default.
+    assert_eq!(
+        runner.met.is_some(),
+        bevy.met.is_some(),
+        "{label} at t={t:.6}s diverged on met presence: runner={:?} bevy={:?}",
+        runner.met.is_some(),
+        bevy.met.is_some(),
+    );
+    if let (Some(rmet), Some(bmet)) = (runner.met.as_ref(), bevy.met.as_ref()) {
+        bits_eq(t, label, "met.seconds", rmet.seconds, bmet.seconds);
+    }
+
+    // UDE: vec length + per-slot seconds parity. Same setup-bug rationale.
+    assert_eq!(
+        runner.ude.len(),
+        bevy.ude.len(),
+        "{label} at t={t:.6}s diverged on ude.len(): runner={} bevy={}",
+        runner.ude.len(),
+        bevy.ude.len(),
+    );
+    for (i, (r, b)) in runner.ude.iter().zip(bevy.ude.iter()).enumerate() {
+        bits_eq(t, label, &format!("ude[{i}].seconds"), r.seconds, b.seconds);
+    }
+
+    // EOP-table presence (only the flag — the table itself is large and
+    // both runtimes share the same `default_eop_table()` by construction
+    // when EOP is in use, so an `is_some()` mismatch is the setup signal).
+    assert_eq!(
+        runner.has_eop_table(),
+        bevy.has_eop_table(),
+        "{label} at t={t:.6}s diverged on has_eop_table(): runner={} bevy={}",
+        runner.has_eop_table(),
+        bevy.has_eop_table(),
     );
 }

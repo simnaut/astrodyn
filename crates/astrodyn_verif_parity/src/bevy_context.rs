@@ -673,19 +673,18 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
     fn set_time_scale_factor(&mut self, factor: f64) {
         // The Bevy adapter mirrors the runner's `SimulationTime` through
         // the `SimulationTimeR` resource (initialised in `populate_app`
-        // from the `SimulationBuilder.time` value). Writing the scale
-        // factor here matches the runner's `self.time.time_scale_factor
-        // = factor` field write: `time_advance_system` reads the
-        // resource at the top of the next FixedUpdate and propagates
-        // the sign change through TAI / TDB / TT / GMST, while the
-        // integration system reads it via
-        // `sim_time.0.time_scale_factor` to compute `integ_dt = dt *
-        // time_scale_factor` for ballistic and dynamic propagation.
-        // Both runtimes flip on the same tick, so the next integration
-        // step sees the same `integ_dt` sign and bit-identity holds
-        // across the reversal boundary.
+        // from the `SimulationBuilder.time` value). Calling
+        // `set_scale_factor` here matches the runner's
+        // `self.time.set_scale_factor(factor)` call: `time_advance_system`
+        // reads the resource at the top of the next FixedUpdate and
+        // propagates the sign change through TAI / TDB / TT / GMST, while
+        // the integration system reads it via `sim_time.0.scale_factor()`
+        // to compute `integ_dt = dt * scale_factor()` for ballistic and
+        // dynamic propagation. Both runtimes flip on the same tick, so
+        // the next integration step sees the same `integ_dt` sign and
+        // bit-identity holds across the reversal boundary.
         let mut sim_time = self.world.resource_mut::<SimulationTimeR>();
-        sim_time.0.time_scale_factor = factor;
+        sim_time.0.set_scale_factor(factor);
     }
 }
 

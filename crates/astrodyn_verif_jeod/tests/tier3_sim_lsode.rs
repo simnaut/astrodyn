@@ -171,7 +171,7 @@ fn run_integ_test(
     // JEOD's IntegrationTest sets TimeDyn::scale_factor so that one sim-second
     // corresponds to `time_scale` dynamic-seconds. The CSV's time column is
     // sim-time; the integrator internally uses dyn-dt = sim_dt * time_scale.
-    time.time_scale_factor = time_scale;
+    time.set_scale_factor(time_scale);
     let mut sim = Simulation::new(time, SIM_DT);
 
     let earth = sim.add_source(

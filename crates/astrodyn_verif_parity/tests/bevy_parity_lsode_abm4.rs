@@ -131,7 +131,7 @@ fn build_abm4_scenario(initial_state: TranslationalState) -> SimulationBuilder {
     let time_scale = compute_time_scale();
 
     let mut time = SimulationTime::at_j2000(default_leap_second_table());
-    time.time_scale_factor = time_scale;
+    time.set_scale_factor(time_scale);
     let mut b = SimulationBuilder::new(time, SIM_DT);
 
     let earth = GravitySourceEntry {

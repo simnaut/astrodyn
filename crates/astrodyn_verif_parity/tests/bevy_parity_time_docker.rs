@@ -9,16 +9,14 @@
 //!
 //! ## SIM coverage
 //!
-//! Five SIM cases land here — SIM_1 (DynamicTime only), SIM_2
-//! (Dyn + TAI), SIM_4 (TAI + UTC + UT1 across the 1999-01-01
-//! leap-second boundary), SIM_5 (all calendar scales: TAI/TT/TDB/UTC/
-//! UT1/GMST/GPS), SIM_6 (TAI + DYN). SIM_3 (Dyn + UDE) is structurally
-//! out of scope here: UDE is a [`astrodyn::TimeManager`] feature that
-//! is not surfaced through the per-step `SimulationTimeR` resource the
-//! Bevy pipeline propagates, so there is no Bevy-side state to assert
-//! parity against. The same reasoning excludes MET-only fields from
-//! the SIM_5 case — the calendar-scale fields it shares with the
-//! production resource are still checked.
+//! All six SIM cases land here — SIM_1 (DynamicTime only), SIM_2
+//! (Dyn + TAI), SIM_3 (Dyn + UDE), SIM_4 (TAI + UTC + UT1 across the
+//! 1999-01-01 leap-second boundary, EOP-interpolated UT1), SIM_5
+//! (all calendar scales + `metveh1` MET), SIM_6 (TAI + DYN). After the
+//! #577 unification `SimulationTime` carries the optional EOP table /
+//! MET / UDE state, so every feature the runner-side
+//! `tier3_sim_time_docker` exercises is reachable through
+//! `SimulationTimeR` and gets a bit-identity backstop here.
 //!
 //! The runner-side counterpart is
 //! `crates/astrodyn_verif_jeod/tests/tier3_sim_time_docker.rs`; this
@@ -26,19 +24,16 @@
 //! `bevy ≡ runner ≈ JEOD` transitivity argument that the issue-#389
 //! superset invariant requires.
 //!
-//! ## SIM_4 leap-second handling
+//! ## SIM_4 leap-second + EOP handling
 //!
 //! SIM_4's 86460 s window crosses the 1999-01-01 leap-second boundary.
-//! Both runtimes consume the same `default_leap_second_table()` through
-//! the shared `SimulationBuilder` factory and call the same
-//! `SimulationTime::recompute_derived` path each tick, so the
-//! leap-second transition is bit-identical on both sides by
-//! construction. The runner-side test additionally compares against
-//! the JEOD CSV via `with_eop_table(default_eop_table())` (a
-//! `TimeManager`-only EOP-interpolation path); the parity wrapper does
-//! not need that surface — both sides see the same constant
-//! `ut1_tai_offset` written via [`SimulationTime::set_ut1_tai_offset`]
-//! at construction.
+//! Both runtimes consume the same `default_leap_second_table()` and the
+//! same `default_eop_table()` through the shared `SimulationBuilder`
+//! factory, and call the same `SimulationTime::recompute_derived` path
+//! each tick (which now re-interpolates `ut1_tai_offset` from the EOP
+//! table per JEOD's `time_converter_tai_ut1::convert_a_to_b`). The
+//! leap-second transition and the per-step UT1 interpolation are
+//! bit-identical on both sides by construction.
 
 #![allow(
     clippy::float_cmp,
@@ -52,7 +47,7 @@
 
 use std::time::Duration;
 
-use astrodyn::{default_leap_second_table, SimulationBuilder, SimulationTime};
+use astrodyn::{default_eop_table, default_leap_second_table, SimulationBuilder, SimulationTime};
 use astrodyn_bevy::SimulationBuilderBevyExt;
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
@@ -64,14 +59,20 @@ use common::{assert_simulation_time_bits_eq, bevy_sim_time};
 const SECONDS_PER_DAY: f64 = 86400.0;
 
 /// Minimal CSV row holding the columns this parity wrapper consumes.
-/// Only `time` (cadence) and the t=0 row's `tai_tjt` / optional
-/// `ut1_tjt` (epoch + UT1-TAI offset) are read — the per-tick
-/// time-advance is deterministic on both runtimes given identical
-/// initialisation, so subsequent rows feed only the loop cadence.
+/// Only `time` (cadence) and a few row-0 anchors are read — the
+/// per-tick time-advance is deterministic on both runtimes given
+/// identical initialisation, so subsequent rows feed only the loop
+/// cadence. The optional `dyn_seconds` / `ude_seconds` / `metveh1_seconds`
+/// columns are read from row 0 only, to derive the MET/UDE epochs (the
+/// per-tick `assert_simulation_time_bits_eq` then compares the
+/// re-derived values against each other, not against the CSV).
 struct TimeDockerRow {
     time: f64,
     tai_tjt: Option<f64>,
     ut1_tjt: Option<f64>,
+    dyn_seconds: Option<f64>,
+    ude_seconds: Option<f64>,
+    metveh1_seconds: Option<f64>,
 }
 
 /// Parse a time-verification CSV header so missing columns surface as
@@ -109,6 +110,10 @@ fn load_csv(filename: &str) -> Vec<TimeDockerRow> {
         .or_else(|| col("jeod_time.tai.trunc_julian_time"));
     let i_ut1_tjt = col("jeod_time.time_ut1.trunc_julian_time")
         .or_else(|| col("jeod_time.ut1.trunc_julian_time"));
+    let i_dyn_s = col("jeod_time.time_manager.dyn_time.seconds")
+        .or_else(|| col("jeod_time.manager.dyn_time.seconds"));
+    let i_ude_s = col("jeod_time.time_ude.seconds").or_else(|| col("jeod_time.ude.seconds"));
+    let i_met1_s = col("jeod_time.metveh1.seconds");
 
     let mut rows = Vec::new();
     for (li, line) in lines.enumerate() {
@@ -126,6 +131,9 @@ fn load_csv(filename: &str) -> Vec<TimeDockerRow> {
             time: p(i_time),
             tai_tjt: i_tai_tjt.map(p),
             ut1_tjt: i_ut1_tjt.map(p),
+            dyn_seconds: i_dyn_s.map(p),
+            ude_seconds: i_ude_s.map(p),
+            metveh1_seconds: i_met1_s.map(p),
         });
     }
     assert!(!rows.is_empty(), "no data rows in {}", path.display());
@@ -140,19 +148,46 @@ fn initial_tai_tjt(first: &TimeDockerRow) -> f64 {
     first.tai_tjt.unwrap_or(astrodyn::J2000_TAI_TJT)
 }
 
+/// Per-SIM customization knobs applied on top of the shared builder
+/// factory. Each test fills in only the knobs its SIM needs; the rest
+/// stay at their defaults so unrelated SIMs aren't affected.
+#[derive(Default, Clone, Copy)]
+struct TimeDockerSetup {
+    /// SIM_5: register a `metveh1` MET with the given TAI-seconds epoch.
+    met_epoch_tai_seconds: Option<f64>,
+    /// SIM_3: register a UDE with the given parent-seconds epoch.
+    ude_epoch_in_parent: Option<f64>,
+    /// SIM_4: install the bundled IERS EOP table for per-tick UT1
+    /// interpolation. When `false` the constant `ut1_tai_offset` written
+    /// from the CSV row-0 `(ut1_tjt - tai_tjt)` is used instead.
+    install_eop_table: bool,
+}
+
 /// Build a body-less `SimulationBuilder` whose time pipeline is seeded
-/// from the supplied CSV row-0 epoch. Optionally writes a constant
-/// UT1-TAI offset derived from `init.ut1_tjt - init.tai_tjt` (matches
-/// the SIM_5 runner path; SIM_4 also has UT1 logged but uses an EOP
-/// table on the runner side that is not surfaced through
-/// `SimulationTime` — both runtimes share the same constant offset
-/// here, so bit-identity holds on both sides). The factory runs twice
-/// per test (once per runtime) so each runtime sees bit-identical IC.
-fn build_time_docker_builder(init: &TimeDockerRow, dt: f64) -> SimulationBuilder {
+/// from the supplied CSV row-0 epoch and per-SIM setup. The factory
+/// runs twice per test (once per runtime) so each runtime sees
+/// bit-identical IC.
+fn build_time_docker_builder(
+    init: &TimeDockerRow,
+    dt: f64,
+    setup: TimeDockerSetup,
+) -> SimulationBuilder {
     let mut time = SimulationTime::new(initial_tai_tjt(init), default_leap_second_table());
-    if let (Some(tai_tjt), Some(ut1_tjt)) = (init.tai_tjt, init.ut1_tjt) {
+    if setup.install_eop_table {
+        // EOP table re-interpolates `ut1_tai_offset` on every advance;
+        // do not overwrite with a constant offset afterwards (that
+        // would defeat the `with_eop_table` JEOD path that SIM_4 is
+        // here to exercise).
+        time = time.with_eop_table(default_eop_table());
+    } else if let (Some(tai_tjt), Some(ut1_tjt)) = (init.tai_tjt, init.ut1_tjt) {
         let ut1_tai_offset = (ut1_tjt - tai_tjt) * SECONDS_PER_DAY;
         time.set_ut1_tai_offset(ut1_tai_offset);
+    }
+    if let Some(epoch_in_parent) = setup.ude_epoch_in_parent {
+        time.add_ude(epoch_in_parent);
+    }
+    if let Some(met_epoch_tai_s) = setup.met_epoch_tai_seconds {
+        time.add_met(met_epoch_tai_s);
     }
     SimulationBuilder::new(time, dt)
 }
@@ -190,11 +225,12 @@ fn step_one_tick(label: &str, t: f64, runner: &mut astrodyn_runner::Simulation, 
 }
 
 /// Run a body-less SIM_X case: build both runtimes from the shared
-/// factory, sanity-check IC alignment, then walk the CSV's rows in
-/// lockstep, asserting bit-identical `SimulationTime` at every
-/// checkpoint. Per-SIM `#[test]` entries call this with their own CSV
-/// filename + cadence-fallback so a failure diagnostic names the sim.
-fn run_sim_parity(label: &str, csv: &str, fallback_dt: f64) {
+/// factory + per-SIM setup, sanity-check IC alignment, then walk the
+/// CSV's rows in lockstep, asserting bit-identical `SimulationTime` at
+/// every checkpoint. Per-SIM `#[test]` entries call this with their own
+/// CSV filename, cadence-fallback, and setup so a failure diagnostic
+/// names the sim.
+fn run_sim_parity(label: &str, csv: &str, fallback_dt: f64, setup: TimeDockerSetup) {
     let rows = load_csv(csv);
     assert!(
         rows.len() >= 2,
@@ -204,14 +240,14 @@ fn run_sim_parity(label: &str, csv: &str, fallback_dt: f64) {
     let init = &rows[0];
 
     // ── Runner side ──
-    let mut runner = build_time_docker_builder(init, dt)
+    let mut runner = build_time_docker_builder(init, dt, setup)
         .build()
         .unwrap_or_else(|e| panic!("{label}: runner build failed: {e:?}"));
 
     // ── Bevy side — same factory, materialised under <Earth> ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let _handles = build_time_docker_builder(init, dt)
+    let _handles = build_time_docker_builder(init, dt, setup)
         .populate_app::<astrodyn::Earth>(&mut app)
         .unwrap_or_else(|e| panic!("{label}: populate_app failed: {e:?}"));
     // `MinimalPlugins` does not auto-run `Startup`; mirror the
@@ -251,7 +287,12 @@ fn run_sim_parity(label: &str, csv: &str, fallback_dt: f64) {
 /// plus the derived calendar scales hanging off the synthetic anchor.
 #[test]
 fn bevy_parity_time_v1_dyn_only() {
-    run_sim_parity("SIM_1_dyn_only", "time_v1_dyn_only_time_v1.csv", 1.0);
+    run_sim_parity(
+        "SIM_1_dyn_only",
+        "time_v1_dyn_only_time_v1.csv",
+        1.0,
+        TimeDockerSetup::default(),
+    );
 }
 
 // ── SIM_2_dyn_plus_STD ──────────────────────────────────────────────────────
@@ -261,41 +302,100 @@ fn bevy_parity_time_v1_dyn_only() {
 /// + simtime parity between runtimes at the CSV's 1 s cadence.
 #[test]
 fn bevy_parity_time_v2_std() {
-    run_sim_parity("SIM_2_std", "time_v2_std_time_v2.csv", 1.0);
+    run_sim_parity(
+        "SIM_2_std",
+        "time_v2_std_time_v2.csv",
+        1.0,
+        TimeDockerSetup::default(),
+    );
+}
+
+// ── SIM_3_dyn_plus_UDE ──────────────────────────────────────────────────────
+
+/// SIM_3 RUN_init_by_ude: UDE registered with `clock_second = -5`. After
+/// initialisation UDE starts at -5 s; DynamicTime starts at 0 and the
+/// UDE epoch sits at Dyn = +5 s. At each step JEOD reports
+/// `UDE = Dyn - epoch_in_parent`. Both runtimes register the same UDE
+/// via `add_ude(init_dyn - init_ude)`, and the bit-identity assertion
+/// covers the per-tick `ude[0].seconds` re-derivation as well as the
+/// standard calendar scales hanging off the synthetic J2000 anchor.
+#[test]
+fn bevy_parity_time_v3_ude() {
+    let rows = load_csv("time_v3_ude_time_v3.csv");
+    let init = &rows[0];
+    let init_ude = init.ude_seconds.expect("SIM_3 CSV must log UDE seconds");
+    let init_dyn = init.dyn_seconds.expect("SIM_3 CSV must log DYN seconds");
+    let epoch_in_parent = init_dyn - init_ude;
+    run_sim_parity(
+        "SIM_3_ude",
+        "time_v3_ude_time_v3.csv",
+        1.0,
+        TimeDockerSetup {
+            ude_epoch_in_parent: Some(epoch_in_parent),
+            ..TimeDockerSetup::default()
+        },
+    );
 }
 
 // ── SIM_4_common_usage ──────────────────────────────────────────────────────
 
 /// SIM_4 RUN_JEOD2x: TAI + UTC + UT1 initialised at 1998-12-31 00:00
 /// UTC and sampled at 60 s cadence through t=86460 s, crossing the
-/// 1999-01-01 leap-second boundary at t=86400 s. The CSV's t=0
-/// `ut1_tjt - tai_tjt` seeds a constant `ut1_tai_offset` on both
-/// runtimes; the leap-second transition is handled identically on
-/// both sides via the shared `default_leap_second_table()` through
-/// `SimulationTime::recompute_derived`. See the module-level
-/// "SIM_4 leap-second handling" docstring for why this constant-offset
-/// scoping is correct for the parity wrapper.
+/// 1999-01-01 leap-second boundary at t=86400 s. Both runtimes install
+/// the bundled IERS EOP table so `ut1_tai_offset` interpolates per
+/// tick (mirroring the runner-side `with_eop_table(default_eop_table())`
+/// path). The leap-second transition stays bit-identical via the shared
+/// `default_leap_second_table()` and the same
+/// `SimulationTime::recompute_derived` path.
 #[test]
 fn bevy_parity_time_v4_common() {
-    run_sim_parity("SIM_4_common", "time_v4_common_time_v4.csv", 60.0);
+    run_sim_parity(
+        "SIM_4_common",
+        "time_v4_common_time_v4.csv",
+        60.0,
+        TimeDockerSetup {
+            install_eop_table: true,
+            ..TimeDockerSetup::default()
+        },
+    );
 }
 
 // ── SIM_5_all_inclusive (RUN_UDE_initialized) ───────────────────────────────
 
 /// SIM_5 RUN_UDE_initialized: exercises every calendar time scale the
 /// production `SimulationTime` carries — TAI, TT, TDB, UTC, UT1,
-/// GMST, GPS. The runner-side test additionally validates `metveh1`;
-/// MET is a `TimeManager`-only feature not surfaced through the per-
-/// step `SimulationTimeR` resource, so it is out of scope for this
-/// wrapper — the same module-level reasoning that excludes SIM_3
-/// entirely.
+/// GMST, GPS — and additionally registers a `metveh1` MET. JEOD's
+/// SIM_5 also runs a second MET (`metveh2`) with a hold/release toggle
+/// during the run; our `SimulationTime` currently tracks a single MET
+/// at a time, so `metveh2` is out of scope for both the runner-side
+/// tier3 test and this parity wrapper. The single-MET path here is
+/// load-bearing because it is the only Bevy-side coverage of
+/// `MissionElapsedTime::update` running through `time_advance_system`.
 ///
 /// The SIM_5 `RUN_UTC_initialized_tdb` variant is already covered by
 /// `bevy_parity_timescale.rs`; this entry covers the complementary
 /// `RUN_UDE_initialized` run.
 #[test]
 fn bevy_parity_time_v5_all() {
-    run_sim_parity("SIM_5_all", "time_v5_all_time_v5.csv", 1.0);
+    let rows = load_csv("time_v5_all_time_v5.csv");
+    let init = &rows[0];
+    let init_met1 = init
+        .metveh1_seconds
+        .expect("SIM_5 CSV must log metveh1 seconds");
+    // MET epoch is the TAI-seconds offset that puts the CSV row-0
+    // `metveh1.seconds` value on the current TAI clock. Since `tai_seconds`
+    // is 0 at construction and `MET = tai_seconds - epoch`, the epoch
+    // that produces MET=init_met1 is `-init_met1`.
+    let met_epoch = -init_met1;
+    run_sim_parity(
+        "SIM_5_all",
+        "time_v5_all_time_v5.csv",
+        1.0,
+        TimeDockerSetup {
+            met_epoch_tai_seconds: Some(met_epoch),
+            ..TimeDockerSetup::default()
+        },
+    );
 }
 
 // ── SIM_6_extension ─────────────────────────────────────────────────────────
@@ -307,5 +407,10 @@ fn bevy_parity_time_v5_all() {
 /// parity at 1 s cadence.
 #[test]
 fn bevy_parity_time_v6_ext() {
-    run_sim_parity("SIM_6_ext", "time_v6_ext_time_v6.csv", 1.0);
+    run_sim_parity(
+        "SIM_6_ext",
+        "time_v6_ext_time_v6.csv",
+        1.0,
+        TimeDockerSetup::default(),
+    );
 }

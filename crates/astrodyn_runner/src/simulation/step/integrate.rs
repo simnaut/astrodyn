@@ -201,7 +201,7 @@ impl Simulation {
         // frame origin and source positions must scale by `integ_dt`, not
         // by the raw `dt` — otherwise reversed/scaled time produces
         // inconsistent gravity during coupled integration.
-        let integ_dt = dt * self.time.time_scale_factor;
+        let integ_dt = dt * self.time.scale_factor();
 
         // Helper: evaluate gravity (Newtonian + relativistic) at an
         // intermediate (pos, vel) for the given body. Takes `controls` as
@@ -261,7 +261,7 @@ impl Simulation {
             // a &mut SimBody, and Rust's disjoint-field split borrow lets
             // the closure capture &body.gravity_controls while other
             // fields of `body` are borrowed mutably for the integrator.
-            let time_scale_factor = self.time.time_scale_factor;
+            let time_scale_factor = self.time.scale_factor();
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
                 // JEOD_INV: DB.17 — only the root's state is integrated;
                 // kinematic children's `trans`/`rot` were already

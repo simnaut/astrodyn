@@ -79,13 +79,12 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
     // here.
     //
     // `time_docker` (tier3_sim_time_docker.rs) covered by
-    // `bevy_parity_time_docker.rs`: SIM_1/2/4/5/6 each run as a
+    // `bevy_parity_time_docker.rs`: all six SIM_1..6 cases run as a
     // body-less builder through both runtimes with bit-identical
-    // `SimulationTime` assertion at every CSV checkpoint. SIM_3 (UDE)
-    // and the MET fields of SIM_5 are out of scope structurally —
-    // both are `TimeManager`-only features not surfaced through the
-    // per-step `SimulationTimeR` resource the Bevy pipeline
-    // propagates; the per-file docstring explains the scoping.
+    // `SimulationTime` assertion at every CSV checkpoint. After the
+    // #577 unification `SimulationTime` carries EOP / MET / UDE, so
+    // SIM_3 (UDE), SIM_4 EOP-interpolated UT1, and SIM_5 `metveh1`
+    // are first-class parity surface here.
     // ── dyncomp run3-run10: most have recipe factories
     //    (sim_dyncomp::run3a_sh4x4, run4_3rd_body, run7a_*, run10a_*, …)
     //    but several rely on `pre_step` for ephemeris updates and the
