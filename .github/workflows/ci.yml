@@ -176,13 +176,13 @@ jobs:
       # coupling". If `tests/bevy_parity_*.rs` were ever collapsed under
       # one umbrella binary named `bevy_parity` (e.g. mod-based
       # restructure), the four binary selectors below (two
-      # `binary(/^bevy_parity_…/)` regex + two exact
-      # `binary(=bevy_parity_…)`) would each match zero binaries — both
-      # forms require the trailing `_<topic>` suffix that the umbrella
-      # target name lacks, so nothing gets excluded and the PR lane
-      # silently runs every heavy parity scenario. The
-      # `parity_coverage.rs` module doc enumerates the parallel guard
-      # fence.
+      # `binary(/^bevy_parity_…/)` regexes plus two exact-match
+      # `binary(=bevy_parity_…)` selectors) would each match zero
+      # binaries — both forms require the trailing `_<topic>` suffix
+      # that the umbrella target name lacks, so nothing gets excluded
+      # and the PR lane silently runs every heavy parity scenario.
+      # The `parity_coverage.rs` module doc enumerates the parallel
+      # guard fence.
       - name: Run fast bevy_parity_* tests (exclude heavy binaries)
         run: |
           cargo nextest run --workspace -E '
