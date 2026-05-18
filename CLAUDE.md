@@ -372,6 +372,22 @@ someone forgot. The same rule applies to file-level `#![allow]` and
 module-level `#[allow]` on `#[cfg(test)] mod tests` blocks — write
 the rationale in the `reason`, never as a free-floating comment.
 
+For the recurring "bit-exact" rationales that show up verbatim across
+multiple files (typed-vs-raw boundary parity, Tier 3 literal/analytic
+recovery, `bevy_parity_*` state/time identity), the canonical phrasings
+are catalogued in
+[`astrodyn_quantities::lint_reasons::clippy_float_cmp`] so a future
+edit catches all sites at once. The `reason = "..."` attribute itself
+requires a string literal (the compiler rejects const paths and macro
+invocations on its RHS), so each site still spells the phrasing
+verbatim — copy the exact string from the catalog rather than coining a
+new one. The coverage test
+`crates/astrodyn_quantities/tests/lint_reasons_catalog.rs` asserts
+every cataloged string still appears in at least two `reason = "..."`
+literals, failing CI if the catalog drifts.
+
+[`astrodyn_quantities::lint_reasons::clippy_float_cmp`]: https://docs.rs/astrodyn_quantities/latest/astrodyn_quantities/lint_reasons/clippy_float_cmp/index.html
+
 ## Quaternion Convention
 
 JEOD uses **scalar-first, left-transformation** quaternions: `[q0, q1, q2, q3]`

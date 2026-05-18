@@ -176,6 +176,7 @@ pub mod frame_transform;
 pub mod harmonic;
 pub mod inertia;
 pub mod integ_origin;
+pub mod lint_reasons;
 pub mod ops;
 pub mod prelude;
 pub mod qty3;
