@@ -294,9 +294,11 @@ fn line_mass_props() -> MassProperties {
 // at this operating envelope is bounded by 1.5e-12, six orders of
 // magnitude below the residual — see
 // `integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`).
-// The remaining off-center drift is 12 orders of magnitude better than
-// the pre-fix envelope but not at head-on parity; the structural
-// source remains under investigation.
+// The remaining off-center trajectory drift is roughly one order of
+// magnitude better than the pre-#117 envelope (2.7 cm → 2.5 mm) but
+// not at head-on parity (~12 orders of magnitude separate 2.5 mm from
+// the head-on cases' ~1e-15 m machine-precision floor); the
+// structural source remains under investigation.
 const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
 
 // `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
