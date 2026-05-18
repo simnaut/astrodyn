@@ -279,26 +279,196 @@ fn line_mass_props() -> MassProperties {
 // with one explicitly-noted exception for `CONTACT_TORQUE_TOL` where
 // the observed max sits at the machine-precision noise floor.
 //
+// ── Off-center residual: state of the investigation ──
+//
 // Head-on scenarios match JEOD to machine precision (~1e-15 m position
 // over 10 s); the off-center oblique case sits at ~2.5 mm trajectory
 // drift / ~0.55 mm/s velocity drift, traced to a ω²-scaled per-stage
-// force residual of ~120 μN. The residual's structural source is not in
-// the rel-vel kinematics (textbook two-body formula matches JEOD to
-// 2.48e-16 — see `evaluate_contact_pair_matches_jeod_subject_frame_formula`),
-// not in per-body stage interleaving (our coupled RK4 is single-pass
-// across all bodies, matching JEOD's `IntegLoop` lockstep — see
-// `integrate_bodies_contact_coupled_evaluates_in_lockstep`), and not in
-// per-stage quaternion renormalization (the rotation matrix
-// `contact_eval` materializes is built from a `normalize_integ`'d Q at
-// each stage; the Qdot perturbation between raw and normalized stage Q
-// at this operating envelope is bounded by 1.5e-12, six orders of
-// magnitude below the residual — see
-// `integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`).
+// force residual of ~120 μN. Three directions have been algebraically
+// falsified with permanent regression guards:
+//
+// - **Direction 1 — rel-vel kinematic formula:** matches JEOD's
+//   subject-body-frame `point_contact_pair.cc::in_contact` to 2.48e-16
+//   over 158 stage evaluations. Guard:
+//   `evaluate_contact_pair_matches_jeod_subject_frame_formula` in
+//   `src/interactions.rs`.
+// - **Direction 2 — per-body ordering within a stage:** our coupled
+//   RK4 is single-pass across all bodies, matching JEOD's `IntegLoop`
+//   lockstep. Guard:
+//   `integrate_bodies_contact_coupled_evaluates_in_lockstep` in
+//   `src/integration.rs`.
+// - **Direction 3 — per-stage Q renormalization for contact_eval:**
+//   the rotation matrix `contact_eval` materializes is built from a
+//   `normalize_integ`'d Q at each stage; the Qdot perturbation
+//   between raw and normalized stage Q at this operating envelope is
+//   bounded by 1.5e-12 — six orders of magnitude below the residual.
+//   Guard:
+//   `integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`
+//   in `src/integration.rs`.
+//
+// **Direction 4 — open candidate list, prioritized.** Each candidate
+// names a JEOD source site, the falsification sketch, and an
+// arithmetic bound on its plausible contribution. None has been
+// directly tested; the order reflects how much divergence each could
+// plausibly contribute given the documented ~5e-4 rad/s peak ω and
+// 0.01 s dt.
+//
+// **D4-A — Lie-group RK4 vs quaternion-Euler RK4 for rotation.**
+// JEOD's `RestartableSO3SecondOrderODEIntegrator` defaults to the
+// `LieGroup` technique
+// (`models/utils/integration/include/restartable_state_integrator.hh:415-435`,
+// `models/dynamics/dyn_body/include/dyn_body.hh:705-706`), which
+// dispatches to `RK4GeneralizedStepSecondOrderODEIntegrator` — a
+// commutator-free RK4 that advances Q via `expmap(ω · h)`
+// (`trick_source/er7_utils/integration/rk4/src/rk4_second_order_ode_integrator.cc:262-456`,
+// `trick_source/er7_utils/integration/core/include/left_quaternion_functions.hh:110-149`).
+// Our kernel advances Q via `q + qdot · h` (quaternion-Euler RK4),
+// which is also 4th-order accurate for smooth ω(t) but differs from
+// the Lie-group result at O(h^5) per stage and produces a stage Q
+// that drifts off the unit sphere by O((ω·h)²). **Falsify:** swap
+// `eval_stage`'s `step_q_arr` for an expmap-based step (or apply the
+// CF-RK4 update for rotation) inside
+// `integrate_bodies_contact_coupled` and rerun
+// `tier3_contact_point_off_center`. **Bound on contribution:** the
+// per-step difference in the propagated Q is bounded by
+// (ω·dt)^5/120 ≈ 1e-22 for this regime — orders of magnitude below
+// the 120 μN residual. **Likelihood:** low (~10 %).
+//
+// **D4-B — `compute_transformation` freshness for contact's
+// rotation-matrix consumer.** JEOD runs
+// `Q_parent_this.normalize_integ()` + `compute_transformation()` +
+// `compute_left_quat_deriv()` after every stage (line 380-386 of
+// `models/dynamics/dyn_body/src/dyn_body_integration.cc`), then
+// `propagate_state()` recomputes `composite_body → structure →
+// vehicle_points`. Inside the contact callback our
+// `evaluate_contact_pair` materializes a fresh `T_inertial_body =
+// left_quat_to_transformation(stage_rot.quaternion)` at every stage
+// (`src/interactions.rs:462-467`), which **already** uses the
+// normalized stage Q (Direction 3 guard), so the matrix is fresh.
+// However, the rotation matrix path differs: JEOD stores
+// `T_parent_this` once and reuses it inside `contact_pair.cc::in_range`
+// (which calls `rel_state.update()` → `compute_relative_state` →
+// uses the stored `T_parent_this`), while we recompute the matrix
+// inside the inner loop from a different source quaternion (the
+// kernel's `normalize_integ`'d copy vs JEOD's stored frame matrix).
+// **Falsify:** instrument `eval_stage` to record both `T_inertial_body`
+// matrices at each stage and bit-compare against a `T` materialized
+// from JEOD's `normalize_integ → compute_transformation` chain at
+// the same Q. **Bound:** matrix-element drift is bounded by f64
+// round-off (~1e-15) on `left_quat_to_transformation`'s polynomial,
+// times an arm of 1 m, times the damping coefficient
+// (70 N·s/m) — ~7e-14 N. **Likelihood:** very low (~5 %).
+//
+// **D4-C — Contact-frame coordinate system (subject-body vs
+// inertial).** JEOD's `point_contact_pair.cc::in_contact` computes
+// rel_velocity in the **subject body frame**
+// (`models/interactions/contact/src/point_contact_pair.cc:55-87`):
+// the relative position from
+// `rel_state.rel_state.trans.position` is rotated by the relative
+// `T_parent_this` (subject → target) to find the target contact
+// point, then `rel_velocity = ang_vel_subject × subject_contact_point
+// - rel_state.rel_state.trans.velocity`. Our `evaluate_contact_pair`
+// builds the same physical quantity in the **inertial frame**
+// (`src/interactions.rs:516-534`), then later applies torque arms in
+// inertial and rotates only the torque output back to body frame
+// (`src/interactions.rs:551-557`). Algebraically the two formulations
+// are equivalent; numerically they differ in floating-point order of
+// operations and in which matrix products eat the round-off. **Falsify:**
+// port the JEOD formulation verbatim (do the cross-product in
+// subject body frame, then rotate the resulting force back to
+// inertial) and rerun `tier3_contact_point_off_center`. If the
+// residual drops, the ω²-scaling comes from `T(ω·dt/2)^T · v -
+// T(ω·dt/2)^T · v_jeod_computation_order` — a cancellation that
+// the subject-frame formulation arranges differently than ours.
+// **Bound:** body-frame vs inertial-frame round-off on a c · ω × r
+// term sits at machine ε · (c · |ω × r|) ≈ 1e-16 · 70 · 5e-4 ≈
+// 3.5e-18 N per operation, but the **systematic** difference
+// between two algebraically-equivalent-but-numerically-distinct
+// orderings of the matrix products around ω × r could in principle
+// scale as ω² · h · c ≈ (5e-4)² · 0.01 · 70 ≈ 1.75e-7 N — within an
+// order of magnitude of the 120 μN residual. **Likelihood:**
+// medium-high (~40 %), and the cheapest to test (parallel local
+// reimplementation, no integrator-state change).
+//
+// **D4-D — vehicle_point propagation cadence.** JEOD's
+// `DynBody::integrate(...)` ends with `propagate_state()` after
+// **every** stage
+// (`models/dynamics/dyn_body/src/dyn_body_integration.cc:339`),
+// which calls `compute_derived_state_reverse(composite_body,
+// mass.composite_properties, structure)` and then
+// `compute_vehicle_point_states` — refreshing the facet-attached
+// vehicle_point's `state.trans` and `state.rot`. Our pipeline never
+// materializes a vehicle_point frame; the facet's structural offset
+// is rotated through the body's stage-Q inside
+// `evaluate_contact_pair` directly. For SIM_contact the facet sits
+// at CoM = structure origin so the position offset cancels, but the
+// **angular velocity** propagation through `compute_derived_state_*`
+// uses `T_parent_this` (the stage T after `compute_transformation`),
+// and the cm-to-facet ω cross-product `wxr` adds an additional
+// inertial-frame velocity term at every propagation
+// (`dyn_body_propagate_state.cc:190-191`). With our facet at CoM
+// this is zero, but **the angular velocity expressed in
+// vehicle_point coords** that JEOD's contact eval consumes
+// (`rel_state.rel_state.rot.ang_vel_this`) is built from the
+// `compute_derived_state_*` chain, not from `composite_body.rot.
+// ang_vel_this` directly. For CoM-at-structure, structure ≡
+// composite_body in all components, so this should be zero
+// algebraically — but with vehicle_point's `T_parent_this` rebuilt
+// via `Q.multiply(...).normalize()` rather than `normalize_integ`,
+// any sign-hemisphere flip in `Q.normalize()` could introduce a
+// quaternion-double-cover discontinuity. **Falsify:** capture a
+// trajectory of JEOD's `rel_state.rel_state.rot.ang_vel_this` at
+// each stage (FORCE_COMPONENT_TRACE patch on
+// `point_contact_pair.cc:83`) and compare against
+// `body.rot.ang_vel_body` from our stage state at the same time.
+// **Bound:** for the SIM_contact fixture all three frames coincide,
+// so this candidate is zero in algebra; only round-off in
+// `Q.multiply().normalize() → compute_transformation` can produce
+// drift, bounded at ~1e-15 per matrix element. **Likelihood:** low
+// (~10 %), but worth ruling out because if vehicle_point ever
+// becomes non-coincident in a follow-up test, this path becomes
+// load-bearing.
+//
+// **D4-E — Order of contact-vs-translational-stage state assembly.**
+// In our kernel `eval_stage` materializes `stage_pos[i] = pos0[i] +
+// k_v_prev[i] · h` and `stage_vel[i] = vel0[i] + k_a_prev[i] · h`
+// (Cartesian Euler step on `(pos, vel)`); JEOD's
+// `RK4SimpleSecondOrderODEIntegrator` uses
+// `inplace_two_state_euler_step_save_all` /
+// `rk_two_state_intermediate_step`
+// (`trick_source/er7_utils/integration/rk4/src/rk4_second_order_ode_integrator.cc:111-160`),
+// which is algebraically identical but writes `position` and
+// `velocity` in a specific order with intermediate `posdot_hist[k]`
+// captures. The captured `posdot_hist[k]` is later reused by the
+// stage-4 weighted combination — and **our `step_q_arr` doesn't have
+// an equivalent posdot_hist capture path because we recompute
+// `k_qdot` from scratch every stage**. For translational state our
+// equivalent of `posdot_hist[k]` is just `stage_vel[k] = k_v[k] ·
+// h` (saved implicitly via `k_v` arrays), so the math is
+// equivalent. **Falsify:** instrument both implementations to dump
+// `posdot_hist[k]` / our `k_v[k]` at every stage for a fixture with
+// `ω ≠ 0`, bit-compare. **Bound:** algebraically identical, so
+// round-off only ~ 1e-15 per stage. **Likelihood:** very low
+// (~5 %), included for completeness.
+//
+// **D4-F — Mass-property recomputation per stage.** JEOD's
+// `MassProperties` for a rigid body is constant over a step (no
+// internal-mass redistribution in SIM_contact), so
+// `compute_principal_axes` / `inverse_inertia` are NOT recomputed
+// per stage in JEOD either. **Likelihood:** negligible (~1 %),
+// listed only to mark it as ruled out by inspection.
+//
+// **Direction 4 priority order:** D4-C → D4-D → D4-B → D4-A →
+// D4-E → D4-F. D4-C is the only candidate whose arithmetic bound
+// brackets the observed residual; the others are most likely
+// orders of magnitude too small.
+//
 // The remaining off-center trajectory drift is roughly one order of
 // magnitude better than the pre-#117 envelope (2.7 cm → 2.5 mm) but
 // not at head-on parity (~12 orders of magnitude separate 2.5 mm from
 // the head-on cases' ~1e-15 m machine-precision floor); the
-// structural source remains under investigation.
+// structural source remains under investigation, with the candidate
+// catalog above scoping the next round of audits.
 const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
 
 // `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
