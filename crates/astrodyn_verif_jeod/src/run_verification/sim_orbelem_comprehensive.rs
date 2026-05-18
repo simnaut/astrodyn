@@ -40,6 +40,7 @@
 //! `crates/astrodyn_verif_jeod/test_data/orbelem_verif_tXX_orbelem.csv`,
 //! committed alongside the rest of the verif fixtures.
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, GravityControl, GravityControls,
@@ -62,14 +63,6 @@ const DT_S: f64 = 1e-9;
 /// construction, so a single synthetic-cadence checkpoint preserves
 /// the test's coverage shape.
 const NUM_STEPS: usize = 1;
-
-fn load_mu_earth() -> f64 {
-    // Cache the decoded `mu` for the lifetime of the test process —
-    // every `build_*` call would otherwise re-parse the full GGM05C
-    // coefficient table (≈12 KiB) just to read a single scalar.
-    static MU_EARTH: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *MU_EARTH.get_or_init(|| astrodyn::gravity_fixtures::load_ggm05c().mu)
-}
 
 /// Shared scenario builder for every recipe. Parameterised by:
 ///   * `mu_earth` — Earth's gravitational parameter (point-mass);
