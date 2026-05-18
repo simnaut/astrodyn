@@ -26,7 +26,7 @@
 //! }
 //! ```
 
-pub mod fixtures;
+pub(super) mod fixtures;
 pub mod sim_apollo_trajectory;
 pub mod sim_attach_detach_trajectory;
 pub mod sim_derived_state;
