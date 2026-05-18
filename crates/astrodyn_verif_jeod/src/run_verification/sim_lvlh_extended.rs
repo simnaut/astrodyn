@@ -25,6 +25,7 @@
 //! `SimulationBuilder` to materialize, and a hand-rolled tier3 test
 //! that constructs a `Simulation` directly has no bridge entry point.
 
+use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     default_leap_second_table, DerivedStateConfig, GravityControl, GravityControls,
@@ -51,10 +52,6 @@ const DT_S: f64 = 10.0;
 /// modest cadence (10 records) is enough to drive the parity trait's
 /// lockstep comparison.
 const SHORT_NUM_STEPS: usize = 10;
-
-fn load_mu_earth() -> f64 {
-    astrodyn::gravity_fixtures::load_ggm05c().mu
-}
 
 /// Shared Earth source + LVLH-only body, parameterised by the body's
 /// translational state. Mirrors the inline `make_earth_lvlh_sim` helper
