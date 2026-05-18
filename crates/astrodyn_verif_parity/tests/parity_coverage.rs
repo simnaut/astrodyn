@@ -20,6 +20,57 @@
 //! with a `#[ignore = "parity-gap: <reason>"]` on the wrapper test (or
 //! omit the wrapper entirely). The intent is that *every* gap is
 //! either solved or named explicitly.
+//!
+//! ## Structural coupling: one-binary-per-topic is load-bearing
+//!
+//! The `bevy_parity_<topic>.rs` *file stem* is the topic identifier on
+//! two structural fences, not a convention:
+//!
+//! 1. **Parity-superset coverage (this file).** [`collect_topics`]
+//!    enumerates by `read_dir` + `file_stem` + `strip_prefix("bevy_parity_")`.
+//!    There is no inspection of test function names anywhere in the
+//!    crate. Collapsing N integration-test files into a single
+//!    `tests/bevy_parity.rs` umbrella binary that `mod`s each former
+//!    file would empty this scan: the file stem `bevy_parity` (no
+//!    trailing underscore) fails the `strip_prefix("bevy_parity_")`
+//!    call entirely and the file is skipped — it does *not* contribute
+//!    an empty-string topic. With no parity wrappers discovered, the
+//!    `parity_topics` set is empty; the coverage loop then skips any
+//!    topic listed in [`DEFERRED_GAPS`] or [`PERMANENT_GAPS`] before
+//!    pushing to `uncovered`, so the resulting failure mode is "every
+//!    Tier 3 topic *not already gap-listed* fires uncovered" — with
+//!    today's gap lists that's the bulk of the parity matrix, a
+//!    substantial but per-topic-aware failure rather than a total one.
+//!    The coverage gate would still have to be rewritten to scan test
+//!    function names from compiled binary metadata before the umbrella
+//!    restructure is safe.
+//!
+//! 2. **CI heavy/fast split** (`.github/workflows/ci.yml`,
+//!    `test-parity-trajectory` job). The PR-lane exclusion filter uses
+//!    `binary(/^bevy_parity_dyncomp_run/)`,
+//!    `binary(/^bevy_parity_solar_beta/)`,
+//!    `binary(=bevy_parity_torque_simple)`,
+//!    `binary(=bevy_parity_srp_1st_order)`. Each parity wrapper today
+//!    is its own cargo integration-test target (one binary per file),
+//!    and the `binary(...)` nextest selector reads cargo's target name.
+//!    Collapsing into one umbrella binary (target name `bevy_parity`)
+//!    leaves these four selectors matching **no** binaries — both the
+//!    `^bevy_parity_dyncomp_run` / `^bevy_parity_solar_beta` regexes
+//!    and the exact `=bevy_parity_torque_simple` /
+//!    `=bevy_parity_srp_1st_order` names require the trailing
+//!    `_<topic>` suffix, which the umbrella target name lacks. The
+//!    heavy/fast split silently breaks at the selector level: nothing
+//!    gets excluded, and the PR lane runs every heavy parity scenario.
+//!    To restore the split, the heavy subset would have to be
+//!    re-expressed via `test(...)` selectors against function names,
+//!    which requires every heavy test function to carry the same
+//!    `bevy_parity_<topic>` prefix the file stem carries today.
+//!
+//! Both fences depend on the **file stem** identifying the topic.
+//! Refactors that hoist `#![allow]` blocks (or anything else) into a
+//! single umbrella integration-test binary must coincide with
+//! structural updates to both fences in the same PR — half-baked
+//! consolidations are unsafe.
 
 use std::collections::BTreeSet;
 use std::path::Path;
