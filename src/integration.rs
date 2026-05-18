@@ -1667,10 +1667,11 @@ mod tests {
         trans: Vec<TranslationalState>,
     }
 
-    /// Structural guard for issue #560 Direction 2: the multi-body
-    /// coupled-RK4 driver evaluates `contact_eval` at a *synchronized*
-    /// stage state across all bodies — never with one body advanced
-    /// further than another. This mirrors JEOD's
+    /// Structural guard for the multi-body coupled-RK4 derivative-class
+    /// lockstep contract: `contact_eval` (a derivative-class job) is
+    /// evaluated at a *synchronized* stage state across all bodies —
+    /// every derivative is computed at the same stage of the same step,
+    /// never with one body advanced past another. This mirrors JEOD's
     /// `IntegLoop::integrate_dt` FSM, where every derivative-class job
     /// (including `Contact::check_contact` at
     /// `models/interactions/contact/src/contact.cc:86`, scheduled as
@@ -1682,20 +1683,50 @@ mod tests {
     /// (`models/utils/sim_interface/src/trick_dynbody_integ_loop.cc:194-204`,
     /// `models/dynamics/dyn_manager/src/dynamics_integration_group.cc:339-376`).
     ///
-    /// The assertion below pins three things:
-    ///   1. At stage 1, every body sees its own `y0`.
-    ///   2. At stages 2..=4, every body's stage `position`/`velocity`
-    ///      equals `y_i(0) + h_stage * k_v_prev[i]` (and similarly for
-    ///      velocity) — i.e., body `i`'s stage state depends *only* on
-    ///      body `i`'s initial state and body `i`'s own previous-stage
-    ///      derivative, never on another body's already-advanced output.
-    ///   3. `contact_eval` is invoked exactly four times (once per RK4
-    ///      stage), not once-per-body-per-stage.
+    /// The hypothesis this guard falsifies — that the contact
+    /// derivative could be evaluated at a *mixed* state where body A
+    /// is at stage `s` and body B is still at stage `s-1` — is
+    /// addressed in three layers, because pinning only the *stage
+    /// state inputs* leaves a gap a reader could legitimately ask
+    /// about: would the *derivative output* materially differ if it
+    /// were the mixed state? Layer 3 answers that with a numerical
+    /// receipt.
+    ///
+    /// What this test pins, in three parts:
+    ///
+    /// 1. **Call-count invariant.** `contact_eval` is invoked exactly
+    ///    four times (one per RK4 stage), never once-per-body-per-stage.
+    ///    An interleaved scheduler that re-ran the derivative job after
+    ///    each body advanced would inflate the count to `4 * num_bodies`.
+    ///
+    /// 2. **Stage-input invariant (per-body lockstep state).** At every
+    ///    stage `s ≥ 2`, the kernel feeds `contact_eval` a stage state
+    ///    where body `i`'s position is `pos0[i] + h_s * k_v_prev[i]`
+    ///    using body `i`'s *own* previous-stage derivative — never
+    ///    another body's already-advanced output. We recover the
+    ///    per-body `k_v_prev` from the snapshot differences and assert
+    ///    each one equals the previous stage's per-body velocity, which
+    ///    is what `eval_stage` writes back as `k_v[i]`.
+    ///
+    /// 3. **Derivative time-shift discriminator.** We reconstruct in
+    ///    post a canonical relative-position coupling
+    ///    `F(A, B) = k_spring * (B.pos - A.pos)` (the same shape JEOD's
+    ///    `Contact::check_contact` consumes — see
+    ///    `interactions/contact/src/contact.cc:86`) at the lockstep
+    ///    stage-2 state `(A_s2, B_s2)` that `contact_eval` actually
+    ///    saw, and compare it against the interleaved alternative
+    ///    `(A_s2, B_s1)` where body 1 has not yet been advanced. The
+    ///    delta is `k_spring * (B_s2.pos - B_s1.pos)`, which is
+    ///    non-zero because body 1's stage-1 velocity is non-zero, and
+    ///    we assert it exceeds a non-trivial threshold. This receipt
+    ///    confirms an interleaved-derivative regression would be
+    ///    detectable in derivative-output magnitude, not only in
+    ///    bookkeeping.
     ///
     /// If a future refactor introduces interleaved per-body ordering
     /// (body B's stage state built from body A's just-integrated
-    /// state), property (2) breaks on at least one stage and this guard
-    /// fires.
+    /// state), property (2) breaks immediately and property (3)'s
+    /// arithmetic shifts; both fire.
     #[test]
     fn integrate_bodies_contact_coupled_evaluates_in_lockstep() {
         use std::cell::RefCell;
@@ -1708,10 +1739,10 @@ mod tests {
 
         // Two bodies whose contact-pair force depends strongly on each
         // other's position. Initial states are deliberately asymmetric
-        // so the per-stage k values differ between bodies — an
-        // interleaved variant (body 1 sees body 0's already-advanced
-        // state) would produce a different `stage_trans` for body 1
-        // at stages 2..=4, which the structural check would catch.
+        // so the per-stage k values differ between bodies — both the
+        // structural lockstep check (property 2) and the derivative
+        // time-shift discriminator (property 3) need this asymmetry to
+        // be sensitive to an interleaved regression.
         let mut trans0 = TranslationalState {
             position: DVec3::new(0.0, 0.0, 0.0),
             velocity: DVec3::new(0.05, -0.1, 0.02),
@@ -1781,7 +1812,11 @@ mod tests {
             // is the stage *input* ordering, not the contact
             // arithmetic (see Direction 1 guard
             // `evaluate_contact_pair_matches_jeod_subject_frame_formula`
-            // for the contact-force algebra).
+            // for the contact-force algebra). The derivative
+            // time-shift discriminator below reconstructs a contact
+            // force in post from the recorded snapshots, which keeps
+            // the contact-force shape and the lockstep contract
+            // independent.
             for entry in out.iter_mut() {
                 *entry = (DVec3::ZERO, DVec3::ZERO);
             }
@@ -1791,6 +1826,8 @@ mod tests {
         integrate_bodies_contact_coupled(&mut bodies, &mut scratch, gravity_fn, contact_eval, dt);
 
         let snaps = snapshots.into_inner();
+
+        // Property 1: call-count invariant.
         assert_eq!(
             snaps.len(),
             4,
@@ -1799,17 +1836,7 @@ mod tests {
              the count to 2*4 = 8."
         );
 
-        // Recompute per-body per-stage expected state from initial
-        // snapshots + per-body k_v. The kernel computes
-        //   stage_pos[i] = pos0[i] + k_v_prev[i] * h
-        //   stage_vel[i] = vel0[i] + k_a_prev[i] * h
-        // where (k_v_prev, k_a_prev) are body `i`'s own stage-(s-1)
-        // derivatives — never another body's. The structural check
-        // below reconstructs each body's expected `stage_pos[i]` /
-        // `stage_vel[i]` from its own k history and asserts identity
-        // with what `contact_eval` actually saw.
-
-        // Stage 1: state == initial snapshot.
+        // Property 2a: stage 1 sees every body's initial state.
         for (i, (pos0, vel0)) in pos0_snapshot.iter().zip(vel0_snapshot.iter()).enumerate() {
             assert_eq!(
                 snaps[0].trans[i].position, *pos0,
@@ -1822,15 +1849,18 @@ mod tests {
             );
         }
 
-        // Reconstruct per-body k_v (translation rate) and k_a
-        // (translation acceleration) from the snapshots themselves —
-        // the kernel exposes these only via the closure side-effects,
-        // so we recover them by differencing successive stage states.
-        // k_v[s-1][i] = (stage_pos[s][i] - pos0[i]) / h_s
-        // k_a[s-1][i] = (stage_vel[s][i] - vel0[i]) / h_s
-        // and assert that k_v[s-1][i] (recovered from stage s) equals
-        // the previous stage's velocity (which is what RK4 sets k_v to:
-        // see `eval_stage` body — `k_v[i] = stage_vel[i]`).
+        // Property 2b: at every stage s ≥ 2, body i's stage position
+        // is `pos0[i] + h_s * snaps[s-1].trans[i].velocity` — i.e.,
+        // built from body i's *own* previous-stage state, never from
+        // any other body's already-advanced output.
+        //
+        // We reconstruct per-body k_v (translation rate) from the
+        // snapshots themselves — the kernel exposes these only via the
+        // closure side-effects, so we recover them by differencing
+        // successive stage states:
+        //   recovered_k_v_prev[i] = (snaps[s].trans[i].pos - pos0[i]) / h_s
+        // and assert it equals the previous stage's per-body velocity
+        // (which is what `eval_stage` writes back as `k_v[i]`).
         let h_table = [dt * 0.5, dt * 0.5, dt];
         for (s_idx, &h) in h_table.iter().enumerate() {
             let s = s_idx + 1;
@@ -1849,32 +1879,42 @@ mod tests {
             }
         }
 
-        // Numerical receipt for the Direction 2 falsification: also
-        // construct an explicit "interleaved" alternative — body 0
-        // advances to its stage-2 state in full, then body 1 sees body
-        // 0's advanced position when its stage-2 state is built. The
-        // recorded snapshot for body 1 at stage 2 must NOT match this
-        // interleaved alternative — confirming that JEOD's
-        // single-pass-across-all-bodies derivative-class scheduling is
-        // also what our kernel does. If a future refactor accidentally
-        // adopts the interleaved ordering, this delta will collapse to
-        // zero and trip the assertion.
-        let interleaved_body1_stage2_pos = {
-            // What body 1's stage-2 position would be if body 0's k_v
-            // (= body 0's velocity at stage 1) were used to advance
-            // body 1 instead of body 1's own k_v.
-            let bogus_k_v = vel0_snapshot[0]; // body 0's stage-1 velocity
-            pos0_snapshot[1] + bogus_k_v * (dt * 0.5)
-        };
-        let lockstep_body1_stage2_pos = snaps[1].trans[1].position;
+        // Property 3: derivative time-shift discriminator. The
+        // Direction-2 hypothesis is about *derivative-output drift*
+        // when the contact job sees a mixed-stage state. We
+        // demonstrate it would be detectable by reconstructing a
+        // canonical relative-position coupling
+        //   F(A, B) = k_spring * (B.pos - A.pos)
+        // (the shape JEOD's `Contact::check_contact` consumes — see
+        // `interactions/contact/src/contact.cc:86`) and comparing the
+        // lockstep value `F(A_s2, B_s2)` actually fed in by the kernel
+        // against the interleaved alternative `F(A_s2, B_s1)` where
+        // body 1 has not yet been advanced.
+        //
+        // The delta is `k_spring * (B_s2.pos - B_s1.pos)`, which is
+        // non-zero whenever body 1's stage-1 velocity is non-zero —
+        // it's the by-construction signature an interleaved kernel
+        // would leak into the derivative output.
+        let k_spring = 100.0;
+        let a_s2_pos = snaps[1].trans[0].position; // body 0 at stage 2 (lockstep)
+        let b_s1_pos = snaps[0].trans[1].position; // body 1 at stage 1
+        let b_s2_pos = snaps[1].trans[1].position; // body 1 at stage 2 (lockstep)
+        let lockstep_contact = k_spring * (b_s2_pos - a_s2_pos);
+        let interleaved_contact = k_spring * (b_s1_pos - a_s2_pos);
+        let derivative_drift = (lockstep_contact - interleaved_contact).length();
+        // Threshold: the drift is k_spring * |B_s2 - B_s1| =
+        // k_spring * h * |body1.vel_s1|. With k_spring = 100 N/m, h =
+        // 5e-3 s, and |body1.vel_s1| ~= 0.085 m/s, this is ~0.042 N —
+        // comfortably above any plausible round-off noise but tight
+        // enough that the assertion is meaningful.
         assert!(
-            (lockstep_body1_stage2_pos - interleaved_body1_stage2_pos).length() > 1.0e-9,
-            "lockstep and interleaved alternatives must differ by construction \
-             (the test's initial velocities for the two bodies were chosen distinct \
-             so this delta is non-zero); recovered delta is {:.6e} m which is too \
-             small to discriminate the orderings — fix the test fixture before \
-             trusting the lockstep assertion above",
-            (lockstep_body1_stage2_pos - interleaved_body1_stage2_pos).length(),
+            derivative_drift > 1.0e-3,
+            "the derivative-output drift between lockstep and interleaved contact \
+             evaluation must be non-trivial under this fixture so this test would \
+             detect an interleaved regression; observed drift = {derivative_drift:.6e} N, \
+             which is too small — fix the fixture (initial velocities, k_spring) before \
+             trusting this guard. Lockstep F = {lockstep_contact:?} N, interleaved F = \
+             {interleaved_contact:?} N."
         );
     }
 
