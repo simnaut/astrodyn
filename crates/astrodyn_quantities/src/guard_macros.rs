@@ -7,30 +7,43 @@
 //! - [`crate::validate_finite_positive`] panics if the value is `NaN`, `±∞`,
 //!   or `<= 0`.
 //!
-//! ## Diagnostic-message contract (Fail Loudly)
+//! ## Diagnostic-message contract (partial Fail Loudly)
 //!
-//! CLAUDE.md *Fail Loudly* requires that every panic message names (a) the
-//! parameter, (b) the failed condition, (c) what the caller should fix.
-//! These macros take both the parameter name *and* the call-site context as
-//! literals so the panic message names the entity being constructed *and* the
-//! field being validated:
+//! CLAUDE.md *Fail Loudly* asks every panic message to name (a) the
+//! parameter, (b) the failed condition, and (c) what the caller should
+//! fix. These macros emit a uniform message that delivers (a), (b), and
+//! the offending value — but **not** (c). They take both the parameter
+//! name *and* the call-site context as literals so the panic message
+//! names the entity being constructed *and* the field being validated:
 //!
 //! ```text
 //! <context>: <name> must be finite, got {value}
 //! <context>: <name> must be finite and > 0, got {value}
 //! ```
 //!
-//! The message wording is identical to the hand-written `assert!` macros it
-//! replaces — call sites that already have a `#[should_panic(expected =
-//! "<name> must be finite ...")]` test stay green because the substring is
-//! preserved verbatim.
+//! That covers the bulk of constructor-boundary `is_finite()` /
+//! `is_finite() && > 0` checks, where the remediation is structural
+//! ("don't pass NaN/∞/non-positive") and the `<context>: <name>` prefix
+//! already points the caller at the offending argument. Sites whose
+//! correct fix is *site-specific* — e.g. "Fix the upstream parent-time
+//! advance ..." or "Use 0.0 for per-step refresh ..." — should *not*
+//! migrate to these macros; they should keep their hand-written
+//! `assert!` with the bespoke remediation tail (see the "When *not* to
+//! use these" bullets below).
+//!
+//! The message wording is identical to the hand-written `assert!` macros
+//! it replaces at the migrated sites — call sites that already have a
+//! `#[should_panic(expected = "<name> must be finite ...")]` test stay
+//! green because the substring is preserved verbatim.
 //!
 //! ## When *not* to use these
 //!
 //! - **`const fn` constructors**: formatted `panic!` is not allowed in
-//!   `const fn` (Rust 1.79). `PlanetShape::new` uses static-message
-//!   `panic!` branches by design so the validation fires at compile time on
-//!   `const PLANET: PlanetShape = PlanetShape::new(...)` declarations.
+//!   `const fn` on stable Rust at our MSRV (compile-time evaluation
+//!   cannot allocate the formatted message buffer). `PlanetShape::new`
+//!   uses static-message `panic!` branches by design so the validation
+//!   fires at compile time on `const PLANET: PlanetShape =
+//!   PlanetShape::new(...)` declarations.
 //! - **`Result::Err` boundaries**: validators that propagate an error rather
 //!   than panicking (e.g. `OrbitalElements::from_cartesian_impl` returning
 //!   `OrbitalError::InvalidMu`, `FrameTransform::from_matrix_validated`
@@ -43,9 +56,12 @@
 //!   either macro. Hand-write the `assert!`.
 //! - **Sites whose existing message carries site-specific remediation
 //!   text** ("Fix the upstream parent-time advance ...", "Use 0.0 for
-//!   per-step refresh ...", etc.). The macros emit a uniform message and
-//!   would strictly drop the remediation hint — a Fail-Loudly downgrade.
-//!   Leave the hand-written `assert!` alone.
+//!   per-step refresh ...", etc.). The macros emit a uniform message
+//!   that intentionally omits remediation guidance (see the contract
+//!   above), so migrating such a site would strictly downgrade its
+//!   diagnostic — a Fail-Loudly regression. Leave the hand-written
+//!   `assert!` alone; that is the recommended pattern whenever
+//!   remediation is site-specific.
 
 /// Panic if `$value` is not finite (NaN or ±∞), naming the construction
 /// context and the failing parameter.
