@@ -180,7 +180,7 @@ impl Simulation {
     /// through root. Callers that previously checked
     /// `frame == self.root_frame_id` as a "is this the root inertial
     /// origin?" predicate should use this helper instead.
-    pub(crate) fn is_root_equivalent_frame(&self, frame_id: FrameId) -> bool {
+    pub fn is_root_equivalent_frame(&self, frame_id: FrameId) -> bool {
         if frame_id == self.root_frame_id {
             return true;
         }

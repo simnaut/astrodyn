@@ -54,7 +54,11 @@ fn leo_body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Ve
     let speed_m_s = 7_504.567; // ~circular at 700 km
     let mut cfg = VehicleConfig {
         trans: TranslationalStateTyped::<RootInertial> {
+            // allowed: typed↔raw kernel boundary in test scaffolding (matches
+            // the pattern used by `integ_frame_translation_invariance.rs`).
             position: Position::<RootInertial>::from_raw_si(DVec3::new(radius_m, 0.0, 0.0)),
+            // allowed: typed↔raw kernel boundary in test scaffolding (matches
+            // the pattern used by `integ_frame_translation_invariance.rs`).
             velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, speed_m_s, 0.0)),
         },
         integrator: IntegratorType::Rk4,
