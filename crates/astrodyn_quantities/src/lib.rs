@@ -163,6 +163,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod derive_utils;
 mod sealed;
 
 pub mod aliases;
@@ -173,9 +174,11 @@ pub mod dims;
 pub mod ext;
 pub mod frame;
 pub mod frame_transform;
+pub mod guard_macros;
 pub mod harmonic;
 pub mod inertia;
 pub mod integ_origin;
+pub mod lint_reasons;
 pub mod ops;
 pub mod prelude;
 pub mod qty3;

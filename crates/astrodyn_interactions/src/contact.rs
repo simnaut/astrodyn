@@ -253,10 +253,7 @@ impl SphericalTerrain {
     pub fn new(radius: f64) -> Self {
         // JEOD_INV: IN.37 — SphericalTerrain.radius > 0 (ground point would
         // collapse to the planet center otherwise, producing a NaN normal).
-        assert!(
-            radius.is_finite() && radius > 0.0,
-            "SphericalTerrain::new: radius must be finite and > 0, got {radius}"
-        );
+        astrodyn_quantities::validate_finite_positive!("SphericalTerrain::new", "radius", radius);
         Self { radius }
     }
 }
@@ -324,10 +321,7 @@ impl GroundFacet {
         // JEOD_INV: IN.36 — GroundFacet.alt_offset must be finite (NaN/inf
         // would propagate through the body-frame ground point and produce
         // a nonsensical penetration test).
-        assert!(
-            alt_offset.is_finite(),
-            "GroundFacet::new: alt_offset must be finite, got {alt_offset}"
-        );
+        astrodyn_quantities::validate_finite!("GroundFacet::new", "alt_offset", alt_offset);
         Self {
             terrain,
             alt_offset,

@@ -24,6 +24,7 @@
 
 use core::marker::PhantomData;
 
+use crate::derive_utils::{impl_clone_phantom, impl_copy_phantom};
 use crate::sealed::{FrameSealed, PlanetSealed, VehicleSealed};
 
 /// Compile-time reference frame tag.
@@ -286,16 +287,11 @@ impl Frame for MassNode {
 /// Planet-fixed frame for any planet `P`. Rotates with that planet.
 #[derive(Debug)]
 pub struct PlanetFixed<P: Planet>(PhantomData<P>);
-// Manual `Clone` / `Copy` impls so `FrameTransform<_, PlanetFixed<P>>` can
-// be cloned/copied even when `P` itself doesn't bound `Clone` / `Copy`.
-// `PlanetFixed<P>` is just `PhantomData<P>` — zero-sized — so both impls
-// are trivially correct.
-impl<P: Planet> Clone for PlanetFixed<P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<P: Planet> Copy for PlanetFixed<P> {}
+// Phantom-only generic: `#[derive(Clone, Copy)]` would wrongly demand
+// `P: Clone + Copy` even though `PhantomData<P>` is zero-sized. Hand-rolled
+// so `FrameTransform<_, PlanetFixed<P>>` clones/copies for any planet tag.
+impl_clone_phantom!([P: Planet] PlanetFixed[P]);
+impl_copy_phantom!([P: Planet] PlanetFixed[P]);
 impl<P: Planet> FrameSealed for PlanetFixed<P> {}
 impl<P: Planet> Frame for PlanetFixed<P> {
     const NAME: &'static str = "PlanetFixed";
