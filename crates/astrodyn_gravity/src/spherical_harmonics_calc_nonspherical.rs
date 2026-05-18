@@ -3,6 +3,29 @@
 //! Direct port of JEOD `spherical_harmonics_calc_nonspherical.cc`.
 //! The caller must provide position in planet-fixed coordinates and
 //! rotate the result back to inertial.
+//!
+//! ## SH iteration bound discipline
+//!
+//! Each `for ii in 2..=degree { for jj in … }` nest in this module and
+//! in [`crate::spherical_harmonics_gravity_source`] carries a *distinct*
+//! inner bound that is dictated by the specific Gottlieb equation the
+//! loop evaluates:
+//!
+//! - `for jj in 2..=(ii - 2)` — Pnm recursion fill below the
+//!   tridiagonal band, equation (7-12), in the per-step kernel.
+//! - `for jj in 1..=order.min(ii)` — the main m-sum that accumulates
+//!   the gravitational potential and gradient terms, equation (3-18).
+//! - `for jj in 0..=(ii - 1)` — `xi`/`eta` precompute, equation (7-10),
+//!   in [`SphericalHarmonicsData`]'s `initialize_body`.
+//! - `for jj in 0..=ii` — `zeta`/`upsilon` precompute, equations
+//!   (7-19) and (7-22), in the same `initialize_body` body.
+//!
+//! Because these bounds are equation-specific, a single
+//! `for_each_sh_coefficient(degree, order, …)`-style helper covering
+//! more than one of them silently drops or fabricates terms and so
+//! produces wrong physics. Future refactors that wish to collapse the
+//! scaffolding must keep the inner bound attached to the per-equation
+//! recursion, not to a generic "SH iteration" abstraction.
 
 use astrodyn_dynamics::forces::GravityAccelerationTyped;
 use astrodyn_dynamics::GravityAcceleration;
