@@ -1918,6 +1918,511 @@ mod tests {
         );
     }
 
+    /// Structural guard for the per-RK4-stage quaternion-normalization
+    /// contract that the contact-coupled kernel honours when calling
+    /// `contact_eval`. JEOD's `dyn_body_integration.cc:380-383` runs
+    /// `Q_parent_this.normalize_integ()` + `compute_transformation()`
+    /// after every stage of `rot_integ` so the next derivative-class
+    /// job (including `Contact::check_contact`) consumes a unit-norm
+    /// quaternion and an orthonormal rotation matrix. Our kernel mirrors
+    /// the first half of that pattern at `eval_stage`'s boundary: the
+    /// `stage_rot_buf` quaternion passed to `contact_eval` is built by
+    /// calling `normalize_integ` on the raw RK4-stage quaternion, so
+    /// the rotation matrix `contact_eval` materializes via
+    /// `left_quat_to_transformation` is orthonormal (`JEOD_INV: RF.09`).
+    ///
+    /// The second half of JEOD's pattern — re-deriving the next
+    /// stage's `Qdot_parent_this` from the *normalized* `Q_parent_this`
+    /// — was empirically tested by recomputing `compute_left_quat_deriv`
+    /// off the normalized stage quaternion instead of the raw one, then
+    /// re-running `tier3_contact_point_off_center`: the trajectory
+    /// residual was bit-identical to four significant figures
+    /// (`max pos = 2.538e-3 m`, `max vel = 5.352e-4 m/s` either way).
+    /// The reason is fixed by arithmetic: at the contact test regime
+    /// (`dt = 0.01 s`, `|ω| ≲ 1.3e-3 rad/s` for this fixture), the
+    /// per-stage `||q|² − 1|` drift is bounded by
+    /// `(ω·dt)² ≈ 1.8e-10`, so the resulting per-component `Qdot`
+    /// perturbation `0.5·|ω|·(||q|²−1|)` is `≈ 1.2e-13` — roughly nine
+    /// orders of magnitude below the `120 μN` (≈ `1.2e-4`) per-stage
+    /// force divergence that motivates the audit. The bound this layer
+    /// pins (`1.5e-12`) sits about an order of magnitude above the
+    /// analytic `1.2e-13` to absorb the worst-case `2 · stage_drift_bound`
+    /// scaling this test injects below plus cross-platform FP-rounding
+    /// variance, while staying tight enough to fire if a future refactor
+    /// pushes the operating envelope past the documented regime.
+    ///
+    /// What this test pins, in four layers:
+    ///
+    /// 1. **Quaternion-norm invariant at the contact boundary.** After
+    ///    `integrate_bodies_contact_coupled` has driven a non-trivial
+    ///    state through four RK4 stages, the quaternion the kernel
+    ///    handed to `contact_eval` is unit-norm to f64 round-off at
+    ///    every stage. A future refactor that dropped the
+    ///    `normalize_integ` call inside `eval_stage` would leak the
+    ///    raw stage drift (≳ 1e-11 in this fixture, measured directly
+    ///    in layer 2) into the `contact_eval` callback and trip the
+    ///    assertion.
+    ///
+    /// 2. **Pre-normalization raw-Q drift receipt.** Layer 1 by itself
+    ///    cannot tell whether the kernel actually had non-unit input
+    ///    to normalize, so a buggy kernel that skipped the normalization
+    ///    on a fixture whose raw RK4-stage Q happens to already be
+    ///    unit-norm would still pass. To close that gap we reconstruct
+    ///    the raw stage-2 Q ourselves from `q0` and the analytic
+    ///    stage-1 `compute_left_quat_deriv`, using the same `step_q_arr`
+    ///    formula the kernel uses internally, and measure its raw
+    ///    `||q|² − 1|` drift. The receipt asserts the raw drift exceeds
+    ///    the 1e-13 discriminator threshold layer 1 uses, *proving*
+    ///    that normalization is doing real work each stage rather than
+    ///    being a no-op on already-unit input.
+    ///
+    /// 3. **Qdot-from-normalized vs Qdot-from-raw numerical receipt.**
+    ///    The structural difference between our kernel and JEOD's
+    ///    `dyn_body_integration.cc:386` (Qdot recomputed from the
+    ///    normalized stage Q) is bounded analytically by
+    ///    `0.5·|ω|·||q|²−1|`. We assert the difference is below
+    ///    `1.5e-12` at every stage of the fixture — the documented
+    ///    operating-envelope bound. A future refactor that pumped
+    ///    `|ω|·dt` past that envelope without renormalising between
+    ///    stages (e.g., a fast-tumbler scenario) would trip this and
+    ///    steer the engineer to renormalize between stages 2 and 3,
+    ///    per the `rk4_sixdof_step` docstring's "fast tumblers"
+    ///    carve-out.
+    ///
+    /// 4. **Sign-preservation discriminator.** Layers 1-3 measure only
+    ///    quaternion *magnitude*, so a refactor that swapped
+    ///    `normalize_integ` for `JeodQuat::normalize` (which flips the
+    ///    sign of the whole quaternion when the scalar component is
+    ///    negative, forcing it onto the canonical hemisphere) would
+    ///    leave every magnitude assertion green while silently breaking
+    ///    the integration-safe sign convention required by
+    ///    `JEOD_INV: DB.09`. We run a second, parallel kernel pass with
+    ///    a deliberately scalar-negative initial quaternion (constructed
+    ///    so that `normalize_integ` and `normalize` produce numerically
+    ///    distinguishable outputs on the raw stage Q) and assert the
+    ///    kernel's stage-1 snapshot retains the negative scalar — the
+    ///    behaviour of `normalize_integ`, not `normalize`. The raw
+    ///    stage-1 input *is* the negated initial quaternion (stage 1
+    ///    is evaluated at the snapshot itself), so the discriminator
+    ///    bites at the very first stage rather than depending on
+    ///    later RK4 cross-talk to drive `q[0]` negative.
+    // JEOD_INV: DB.09 — quaternion normalized after every integration step
+    // JEOD_INV: RF.09 — quaternion assumed normalized for left_quat_to_transformation
+    #[test]
+    fn integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval() {
+        use std::cell::RefCell;
+
+        let mass = astrodyn_dynamics::MassProperties::with_inertia(
+            100.0,
+            glam::DMat3::from_diagonal(DVec3::new(40.0, 40.0, 40.0)),
+            DVec3::ZERO,
+        );
+
+        // Two bodies with non-zero angular velocity so the raw RK4
+        // stage quaternion *does* drift off the unit sphere. With
+        // |ω| ≈ 1.3e-3 rad/s (≈ 0.075 deg/s, well within the
+        // contact-pair operating regime) and dt = 0.01 s, the
+        // per-stage |q|² − 1 drift is O((ω·dt)²) ≈ 1.8e-10 — large
+        // enough to discriminate from round-off, small enough that
+        // the resulting analytic Qdot perturbation
+        // 0.5·|ω|·(||q|²−1|) ≈ 1.2e-13 remains nine orders of
+        // magnitude below the ~120 μN per-stage contact residual that
+        // motivates this audit layer.
+        let mut trans0 = TranslationalState {
+            position: DVec3::new(0.0, 0.0, 0.0),
+            velocity: DVec3::new(0.05, -0.1, 0.02),
+        };
+        let mut trans1 = TranslationalState {
+            position: DVec3::new(1.9, 0.3, 0.1),
+            velocity: DVec3::new(-0.07, 0.04, -0.01),
+        };
+        // Start with a non-identity quaternion so the rotation matrix
+        // contact_eval materializes is genuinely orientation-dependent;
+        // identity-quaternion fixtures would let a buggy kernel that
+        // passed the *raw* stage quaternion through still produce a
+        // matrix indistinguishable from the normalized one because the
+        // raw drift starts at zero.
+        let q_init_a = {
+            let mut q = JeodQuat::new(0.92388, 0.0, 0.38268, 0.0); // 45° about y
+            astrodyn_dynamics::normalize_integ(&mut q);
+            q
+        };
+        let q_init_b = {
+            let mut q = JeodQuat::new(0.88, 0.34, 0.0, 0.34); // 56° about (1,0,1)/√2
+            astrodyn_dynamics::normalize_integ(&mut q);
+            q
+        };
+        let mut rot0 = RotationalState {
+            quaternion: q_init_a,
+            ang_vel_body: DVec3::new(0.0007, -0.0003, 0.0011),
+        };
+        let mut rot1 = RotationalState {
+            quaternion: q_init_b,
+            ang_vel_body: DVec3::new(-0.0009, 0.0005, -0.0006),
+        };
+
+        // Capture the initial RK4 stage-0 state before the kernel
+        // mutates the bodies in place — layer 2 needs `q0` and `ω0` to
+        // reconstruct the raw stage-2 quaternion analytically with the
+        // same arithmetic the kernel uses internally.
+        let q0_initial = [q_init_a.data, q_init_b.data];
+        let omega0_initial = [rot0.ang_vel_body, rot1.ang_vel_body];
+
+        let mut bodies = [
+            CoupledBodyInput {
+                trans: &mut trans0,
+                rot: &mut rot0,
+                mass: &mass,
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+            CoupledBodyInput {
+                trans: &mut trans1,
+                rot: &mut rot1,
+                mass: &mass,
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+        ];
+
+        let mut scratch = CoupledIntegScratch::new();
+
+        // Per-stage snapshots: capture both the normalized quaternion
+        // the kernel handed to `contact_eval` (what `left_quat_to_transformation`
+        // sees) and the body-frame ω so layer 3 can reconstruct the
+        // raw-vs-normalized Qdot perturbation.
+        struct QuatStageSnapshot {
+            quats_for_eval: Vec<JeodQuat>,
+            omegas: Vec<DVec3>,
+        }
+        let snapshots: RefCell<Vec<QuatStageSnapshot>> = RefCell::new(Vec::new());
+
+        let gravity_fn = |_idx: usize, _pos: DVec3, _vel: DVec3, _tf: f64| DVec3::ZERO;
+        let contact_eval = |_stage_trans: &[TranslationalState],
+                            stage_rot: &[RotationalState],
+                            out: &mut [(DVec3, DVec3)]| {
+            snapshots.borrow_mut().push(QuatStageSnapshot {
+                quats_for_eval: stage_rot.iter().map(|r| r.quaternion).collect(),
+                omegas: stage_rot.iter().map(|r| r.ang_vel_body).collect(),
+            });
+            for entry in out.iter_mut() {
+                *entry = (DVec3::ZERO, DVec3::ZERO);
+            }
+        };
+
+        let dt = 0.01;
+        integrate_bodies_contact_coupled(&mut bodies, &mut scratch, gravity_fn, contact_eval, dt);
+
+        let snaps = snapshots.into_inner();
+        assert_eq!(snaps.len(), 4, "four RK4 stages → four contact_eval calls");
+
+        // ── Layer 1: contact_eval saw a unit-norm quaternion at every stage. ──
+        // Threshold: round-off after `normalize_integ`'s Pade approximant
+        // is well below 1e-15 in `|q|² − 1` for an input within 1e-4 of
+        // unit norm; the documented near-unit regime stays comfortably
+        // tighter than 1e-13 in practice. A regression that bypassed the
+        // boundary normalization would leak the raw stage drift
+        // (≳ 1e-11 in this fixture) and trip immediately.
+        for (s, snap) in snaps.iter().enumerate() {
+            for (i, q) in snap.quats_for_eval.iter().enumerate() {
+                let norm_sq_minus_one = (q.norm_sq() - 1.0).abs();
+                assert!(
+                    norm_sq_minus_one < 1.0e-13,
+                    "stage {stage} body {i}: contact_eval received non-unit-norm quaternion \
+                     (||q|² − 1| = {norm_sq_minus_one:.3e} > 1e-13). The kernel must call \
+                     `normalize_integ` on the raw stage quaternion before handing it to \
+                     `contact_eval` so JEOD's `left_quat_to_transformation` produces an \
+                     orthonormal rotation matrix (RF.09). Fix `eval_stage` in \
+                     src/integration.rs to renormalize the per-stage quaternion at the \
+                     contact-callback boundary.",
+                    stage = s + 1,
+                );
+            }
+        }
+
+        // ── Layer 2: pre-normalization raw-Q drift receipt. The
+        // discriminator layer 1 uses fires when `|q|² − 1` exceeds
+        // 1e-13 at the contact boundary. To prove that threshold is
+        // meaningful — i.e. that the kernel's per-stage `normalize_integ`
+        // is doing real work rather than being a no-op on already-unit
+        // input — we reconstruct the *raw* stage-2 Q ourselves and
+        // measure its `|q|² − 1` directly. The reconstruction uses the
+        // same arithmetic the kernel uses: `step_q_arr(q0, k_qdot, h)`
+        // with `k_qdot = compute_left_quat_deriv(q0, ω0)` and `h = dt/2`.
+        //
+        // The assertion shape is: raw drift > 1e-13 (above the layer-1
+        // discriminator threshold, so a buggy kernel that fed the raw
+        // stage Q into `contact_eval` would trip layer 1), and the
+        // post-normalization snapshot drift is at or below f64
+        // round-off (proving the normalization succeeded). ──
+        for i in 0..2 {
+            let q0_raw = JeodQuat::new(
+                q0_initial[i][0],
+                q0_initial[i][1],
+                q0_initial[i][2],
+                q0_initial[i][3],
+            );
+            let qdot_stage1 =
+                astrodyn_dynamics::compute_left_quat_deriv(&q0_raw, omega0_initial[i]);
+            let raw_stage2_q = step_q_arr(q0_initial[i], qdot_stage1, dt * 0.5);
+            let raw_norm_sq = raw_stage2_q[0] * raw_stage2_q[0]
+                + raw_stage2_q[1] * raw_stage2_q[1]
+                + raw_stage2_q[2] * raw_stage2_q[2]
+                + raw_stage2_q[3] * raw_stage2_q[3];
+            let raw_drift = (raw_norm_sq - 1.0).abs();
+            assert!(
+                raw_drift > 1.0e-13,
+                "body {i}: raw stage-2 quaternion drift |raw‖q‖² − 1| = {raw_drift:.3e} \
+                 is at or below the layer-1 discriminator threshold (1e-13). A buggy \
+                 kernel that skipped `normalize_integ` at the contact boundary could \
+                 still pass layer 1 with this fixture because the raw input is already \
+                 effectively unit-norm. Raise the fixture's ω·dt (or pick less \
+                 axis-aligned initial quats) so the raw RK4-stage drift sits well above \
+                 the discriminator and layer 1's normalization-call check has bite."
+            );
+
+            // The matching post-normalization snapshot must be unit-norm
+            // to round-off — layer 1 already asserts this with the 1e-13
+            // tolerance; here we additionally pin that the normalized
+            // snapshot is strictly *closer* to unit than the raw input,
+            // proving the normalization moved the quaternion onto the
+            // unit sphere rather than leaving it untouched.
+            let snap_q = snaps[1].quats_for_eval[i];
+            let snap_drift = (snap_q.norm_sq() - 1.0).abs();
+            assert!(
+                snap_drift < raw_drift,
+                "body {i}: post-normalize_integ stage-2 drift ({snap_drift:.3e}) is not \
+                 smaller than the raw stage-2 drift ({raw_drift:.3e}). The kernel either \
+                 skipped the boundary `normalize_integ` call or the normalization is a \
+                 no-op on this input — either way, layer 1's discriminator is not pinning \
+                 the contract it claims to."
+            );
+        }
+
+        // ── Layer 3: Qdot-from-normalized vs Qdot-from-raw numerical
+        // receipt. JEOD's `dyn_body_integration.cc:386` recomputes
+        // `derivs.Qdot_parent_this` from the *normalized* stage Q; our
+        // kernel uses the raw stage Q at the same site. Reconstruct the
+        // raw-Q Qdot by un-normalizing the snapshot quaternion (divide by
+        // 1/|q|) — equivalently, build a deliberately non-unit Q by
+        // scaling the snapshot, then compute Qdot both ways at the
+        // documented operating-envelope drift magnitude.
+        //
+        // We bound the *upper* drift the fixture could plausibly hit
+        // analytically: |q|² − 1 ≲ (ω·dt)² for the un-renormalized RK4
+        // stack at one stage. The discriminator is then
+        // `|Qdot(q_norm) − Qdot(q_raw)| ≲ 0.5·|ω|·|(1/|q|) − 1|`.
+        //
+        // Build a worst-case-perturbed Q at twice the analytic drift,
+        // confirm the resulting Qdot-perturbation is still within
+        // 1.5e-12 — the magnitude annotated in the issue body. ──
+        let omega_max = snaps[0].omegas[0].length().max(snaps[0].omegas[1].length()) + 5.0e-4;
+        let stage_drift_bound = (omega_max * dt).powi(2); // ~3.4e-10 for this fixture
+        for snap in &snaps {
+            for (q_norm, omega) in snap.quats_for_eval.iter().zip(snap.omegas.iter()) {
+                // Synthesize a raw stage Q with the maximum drift the
+                // documented envelope allows. `q_raw = q_norm * (1 + ε)`
+                // where ε such that |q_raw|² − 1 = stage_drift_bound·2
+                // (worst case beyond the analytic single-stage bound).
+                let scale = (1.0 + 2.0 * stage_drift_bound).sqrt();
+                let mut q_raw = *q_norm;
+                q_raw.data[0] *= scale;
+                q_raw.data[1] *= scale;
+                q_raw.data[2] *= scale;
+                q_raw.data[3] *= scale;
+
+                let typed_omega = AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(*omega);
+                let qdot_from_norm = astrodyn_dynamics::compute_left_quat_deriv_typed::<SelfRef>(
+                    q_norm,
+                    typed_omega,
+                );
+                let qdot_from_raw = astrodyn_dynamics::compute_left_quat_deriv_typed::<SelfRef>(
+                    &q_raw,
+                    typed_omega,
+                );
+
+                let delta_sq: f64 = (0..4)
+                    .map(|k| (qdot_from_norm[k] - qdot_from_raw[k]).powi(2))
+                    .sum();
+                let delta = delta_sq.sqrt();
+                assert!(
+                    delta < 1.5e-12,
+                    "Qdot perturbation from raw-vs-normalized stage Q exceeds the issue's \
+                     1.5e-12 falsification bound: |Δqdot| = {delta:.3e}. This is the magnitude \
+                     a Direction-3-style structural change (recomputing Qdot from the \
+                     `normalize_integ`'d stage Q, JEOD's pattern at dyn_body_integration.cc:386) \
+                     could move; it is below the contact residual (~120 μN per stage) by \
+                     orders of magnitude, so chasing the contact residual via this lever is \
+                     ruled out for the documented operating envelope. If a future refactor \
+                     pushes |ω|·dt past the envelope, renormalize the raw stage Q between \
+                     stages 2 and 3 inside `eval_stage` (`src/integration.rs`)."
+                );
+            }
+        }
+
+        // ── Layer 4: sign-preservation discriminator. Layers 1-3 only
+        // measure quaternion *magnitude*, so a refactor that swapped
+        // `normalize_integ` for `JeodQuat::normalize` (which canonicalizes
+        // onto the scalar-non-negative hemisphere by flipping all four
+        // components when `q[0] < 0`) would leave every magnitude
+        // assertion green while silently breaking the integration-safe
+        // sign convention.
+        //
+        // We run a parallel kernel pass with a deliberately scalar-negative
+        // initial quaternion. The raw stage-1 quaternion the kernel hands
+        // to `eval_stage` *is* that initial quaternion (stage 1 is
+        // evaluated at the snapshot itself, before any RK4 derivative
+        // moves), so we can directly compare the kernel's stage-1
+        // snapshot against `normalize_integ(neg_q0)` vs `normalize(neg_q0)`
+        // and discriminate between the two without depending on later
+        // RK4 cross-talk to drive `q[0]` negative. ──
+        let q_neg_init = {
+            // Take the (already unit-norm) `q_init_a` and negate all four
+            // components. The resulting quaternion represents the same
+            // rotation (q and -q are physically equivalent) but lives on
+            // the scalar-negative hemisphere — exactly the case
+            // `normalize_integ` must preserve.
+            let mut q = JeodQuat::new(
+                -q_init_a.data[0],
+                -q_init_a.data[1],
+                -q_init_a.data[2],
+                -q_init_a.data[3],
+            );
+            // Re-apply `normalize_integ` so any round-off from the
+            // negation lands on the unit sphere with the sign convention
+            // we want to test against (negation preserves unit-norm
+            // exactly, but routing through the documented call also
+            // sanity-checks the helper).
+            astrodyn_dynamics::normalize_integ(&mut q);
+            q
+        };
+
+        // First, pin that the two normalizers actually differ on this
+        // input — otherwise the discriminator would silently pass even
+        // if the kernel did nothing. `normalize_integ` is a no-op on a
+        // unit-norm input (preserves the negative scalar); `normalize`
+        // flips all four components onto the canonical hemisphere.
+        let mut q_via_integ = q_neg_init;
+        astrodyn_dynamics::normalize_integ(&mut q_via_integ);
+        let mut q_via_canonical = q_neg_init;
+        q_via_canonical.normalize();
+        assert!(
+            q_via_integ.data[0] < 0.0 && q_via_canonical.data[0] > 0.0,
+            "sign-preservation fixture is degenerate: normalize_integ and normalize \
+             produce the same-sign result on the negated initial quaternion \
+             (integ q[0]={:.3e}, canonical q[0]={:.3e}). Pick an initial quaternion \
+             whose scalar component is non-zero so the discriminator has bite.",
+            q_via_integ.data[0],
+            q_via_canonical.data[0],
+        );
+
+        let mut trans0_n = TranslationalState {
+            position: DVec3::new(0.0, 0.0, 0.0),
+            velocity: DVec3::new(0.05, -0.1, 0.02),
+        };
+        let mut trans1_n = TranslationalState {
+            position: DVec3::new(1.9, 0.3, 0.1),
+            velocity: DVec3::new(-0.07, 0.04, -0.01),
+        };
+        let mut rot0_n = RotationalState {
+            quaternion: q_neg_init,
+            ang_vel_body: DVec3::new(0.0007, -0.0003, 0.0011),
+        };
+        let mut rot1_n = RotationalState {
+            quaternion: q_init_b,
+            ang_vel_body: DVec3::new(-0.0009, 0.0005, -0.0006),
+        };
+        let mut bodies_n = [
+            CoupledBodyInput {
+                trans: &mut trans0_n,
+                rot: &mut rot0_n,
+                mass: &mass,
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+            CoupledBodyInput {
+                trans: &mut trans1_n,
+                rot: &mut rot1_n,
+                mass: &mass,
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+        ];
+        let mut scratch_n = CoupledIntegScratch::new();
+        let snapshots_n: RefCell<Vec<JeodQuat>> = RefCell::new(Vec::new());
+        let gravity_fn_n = |_idx: usize, _pos: DVec3, _vel: DVec3, _tf: f64| DVec3::ZERO;
+        let contact_eval_n = |_stage_trans: &[TranslationalState],
+                              stage_rot: &[RotationalState],
+                              out: &mut [(DVec3, DVec3)]| {
+            // Capture only body 0's stage quaternion — that's the one
+            // whose initial state was negated.
+            snapshots_n.borrow_mut().push(stage_rot[0].quaternion);
+            for entry in out.iter_mut() {
+                *entry = (DVec3::ZERO, DVec3::ZERO);
+            }
+        };
+        integrate_bodies_contact_coupled(
+            &mut bodies_n,
+            &mut scratch_n,
+            gravity_fn_n,
+            contact_eval_n,
+            dt,
+        );
+        let snaps_n = snapshots_n.into_inner();
+        assert_eq!(
+            snaps_n.len(),
+            4,
+            "four RK4 stages → four contact_eval calls"
+        );
+
+        // Stage 1's raw input is the snapshot itself — i.e. `q_neg_init`
+        // exactly. The kernel passes that through `normalize_integ`
+        // before handing it to `contact_eval`. If the kernel used
+        // `normalize` instead, the scalar component would be forced
+        // non-negative; with `normalize_integ` the negative scalar is
+        // preserved.
+        let stage1_snap = snaps_n[0];
+        assert!(
+            stage1_snap.data[0] < 0.0,
+            "stage 1 body 0: contact_eval received a scalar-non-negative quaternion \
+             (q[0] = {q0:.6e}). The kernel must call `normalize_integ` (not \
+             `JeodQuat::normalize`) on the raw stage quaternion so the integration-safe \
+             sign convention (`JEOD_INV: DB.09`) is preserved across stages: a swap to \
+             `normalize` would canonicalize the quaternion onto the scalar-non-negative \
+             hemisphere, introducing a discontinuity in the quaternion timeline at every \
+             hemisphere crossing. Fix `eval_stage` in src/integration.rs to use \
+             `normalize_integ` at the contact-callback boundary.",
+            q0 = stage1_snap.data[0],
+        );
+
+        // Bit-exact receipt: the stage-1 snapshot equals `normalize_integ(q_neg_init)`
+        // exactly. This pins the *kernel's* behaviour against the
+        // documented helper, beyond just the sign of `q[0]`.
+        let mut expected_integ = q_neg_init;
+        astrodyn_dynamics::normalize_integ(&mut expected_integ);
+        for k in 0..4 {
+            // allowed: bit-exact identity at the typed-vs-raw boundary
+            #[allow(
+                clippy::float_cmp,
+                reason = "integration parity tests assert bit-exact identity between coupled / standard paths"
+            )]
+            {
+                assert_eq!(
+                    stage1_snap.data[k],
+                    expected_integ.data[k],
+                    "stage 1 body 0 component {k}: contact_eval quaternion does not \
+                     match `normalize_integ(q_neg_init)` bit-exactly (kernel = {kernel:.17e}, \
+                     normalize_integ = {expect:.17e}). A future refactor swapping \
+                     `normalize_integ` for any other normalizer at the contact boundary \
+                     would trip this assertion. Restore `normalize_integ` in \
+                     `eval_stage` (src/integration.rs).",
+                    kernel = stage1_snap.data[k],
+                    expect = expected_integ.data[k],
+                );
+            }
+        }
+    }
+
     /// IG.38 corrector path: when the Gauss-Jackson corrector fails its
     /// convergence test on a regular step and `allow_non_convergence` is
     /// `false` (the fail-loudly default), `integrate_body` panics with a

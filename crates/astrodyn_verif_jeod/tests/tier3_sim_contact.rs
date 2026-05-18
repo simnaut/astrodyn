@@ -279,20 +279,26 @@ fn line_mass_props() -> MassProperties {
 // with one explicitly-noted exception for `CONTACT_TORQUE_TOL` where
 // the observed max sits at the machine-precision noise floor.
 //
-// Issue #117 closed two bugs that previously inflated these tolerances:
-// (1) the spring/damping unit-conversion constants used a slightly off
-// `lbf` factor, producing a 1e-5 relative error in `K` and `c`; and
-// (2) the relative-velocity formula in `evaluate_contact_pair` omitted
-// the rotating-frame contribution that JEOD includes for sphere-sphere
-// contact. After both fixes the head-on scenarios match JEOD to
-// machine precision (~1e-15 m position over 10 s); the off-center
-// oblique case drops from ~2.7 cm trajectory drift to ~2.5 mm — an
-// ω²-scaled per-stage residual of ~120 μN per RK4 stage remains,
-// likely from JEOD's per-stage `Q_parent_this.normalize_integ` +
-// `compute_transformation` recomputation that our coupled-RK4 kernel
-// doesn't currently mirror. The remaining off-center drift is 12
-// orders of magnitude better than head-on (machine precision) but
-// not at parity; tracked for future tightening.
+// Head-on scenarios match JEOD to machine precision (~1e-15 m position
+// over 10 s); the off-center oblique case sits at ~2.5 mm trajectory
+// drift / ~0.55 mm/s velocity drift, traced to a ω²-scaled per-stage
+// force residual of ~120 μN. The residual's structural source is not in
+// the rel-vel kinematics (textbook two-body formula matches JEOD to
+// 2.48e-16 — see `evaluate_contact_pair_matches_jeod_subject_frame_formula`),
+// not in per-body stage interleaving (our coupled RK4 is single-pass
+// across all bodies, matching JEOD's `IntegLoop` lockstep — see
+// `integrate_bodies_contact_coupled_evaluates_in_lockstep`), and not in
+// per-stage quaternion renormalization (the rotation matrix
+// `contact_eval` materializes is built from a `normalize_integ`'d Q at
+// each stage; the Qdot perturbation between raw and normalized stage Q
+// at this operating envelope is bounded by 1.5e-12, six orders of
+// magnitude below the residual — see
+// `integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`).
+// The remaining off-center trajectory drift is roughly one order of
+// magnitude better than the pre-#117 envelope (2.7 cm → 2.5 mm) but
+// not at head-on parity (~12 orders of magnitude separate 2.5 mm from
+// the head-on cases' ~1e-15 m machine-precision floor); the
+// structural source remains under investigation.
 const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
 
 // `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
@@ -865,30 +871,18 @@ fn tier3_contact_point_off_center() {
         "SIM_contact RUN_point_off_center: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
     );
 
-    // Oblique collision. Issue #117 closed the two principal bugs that
-    // previously held this test at ~2.7 cm trajectory drift:
-    //
-    // 1. Spring/damping unit-conversion (`JEOD_SPRING_K`, `JEOD_DAMPING_B`):
-    //    used a slightly off `lbf` factor (`4.4481756` vs NIST CODATA
-    //    `4.4482216152605`), producing a 1e-5 relative error in `K` and
-    //    `c`. Affected both head-on and oblique tests, but compounded
-    //    far more in oblique through the tangential-friction loop.
-    //
-    // 2. Relative-velocity formula in `evaluate_contact_pair`: the prior
-    //    one-cross form `(ω_b − ω_a) × arm_a` (PR #87) was identically
-    //    zero for equal-ω cases (sphere-sphere with symmetric
-    //    Newton's-third-law torques) and missed the textbook
-    //    `(ω_a + ω_b) × arm_a` rotating-frame term. Replaced with the
-    //    full two-body kinematic formula
-    //    `(v_a − v_b) + ω_a × arm_a − ω_b × arm_b`, which matches JEOD's
-    //    `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
-    //    formulation for sphere-sphere contact (`src/interactions.rs::evaluate_contact_pair`).
-    //
-    // After both fixes, oblique trajectory error drops from ~2.7 cm to
-    // ~2.5 mm (and head-on tests reach machine precision). The residual
-    // ~120 μN per-RK4-stage force divergence scales with ω². See #560
-    // for the Direction 1 audit (rel-vel formula, falsified) and the
-    // current Direction 2 hypothesis (per-body stage interleaving).
+    // Oblique collision. After spring/damping unit-conversion fixes and
+    // the textbook two-body rel-vel formula
+    // `(v_a − v_b) + ω_a × arm_a − ω_b × arm_b` in
+    // `src/interactions.rs::evaluate_contact_pair`, the oblique
+    // trajectory drift sits at ~2.5 mm (head-on tests reach machine
+    // precision). The residual is a ω²-scaled per-RK4-stage force
+    // divergence of ~120 μN; the rel-vel kinematics, per-body stage
+    // interleaving, and per-stage quaternion normalization have all
+    // been audited as the source and falsified (see
+    // `src/interactions.rs::evaluate_contact_pair_matches_jeod_subject_frame_formula`,
+    // `src/integration.rs::integrate_bodies_contact_coupled_evaluates_in_lockstep`,
+    // and `src/integration.rs::integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`).
     assert!(
         max_pos_err < 2.7e-3,
         "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
