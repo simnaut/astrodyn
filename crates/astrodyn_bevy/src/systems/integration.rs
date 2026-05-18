@@ -336,7 +336,7 @@ pub fn integration_system<P: Planet>(
     // Dynamic timestep matches `astrodyn_runner::run_integration`'s
     // `integ_dt = sim_dt * time_scale_factor` so reversed/scaled time
     // produces consistent gravity at RK sub-stages.
-    let integ_dt = dt * sim_time.0.time_scale_factor;
+    let integ_dt = dt * sim_time.0.scale_factor();
 
     // Helper closure for gravity at an intermediate state — reused by both
     // the standard and coupled dispatch branches. The integrator passes
@@ -700,7 +700,7 @@ pub fn integration_system<P: Planet>(
                 },
                 &mut thermal.0,
                 dt,
-                sim_time.0.time_scale_factor,
+                sim_time.0.scale_factor(),
             );
 
             // Re-wrap kernel-mutated untyped state back into typed
@@ -777,7 +777,7 @@ pub fn integration_system<P: Planet>(
             total_force.force.raw_si(),
             total_force.torque.raw_si(),
             dt,
-            sim_time.0.time_scale_factor,
+            sim_time.0.scale_factor(),
             integrator_type,
             gj_state.as_mut().map(|g| g.0.inner_mut()),
             abm4_state.as_mut().map(|a| a.0.inner_mut()),
@@ -3184,7 +3184,7 @@ pub fn step_detached_system<P: Planet>(
     if dt == 0.0 {
         return;
     }
-    let integ_dt = dt * sim_time.0.time_scale_factor;
+    let integ_dt = dt * sim_time.0.scale_factor();
     for (entity, mut state, trans, rot) in &mut detached {
         state.0.step_ballistic(integ_dt);
         if let Some(mut t) = trans {

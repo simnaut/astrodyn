@@ -450,8 +450,8 @@ fn assert_time_scale_bits_eq(label: &str, t: f64, runner: &Simulation, app: &App
         label,
         t,
         "time_scale_factor",
-        runner_time.time_scale_factor,
-        bevy.time_scale_factor,
+        runner_time.scale_factor(),
+        bevy.scale_factor(),
     );
     bits_eq(label, t, "tai_tjt", runner_time.tai_tjt, bevy.tai_tjt);
     bits_eq(

@@ -8,12 +8,12 @@
 //!
 //! ## Public surface
 //!
-//! - [`TimeManager`] and [`TimeScaleId`] — the orchestrator that owns the
-//!   currently registered time scales and answers conversions between
-//!   them. Mirrors JEOD's `TimeManager`.
-//! - [`SimulationTime`] — the resource the integration loop advances each
-//!   step; downstream consumers (gravity, ephemeris, atmosphere) read from
-//!   it rather than tracking their own clocks.
+//! - [`SimulationTime`] and [`TimeScaleId`] — the resource the integration
+//!   loop advances each step; owns all currently-registered time scales
+//!   (TAI/TT/TDB/UTC/UT1/GMST/GPS + optional MET / UDE) and re-derives
+//!   them from TAI on every tick. Mirrors JEOD's `TimeManager` aggregate.
+//!   Downstream consumers (gravity, ephemeris, atmosphere) read from it
+//!   rather than tracking their own clocks.
 //! - [`DynamicTime`] — the dynamics-frame time state passed through the
 //!   integrator.
 //! - [`LeapSecondTable`] — parser/lookup for JEOD's
@@ -65,18 +65,16 @@ pub mod time_converter_tai_ut1;
 pub mod time_converter_ut1_gmst;
 pub mod time_dyn;
 pub mod time_gps;
-pub mod time_manager;
 pub mod time_met;
 pub mod time_ude;
 pub mod time_utc;
 
 pub use epoch::*;
 pub use leap_second::LeapSecondTable;
-pub use simulation_time::SimulationTime;
+pub use simulation_time::{SimulationTime, TimeScaleId};
 pub use time_converter_tai_ut1::{default_eop_table, EopLoadError, EopTable};
 pub use time_dyn::DynamicTime;
 pub use time_gps::{GpsTimeComponents, TAI_GPS_OFFSET};
-pub use time_manager::{TimeManager, TimeScaleId};
 pub use time_met::MissionElapsedTime;
 pub use time_ude::UserDefinedEpoch;
 pub use time_utc::{CalendarDate, UTC_EPOCH_TAI_TJT};

@@ -1,6 +1,6 @@
 //! Comprehensive time scale verification tests.
 //!
-//! These tests exercise the full TimeManager across extended propagation,
+//! These tests exercise the full SimulationTime across extended propagation,
 //! verifying that all time scale relationships remain correct over long
 //! durations and at critical boundaries (leap seconds, GPS week rollovers,
 //! MET holds, DYN scale factor changes, UDE custom epochs).
@@ -15,18 +15,18 @@ use astrodyn_time::leap_second::default_leap_second_table;
 use astrodyn_time::time_converter_tai_tdb;
 use astrodyn_time::time_gps;
 use astrodyn_time::time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate};
-use astrodyn_time::{TimeManager, TimeScaleId};
+use astrodyn_time::{SimulationTime, TimeScaleId};
 
 /// Verify all time scales maintain correct relationships over 24-hour propagation.
 ///
-/// Advances the TimeManager by 86400s in 1s steps, checking at each step:
+/// Advances the SimulationTime by 86400s in 1s steps, checking at each step:
 ///   TT = TAI + 32.184s (exact)
 ///   GPS = TAI - 19s (exact)
 ///   |TDB - TT| < 2ms (periodic correction bounded)
 ///   UTC elapsed ~= TAI elapsed (no leap second crossed near J2000)
 #[test]
 fn tier3_time_all_scales_24h_propagation() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     let dt = 1.0; // 1-second steps
     let total_steps = 86400; // 24 hours
@@ -255,7 +255,7 @@ fn tier3_time_gps_week_rollover() {
 /// MET should freeze during hold and resume correctly afterward.
 #[test]
 fn tier3_time_met_hold_resume() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     mgr.add_met(0.0); // MET epoch at TAI=0
 
     // Advance 100s -- MET should be 100
@@ -317,7 +317,7 @@ fn tier3_time_met_hold_resume() {
 #[test]
 fn tier3_time_dyn_scale_factor() {
     // Test 2x speed
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     mgr.set_scale_factor(2.0);
     mgr.advance(100.0);
 
@@ -342,7 +342,7 @@ fn tier3_time_dyn_scale_factor() {
     );
 
     // Test 0.5x speed
-    let mut mgr2 = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr2 = SimulationTime::at_j2000(default_leap_second_table());
     mgr2.set_scale_factor(0.5);
     mgr2.advance(100.0);
 
@@ -365,7 +365,7 @@ fn tier3_time_dyn_scale_factor() {
     );
 
     // Test mid-sim scale factor change
-    let mut mgr3 = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr3 = SimulationTime::at_j2000(default_leap_second_table());
     mgr3.advance(100.0); // 100s at 1x -> TAI=100
     mgr3.set_scale_factor(3.0);
     mgr3.advance(50.0); // 50s at 3x -> TAI += 150 -> TAI=250
@@ -384,7 +384,7 @@ fn tier3_time_dyn_scale_factor() {
 /// Also tests clock decomposition.
 #[test]
 fn tier3_time_ude_custom_epoch() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     let idx = mgr.add_ude(1000.0); // UDE epoch at TAI=1000s
 
     // Before epoch: UDE should be negative
@@ -500,7 +500,7 @@ fn tier3_time_calendar_roundtrip_extended() {
 /// Over an entire year, the maximum |TDB - TT| should remain under 2 ms.
 #[test]
 fn tier3_time_tt_tdb_relationship() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     let mut max_diff: f64 = 0.0;
     let step = 3600.0; // 1 hour steps
@@ -539,7 +539,7 @@ fn tier3_time_tt_tdb_relationship() {
     );
 
     // Verify the TDB-TT offset function directly at J2000 (fresh manager, before propagation)
-    let mgr_j2000 = TimeManager::at_j2000(default_leap_second_table());
+    let mgr_j2000 = SimulationTime::at_j2000(default_leap_second_table());
     let offset_j2000 = time_converter_tai_tdb::tdb_tt_offset(mgr_j2000.tai_tjt);
     assert!(
         offset_j2000.abs() < 0.002,
@@ -555,7 +555,7 @@ fn tier3_time_tt_tdb_relationship() {
 /// sidereal excess over a solar day).
 #[test]
 fn tier3_time_gmst_increases_with_ut1() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     let gmst_initial = mgr.get_seconds(TimeScaleId::GMST);
 
     let step = 60.0; // 1-minute steps
@@ -592,14 +592,14 @@ fn tier3_time_gmst_increases_with_ut1() {
     );
 }
 
-/// Verify GPS time through TimeManager honors the GPS = TAI - 19 invariant.
+/// Verify GPS time through SimulationTime honors the GPS = TAI - 19 invariant.
 ///
 /// GPS is offset from TAI by exactly 19 seconds (the TAI-UTC offset at the
 /// GPS epoch, 1980-01-06). Since the offset is fixed (no leap seconds in GPS),
 /// this relationship must hold exactly at every propagation step.
 #[test]
 fn tier3_time_gps_through_manager() {
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
 
     // Check at t=0 as well as throughout propagation.
     let gps0 = mgr.get_seconds(TimeScaleId::GPS);
@@ -625,13 +625,13 @@ fn tier3_time_gps_through_manager() {
     }
 }
 
-/// Verify TimeManager TDB Julian Date at J2000 and after propagation.
+/// Verify SimulationTime TDB Julian Date at J2000 and after propagation.
 ///
 /// At J2000, TDB JD should be close to 2451545.0.
 /// After 365.25 days, TDB JD should be close to 2451545.0 + 365.25.
 #[test]
 fn tier3_time_tdb_julian_date_propagation() {
-    let mgr0 = TimeManager::at_j2000(default_leap_second_table());
+    let mgr0 = SimulationTime::at_j2000(default_leap_second_table());
     let jd0 = mgr0.tdb_julian_date();
     // At J2000, TDB differs from TT by the bounded periodic correction
     // (~ms, i.e., ~2e-8 days), so the JD should be within a very tight
@@ -644,7 +644,7 @@ fn tier3_time_tdb_julian_date_propagation() {
     );
 
     // Propagate 1 year
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     let one_year_s = 365.25 * SECONDS_PER_DAY;
     mgr.advance(one_year_s);
     let jd1 = mgr.tdb_julian_date();
@@ -665,8 +665,8 @@ fn tier3_time_tdb_julian_date_propagation() {
 /// All time scales should return to their initial values.
 #[test]
 fn tier3_time_forward_reverse_all_scales() {
-    let initial = TimeManager::at_j2000(default_leap_second_table());
-    let mut mgr = TimeManager::at_j2000(default_leap_second_table());
+    let initial = SimulationTime::at_j2000(default_leap_second_table());
+    let mut mgr = SimulationTime::at_j2000(default_leap_second_table());
     mgr.add_met(0.0);
     let ude_idx = mgr.add_ude(500.0);
 

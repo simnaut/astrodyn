@@ -1,6 +1,6 @@
 //! Tier 3: JEOD time verification SIMs cross-validation.
 //!
-//! Exercises the Rust `TimeManager` against JEOD-generated reference
+//! Exercises the Rust `SimulationTime` against JEOD-generated reference
 //! CSVs from the six canonical time verification sims:
 //!
 //!   SIM_1_dyn_only       — DynamicTime only (no TAI)
@@ -22,7 +22,7 @@
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
 use astrodyn::{default_eop_table, default_leap_second_table};
-use astrodyn::{TimeManager, TimeScaleId};
+use astrodyn::{SimulationTime, TimeScaleId};
 
 const SECONDS_PER_DAY: f64 = 86400.0;
 
@@ -149,13 +149,13 @@ fn initial_tai_tjt(first: &TimeRow) -> f64 {
 
 /// SIM_1: DynamicTime-only sim. No TAI, no calendar. JEOD logs only
 /// `time_manager.dyn_time.seconds`, which equals sim-time when
-/// `scale_factor = 1`. We verify our `TimeManager.get_seconds(DYN)` tracks it.
+/// `scale_factor = 1`. We verify our `SimulationTime.get_seconds(DYN)` tracks it.
 #[test]
 fn tier3_time_v1_dyn_only() {
     let csv = test_data_path("time_v1_dyn_only_time_v1.csv");
     let rows = load_time_csv(&csv);
 
-    let mut mgr = TimeManager::new(initial_tai_tjt(&rows[0]), default_leap_second_table());
+    let mut mgr = SimulationTime::new(initial_tai_tjt(&rows[0]), default_leap_second_table());
     let dt = if rows.len() > 1 {
         rows[1].time - rows[0].time
     } else {
@@ -196,7 +196,7 @@ fn tier3_time_v2_std() {
     let init_tai_tjt = init.tai_tjt.expect("SIM_2 CSV must log TAI TJT");
     let init_tai_seconds = init.tai_seconds.expect("SIM_2 CSV must log TAI seconds");
 
-    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table());
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
     let dt = if rows.len() > 1 {
         rows[1].time - rows[0].time
     } else {
@@ -253,12 +253,12 @@ fn tier3_time_v3_ude() {
     let init_ude = init.ude_seconds.expect("SIM_3 CSV must log UDE seconds");
     let init_dyn = init.dyn_seconds.expect("SIM_3 CSV must log DYN seconds");
 
-    let mut mgr = TimeManager::new(initial_tai_tjt(init), default_leap_second_table());
+    let mut mgr = SimulationTime::new(initial_tai_tjt(init), default_leap_second_table());
     // JEOD's Dyn time scale is the sim epoch. UDE = Dyn - epoch_in_parent.
     // At t=0 JEOD reports UDE = init.ude_seconds and Dyn = init.dyn_seconds,
     // so epoch_in_parent = init.dyn_seconds - init.ude_seconds.
     let epoch_in_parent = init_dyn - init_ude;
-    // Our TimeManager::add_ude takes epoch_in_parent as TAI seconds (our DYN
+    // Our SimulationTime::add_ude takes epoch_in_parent as TAI seconds (our DYN
     // is mirrored to TAI for scale_factor=1), so this matches directly.
     let idx = mgr.add_ude(epoch_in_parent);
 
@@ -310,7 +310,7 @@ fn tier3_time_v4_common() {
     // `time_converter_tai_ut1.cc::convert_a_to_b`. The CSV's t=0
     // UT1-TJT is used purely as a sanity check on the table value at
     // the epoch; we do not feed it back as a constant override.
-    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table())
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table())
         .with_eop_table(default_eop_table());
     let init_eop_offset = mgr.ut1_tai_offset;
     let csv_offset = (init_ut1_tjt - init_tai_tjt) * SECONDS_PER_DAY;
@@ -386,11 +386,11 @@ fn tier3_time_v4_common() {
 /// (`metveh1`).
 ///
 /// Scope note: JEOD's SIM_5 also runs a second MET (`metveh2`) with a
-/// hold/release toggle during the run. Our `TimeManager` currently tracks a
+/// hold/release toggle during the run. Our `SimulationTime` currently tracks a
 /// single MET at a time, so `metveh2` is out of scope for this Tier 3 check
 /// and the CSV's `metveh2.seconds` column is deliberately not consumed. The
 /// single-MET hold/release behavior is exercised in `tier3_sim_met.rs`; adding
-/// a second slot to `TimeManager` is tracked separately.
+/// a second slot to `SimulationTime` is tracked separately.
 ///
 /// All `*.seconds` columns logged for the other scales (UTC/UT1/TT/TDB/GPS)
 /// are redundant with the TJT values we assert against (same absolute time,
@@ -408,7 +408,7 @@ fn tier3_time_v5_all() {
         .metveh1_seconds
         .expect("SIM_5 CSV must log metveh1 seconds");
 
-    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table());
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
     let ut1_tai_offset = (init_ut1_tjt - init_tai_tjt) * SECONDS_PER_DAY;
     mgr.set_ut1_tai_offset(ut1_tai_offset);
 
@@ -512,7 +512,7 @@ fn tier3_time_v6_ext() {
     let init_tai_tjt = init.tai_tjt.expect("SIM_6 CSV must log TAI TJT");
     let init_tai_seconds = init.tai_seconds.expect("SIM_6 CSV must log TAI seconds");
 
-    let mut mgr = TimeManager::new(init_tai_tjt, default_leap_second_table());
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
     let dt = if rows.len() > 1 {
         rows[1].time - rows[0].time
     } else {

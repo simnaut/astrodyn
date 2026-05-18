@@ -361,7 +361,7 @@ fn bevy_parity_point_mass_time_reversal_round_trip() {
         "should have moved after 50 steps"
     );
 
-    sim.time.time_scale_factor = -1.0;
+    sim.time.set_scale_factor(-1.0);
     sim.step_n(50).expect("step_n failed");
     let final_pos = sim.body(0).trans.position.raw_si();
     let final_vel = sim.body(0).trans.velocity.raw_si();

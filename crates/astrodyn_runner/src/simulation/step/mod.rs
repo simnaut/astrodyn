@@ -325,7 +325,7 @@ impl Simulation {
         if !self.detached_subtrees.is_empty() {
             #[cfg(feature = "phase_timing")]
             let _t0 = std::time::Instant::now();
-            self.step_detached_subtrees(dt * self.time.time_scale_factor);
+            self.step_detached_subtrees(dt * self.time.scale_factor());
             #[cfg(feature = "phase_timing")]
             {
                 self.phase_timings.detached_subtrees += _t0.elapsed();
