@@ -77,11 +77,15 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
     // future-work scoping). The prefix-match in `is_covered_by_parity`
     // satisfies this entry implicitly, so the topic is not listed
     // here.
-    (
-        "time_docker",
-        "pre-recipe sibling exercising time-scale conversions — recipe \
-         factory not yet defined (#389 follow-up)",
-    ),
+    //
+    // `time_docker` (tier3_sim_time_docker.rs) covered by
+    // `bevy_parity_time_docker.rs`: SIM_1/2/4/5/6 each run as a
+    // body-less builder through both runtimes with bit-identical
+    // `SimulationTime` assertion at every CSV checkpoint. SIM_3 (UDE)
+    // and the MET fields of SIM_5 are out of scope structurally —
+    // both are `TimeManager`-only features not surfaced through the
+    // per-step `SimulationTimeR` resource the Bevy pipeline
+    // propagates; the per-file docstring explains the scoping.
     // ── dyncomp run3-run10: most have recipe factories
     //    (sim_dyncomp::run3a_sh4x4, run4_3rd_body, run7a_*, run10a_*, …)
     //    but several rely on `pre_step` for ephemeris updates and the
