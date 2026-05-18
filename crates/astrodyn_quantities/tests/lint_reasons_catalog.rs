@@ -106,28 +106,41 @@ fn every_catalog_entry_has_at_least_min_occurrences() {
 /// of an open `#[allow(` / `#![allow(` token across multi-line
 /// attribute blocks (the canonical layout in this workspace, where
 /// `clippy::float_cmp` and `reason = "..."` sit on separate lines
-/// inside the opener). A `//` line comment short-circuits to
-/// end-of-line, so `reason = "..."` text inside a `//` or `///`
-/// comment is never counted.
+/// inside the opener).
 ///
-/// We do not parse block comments (`/* ... */`); the catalog strings
-/// are long, specific audit-log phrasings that don't show up inside
-/// block-commented code in practice, and proper handling (nested
-/// block comments, string literals containing `*/`, etc.) buys
-/// nothing on the real codebase. A `reason = "<catalog value>"`
-/// inside `/* ... */` would inflate the cluster size, which is the
-/// harmless direction for a minimum-cluster check.
+/// The scanner explicitly skips four lexical contexts so a `reason =
+/// "<catalog value>"` literal embedded in *any* of them does **not**
+/// count toward the cluster size:
 ///
-/// We also do not parse arbitrary string literals: a `(` appearing
-/// inside a non-catalog `reason = "..."` value would erroneously
-/// inflate `depth`. The audit-log invariant is structural — every
-/// `reason = "..."` in this workspace lives inside an `#[allow]`
-/// attribute by policy — so this risk is limited to a future
-/// contributor adding `reason = "...with ( in it..."` to a *non*-allow
-/// attribute, which would only affect this counter if the
-/// non-balanced paren preceded a `#[allow(` site. None of that
-/// happens today; if it ever does, the symptom is a single
-/// false-positive count, not a CI break.
+/// - `//` line comments (including `///` and `//!` doc comments) —
+///   short-circuit to end-of-line.
+/// - `/* ... */` block comments — Rust permits nesting, so the scanner
+///   tracks an integer block-comment depth and only resumes scanning
+///   when the depth returns to zero.
+/// - Cooked string literals `"..."` — the scanner consumes characters
+///   until the matching unescaped closing quote, honouring `\"` so an
+///   escaped quote inside the literal doesn't close it.
+/// - Raw string literals `r"..."` / `r#"..."#` / `r##"..."##` … — the
+///   scanner remembers how many `#` hashes opened the literal and
+///   closes only on a matching `"<same-count-of-#>` suffix. Raw
+///   strings don't honour `\"`, mirroring Rust's lexer.
+///
+/// Skipping these contexts matters because example snippets in doc
+/// comments (`///`), assertion-failure messages (`assert!(..., "...
+/// #[allow(... reason = \"...\")] ...")`), or block-commented stubs
+/// can legitimately quote the canonical catalog phrasings without
+/// representing a real bypass site. The earlier scanner counted
+/// those occurrences and could keep a stale catalog entry alive even
+/// after every genuine `#[allow]` site was removed; the four extra
+/// skip states close that hole.
+///
+/// The four skip states are mutually exclusive and dominate the
+/// `#[allow(` opener test: a scanner that is currently inside a
+/// string literal does not start a new attribute span even if the
+/// literal's bytes spell `#[allow(`. That ordering is the load-bearing
+/// invariant for the false-positive cases (`scanner_tests::*` covers
+/// the cooked-string, block-comment, and raw-string variants
+/// explicitly).
 fn count_reason_in_allow_attrs(src: &str, needle_value: &str) -> usize {
     let needle = format!("reason = \"{needle_value}\"");
     let needle_bytes = needle.as_bytes();
@@ -137,15 +150,93 @@ fn count_reason_in_allow_attrs(src: &str, needle_value: &str) -> usize {
     // multi-byte sequence (e.g. an em-dash inside a comment or
     // string literal) doesn't trip char-boundary slicing in `src[i..]`.
     // Each ASCII delimiter we care about — `#`, `/`, `(`, `)`, `[`,
-    // `]`, `!`, the bytes of `allow(` and of the needle — is a
-    // single byte under UTF-8, so byte-level comparisons are
+    // `]`, `!`, `"`, `*`, the bytes of `allow(` and of the needle —
+    // is a single byte under UTF-8, so byte-level comparisons are
     // exactly as precise as char-level ones for our matching needs.
 
     let mut count = 0usize;
     let mut depth: u32 = 0;
+    // Rust block comments nest, so `/* /* */ */` is a single comment.
+    // Track the open-block depth and only resume scanning when it
+    // returns to zero.
+    let mut block_comment_depth: u32 = 0;
+    // Cooked-string state: when `in_cooked_string` is true, consume
+    // bytes until an unescaped `"`. Tracks `cooked_escape_next` so a
+    // backslash escapes the next byte (including a `"`).
+    let mut in_cooked_string = false;
+    let mut cooked_escape_next = false;
+    // Raw-string state: when `Some(n)`, we are inside `r##…"…"##` with
+    // exactly `n` opening hashes; close only on a `"` followed by
+    // exactly `n` `#` bytes. Raw strings do not honour `\"`, mirroring
+    // Rust's lexer (so `r"…\""` doesn't exist — the first unescaped
+    // quote ends the literal).
+    let mut raw_string_hashes: Option<usize> = None;
     let mut i = 0usize;
 
     while i < bytes.len() {
+        // Highest-priority state: inside a block comment. Nothing else
+        // is scanned until the matching `*/` closes the outermost
+        // open block. A nested `/*` bumps the depth.
+        if block_comment_depth > 0 {
+            if bytes_starts_with(bytes, i, b"/*") {
+                block_comment_depth += 1;
+                i += 2;
+                continue;
+            }
+            if bytes_starts_with(bytes, i, b"*/") {
+                block_comment_depth -= 1;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Second-priority state: inside a raw string literal. Only a
+        // closing `"<n hashes>` exits; the hash-count must match the
+        // opener exactly. Raw strings ignore backslash escapes.
+        if let Some(n_hashes) = raw_string_hashes {
+            if bytes[i] == b'"' {
+                // Check for `n_hashes` trailing `#` after the quote.
+                let end = i + 1;
+                let has_enough = end + n_hashes <= bytes.len()
+                    && bytes[end..end + n_hashes].iter().all(|b| *b == b'#');
+                if has_enough {
+                    raw_string_hashes = None;
+                    i = end + n_hashes;
+                    continue;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        // Third-priority state: inside a cooked string literal.
+        // Honour `\<anything>` as an escape so `\"` doesn't close.
+        if in_cooked_string {
+            if cooked_escape_next {
+                cooked_escape_next = false;
+                i += 1;
+                continue;
+            }
+            match bytes[i] {
+                b'\\' => {
+                    cooked_escape_next = true;
+                    i += 1;
+                    continue;
+                }
+                b'"' => {
+                    in_cooked_string = false;
+                    i += 1;
+                    continue;
+                }
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
         // Skip a `//` line comment to end-of-line. Doc comments
         // (`///`, `//!`) share this prefix and are handled the same
         // way — neither can carry executable attribute syntax.
@@ -153,6 +244,46 @@ fn count_reason_in_allow_attrs(src: &str, needle_value: &str) -> usize {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
+            continue;
+        }
+
+        // Enter a block comment.
+        if bytes_starts_with(bytes, i, b"/*") {
+            block_comment_depth += 1;
+            i += 2;
+            continue;
+        }
+
+        // Enter a raw string literal `r"…"` or `r#"…"#` etc. Count
+        // the `#` hashes between the `r` and the opening quote so the
+        // closer can match exactly. A bare `r` inside an identifier
+        // (e.g. `for`, `var_r`, `r_value`) is *not* a raw string —
+        // those distinguish themselves by the next byte being an
+        // identifier character rather than `#` or `"`, which makes the
+        // `bytes[j] == b'"'` check below fail. Raw identifier syntax
+        // (`r#type`) similarly fails the check because the byte after
+        // the trailing hashes is an identifier byte, not `"`.
+        if bytes[i] == b'r' {
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] == b'#' {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'"' {
+                raw_string_hashes = Some(j - (i + 1));
+                i = j + 1;
+                continue;
+            }
+        }
+
+        // Enter a cooked string literal. We don't distinguish
+        // byte-strings (`b"…"`) here because their internal escape
+        // grammar matches cooked strings closely enough that we
+        // never miscount the catalog needle (which is a plain UTF-8
+        // string anyway).
+        if bytes[i] == b'"' {
+            in_cooked_string = true;
+            cooked_escape_next = false;
+            i += 1;
             continue;
         }
 
@@ -375,6 +506,49 @@ fn bar() {}
         // here; the byte-only `bytes_starts_with` helper exists to
         // prevent exactly that.
         let src = "// JEOD_INV: TS.01 — see invariant catalog\nfn foo() {}\n";
+        assert_eq!(count_reason_in_allow_attrs(src, VALUE), 0);
+    }
+
+    #[test]
+    fn skips_cooked_string_literal_with_attribute_text() {
+        // A cooked string literal that happens to spell out a fake
+        // `#[allow(... reason = "...")]` snippet (e.g. as part of an
+        // assertion-failure message or an error-formatting helper)
+        // must not count as a live bypass — the audit-log invariant
+        // is structural, not textual, and the bytes inside a string
+        // literal are not an attribute.
+        let src = r#"
+fn foo() {
+    let s = "example: #[allow(clippy::float_cmp, reason = \"typed-vs-raw parity tests assert bit-exact identity at the type boundary\")]";
+    let _ = s;
+}
+"#;
+        assert_eq!(count_reason_in_allow_attrs(src, VALUE), 0);
+    }
+
+    #[test]
+    fn skips_block_comment_with_attribute_text() {
+        // A `/* ... */` block comment may carry example code that
+        // quotes the canonical catalog phrasing verbatim. Those bytes
+        // are not a real bypass site and must not count.
+        let src = r#"
+/* example: #[allow(clippy::float_cmp, reason = "typed-vs-raw parity tests assert bit-exact identity at the type boundary")] */
+fn foo() {}
+"#;
+        assert_eq!(count_reason_in_allow_attrs(src, VALUE), 0);
+    }
+
+    #[test]
+    fn skips_raw_string_literal_with_attribute_text() {
+        // A raw string literal `r##"..."##` can contain an attribute
+        // snippet without escaping its quotes — these are common in
+        // test fixtures and macro-input docs. The scanner must close
+        // raw strings on the matching hash count so the embedded
+        // `#[allow(... reason = "...")]` doesn't count as a live
+        // bypass. The literal itself uses three opening hashes so
+        // that the embedded `"##` inside the catalog example doesn't
+        // prematurely terminate the test fixture.
+        let src = "let s = r###\"#[allow(clippy::float_cmp, reason = \"typed-vs-raw parity tests assert bit-exact identity at the type boundary\")]\"###;";
         assert_eq!(count_reason_in_allow_attrs(src, VALUE), 0);
     }
 }

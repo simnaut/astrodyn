@@ -396,7 +396,7 @@ enforced by review: copy the catalog string verbatim, and when you
 edit a catalog string, grep the workspace for the old wording and
 update every match.
 
-[`astrodyn_quantities::lint_reasons::clippy_float_cmp`]: https://docs.rs/astrodyn_quantities/latest/astrodyn_quantities/lint_reasons/clippy_float_cmp/index.html
+[`astrodyn_quantities::lint_reasons::clippy_float_cmp`]: crates/astrodyn_quantities/src/lint_reasons.rs
 
 ## Quaternion Convention
 
