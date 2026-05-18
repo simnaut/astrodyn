@@ -13,13 +13,17 @@
 //!
 //! - `for jj in 2..=ii.saturating_sub(2)` — Pnm recursion fill below
 //!   the tridiagonal band, equation (7-12), in the per-step kernel.
-//!   The `saturating_sub` is load-bearing: the loop is *intentionally
-//!   empty* for `ii < 4` (at `ii = 2` and `ii = 3` the tridiagonal-band
-//!   entries already cover every `jj`, so there is nothing below the
-//!   band to fill). Replacing it with the unchecked `ii - 2` form
-//!   underflows `usize` at `ii = 0`/`ii = 1` and is wrong by
-//!   construction; replacing it with a wider lower bound fabricates
-//!   off-band Pnm terms.
+//!   The bound is *intentionally empty* for `ii < 4` (at `ii = 2` and
+//!   `ii = 3` the tridiagonal-band entries already cover every `jj`, so
+//!   there is nothing below the band to fill), and replacing it with a
+//!   wider lower bound fabricates off-band Pnm terms. The
+//!   `saturating_sub` itself is defensive rather than load-bearing
+//!   today: the enclosing `for ii in 2..=degree` already restricts
+//!   `ii >= 2`, so plain `ii - 2` would not underflow in this loop as
+//!   written and would yield the same empty range for `ii ∈ {2, 3}`.
+//!   The `saturating_sub` is retained so the inner expression stays
+//!   safe under any future widening of the outer loop bound that
+//!   admits `ii < 2`.
 //! - `let jj_max = order.min(ii); for jj in 1..=jj_max` — the main
 //!   m-sum that accumulates the gravitational potential and gradient
 //!   terms, equation (3-18). The bound is the smaller of the field's
