@@ -752,7 +752,8 @@ mod tests {
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, KinematicChildC,
         MassChildOf, MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
     };
-    use crate::{AstrodynPlugin, IntegrationDtR};
+    use crate::test_utils::create_astrodyn_test_app;
+    use crate::IntegrationDtR;
     use astrodyn::{MassProperties, RotationalState, TranslationalState};
     use bevy::prelude::FixedUpdate;
     use bevy::time::{Fixed, Time};
@@ -803,8 +804,7 @@ mod tests {
     /// carrying `FrameAttachedC` after the event is processed.
     #[test]
     fn attach_event_inserts_marker() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -828,8 +828,7 @@ mod tests {
     /// `FrameDetachEvent` removes the marker.
     #[test]
     fn detach_event_removes_marker() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -870,8 +869,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "already had a FrameAttachEvent processed earlier in this tick")]
     fn duplicate_attach_event_in_same_tick_panics() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -903,8 +901,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "already had a FrameDetachEvent processed earlier in this tick")]
     fn duplicate_detach_event_in_same_tick_panics() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
@@ -938,8 +935,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "is not a frame entity")]
     fn attach_event_with_non_frame_parent_panics() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         let body = spawn_test_body(&mut app);
         // Bare entity — no FrameTransC / FrameRotC / FrameAngVelC.
@@ -972,8 +968,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "is not a valid body entity")]
     fn attach_event_with_non_body_target_panics() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         // Bare entity — no TranslationalStateC. Stands in for a
         // caller that mistakenly passed a frame entity, a source
@@ -1003,8 +998,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "is not a valid body entity")]
     fn attach_event_with_frame_entity_target_panics() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         // Use the root frame as the (invalid) body target. The root
         // frame is a frame entity (carries the FrameTransC / FrameRotC
@@ -1046,8 +1040,7 @@ mod tests {
     /// would produce.
     #[test]
     fn frame_attached_parent_propagates_before_kinematic_child() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, AstrodynPlugin));
+        let mut app = create_astrodyn_test_app();
 
         // Use the root frame (which sits at the origin and has zero
         // velocity) as the parent reference frame. The captured offset
