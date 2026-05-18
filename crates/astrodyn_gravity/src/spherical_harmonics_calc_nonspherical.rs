@@ -11,12 +11,25 @@
 //! inner bound that is dictated by the specific Gottlieb equation the
 //! loop evaluates:
 //!
-//! - `for jj in 2..=(ii - 2)` — Pnm recursion fill below the
-//!   tridiagonal band, equation (7-12), in the per-step kernel.
-//! - `for jj in 1..=order.min(ii)` — the main m-sum that accumulates
-//!   the gravitational potential and gradient terms, equation (3-18).
+//! - `for jj in 2..=ii.saturating_sub(2)` — Pnm recursion fill below
+//!   the tridiagonal band, equation (7-12), in the per-step kernel.
+//!   The `saturating_sub` is load-bearing: the loop is *intentionally
+//!   empty* for `ii < 4` (at `ii = 2` and `ii = 3` the tridiagonal-band
+//!   entries already cover every `jj`, so there is nothing below the
+//!   band to fill). Replacing it with the unchecked `ii - 2` form
+//!   underflows `usize` at `ii = 0`/`ii = 1` and is wrong by
+//!   construction; replacing it with a wider lower bound fabricates
+//!   off-band Pnm terms.
+//! - `let jj_max = order.min(ii); for jj in 1..=jj_max` — the main
+//!   m-sum that accumulates the gravitational potential and gradient
+//!   terms, equation (3-18). The bound is the smaller of the field's
+//!   order and the current degree row, gated by `if order > 0` one
+//!   level up (so `order == 0` skips the whole branch rather than
+//!   entering with an empty range).
 //! - `for jj in 0..=(ii - 1)` — `xi`/`eta` precompute, equation (7-10),
-//!   in [`SphericalHarmonicsData`]'s `initialize_body`.
+//!   in [`SphericalHarmonicsData`]'s `initialize_body`. The plain
+//!   `ii - 1` is safe here because the enclosing `for ii in 2..=degree`
+//!   guarantees `ii >= 2`.
 //! - `for jj in 0..=ii` — `zeta`/`upsilon` precompute, equations
 //!   (7-19) and (7-22), in the same `initialize_body` body.
 //!
