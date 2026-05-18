@@ -168,6 +168,14 @@ jobs:
       # extend both this exclusion and the
       # `test-parity-trajectory-full` job's matching comment so the
       # full-coverage invariant stays explicit.
+      #
+      # Note: the `binary(...)` selectors below read the cargo target
+      # name (one binary per `tests/bevy_parity_*.rs` file). This is the
+      # second of the two structural fences cataloged in
+      # `crates/astrodyn_verif_parity/tests/parity_coverage.rs` §"Structural
+      # coupling" — collapsing the parity tests into a single umbrella
+      # integration-test binary would silently collapse all four
+      # selectors below to one, undoing the heavy/fast split.
       - name: Run fast bevy_parity_* tests (exclude heavy binaries)
         run: |
           cargo nextest run --workspace -E '

@@ -20,6 +20,43 @@
 //! with a `#[ignore = "parity-gap: <reason>"]` on the wrapper test (or
 //! omit the wrapper entirely). The intent is that *every* gap is
 //! either solved or named explicitly.
+//!
+//! ## Structural coupling: one-binary-per-topic is load-bearing
+//!
+//! The `bevy_parity_<topic>.rs` *file stem* is the topic identifier on
+//! two structural fences, not a convention:
+//!
+//! 1. **Parity-superset coverage (this file).** [`collect_topics`]
+//!    enumerates by `read_dir` + `file_stem` + `strip_prefix("bevy_parity_")`.
+//!    There is no inspection of test function names anywhere in the
+//!    crate. Collapsing N integration-test files into a single
+//!    `tests/bevy_parity.rs` umbrella binary that `mod`s each former
+//!    file would empty this scan (a single file stem of `bevy_parity`
+//!    leaves no topic after the prefix strip), and every Tier 3 topic
+//!    would immediately report "uncovered". The coverage gate would
+//!    have to be rewritten to scan test function names from compiled
+//!    binary metadata before the umbrella restructure is safe.
+//!
+//! 2. **CI heavy/fast split** (`.github/workflows/ci.yml`,
+//!    `test-parity-trajectory` job). The PR-lane exclusion filter uses
+//!    `binary(/^bevy_parity_dyncomp_run/)`,
+//!    `binary(/^bevy_parity_solar_beta/)`,
+//!    `binary(=bevy_parity_torque_simple)`,
+//!    `binary(=bevy_parity_srp_1st_order)`. Each parity wrapper today
+//!    is its own cargo integration-test target (one binary per file),
+//!    and the `binary(...)` nextest selector reads cargo's target name.
+//!    Collapsing into one umbrella binary collapses these four
+//!    selectors to a single `binary(=bevy_parity)`; the heavy subset
+//!    would have to be re-expressed via `test(...)` selectors against
+//!    function names, which requires every heavy test function to
+//!    carry the same `bevy_parity_<topic>` prefix the file stem
+//!    carries today.
+//!
+//! Both fences depend on the **file stem** identifying the topic.
+//! Refactors that hoist `#![allow]` blocks (or anything else) into a
+//! single umbrella integration-test binary must coincide with
+//! structural updates to both fences in the same PR — half-baked
+//! consolidations are unsafe.
 
 use std::collections::BTreeSet;
 use std::path::Path;
