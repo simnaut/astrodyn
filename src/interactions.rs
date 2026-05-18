@@ -513,35 +513,14 @@ pub fn evaluate_contact_pair(
     // to the same thing: see `point_contact_facet::calculate_torque`).
     let contact_arm_a_inertial = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
 
-    // Relative velocity at the contact point — textbook two-body kinematic
-    // formula:
+    // Relative velocity at the contact point:
     //
     //   rel_vel = (v_A − v_B) + ω_A × r_A_contact − ω_B × r_B_contact
     //
-    // This is the velocity of A's contact point in inertial minus the
-    // velocity of B's contact point in inertial, where each body's
-    // contact-point arm is from its own CoM. JEOD computes the same
-    // quantity in the subject body frame using
-    // `(ω_target − ω_subject) × r_subject_contact − v_target_in_subject_frame`
-    // (`point_contact_pair.cc:83-84`), where `v_target_in_subject_frame`
-    // is the target's velocity expressed in the rotating subject frame
-    // and therefore already contains the `−ω_subject × rel_pos`
-    // contribution. The two forms produce the same physical velocity
-    // for any pair geometry; the textbook form above is preferred here
-    // because it composes naturally with the inertial-frame arms we
-    // already need for the torque calculation below.
-    //
-    // Issue #117: an earlier port (PR #87) used `(ω_b − ω_a) × arm_a`
-    // alone, omitting the `ω_b × (arm_a − arm_b) = ω_b × (rel_pos −
-    // (arm_b − arm_a))` rotating-frame contribution. For equal-mass
-    // equal-inertia spheres ω_a = ω_b ⇒ ω_rel = 0, so the earlier
-    // formula collapsed to `vel_a − vel_b` (pure inertial frame),
-    // missing the rotating-frame term entirely. The textbook formula
-    // above is correct for all facet geometries and reproduces JEOD's
-    // result for sphere-sphere contact to machine precision.
-    //
-    // `t_inertial_body` is inertial→body (see
-    // `astrodyn_dynamics::compute_t_inertial_struct` docs), so going
+    // Equivalent to JEOD's subject-body-frame formula at
+    // `point_contact_pair.cc:83-84` (proven by
+    // `evaluate_contact_pair_matches_jeod_subject_frame_formula`; see
+    // #117 and #560 for history). `t_inertial_body` is inertial→body, so
     // body→inertial requires the transpose.
     let omega_a_inertial = rot_a.map_or(DVec3::ZERO, |r| {
         t_inertial_body_a.transpose() * r.ang_vel_body
@@ -891,6 +870,97 @@ mod tests {
             got_tangent_dir.dot(expected_tangent_dir) > 0.99,
             "friction direction should oppose ω-induced slip; \
              expected {expected_tangent_dir:?}, got {got_tangent_dir:?}",
+        );
+    }
+
+    /// Equal-radius sphere-sphere rel-vel: our inertial-frame formula
+    /// must equal JEOD's subject-body-frame formula
+    /// (`point_contact_pair.cc:83-84`) rotated back to inertial. See
+    /// #560 for the derivation and the audit that motivates this guard.
+    #[test]
+    fn evaluate_contact_pair_matches_jeod_subject_frame_formula() {
+        // Non-trivial attitudes for both bodies (not identity, not aligned).
+        let q_a =
+            JeodQuat::left_quat_from_eigen_rotation(0.37, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let q_b =
+            JeodQuat::left_quat_from_eigen_rotation(-0.81, DVec3::new(-2.0, 1.0, -1.5).normalize());
+        let t_inertial_body_a = q_a.left_quat_to_transformation();
+        let t_inertial_body_b = q_b.left_quat_to_transformation();
+
+        let radius: f64 = 1.0;
+        let mat = scenario_material(3502.5, 70.05, 0.05);
+        let facet = astrodyn_interactions::ContactFacet::point(DVec3::ZERO, radius, mat);
+        let mass = MassProperties::with_inertia(
+            100.0,
+            DMat3::from_diagonal(DVec3::new(40.0, 40.0, 40.0)),
+            DVec3::ZERO,
+        );
+
+        // Off-centre, overlapping (centres ~1.86 m apart, sum of radii = 2).
+        let trans_a = TranslationalState {
+            position: DVec3::new(0.1, -0.2, 0.3),
+            velocity: DVec3::new(0.05, -0.1, 0.02),
+        };
+        let trans_b = TranslationalState {
+            position: DVec3::new(1.9, 0.3, 0.1),
+            velocity: DVec3::new(-0.07, 0.04, -0.01),
+        };
+        // Non-zero ω on both bodies in body frame; rotated to inertial below.
+        let rot_a = RotationalState {
+            quaternion: q_a,
+            ang_vel_body: DVec3::new(0.0007, -0.0003, 0.0011),
+        };
+        let rot_b = RotationalState {
+            quaternion: q_b,
+            ang_vel_body: DVec3::new(-0.0009, 0.0005, -0.0006),
+        };
+
+        let t_inertial_struct_a =
+            astrodyn_dynamics::compute_t_inertial_struct(&DMat3::IDENTITY, &t_inertial_body_a);
+        let t_inertial_struct_b =
+            astrodyn_dynamics::compute_t_inertial_struct(&DMat3::IDENTITY, &t_inertial_body_b);
+        let t_inertial_from_struct_a = t_inertial_struct_a.transpose();
+        let t_inertial_from_struct_b = t_inertial_struct_b.transpose();
+        let facet_a_world = rotate_facet(&facet, &t_inertial_from_struct_a);
+        let facet_b_world = rotate_facet(&facet, &t_inertial_from_struct_b);
+        let r_cm_a_struct = mass.position;
+        let r_cm_b_struct = mass.position;
+        let facet_a_offset_from_cm_inertial =
+            t_inertial_from_struct_a * (facet.shape.reference_position() - r_cm_a_struct);
+        let facet_b_offset_from_cm_inertial =
+            t_inertial_from_struct_b * (facet.shape.reference_position() - r_cm_b_struct);
+        let a_ref_inertial = trans_a.position + facet_a_offset_from_cm_inertial;
+        let b_ref_inertial = trans_b.position + facet_b_offset_from_cm_inertial;
+        let rel_pos = a_ref_inertial - b_ref_inertial;
+        let geom = compute_contact_geometry(&facet_a_world, &facet_b_world, rel_pos)
+            .expect("non-trivial overlap by construction");
+
+        let cp_a = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
+        let cp_b = facet_b_offset_from_cm_inertial + geom.contact_point_on_b;
+
+        // Equal-radius sphere-sphere ⇒ cp_a + cp_b = 0 (collapses the
+        // only difference term between the two formulas).
+        assert!(
+            (cp_a + cp_b).length() < 1.0e-14,
+            "equal-radius sphere-sphere contact must place cp_a = -cp_b; got cp_a+cp_b = {:?}",
+            cp_a + cp_b,
+        );
+
+        let omega_a_inertial = t_inertial_body_a.transpose() * rot_a.ang_vel_body;
+        let omega_b_inertial = t_inertial_body_b.transpose() * rot_b.ang_vel_body;
+
+        let ours = (trans_a.velocity - trans_b.velocity) + omega_a_inertial.cross(cp_a)
+            - omega_b_inertial.cross(cp_b);
+
+        let rel_pos_inertial = cp_a - cp_b;
+        let jeod = (trans_a.velocity - trans_b.velocity)
+            + omega_a_inertial.cross(rel_pos_inertial)
+            + (omega_b_inertial - omega_a_inertial).cross(cp_a);
+
+        let diff = ours - jeod;
+        assert!(
+            diff.length() < 1.0e-14,
+            "rel-vel formulas diverged at non-trivial state: ours={ours:?} jeod={jeod:?} diff={diff:?}"
         );
     }
 
