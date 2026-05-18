@@ -23,6 +23,9 @@ use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use glam::DMat3;
 
+use crate::derive_utils::{
+    impl_clone_phantom, impl_copy_phantom, impl_debug_phantom, impl_partial_eq_phantom,
+};
 use crate::frame::Frame;
 
 /// Mass moment of inertia tensor (`kg·m²`) expressed in frame `F`.
@@ -121,36 +124,24 @@ impl<F: Frame> InertiaTensor<F> {
     }
 }
 
-// Manual Copy/Clone/Debug/PartialEq mirroring `Qty3` style — derives would
-// otherwise demand `F: Copy + Debug + PartialEq` even though `PhantomData<F>`
-// is zero-sized regardless.
-
-impl<F: Frame> Copy for InertiaTensor<F> {}
-
-impl<F: Frame> Clone for InertiaTensor<F> {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<F: Frame> core::fmt::Debug for InertiaTensor<F> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "InertiaTensor<{}>({:?})",
-            core::any::type_name::<F>(),
-            self.value
-        )
-    }
-}
-
-impl<F: Frame> PartialEq for InertiaTensor<F> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
+// Phantom-only generic mirroring `Qty3` style — `#[derive]` would wrongly
+// demand `F: Copy + Debug + PartialEq` even though `PhantomData<F>` is
+// zero-sized regardless.
+impl_copy_phantom!([F: Frame] InertiaTensor[F]);
+impl_clone_phantom!([F: Frame] InertiaTensor[F]);
+impl_debug_phantom!(
+    [F: Frame] InertiaTensor[F],
+    |this, f| write!(
+        f,
+        "InertiaTensor<{}>({:?})",
+        core::any::type_name::<F>(),
+        this.value
+    )
+);
+impl_partial_eq_phantom!(
+    [F: Frame] InertiaTensor[F],
+    |this, other| this.value == other.value
+);
 
 impl<F: Frame> Default for InertiaTensor<F> {
     #[inline]
