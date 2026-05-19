@@ -1,0 +1,116 @@
+# cargo-deny configuration — supply-chain / license / source policy for the
+# workspace. Wired into CI via `.github/workflows/tooling.yml` (job
+# `cargo-deny`). See https://embarkstudios.github.io/cargo-deny/ for the
+# schema reference.
+#
+# Schema: cargo-deny 0.14+ (deprecated `vulnerability`/`unmaintained` severity
+# keys have been replaced by implicit defaults plus the `[advisories].ignore`
+# list).
+
+[graph]
+# Audit the full workspace, including dev-dependencies — proptest, criterion,
+# pprof, and the JEOD reference-fixture parsers all live there and are part of
+# the supply chain we ship test artifacts against.
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# -----------------------------------------------------------------------------
+# Advisories — RUSTSEC database
+# -----------------------------------------------------------------------------
+# Defaults in cargo-deny 0.14+ already deny known vulnerabilities and yanked
+# crates. We surface unmaintained crates as warnings (transitive deps via
+# bevy/anise can flap on this signal). The `ignore` list documents advisories
+# we have triaged and accepted; every entry carries an inline rationale so
+# this file is the audit log.
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # `paste 1.0.15` — RUSTSEC-2024-0436. The maintainer declared the crate
+    # complete and stopped accepting changes; this is an administrative
+    # status, not a vulnerability. `paste` reaches us transitively via the
+    # Bevy 0.18 proc-macro chain (`bevy_ecs` macros → `paste`). We can drop
+    # this entry when Bevy ships a release that no longer depends on
+    # `paste`. Tracked in https://github.com/bevyengine/bevy as the chain
+    # migrates.
+    "RUSTSEC-2024-0436",
+]
+
+# -----------------------------------------------------------------------------
+# Licenses — SPDX allowlist
+# -----------------------------------------------------------------------------
+# The workspace publishes under `MIT OR Apache-2.0` (see [workspace.package] in
+# Cargo.toml). The list below is the union of SPDX identifiers observed in the
+# resolved dep tree across Bevy 0.18, anise, pprof, and the proptest/serde
+# ecosystems. Any new license entering the tree fails CI until explicitly
+# allowed — that's the audit hook this section provides.
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "BSL-1.0",
+    "0BSD",
+    # Permissive licenses observed in the resolved dep tree:
+    # - BlueOak-1.0.0:        `minicbor` (transitive via anise → ureq).
+    # - CDLA-Permissive-2.0:  `webpki-roots` 0.26 and 1.0 (transitive via
+    #                         rustls / ureq).
+    "BlueOak-1.0.0",
+    "CDLA-Permissive-2.0",
+]
+exceptions = []
+
+# -----------------------------------------------------------------------------
+# Bans — duplicate detection
+# -----------------------------------------------------------------------------
+# `multiple-versions = "warn"` is a deliberate choice: the workspace has ~20
+# transitive-only duplicate crates flowing from independent ecosystems (Bevy
+# graphics stack vs. NAIF tooling via anise vs. flamegraph tooling via pprof).
+# None of these are caused by our direct dependency choices, so a `deny`
+# posture would just be an allowlist that grows on every upstream bump. Flip
+# to "deny" once Bevy/anise/pprof have converged on their transitive deps.
+#
+# `wildcards = "deny"` is the load-bearing rule here: a `*` requirement in any
+# of our `Cargo.toml`s would silently pull in untested major-version
+# upgrades.
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace-internal `path = "..."` deps without an explicit `version =`
+# field are not the wildcards `wildcards = "deny"` is meant to catch (those
+# are crates.io requirements like `serde = "*"`). The workspace uses path-
+# only deps deliberately so the resolver always picks the in-tree copy.
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+# -----------------------------------------------------------------------------
+# Sources — registry / git allowlist
+# -----------------------------------------------------------------------------
+# All deps must come from crates.io. Git-sourced deps are denied outright; if
+# we ever need one (e.g., to track a pre-release Bevy patch), the allow-git
+# entry must land in the same PR that adds the git dep, so this file documents
+# every non-registry source we trust.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

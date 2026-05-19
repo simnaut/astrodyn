@@ -1,0 +1,35 @@
+# Dependabot configuration — weekly bump cadence for cargo + github-actions.
+#
+# Grouping minor/patch updates into a single PR per ecosystem keeps PR noise
+# bounded on a Bevy + anise + serde dep tree where dozens of transitive crates
+# move per week. Major bumps still arrive as individual PRs so the breaking-
+# change review is per-crate. See
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+# for the schema reference.
+#
+# Pinned versions called out in `Cargo.toml` (`bevy = "0.18"`, `glam = "0.30"`,
+# `uom = "0.38"`) will rot without an active bump signal; this config is the
+# rot-detector.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

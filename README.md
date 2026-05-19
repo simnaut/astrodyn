@@ -143,6 +143,14 @@ releases as the supported window; updates land when a dependency
 forces the floor higher or when a stdlib feature with no clean polyfill
 becomes load-bearing. Bumps are called out in the changelog.
 
+**Source of truth.** The `msrv` job in
+[`.github/workflows/tooling.yml`](.github/workflows/tooling.yml) pins
+`dtolnay/rust-toolchain@1.87` and runs
+`cargo check --workspace --all-targets`. That CI gate — not the
+`rust-version` field alone — is what every PR has to clear. Stdlib drift
+beyond `clippy::incompatible_msrv` (cfg-gated syntax, transitive-dep MSRV
+bumps) surfaces here.
+
 ## License and attribution
 
 Dual-licensed under either [`LICENSE-MIT`](LICENSE-MIT) or
