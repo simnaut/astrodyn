@@ -246,7 +246,7 @@ dependencies = [
  "astrodyn_planet",
  "astrodyn_quantities",
  "astrodyn_time",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "sha2",
  "uom",
@@ -258,7 +258,7 @@ version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
- "glam 0.30.10",
+ "glam 0.32.1",
  "uom",
 ]
 
@@ -271,7 +271,7 @@ dependencies = [
  "astrodyn_verif_jeod",
  "bevy",
  "bevy_reflect",
- "glam 0.30.10",
+ "glam 0.32.1",
  "uom",
 ]
 
@@ -283,7 +283,7 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
- "glam 0.30.10",
+ "glam 0.32.1",
  "proptest",
  "sha2",
  "uom",
@@ -295,7 +295,7 @@ version = "0.2.0"
 dependencies = [
  "anise",
  "astrodyn_quantities",
- "glam 0.30.10",
+ "glam 0.32.1",
  "sha2",
  "thiserror 2.0.18",
  "ureq 2.12.1",
@@ -308,7 +308,7 @@ dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
  "astrodyn_time",
- "glam 0.30.10",
+ "glam 0.32.1",
  "proptest",
 ]
 
@@ -322,7 +322,7 @@ dependencies = [
  "astrodyn_quantities",
  "astrodyn_time",
  "criterion",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "pprof",
  "proptest",
@@ -344,7 +344,7 @@ dependencies = [
  "astrodyn_quantities",
  "astrodyn_time",
  "astrodyn_verif_jeod_fixtures",
- "glam 0.30.10",
+ "glam 0.32.1",
  "proptest",
  "uom",
 ]
@@ -355,7 +355,7 @@ version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
- "glam 0.30.10",
+ "glam 0.32.1",
  "proptest",
  "thiserror 2.0.18",
  "uom",
@@ -367,7 +367,7 @@ version = "0.2.0"
 dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
- "glam 0.30.10",
+ "glam 0.32.1",
  "regex",
  "sha2",
  "uom",
@@ -377,7 +377,7 @@ dependencies = [
 name = "astrodyn_quantities"
 version = "0.2.0"
 dependencies = [
- "glam 0.30.10",
+ "glam 0.32.1",
  "proptest",
  "thiserror 2.0.18",
  "typenum",
@@ -389,7 +389,7 @@ name = "astrodyn_runner"
 version = "0.2.0"
 dependencies = [
  "astrodyn",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "uom",
 ]
@@ -415,7 +415,7 @@ dependencies = [
  "astrodyn_runner",
  "astrodyn_verif_jeod_fixtures",
  "criterion",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "pprof",
  "regex",
@@ -429,7 +429,7 @@ name = "astrodyn_verif_jeod_fixtures"
 version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "regex",
  "thiserror 2.0.18",
@@ -443,7 +443,7 @@ dependencies = [
  "astrodyn",
  "astrodyn_runner",
  "astrodyn_verif_jeod_fixtures",
- "glam 0.30.10",
+ "glam 0.32.1",
  "sha2",
 ]
 
@@ -457,7 +457,7 @@ dependencies = [
  "astrodyn_verif_jeod",
  "astrodyn_verif_nesc",
  "bevy",
- "glam 0.30.10",
+ "glam 0.32.1",
  "log",
  "uom",
 ]
@@ -2363,6 +2363,12 @@ dependencies = [
  "rand",
  "serde_core",
 ]
+
+[[package]]
+name = "glam"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
 
 [[package]]
 name = "gpu-alloc"
