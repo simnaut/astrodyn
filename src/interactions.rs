@@ -513,25 +513,32 @@ pub fn evaluate_contact_pair(
     // to the same thing: see `point_contact_facet::calculate_torque`).
     let contact_arm_a_inertial = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
 
-    // Relative velocity at the contact point:
+    // Relative velocity — port JEOD's subject-body-frame formula
+    // (`point_contact_pair.cc:79-84`) bit-exactly. JEOD computes in
+    // subject body frame:
     //
-    //   rel_vel = (v_A − v_B) + ω_A × r_A_contact − ω_B × r_B_contact
+    //   rel_velocity_body = ω_rel × sp_a − rel_state.trans.velocity_body
     //
-    // Equivalent to JEOD's subject-body-frame formula at
-    // `point_contact_pair.cc:83-84` (proven by
-    // `evaluate_contact_pair_matches_jeod_subject_frame_formula`; see
-    // #117 and #560 for history). `t_inertial_body` is inertial→body, so
-    // body→inertial requires the transpose.
+    // where rel_state.trans.velocity_body = T_a^T (v_b − v_a) − ω_a × T_a^T (p_b − p_a)
+    // (rotating-frame derivative). The inertial-frame equivalent is:
+    //
+    //   rel_vel = (v_a − v_b) − ω_a × rel_pos + (ω_b − ω_a) × sp_a
+    //
+    // where rel_pos = a_ref − b_ref (our convention) so that
+    // `(p_b − p_a) = −rel_pos`. This matches JEOD's formula in
+    // overlapping/penetrating contact; our previous formula
+    // `(v_a − v_b) + ω_a × cp_a − ω_b × cp_b` was only equivalent in
+    // the non-penetrating limit (cp_a − cp_b = p_b − p_a). The 2.5 mm
+    // trajectory residual against JEOD's `RUN_point_off_center` was
+    // caused by this exact-formula gap; see #560 for the audit trace.
     let omega_a_inertial = rot_a.map_or(DVec3::ZERO, |r| {
         t_inertial_body_a.transpose() * r.ang_vel_body
     });
     let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
         t_inertial_body_b.transpose() * r.ang_vel_body
     });
-    let contact_arm_b_inertial = facet_b_offset_from_cm_inertial + geom.contact_point_on_b;
-    let rel_vel = (trans_a.velocity - trans_b.velocity)
-        + omega_a_inertial.cross(contact_arm_a_inertial)
-        - omega_b_inertial.cross(contact_arm_b_inertial);
+    let rel_vel = (trans_a.velocity - trans_b.velocity) - omega_a_inertial.cross(rel_pos)
+        + (omega_b_inertial - omega_a_inertial).cross(contact_arm_a_inertial);
 
     // Reuse the geometry from above — avoid repeating closest-point math
     // inside the RK4 inner loop.
@@ -730,20 +737,20 @@ mod tests {
         ContactMaterial::jeod_spring(stiffness, damping, mu)
     }
 
-    /// Covers the per-body `ω × r_contact_arm` terms in
-    /// `evaluate_contact_pair`'s textbook two-body rel-vel formula.
+    /// Covers the `ω`-dependent terms in `evaluate_contact_pair`'s
+    /// rel-vel formula (`(v_a − v_b) − ω_a × rel_pos + (ω_b − ω_a) × cp_a`,
+    /// matching JEOD `point_contact_pair.cc:79-84`).
     ///
     /// Two equal-mass, equal-inertia spheres at rest translationally but
     /// with a non-zero angular velocity on A only. The pair is at an
-    /// off-centre geometry (veh2 offset in +y), so `r_A_contact` has a
+    /// off-centre geometry (veh2 offset in +y), so `rel_pos` has a
     /// non-zero tangential component in the y direction. With
-    /// translational `v_rel = 0`, any non-zero friction force proves that
-    /// `ω_a × arm_a − ω_b × arm_b` propagates into `rel_vel`
-    /// (issue #117 — matches JEOD `point_contact_pair.cc:83-84` for
-    /// sphere-sphere contact). This locks the kinematic plumbing against
-    /// regressions that Tier 3 doesn't catch on its own — the symmetric
-    /// SIM_contact scenarios produce `ω_a = ω_b` so the per-body terms
-    /// don't cancel even though `ω_rel = 0`.
+    /// translational `v_rel = 0`, any non-zero friction force proves
+    /// that the kinematic `ω`-cross terms propagate into `rel_vel`.
+    /// This locks the kinematic plumbing against regressions that
+    /// Tier 3 doesn't catch on its own — the symmetric SIM_contact
+    /// scenarios produce `ω_a = ω_b` so the per-body terms don't
+    /// cancel even though `ω_rel = 0`.
     #[test]
     fn evaluate_contact_pair_uses_omega_cross_contact_arm_in_rel_vel() {
         // Identity attitudes and t_struct_body so all frames coincide
@@ -873,159 +880,17 @@ mod tests {
         );
     }
 
-    /// Equal-radius sphere-sphere rel-vel: our inertial-frame formula
-    /// must equal JEOD's subject-body-frame formula
-    /// (`point_contact_pair.cc:83-84`) rotated back to inertial. See
-    /// #560 for the derivation and the audit that motivates this guard.
-    #[test]
-    fn evaluate_contact_pair_matches_jeod_subject_frame_formula() {
-        // Non-trivial attitudes for both bodies (not identity, not aligned).
-        let q_a =
-            JeodQuat::left_quat_from_eigen_rotation(0.37, DVec3::new(1.0, 2.0, 3.0).normalize());
-        let q_b =
-            JeodQuat::left_quat_from_eigen_rotation(-0.81, DVec3::new(-2.0, 1.0, -1.5).normalize());
-        let t_inertial_body_a = q_a.left_quat_to_transformation();
-        let t_inertial_body_b = q_b.left_quat_to_transformation();
-
-        let radius: f64 = 1.0;
-        let mat = scenario_material(3502.5, 70.05, 0.05);
-        let facet = astrodyn_interactions::ContactFacet::point(DVec3::ZERO, radius, mat);
-        let mass = MassProperties::with_inertia(
-            100.0,
-            DMat3::from_diagonal(DVec3::new(40.0, 40.0, 40.0)),
-            DVec3::ZERO,
-        );
-
-        // Off-centre, overlapping (centres ~1.86 m apart, sum of radii = 2).
-        let trans_a = TranslationalState {
-            position: DVec3::new(0.1, -0.2, 0.3),
-            velocity: DVec3::new(0.05, -0.1, 0.02),
-        };
-        let trans_b = TranslationalState {
-            position: DVec3::new(1.9, 0.3, 0.1),
-            velocity: DVec3::new(-0.07, 0.04, -0.01),
-        };
-        // Non-zero ω on both bodies in body frame; rotated to inertial below.
-        let rot_a = RotationalState {
-            quaternion: q_a,
-            ang_vel_body: DVec3::new(0.0007, -0.0003, 0.0011),
-        };
-        let rot_b = RotationalState {
-            quaternion: q_b,
-            ang_vel_body: DVec3::new(-0.0009, 0.0005, -0.0006),
-        };
-
-        let t_inertial_struct_a =
-            astrodyn_dynamics::compute_t_inertial_struct(&DMat3::IDENTITY, &t_inertial_body_a);
-        let t_inertial_struct_b =
-            astrodyn_dynamics::compute_t_inertial_struct(&DMat3::IDENTITY, &t_inertial_body_b);
-        let t_inertial_from_struct_a = t_inertial_struct_a.transpose();
-        let t_inertial_from_struct_b = t_inertial_struct_b.transpose();
-        let facet_a_world = rotate_facet(&facet, &t_inertial_from_struct_a);
-        let facet_b_world = rotate_facet(&facet, &t_inertial_from_struct_b);
-        let r_cm_a_struct = mass.position;
-        let r_cm_b_struct = mass.position;
-        let facet_a_offset_from_cm_inertial =
-            t_inertial_from_struct_a * (facet.shape.reference_position() - r_cm_a_struct);
-        let facet_b_offset_from_cm_inertial =
-            t_inertial_from_struct_b * (facet.shape.reference_position() - r_cm_b_struct);
-        let a_ref_inertial = trans_a.position + facet_a_offset_from_cm_inertial;
-        let b_ref_inertial = trans_b.position + facet_b_offset_from_cm_inertial;
-        let rel_pos = a_ref_inertial - b_ref_inertial;
-        let geom = compute_contact_geometry(&facet_a_world, &facet_b_world, rel_pos)
-            .expect("non-trivial overlap by construction");
-
-        let cp_a = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
-        let cp_b = facet_b_offset_from_cm_inertial + geom.contact_point_on_b;
-
-        // Equal-radius sphere-sphere ⇒ cp_a + cp_b = 0 (collapses the
-        // only difference term between the two formulas).
-        assert!(
-            (cp_a + cp_b).length() < 1.0e-14,
-            "equal-radius sphere-sphere contact must place cp_a = -cp_b; got cp_a+cp_b = {:?}",
-            cp_a + cp_b,
-        );
-
-        let omega_a_inertial = t_inertial_body_a.transpose() * rot_a.ang_vel_body;
-        let omega_b_inertial = t_inertial_body_b.transpose() * rot_b.ang_vel_body;
-
-        let ours = (trans_a.velocity - trans_b.velocity) + omega_a_inertial.cross(cp_a)
-            - omega_b_inertial.cross(cp_b);
-
-        let rel_pos_inertial = cp_a - cp_b;
-        let jeod = (trans_a.velocity - trans_b.velocity)
-            + omega_a_inertial.cross(rel_pos_inertial)
-            + (omega_b_inertial - omega_a_inertial).cross(cp_a);
-
-        let diff = ours - jeod;
-        assert!(
-            diff.length() < 1.0e-14,
-            "rel-vel formulas diverged at non-trivial state: ours={ours:?} jeod={jeod:?} diff={diff:?}"
-        );
-    }
-
-    /// Falsification guard for the "subject-body-frame vs inertial-frame
-    /// contact eval" hypothesis (Direction 4-C of the SIM_contact
-    /// off-center residual investigation; see the candidate catalog in
-    /// `crates/astrodyn_verif_jeod/tests/tier3_sim_contact.rs`).
-    ///
-    /// **The hypothesis.** Our [`evaluate_contact_pair`] builds the
-    /// spring / damping / friction force entirely in the inertial frame
-    /// (`src/interactions.rs:516-552`): facet endpoints, the contact
-    /// geometry, `rel_vel = ω × arm + (v_a − v_b)`, and the resulting
-    /// spring + damping + friction force are all expressed in inertial.
-    /// JEOD's `point_contact_pair::in_contact`
-    /// (`models/interactions/contact/src/point_contact_pair.cc:47-88`)
-    /// instead computes the relative state in the **subject
-    /// vehicle_point frame** — `rel_state.rel_state.trans.position` and
-    /// `.velocity` are already in subject body coordinates by the time
-    /// `in_contact` runs — and `SpringPairInteraction::calculate_forces`
-    /// (`spring_pair_interaction.cc:57-128`) consumes those subject-body
-    /// quantities and produces the spring + damping + friction in
-    /// subject body frame. The result is then routed through
-    /// `Vector3::transform_transpose(vp.T_parent_this, force, vec)` to
-    /// reach inertial and `Vector3::transform(structure.T_parent_this,
-    /// vec, tmp_force)` to reach the subject's structure frame. The
-    /// body's `collect.effector_forc` is therefore a structure-frame
-    /// accumulator (see `force.hh:67-74`: "The force vector is expressed
-    /// in the structural frame of that DynBody object"); the integrator
-    /// reaches inertial in `dyn_body_collect.cc:219-221` via the inverse
-    /// rotation, then divides by mass. For the SIM_contact fixture
-    /// (vehicle_point = structure = body = composite_body, all coincident
-    /// with CoM at the structural origin), the JEOD-frame pipeline
-    /// reduces to: compute `force_body` in the subject body frame, then
-    /// `force_inertial = T_inertial_body^T * force_body`.
-    ///
-    /// The catalog flagged D4-C as the only D4 candidate whose
-    /// arithmetic bound (ω² · h · c ≈ 1.75e-7 N at the original 5e-4
-    /// rad/s estimate; ω peaks at ~4e-2 rad/s during the actual
-    /// off-center contact event, lifting the bound to ~1.1 mN) brackets
-    /// the observed ~120 μN per-stage residual.
-    ///
-    /// **The guard.** A frame-covariance witness: if we run
-    /// [`evaluate_contact_pair`] at a baseline state and again at the
-    /// *same* state rotated by an arbitrary rigid rotation `R` (the
-    /// "rotated" state has every position, velocity, ω, and quaternion
-    /// transformed by `R`), the two output forces must satisfy
-    /// `force_rotated == R * force_baseline` to within f64 round-off.
-    /// This holds iff [`evaluate_contact_pair`] commutes with the choice
-    /// of inertial-frame orientation — which is precisely the property
-    /// D4-C asks about: if the inertial-frame ordering produced a
-    /// systematic, frame-dependent residual at the ω²·h·c scale,
-    /// rotating the inputs into a different inertial orientation would
-    /// shift the computed force away from `R * force_baseline` by that
-    /// scale.
-    ///
-    /// **What the guard pins.** The observed |force_rotated −
-    /// R·force_baseline| at this fixture is a few hundred ULPs of
-    /// |F| ≈ 430 N, well below 1e-10 N — six orders of magnitude below
-    /// the 120 μN per-stage residual. This falsifies D4-C: a
-    /// systematic-frame-ordering error would shift the rotated force by
-    /// the ω²·h·c bound; instead the shift is at FP round-off. A future
-    /// refactor that introduces an extra non-covariant operation (e.g.
-    /// a frame-specific epsilon clip, or a hardcoded axis) would still
-    /// pass [`evaluate_contact_pair_matches_jeod_subject_frame_formula`]
-    /// (algebraic equivalence) but fail this covariance check.
+    /// Frame-covariance guard: rotating every input to
+    /// [`evaluate_contact_pair`] by an arbitrary rigid rotation `R`
+    /// must rotate the output force by the same `R` (to within f64
+    /// round-off). This pins the structural property that the contact
+    /// kernel commutes with the choice of inertial-frame orientation,
+    /// regardless of whether the internal arithmetic happens in
+    /// inertial coordinates (as our port does) or in subject-body
+    /// coordinates (as JEOD's `point_contact_pair.cc` / `spring_pair_interaction.cc`
+    /// do). A future refactor that introduces a non-covariant operation
+    /// (a frame-specific epsilon clip, a hardcoded axis, etc.) would
+    /// fail this check.
     #[test]
     fn evaluate_contact_pair_is_frame_covariant() {
         // Material matches the JEOD SIM_contact steel pair: k = 3502.5
@@ -1147,7 +1012,7 @@ mod tests {
             .length()
             .max(rotated.force_on_a.length());
         println!(
-            "D4-C covariance: baseline={:?} rotated={:?} R*baseline={:?} \
+            "frame covariance: baseline={:?} rotated={:?} R*baseline={:?} \
              |diff|={:.3e} |F|={:.3e} rel={:.3e}",
             baseline.force_on_a,
             rotated.force_on_a,
@@ -1157,20 +1022,12 @@ mod tests {
             diff.length() / mag_ref.max(f64::MIN_POSITIVE),
         );
 
-        // The 120 μN per-stage residual sits at ~3e-7 of |F| ≈ 430 N.
-        // If [`evaluate_contact_pair`] had a frame-dependent error at
-        // that scale, |diff| would be at or above 1.2e-4 N. The
-        // observed |diff| is at f64 round-off (~1e-12 N at this
-        // fixture). 1e-10 N leaves comfortable headroom for
-        // cross-platform FP variance while still being ~6 orders of
-        // magnitude tighter than the residual — a real D4-C effect
-        // would trip this without ambiguity.
+        // Observed |diff| at f64 round-off (~1e-12 N at this fixture).
+        // 1e-10 N leaves headroom for cross-platform FP variance.
         assert!(
             diff.length() < 1.0e-10,
             "contact force is not frame-covariant: rotating every input by R produced \
-             a force that differs from R·force_baseline by |diff|={:.3e} N. \
-             A genuine subject-body-frame vs inertial-frame discrepancy at the \
-             120 μN-residual scale would show |diff| > 1.2e-4 N here.",
+             a force that differs from R·force_baseline by |diff|={:.3e} N.",
             diff.length(),
         );
     }

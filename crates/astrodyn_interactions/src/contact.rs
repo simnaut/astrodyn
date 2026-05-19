@@ -398,10 +398,17 @@ pub fn compute_contact_geometry(
     if sep_len >= sum_radii {
         return None;
     }
+    // #560 root cause fix: JEOD's `Vector3::normalize` (vector3_inline.hh:192)
+    // uses `scale(1.0/mag, vec)` — i.e., `vec[i] *= 1.0/mag`. That's one
+    // reciprocal (1 rounding) plus three multiplies (3 roundings). Our
+    // previous `sep / sep_len` was direct component-wise division (3
+    // roundings, no shared reciprocal). The two produce f64 values that
+    // differ at ULP. Matching JEOD's chain.
     let normal = if sep_len < ZERO_SMALL {
         DVec3::X
     } else {
-        sep / sep_len
+        let inv_sep_len = 1.0 / sep_len;
+        sep * inv_sep_len
     };
     let contact_a_world = p_a - normal * facet_a.shape.radius();
     let contact_b_world = p_b + normal * facet_b.shape.radius();
@@ -500,19 +507,57 @@ pub fn compute_contact_force_from_geometry(
     let &ContactGeometry {
         contact_point_on_a,
         contact_point_on_b,
-        normal,
+        normal: _,
         penetration_depth,
     } = geom;
 
-    // Port of JEOD `spring_pair_interaction.cc:76`:
-    //     force_on_subject = k * (target_contact_point - subject_contact_point)
+    // #560 root cause fix B3: compute `penetration_vec` via JEOD's exact
+    // arithmetic chain (`point_contact_pair.cc:55-82`), not the
+    // algebraically-equivalent `penetration_depth * normal`. JEOD does:
+    //   vec = normalize(rel_state.trans.position)
+    //   subject_cp = vec * radius_a
+    //   vec_target = -vec (after re-normalize of negated rel_pos, FP equiv)
+    //   target_cp_body = vec_target * radius_b
+    //   target_cp = rel_state.trans.position + target_cp_body
+    //   penetration_vec = target_cp - subject_cp
+    // In our local frame (rel_state.trans.position = -sep), this becomes
+    // the chain below. We also compute `nvec = normalize(penetration_vec)`
+    // (B2): JEOD uses `Vector3::normalize(penetration_vector, nvec)`
+    // which is `scale(1/mag, vec)` — reciprocal-multiply.
     //
-    // `contact_b_world − contact_a_world` equals `penetration_depth · normal`
-    // (normal is the unit vector from B into A, pointing through the
-    // overlap zone into A), so a +k·penetration_vec force pushes A away
-    // from B. We use the `depth · normal` form since both terms are
-    // already available from `compute_contact_geometry`.
-    let penetration_vec = penetration_depth * normal;
+    // To stand in for JEOD's `vec`, we'd need access to
+    // `rel_pos_a_wrt_b` (= `sep` in our local frame). Reconstruct it
+    // from `sep = sep_len * normal`, where `sep_len = sum_radii -
+    // penetration_depth` and `normal = geom.normal` (the latter already
+    // computed via JEOD's reciprocal-multiply in `compute_contact_geometry`,
+    // B2). This is not a bit-exact roundtrip — `(sep / |sep|) * |sep|`
+    // is only approximate in f64 — but it matches JEOD's chain to ULP,
+    // which is the comparable property: JEOD recomputes `vec` from the
+    // already-normalized `rel_state.trans.position` and shares the same
+    // category of rounding error.
+    let sum_radii = facet_a.shape.radius() + facet_b.shape.radius();
+    let sep_len = sum_radii - penetration_depth;
+    // `compute_contact_geometry` returns a degenerate-fallback normal
+    // (`DVec3::X`) when `sep_len < ZERO_SMALL` (centers coincident or
+    // nearly so — deep penetration). In that regime the JEOD reciprocal
+    // chain below would divide by ~0 and contaminate the force with
+    // inf/NaN. Skip the chain and fall back to the algebraic equivalent
+    // (`penetration_vec = penetration_depth * normal`, matching JEOD's
+    // formula for the non-degenerate case after cancellation).
+    let penetration_vec = if sep_len < ZERO_SMALL {
+        penetration_depth * geom.normal
+    } else {
+        let sep = sep_len * geom.normal;
+        let inv_sep_len = 1.0 / sep_len;
+        let vec = (-sep) * inv_sep_len; // JEOD's normalize(rel_pos_subj)
+        let subject_cp = vec * facet_a.shape.radius();
+        // `-vec` is bit-equivalent to JEOD's `normalize(-rel_state.trans.position)`:
+        // negation is sign-only, so `|-v| = |v|` and the renormalize collapses to a sign flip.
+        let vec_target = -vec;
+        let target_cp_body = vec_target * facet_b.shape.radius();
+        let target_cp_in_subj = -sep + target_cp_body; // rel_pos_subj + target_cp_body
+        target_cp_in_subj - subject_cp
+    };
 
     // 5. Spring force on A: repulsive, along `normal` (from B into A).
     let spring_force = if penetration_vec.length() < ZERO_SMALL {
@@ -521,25 +566,20 @@ pub fn compute_contact_force_from_geometry(
         facet_a.material.stiffness * penetration_vec
     };
 
-    // 6. Damping force on A: opposes relative velocity along the normal.
-    //    JEOD `spring_pair_interaction.cc:80-84`:
-    //      mag = v_rel · n_hat
-    //      damping_force = -n_hat * (mag * damping_b)
-    //    where `n_hat` is the unit penetration_vec (from subject interior
-    //    toward target) and `v_rel` is velocity of target relative to
-    //    subject. In JEOD's frame, approach → `v_rel · n_hat < 0` →
-    //    damping force along `+n_hat` pushes subject away from target.
-    //
-    //    Our `normal` points from B into A (the opposite of JEOD's n_hat).
-    //    Our `rel_vel_a_wrt_b` is velocity of A relative to B (the
-    //    opposite sign of JEOD's `rel_velocity`). These two sign flips
-    //    cancel, so the damping law is identical:
-    //      v_n = rel_vel_a_wrt_b · normal
-    //      damping_on_A = -normal · v_n · damping_b
-    //    Approach of A toward B: rel_vel_a_wrt_b · normal < 0 →
-    //    damping_force along +normal (pushes A away from B). ✓
-    let v_normal_mag = rel_vel_a_wrt_b.dot(normal);
-    let damping_force = -normal * (v_normal_mag * facet_a.material.damping);
+    // 6. Damping force using JEOD's `nvec = normalize(penetration_vec)`
+    // (NOT our `geom.normal`). JEOD `spring_pair_interaction.cc:71-84`.
+    let pen_len = penetration_vec.length();
+    let nvec = if pen_len < ZERO_SMALL {
+        DVec3::X
+    } else {
+        let inv_pen_len = 1.0 / pen_len;
+        penetration_vec * inv_pen_len
+    };
+    let v_normal_mag = rel_vel_a_wrt_b.dot(nvec);
+    let damping_mag = v_normal_mag * facet_a.material.damping;
+    let damping_force = nvec * -damping_mag;
+    // Re-bind `normal` to nvec for downstream friction calc.
+    let normal = nvec;
 
     let mut total = spring_force + damping_force;
 
@@ -564,7 +604,8 @@ pub fn compute_contact_force_from_geometry(
         let normal_force_mag = total.length();
         // JEOD friction magnitude: mu * |F| * (|v_tang|/|v_total|)
         let friction_mag = mu * normal_force_mag * (tangential_speed / total_rel_speed);
-        total -= tangent_hat * friction_mag;
+        let friction_force = -tangent_hat * friction_mag;
+        total += friction_force;
     }
 
     ContactForce {

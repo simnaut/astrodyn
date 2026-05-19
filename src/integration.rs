@@ -1810,13 +1810,10 @@ mod tests {
             });
             // Zero contact for this guard — the property under test
             // is the stage *input* ordering, not the contact
-            // arithmetic (see Direction 1 guard
-            // `evaluate_contact_pair_matches_jeod_subject_frame_formula`
-            // for the contact-force algebra). The derivative
-            // time-shift discriminator below reconstructs a contact
-            // force in post from the recorded snapshots, which keeps
-            // the contact-force shape and the lockstep contract
-            // independent.
+            // arithmetic. The derivative time-shift discriminator
+            // below reconstructs a contact force in post from the
+            // recorded snapshots, which keeps the contact-force shape
+            // and the lockstep contract independent.
             for entry in out.iter_mut() {
                 *entry = (DVec3::ZERO, DVec3::ZERO);
             }
@@ -1933,20 +1930,13 @@ mod tests {
     ///
     /// The second half of JEOD's pattern — re-deriving the next
     /// stage's `Qdot_parent_this` from the *normalized* `Q_parent_this`
-    /// — was empirically tested by recomputing `compute_left_quat_deriv`
-    /// off the normalized stage quaternion instead of the raw one, then
-    /// re-running `tier3_contact_point_off_center`: the trajectory
-    /// residual was bit-identical to four significant figures
-    /// (`max pos = 2.538e-3 m`, `max vel = 5.352e-4 m/s` either way).
-    /// The reason is fixed by arithmetic: at the contact test regime
+    /// — is omitted in our kernel: at the contact test regime
     /// (`dt = 0.01 s`, `|ω| ≲ 1.3e-3 rad/s` for this fixture), the
-    /// per-stage `||q|² − 1|` drift is bounded by
-    /// `(ω·dt)² ≈ 1.8e-10`, so the resulting per-component `Qdot`
-    /// perturbation `0.5·|ω|·(||q|²−1|)` is `≈ 1.2e-13` — roughly nine
-    /// orders of magnitude below the `120 μN` (≈ `1.2e-4`) per-stage
-    /// force divergence that motivates the audit. The bound this layer
-    /// pins (`1.5e-12`) sits about an order of magnitude above the
-    /// analytic `1.2e-13` to absorb the worst-case `2 · stage_drift_bound`
+    /// per-stage `||q|² − 1|` drift is bounded by `(ω·dt)² ≈ 1.8e-10`,
+    /// so the resulting per-component `Qdot` perturbation
+    /// `0.5·|ω|·(||q|²−1|)` is `≈ 1.2e-13`. The bound this layer pins
+    /// (`1.5e-12`) sits about an order of magnitude above the analytic
+    /// `1.2e-13` to absorb the worst-case `2 · stage_drift_bound`
     /// scaling this test injects below plus cross-platform FP-rounding
     /// variance, while staying tight enough to fire if a future refactor
     /// pushes the operating envelope past the documented regime.
@@ -2025,9 +2015,7 @@ mod tests {
         // per-stage |q|² − 1 drift is O((ω·dt)²) ≈ 1.8e-10 — large
         // enough to discriminate from round-off, small enough that
         // the resulting analytic Qdot perturbation
-        // 0.5·|ω|·(||q|²−1|) ≈ 1.2e-13 remains nine orders of
-        // magnitude below the ~120 μN per-stage contact residual that
-        // motivates this audit layer.
+        // 0.5·|ω|·(||q|²−1|) ≈ 1.2e-13 stays at FP round-off.
         let mut trans0 = TranslationalState {
             position: DVec3::new(0.0, 0.0, 0.0),
             velocity: DVec3::new(0.05, -0.1, 0.02),
@@ -2247,15 +2235,14 @@ mod tests {
                 let delta = delta_sq.sqrt();
                 assert!(
                     delta < 1.5e-12,
-                    "Qdot perturbation from raw-vs-normalized stage Q exceeds the issue's \
-                     1.5e-12 falsification bound: |Δqdot| = {delta:.3e}. This is the magnitude \
-                     a Direction-3-style structural change (recomputing Qdot from the \
-                     `normalize_integ`'d stage Q, JEOD's pattern at dyn_body_integration.cc:386) \
-                     could move; it is below the contact residual (~120 μN per stage) by \
-                     orders of magnitude, so chasing the contact residual via this lever is \
-                     ruled out for the documented operating envelope. If a future refactor \
-                     pushes |ω|·dt past the envelope, renormalize the raw stage Q between \
-                     stages 2 and 3 inside `eval_stage` (`src/integration.rs`)."
+                    "Qdot perturbation from raw-vs-normalized stage Q exceeds the \
+                     1.5e-12 bound: |Δqdot| = {delta:.3e}. This is the magnitude a \
+                     structural change (recomputing Qdot from the `normalize_integ`'d \
+                     stage Q, JEOD's pattern at dyn_body_integration.cc:386) could \
+                     move; the bound is set for the documented operating envelope. \
+                     If a future refactor pushes |ω|·dt past the envelope, renormalize \
+                     the raw stage Q between stages 2 and 3 inside `eval_stage` \
+                     (`src/integration.rs`)."
                 );
             }
         }
