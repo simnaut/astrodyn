@@ -177,11 +177,11 @@ pub struct VehicleOutput {
     /// JEOD's `derivs.trans_accel`. Zero before the first `step()`.
     ///
     /// Typed against `RootInertial` to match the Bevy adapter's
-    /// [`FrameDerivativesC`](astrodyn_bevy::components::FrameDerivativesC)
-    /// phantom (the integ-origin shift on acceleration is zero — only
-    /// positions shift between integration and root frames — so the
-    /// `RootInertial` phantom carries the same numerics whether the body
-    /// integrates in the root frame or a planet-inertial child of root).
+    /// `FrameDerivativesC` phantom (the integ-origin shift on
+    /// acceleration is zero — only positions shift between integration
+    /// and root frames — so the `RootInertial` phantom carries the same
+    /// numerics whether the body integrates in the root frame or a
+    /// planet-inertial child of root).
     pub trans_accel: Acceleration<RootInertial>,
     /// Total rotational acceleration (rad/s²) in the body frame at the
     /// end of the last `step()` — mirrors JEOD's `derivs.rot_accel`.

@@ -21,11 +21,11 @@
 //!   exposed because the underlying components are already typed end-to-end.
 //! - [`BodyMutator`] — read+write API for the four external-load setters,
 //!   typed-first with raw `// ESCAPE_HATCH:` siblings retained for parity
-//!   with the runner's raw [`Simulation::set_body_external_force`] entry
+//!   with the runner's raw `Simulation::set_body_external_force` entry
 //!   points.
 //!
 //! Both filter on [`DynamicsConfigC`] (the universally-present body
-//! component — every body spawned via [`crate::lib::VehicleConfigBevyExt::spawn_bevy`]
+//! component — every body spawned via [`crate::VehicleConfigBevyExt::spawn_bevy`]
 //! carries one). Passing a non-body entity (e.g. a gravity source) panics
 //! with a diagnostic naming the misuse — the same fail-loud pattern
 //! [`crate::source_mutator::SourceMutator`] applies for source-targeted
@@ -334,7 +334,7 @@ impl<P: Planet> BodyMutator<'_, '_, P> {
     /// Typed sibling of [`set_body_external_force`](Self::set_body_external_force).
     /// The `Force<RootInertial>` argument's phantom enforces at compile
     /// time that the value is in the root-inertial frame, matching the
-    /// runner's [`Simulation::set_body_external_force_typed`].
+    /// runner's `Simulation::set_body_external_force_typed`.
     ///
     /// Auto-inserts [`ExternalForceC`] if the body doesn't carry one yet
     /// (i.e. was spawned with a zero `VehicleConfig.external_force`, the
