@@ -15,18 +15,18 @@ all-features = true
 
 [dependencies]
 glam = { workspace = true }
-astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.1.0" }
-astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_atmosphere = { path = "../astrodyn_atmosphere", version = "0.2.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.2.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 uom = { workspace = true }
 
 [dev-dependencies]
-astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.1.0" }
-astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.1.0" }
-astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
+astrodyn_ephemeris = { path = "../astrodyn_ephemeris", version = "0.2.0" }
+astrodyn_gravity = { path = "../astrodyn_gravity", version = "0.2.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.2.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0", features = ["test-utils"] }
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures" }
-astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
+astrodyn_time = { path = "../astrodyn_time", version = "0.2.0" }
 proptest = "1"
 
 [lints]

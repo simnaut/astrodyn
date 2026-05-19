@@ -14,7 +14,7 @@ rust-version.workspace = true
 all-features = true
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 glam = { workspace = true }
 uom = { workspace = true }
 

@@ -43,21 +43,22 @@ jobs:
           # advisory state — a 24-hour-old cache hit would defeat the point.
 
   msrv:
-    # MSRV gate at Rust 1.87 (matches `rust-version` in [workspace.package]).
+    # MSRV gate at Rust 1.89 (matches `rust-version` in [workspace.package]).
     # `cargo check --workspace --all-targets` exercises lib, bin, test, bench,
     # and example targets — catches stdlib drift (cfg-gated syntax, transitive-
     # dep MSRV bumps) that `clippy::incompatible_msrv` on stable cannot see.
-    # See `README.md` § "Minimum supported Rust version" for the bump policy.
-    name: MSRV (1.87)
+    # The 1.89 floor is set by bevy 0.18.1's own `rust-version` declaration;
+    # see `README.md` § "Minimum supported Rust version" for the bump policy.
+    name: MSRV (1.89)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.87
+      - uses: dtolnay/rust-toolchain@1.89
       - uses: Swatinem/rust-cache@v2
         with:
           # Distinct cache key from the stable-toolchain jobs in `ci.yml` so
-          # 1.87 artifacts don't poison `cargo build` on stable and vice versa.
-          key: msrv-1.87
+          # 1.89 artifacts don't poison `cargo build` on stable and vice versa.
+          key: msrv-1.89
       - run: cargo check --workspace --all-targets
 
   cargo-semver-checks:

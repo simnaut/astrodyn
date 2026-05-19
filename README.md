@@ -124,18 +124,18 @@ cargo run --profile release-with-debug \
 
 ## Minimum supported Rust version
 
-astrodyn requires **Rust 1.87 or newer**. The `rust-version` field is
+astrodyn requires **Rust 1.89 or newer**. The `rust-version` field is
 declared in `[workspace.package]` so every published member crate
 inherits it; users on older toolchains get a clean
-`error: package <name> requires Rust 1.87` from cargo rather than a
+`error: package <name> requires Rust 1.89` from cargo rather than a
 deep dependency-tree compile error.
 
-The binding constraints are the `bevy = "0.18"` dependency (released
-targeting Rust ~1.85) and direct workspace usage of
-`u{32,usize}::is_multiple_of` (stabilized in Rust 1.87) inside the
-Gauss–Jackson integrator. The workspace also uses modern stdlib
-features (`#[diagnostic::on_unimplemented]`, recent const generics)
-that require an MSRV of at least this vintage.
+The binding constraint is `bevy = "0.18"` (0.18.1 declares its own
+`rust-version = "1.89"`, which MSRV-aware resolution in cargo 1.85+
+enforces transitively). Our own direct usage of recent stdlib features
+(`u{32,usize}::is_multiple_of`, stabilized in 1.87; `#[diagnostic::
+on_unimplemented]`; recent const generics) sits comfortably below this
+floor.
 
 **Bump policy.** Raising the MSRV is treated as a minor-version event,
 not a patch. The project tracks the last two to three stable Rust
@@ -145,7 +145,7 @@ becomes load-bearing. Bumps are called out in the changelog.
 
 **Source of truth.** The `msrv` job in
 [`.github/workflows/tooling.yml`](.github/workflows/tooling.yml) pins
-`dtolnay/rust-toolchain@1.87` and runs
+`dtolnay/rust-toolchain@1.89` and runs
 `cargo check --workspace --all-targets`. That CI gate — not the
 `rust-version` field alone — is what every PR has to clear. Stdlib drift
 beyond `clippy::incompatible_msrv` (cfg-gated syntax, transitive-dep MSRV

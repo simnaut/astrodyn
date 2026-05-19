@@ -34,9 +34,9 @@ all-features = true
 bench = false
 
 [dependencies]
-astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
-astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.1.0" }
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.2.0" }
+astrodyn_dynamics = { path = "../astrodyn_dynamics", version = "0.2.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 glam = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
@@ -48,9 +48,9 @@ uom = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
-astrodyn_time = { path = "../astrodyn_time", version = "0.1.0" }
-astrodyn_frames = { path = "../astrodyn_frames", version = "0.1.0" }
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
+astrodyn_time = { path = "../astrodyn_time", version = "0.2.0" }
+astrodyn_frames = { path = "../astrodyn_frames", version = "0.2.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0", features = ["test-utils"] }
 proptest = "1"
 tempfile = "3"
 criterion = { workspace = true }

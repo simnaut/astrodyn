@@ -35,7 +35,7 @@ default = ["fetch"]
 fetch = ["dep:ureq", "dep:sha2"]
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 anise = "0.9"
 glam = { workspace = true }
 thiserror = { workspace = true }

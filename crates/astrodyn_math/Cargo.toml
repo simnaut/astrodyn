@@ -14,7 +14,7 @@ rust-version.workspace = true
 all-features = true
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 glam = { workspace = true }
 thiserror = { workspace = true }
 uom = { workspace = true }
@@ -26,7 +26,7 @@ test-utils = []
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures" }
 # `test-utils` exposes `astrodyn_quantities::frame::TestVehicle` for inline tests
 # that need a phantom vehicle tag (Vehicle is sealed in production).
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0", features = ["test-utils"] }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0", features = ["test-utils"] }
 proptest = "1"
 
 [lints]
