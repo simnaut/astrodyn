@@ -558,7 +558,10 @@ fn bevy_parity_point_mass_mars_rotation_dispatch() {
     sim.validate().unwrap();
     sim.step_n(10).expect("step_n failed");
 
-    let rot = sim.source_pfix_rotation(mars).unwrap();
+    let rot = sim
+        .source_pfix_rotation_typed::<astrodyn::Mars>(mars)
+        .unwrap()
+        .matrix();
     assert!(
         rot != glam::DMat3::IDENTITY,
         "Mars rotation should differ from identity after 10 steps"
@@ -632,8 +635,14 @@ fn bevy_parity_point_mass_multi_source_rotation() {
     sim.validate().unwrap();
     sim.step_n(10).expect("step_n failed");
 
-    let earth_rot = sim.source_pfix_rotation(earth).unwrap();
-    let mars_rot = sim.source_pfix_rotation(mars).unwrap();
+    let earth_rot = sim
+        .source_pfix_rotation_typed::<astrodyn::Earth>(earth)
+        .unwrap()
+        .matrix();
+    let mars_rot = sim
+        .source_pfix_rotation_typed::<astrodyn::Mars>(mars)
+        .unwrap()
+        .matrix();
 
     assert!(earth_rot != glam::DMat3::IDENTITY, "Earth rotation updated");
     assert!(mars_rot != glam::DMat3::IDENTITY, "Mars rotation updated");

@@ -58,9 +58,10 @@ use astrodyn::{
     StructuralFrame, Torque, Vec3Ext,
 };
 use astrodyn_bevy::{
-    AttachEvent, DetachEvent, ExternalForceC, ExternalTorqueC, FrameAttachEvent, FrameEntityC,
-    FrameTransC, KinematicChildC, MassChildOf, PfixFrameEntityC, RotationalStateC, SimulationTimeR,
-    SourceInertialPositionC, SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
+    AttachEvent, DetachEvent, ExternalForceC, ExternalForceStructC, ExternalTorqueC,
+    ExternalTorqueStructC, FrameAttachEvent, FrameEntityC, FrameTransC, KinematicChildC,
+    MassChildOf, PfixFrameEntityC, RotationalStateC, SimulationTimeR, SourceInertialPositionC,
+    SourceInertialVelocityC, TidalConfigC, TranslationalStateC,
 };
 use astrodyn_verif_jeod::verification::{SimContext, SourceFrameKind};
 use bevy::ecs::message::Messages;
@@ -466,6 +467,42 @@ impl<P: Planet> SimContext for BevySimContext<'_, P> {
             tc.0 = typed;
         } else {
             self.world.entity_mut(entity).insert(ExternalTorqueC(typed));
+        }
+    }
+
+    fn set_body_external_force_struct(&mut self, body_idx: usize, force_struct: DVec3) {
+        // Mirror the runner's `Simulation::set_body_external_force_struct`:
+        // overwrite the body's structural-frame external-force component.
+        // `force_collection_system` reads it, rotates to inertial via
+        // `T_inertial_struct = T_struct_body^T * T_inertial_body`, and
+        // adds to `TotalForceC` (same logic as the runner's
+        // `simulation/step/integrate.rs:85-105`). Auto-insert when the
+        // component is absent — `VehicleConfig` has no
+        // `external_force_struct` field today, so the component is
+        // absent until the first `set_body_external_force_struct` call.
+        let entity = self.body_entity(body_idx);
+        let typed = Force::<StructuralFrame<SelfRef>>::from_raw_si(force_struct);
+        if let Some(mut fc) = self.world.get_mut::<ExternalForceStructC>(entity) {
+            fc.0 = typed;
+        } else {
+            self.world
+                .entity_mut(entity)
+                .insert(ExternalForceStructC(typed));
+        }
+    }
+
+    fn set_body_external_torque_struct(&mut self, body_idx: usize, torque_struct: DVec3) {
+        // Mirror `set_body_external_force_struct`'s pattern for torque:
+        // `force_collection_system` rotates to body frame via
+        // `t_struct_body` (the body's structural-to-body transform).
+        let entity = self.body_entity(body_idx);
+        let typed = Torque::<StructuralFrame<SelfRef>>::from_raw_si(torque_struct);
+        if let Some(mut tc) = self.world.get_mut::<ExternalTorqueStructC>(entity) {
+            tc.0 = typed;
+        } else {
+            self.world
+                .entity_mut(entity)
+                .insert(ExternalTorqueStructC(typed));
         }
     }
 

@@ -165,6 +165,14 @@ impl SimContext for Simulation {
         Simulation::set_body_external_torque(self, body_idx, torque);
     }
 
+    fn set_body_external_force_struct(&mut self, body_idx: usize, force_struct: DVec3) {
+        Simulation::set_body_external_force_struct(self, body_idx, force_struct);
+    }
+
+    fn set_body_external_torque_struct(&mut self, body_idx: usize, torque_struct: DVec3) {
+        Simulation::set_body_external_torque_struct(self, body_idx, torque_struct);
+    }
+
     fn body_q_inertial_body(&self, body_idx: usize) -> glam::DQuat {
         // `VehicleOutput.rot` is `Option<RotationalStateTyped<SelfRef>>`;
         // panic with a descriptive message rather than returning identity
@@ -619,13 +627,13 @@ fn snapshot_from(body: &VehicleOutput, ref_record: &StateLog) -> StateLog {
         time: ref_record.time,
         position: Some(body.trans.position.raw_si()),
         velocity: Some(body.trans.velocity.raw_si()),
-        acceleration: Some(body.trans_accel),
+        acceleration: Some(body.trans_accel.raw_si()),
         quaternion: body
             .rot
             .as_ref()
             .map(|r| r.q_inertial_body.as_witness().inner().to_glam()),
         ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body.raw_si()),
-        ang_accel: body.rot_accel,
+        ang_accel: body.rot_accel.map(|a| a.raw_si()),
     }
 }
 

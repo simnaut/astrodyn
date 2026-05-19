@@ -79,55 +79,38 @@ pub struct RelativeFrameState<'w, 's> {
 }
 
 impl<'w, 's> RelativeFrameState<'w, 's> {
-    /// `(position, velocity)` of `to` relative to `from`, both in
-    /// `from`-frame coordinates.
+    /// Typed `(Position<F>, Velocity<F>)` of `to` relative to `from`,
+    /// both in `from`-frame coordinates. The caller asserts via the
+    /// turbofish that `from`'s frame marker is `F` — phantom-attachment
+    /// is unchecked at runtime, matching [`FrameOrigin::origin_in_typed`].
     ///
-    /// Prefer [`position_velocity_typed`](Self::position_velocity_typed)
-    /// when `from`'s frame marker is statically known.
-    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
-    pub fn position_velocity(&self, from: Entity, to: Entity) -> (DVec3, DVec3) {
-        let rel = self.relative_state(from, to);
-        (rel.trans.position, rel.trans.velocity)
-    }
-
-    /// Typed sibling of [`position_velocity`](Self::position_velocity).
-    /// The caller asserts via the turbofish that `from`'s frame marker is
-    /// `F` — phantom-attachment is unchecked at runtime, matching
-    /// [`FrameOrigin::origin_in_typed`].
+    /// Callers whose `from`'s marker isn't known at compile time should
+    /// read [`relative_state`](Self::relative_state) and project the
+    /// `.trans.position` / `.trans.velocity` fields directly.
     pub fn position_velocity_typed<F: astrodyn::Frame>(
         &self,
         from: Entity,
         to: Entity,
     ) -> (astrodyn::Position<F>, astrodyn::Velocity<F>) {
-        let (pos, vel) = self.position_velocity(from, to);
+        let trans = self.relative_state(from, to).trans;
         (
             // allowed: typed-sibling accessor boundary; phantom attached unchecked.
-            astrodyn::Position::<F>::from_raw_si(pos),
+            astrodyn::Position::<F>::from_raw_si(trans.position),
             // allowed: typed-sibling accessor boundary; phantom attached unchecked.
-            astrodyn::Velocity::<F>::from_raw_si(vel),
+            astrodyn::Velocity::<F>::from_raw_si(trans.velocity),
         )
     }
 
-    /// Position of `to` relative to `from`, in `from`-frame
-    /// coordinates.
-    ///
-    /// Prefer [`position_typed`](Self::position_typed) when `from`'s frame
-    /// marker is statically known.
-    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
-    pub fn position(&self, from: Entity, to: Entity) -> DVec3 {
-        self.relative_state(from, to).trans.position
-    }
-
-    /// Typed sibling of [`position`](Self::position). See
-    /// [`position_velocity_typed`](Self::position_velocity_typed) for
-    /// the phantom-attachment semantics.
+    /// Typed `Position<F>` of `to` relative to `from`, in `from`-frame
+    /// coordinates. See [`position_velocity_typed`](Self::position_velocity_typed)
+    /// for the phantom-attachment semantics.
     pub fn position_typed<F: astrodyn::Frame>(
         &self,
         from: Entity,
         to: Entity,
     ) -> astrodyn::Position<F> {
         // allowed: typed-sibling accessor boundary; phantom attached unchecked.
-        astrodyn::Position::<F>::from_raw_si(self.position(from, to))
+        astrodyn::Position::<F>::from_raw_si(self.relative_state(from, to).trans.position)
     }
 
     /// Full [`RefFrameState`] of `to` relative to `from`. Delegates
@@ -253,7 +236,8 @@ impl<'w, 's> FrameOrigin<'w, 's> {
     // the typed siblings origin_in_root / origin_in_typed handle the
     // static-marker majority of callers. See #485 H4 / T2.
     pub fn origin_in(&self, ancestor: Entity, frame: Entity) -> (DVec3, DVec3) {
-        self.rel.position_velocity(ancestor, frame)
+        let trans = self.rel.relative_state(ancestor, frame).trans;
+        (trans.position, trans.velocity)
     }
 
     /// Typed `(Position<RootInertial>, Velocity<RootInertial>)` for the

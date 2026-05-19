@@ -5,7 +5,7 @@
 //! `set_source_state`, `source_pfix_rotation`, `source_tidal_config_mut`,
 //! `source_delta_c20`.
 
-use glam::{DMat3, DVec3};
+use glam::DVec3;
 
 use astrodyn::{
     set_source_position as sim_set_source_position, set_source_state as sim_set_source_state,
@@ -204,29 +204,12 @@ impl Simulation {
     }
 
     /// Get the current position of a gravity source relative to the root
-    /// inertial frame. Returns `DVec3::ZERO` for the root-mapped central source.
-    ///
-    /// Prefer [`source_position_typed`](Self::source_position_typed) for the
-    /// typed-result path.
-    // ESCAPE_HATCH: pending H4 typed-migration follow-up. The typed sibling
-    // `source_position_typed` exists; this raw variant is preserved for
-    // backwards compatibility until the parity-lockstep follow-on PR (see
-    // #485 task 18) removes it alongside the Bevy mirrors.
-    pub fn source_position(&self, source_idx: usize) -> DVec3 {
-        sim_source_position(
-            &self.frame_tree,
-            &self.source_frame_ids,
-            self.root_frame_id,
-            source_idx,
-        )
-    }
-
-    /// Typed sibling of [`Self::source_position`] returning the source
-    /// position already wrapped as `Position<RootInertial>`. The
+    /// inertial frame, already wrapped as `Position<RootInertial>`. The
     /// frame phantom matches the runner's root-inertial convention; per-
     /// step pipelines that consume gravity / SRP / shadow inputs in
     /// `RootInertial` should call this rather than re-lifting the raw
-    /// `DVec3` at every body.
+    /// `DVec3` at every body. Returns the typed zero for the root-mapped
+    /// central source.
     pub fn source_position_typed(
         &self,
         source_idx: usize,
@@ -236,7 +219,12 @@ impl Simulation {
         // raw kernel returns a frame-erased `DVec3` and the only source
         // of truth for the phantom is the runner's documented root
         // configuration.
-        astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(self.source_position(source_idx))
+        astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(sim_source_position(
+            &self.frame_tree,
+            &self.source_frame_ids,
+            self.root_frame_id,
+            source_idx,
+        ))
     }
 
     /// Set the position of a gravity source relative to the root inertial frame.
@@ -269,24 +257,10 @@ impl Simulation {
         self.gravity_data[source_idx].velocity = velocity;
     }
 
-    /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
-    /// if the source has no rotation model (no pfix frame).
-    ///
-    /// Prefer [`source_pfix_rotation_typed`](Self::source_pfix_rotation_typed)
-    /// for typed `FrameTransform<RootInertial, PlanetFixed<P>>`.
-    // ESCAPE_HATCH: pending H4 typed-migration follow-up. Raw `DMat3`
-    // return is deferred to the parity-lockstep follow-on PR (see #485
-    // task 18) to be removed alongside the Bevy mirror in
-    // `SourceReader::source_pfix_rotation`.
-    pub fn source_pfix_rotation(&self, source_idx: usize) -> Option<DMat3> {
-        sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx)
-    }
-
-    /// Typed sibling of [`source_pfix_rotation`](Self::source_pfix_rotation).
-    ///
-    /// Returns the source's planet-fixed rotation as a typed
+    /// Get the planet-fixed rotation for a gravity source as a typed
     /// `FrameTransform<RootInertial, PlanetFixed<P>>`, matching the canonical
-    /// shape used by `PlanetFixedRotationC<P>` on the Bevy adapter side. The
+    /// shape used by `PlanetFixedRotationC<P>` on the Bevy adapter side. Returns
+    /// `None` if the source has no rotation model (no pfix frame). The
     /// caller asserts via the turbofish that `source_idx` resolves to the
     /// planet `P`'s pfix frame — no runtime check is performed (mirroring
     /// `source_position_typed`'s phantom-attachment boundary).

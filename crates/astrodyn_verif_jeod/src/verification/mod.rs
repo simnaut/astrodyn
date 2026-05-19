@@ -184,6 +184,49 @@ pub trait SimContext {
         );
     }
 
+    /// Set body `body_idx`'s **structural-frame** external force,
+    /// replacing any previous value. Mirrors the runner's
+    /// `Simulation::set_body_external_force_struct` — the force is
+    /// expressed in the body's structural frame and rotated to
+    /// inertial at force-collection time using the body's current
+    /// attitude (mirrors JEOD's `dyn_body_collect.cc:219-221`). Use
+    /// this entry point for Tier 3 sims that schedule struct-frame
+    /// force events (`SIM_verif_attach_detach`'s
+    /// `RUN_compute_child_derivative`) so the inertial-frame
+    /// contribution tracks the body's attitude across each
+    /// integration step.
+    ///
+    /// The default implementation panics with an explicit
+    /// "set_body_external_force_struct not supported" message so
+    /// existing `SimContext` implementors stay source-compatible.
+    fn set_body_external_force_struct(&mut self, body_idx: usize, force_struct: DVec3) {
+        let _ = (body_idx, force_struct);
+        panic!(
+            "set_body_external_force_struct not supported by this SimContext implementation; \
+             provide a SimContext impl that mutates the adapter's structural-frame \
+             external-load surface (e.g. ExternalForceStructC on the Bevy body entity)"
+        );
+    }
+
+    /// Set body `body_idx`'s **structural-frame** external torque,
+    /// replacing any previous value. Mirrors the runner's
+    /// `Simulation::set_body_external_torque_struct` — the torque is
+    /// expressed in the body's structural frame and rotated to the
+    /// body frame at force-collection time using the body's
+    /// structural-to-body transform.
+    ///
+    /// The default implementation panics with an explicit
+    /// "set_body_external_torque_struct not supported" message so
+    /// existing `SimContext` implementors stay source-compatible.
+    fn set_body_external_torque_struct(&mut self, body_idx: usize, torque_struct: DVec3) {
+        let _ = (body_idx, torque_struct);
+        panic!(
+            "set_body_external_torque_struct not supported by this SimContext implementation; \
+             provide a SimContext impl that mutates the adapter's structural-frame \
+             external-load surface (e.g. ExternalTorqueStructC on the Bevy body entity)"
+        );
+    }
+
     /// Read body `body_idx`'s current inertial-body left-transformation
     /// quaternion as `glam::DQuat` (xyzw layout). Used by `pre_step`
     /// closures that need to rotate a body-frame load into the inertial

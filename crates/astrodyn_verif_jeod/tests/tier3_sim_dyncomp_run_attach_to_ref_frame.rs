@@ -459,8 +459,9 @@ fn apply_event(
                 .source_pfix_frame_id(earth_idx)
                 .expect("Earth source has a pfix frame");
             let t_inertial_pfix = sim
-                .source_pfix_rotation(earth_idx)
-                .expect("Earth source has a pfix rotation");
+                .source_pfix_rotation_typed::<astrodyn::Earth>(earth_idx)
+                .expect("Earth source has a pfix rotation")
+                .matrix();
             let rot = body_out
                 .rot
                 .as_ref()
@@ -537,8 +538,9 @@ fn apply_event(
                 .source_pfix_frame_id(earth_idx)
                 .expect("Earth source has a pfix frame");
             let t_inertial_pfix = sim
-                .source_pfix_rotation(earth_idx)
-                .expect("Earth source has a pfix rotation");
+                .source_pfix_rotation_typed::<astrodyn::Earth>(earth_idx)
+                .expect("Earth source has a pfix rotation")
+                .matrix();
             let t_inertial_struct = rot
                 .q_inertial_body
                 .as_witness()
@@ -589,8 +591,9 @@ fn apply_event(
                 .source_pfix_frame_id(earth_idx)
                 .expect("Earth source has a pfix frame");
             let t_inertial_pfix = sim
-                .source_pfix_rotation(earth_idx)
-                .expect("Earth source has a pfix rotation");
+                .source_pfix_rotation_typed::<astrodyn::Earth>(earth_idx)
+                .expect("Earth source has a pfix rotation")
+                .matrix();
             let t_inertial_struct = rot
                 .q_inertial_body
                 .as_witness()
@@ -756,8 +759,9 @@ fn drive_through_csv(
                     .expect("step_until to t-dt must succeed");
                 let body_now = sim.body(body_idx);
                 let t_ip_now = sim
-                    .source_pfix_rotation(earth_idx)
-                    .expect("Earth source has a pfix rotation");
+                    .source_pfix_rotation_typed::<astrodyn::Earth>(earth_idx)
+                    .expect("Earth source has a pfix rotation")
+                    .matrix();
                 Some(t_ip_now * body_now.trans.position.raw_si())
             } else {
                 None

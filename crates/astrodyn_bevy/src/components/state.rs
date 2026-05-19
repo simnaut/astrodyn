@@ -6,7 +6,7 @@
 //! external-force / external-torque injection slots.
 
 use astrodyn::{
-    BodyFrame, DynamicsConfig, FrameDerivatives, FrameDerivativesTyped, FrameTransform,
+    BodyFrame, DynamicsConfig, Force, FrameDerivatives, FrameDerivativesTyped, FrameTransform,
     GravityAcceleration, GravityAccelerationTyped, MassPropertiesTyped, Planet, PlanetInertial,
     Position, RootInertial, RotationalStateTyped, SelfRef, StructuralFrame, Torque, TotalForce,
     TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
@@ -352,3 +352,31 @@ pub struct ExternalForceC(pub astrodyn::Force<RootInertial>);
 /// Mutate between steps to implement time-scheduled torque injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
+
+/// External force in the body's **structural** frame (N).
+///
+/// Mirrors JEOD's `Force` model
+/// (`models/dynamics/dyn_body/include/force.hh`): the force vector is
+/// expressed in the body's structural frame, then rotated to inertial at
+/// force-collection time via `T_inertial_struct = T_struct_body^T *
+/// T_inertial_body`. The companion [`ExternalForceC`] (inertial frame)
+/// remains available for callers that produce inertial-frame
+/// contributions directly; the two contribute additively at collection.
+///
+/// Matches `SimBody.external_force_struct` in `astrodyn::Simulation` —
+/// the parity-lockstep invariant requires both adapters to expose the
+/// same surface.
+// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct ExternalForceStructC(pub Force<StructuralFrame<SelfRef>>);
+
+/// External torque in the body's **structural** frame (N·m).
+///
+/// Companion to [`ExternalForceStructC`]; rotated to body frame at
+/// force-collection time via the body's `t_struct_body` (the matrix
+/// stored on [`StructuralTransformC`]).
+///
+/// Matches `SimBody.external_torque_struct` in `astrodyn::Simulation`.
+// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct ExternalTorqueStructC(pub Torque<StructuralFrame<SelfRef>>);

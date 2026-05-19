@@ -28,11 +28,11 @@
 use glam::{DMat3, DVec3};
 
 use astrodyn::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
-    FrameSwitchConfig, GeodeticState, GravityAccelerationTyped, GravityControls, GravitySource,
-    LvlhFrame, MassPropertiesTyped, OrbitalElements, RadiationForce, RootInertial, RotationModel,
-    RotationalStateTyped, SelfPlanet, SelfRef, SrpModel, TotalForce, TranslationalStateTyped,
-    VehicleConfig,
+    Acceleration, AerodynamicForce, AngularAcceleration, AtmosphereState, BodyFrame, DragConfig,
+    DynamicsConfig, EulerSequence, FrameDerivatives, FrameSwitchConfig, GeodeticState,
+    GravityAccelerationTyped, GravityControls, GravitySource, LvlhFrame, MassPropertiesTyped,
+    OrbitalElements, RadiationForce, RootInertial, RotationModel, RotationalStateTyped, SelfPlanet,
+    SelfRef, SrpModel, TotalForce, TranslationalStateTyped, VehicleConfig,
 };
 use astrodyn::{ContactFacet, FrameId, GroundFacet, IntegrationFrame, MassBodyId, MassPointState};
 
@@ -172,14 +172,21 @@ pub struct VehicleOutput {
     /// Current rotational state (attitude, body-frame angular velocity).
     /// `None` for 3-DOF.
     pub rot: Option<RotationalStateTyped<SelfRef>>,
-    /// Total translational acceleration in the integration frame (m/s²) at the
-    /// end of the last `step()`. Sum of gravity and non-gravity contributions —
-    /// mirrors JEOD's `derivs.trans_accel`. Zero before the first `step()`.
-    pub trans_accel: DVec3,
-    /// Total rotational acceleration in the body frame (rad/s²) at the end of
-    /// the last `step()` — mirrors JEOD's `derivs.rot_accel`. `None` for 3-DOF
-    /// bodies; zero before the first `step()`.
-    pub rot_accel: Option<DVec3>,
+    /// Total translational acceleration (m/s²) at the end of the last
+    /// `step()`. Sum of gravity and non-gravity contributions — mirrors
+    /// JEOD's `derivs.trans_accel`. Zero before the first `step()`.
+    ///
+    /// Typed against `RootInertial` to match the Bevy adapter's
+    /// [`FrameDerivativesC`](astrodyn_bevy::components::FrameDerivativesC)
+    /// phantom (the integ-origin shift on acceleration is zero — only
+    /// positions shift between integration and root frames — so the
+    /// `RootInertial` phantom carries the same numerics whether the body
+    /// integrates in the root frame or a planet-inertial child of root).
+    pub trans_accel: Acceleration<RootInertial>,
+    /// Total rotational acceleration (rad/s²) in the body frame at the
+    /// end of the last `step()` — mirrors JEOD's `derivs.rot_accel`.
+    /// `None` for 3-DOF bodies; the typed zero before the first `step()`.
+    pub rot_accel: Option<AngularAcceleration<BodyFrame<SelfRef>>>,
     /// Orbital elements from the latest step.
     pub orbital_elements: Option<OrbitalElements<SelfPlanet>>,
     /// Euler angles `[phi, theta, psi]` from the latest step.
@@ -418,8 +425,16 @@ impl SimBody {
             trans: self.trans,
             integ_frame_id: self.integ_frame_id,
             rot: self.rot,
-            trans_accel: self.frame_derivs.trans_accel,
-            rot_accel: self.rot.map(|_| self.frame_derivs.rot_accel),
+            // allowed: typed-output boundary at the VehicleOutput
+            // materialization site. `SimBody.frame_derivs` is the raw
+            // `FrameDerivatives` form the kernel populates; the phantom
+            // attached here mirrors the Bevy adapter's
+            // `FrameDerivativesC(FrameDerivativesTyped<RootInertial, SelfRef>)`.
+            trans_accel: Acceleration::<RootInertial>::from_raw_si(self.frame_derivs.trans_accel),
+            rot_accel: self.rot.map(|_| {
+                // allowed: same typed-output boundary as `trans_accel` above.
+                AngularAcceleration::<BodyFrame<SelfRef>>::from_raw_si(self.frame_derivs.rot_accel)
+            }),
             orbital_elements: self.orbital_elements.clone(),
             euler_angles: self.euler_angles,
             lvlh_frame: self.lvlh_frame,

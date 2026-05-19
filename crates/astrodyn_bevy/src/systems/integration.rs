@@ -150,7 +150,10 @@ pub fn frame_switch_system<P: Planet>(
             let threshold_sq = sw.switch_distance * sw.switch_distance;
             let triggered = match sw.switch_sense {
                 astrodyn::SwitchSense::OnApproach => {
-                    let pos_in_target = rel.position(target_frame_entity, body_frame_entity.0);
+                    let pos_in_target = rel
+                        .relative_state(target_frame_entity, body_frame_entity.0)
+                        .trans
+                        .position;
                     pos_in_target.length_squared() < threshold_sq
                 }
                 astrodyn::SwitchSense::OnDeparture => {

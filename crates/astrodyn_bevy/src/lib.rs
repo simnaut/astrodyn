@@ -12,6 +12,7 @@
 
 pub mod app_ext;
 pub mod body_action;
+pub mod body_mutator;
 pub mod bundles;
 pub mod components;
 pub mod frame_attach_system;
@@ -35,6 +36,7 @@ pub use body_action::{
     body_action_unregistered_planet_fence_system, BodyActionCommandsExt, BodyActionEvent,
     BodyActionsR, RegisteredPlanetsR,
 };
+pub use body_mutator::{BodyMutator, BodyReader};
 pub use bundles::*;
 pub use components::*;
 pub use frame_attach_system::{

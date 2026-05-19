@@ -169,7 +169,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
         sim.set_body_position(0, record.position);
 
         // Compute our shadow fraction at the current Sun position
-        let sun_pos = sim.source_position(sun);
+        let sun_pos = sim.source_position_typed(sun).raw_si();
         let our_frac =
             compute_shadow_fraction(record.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);
 

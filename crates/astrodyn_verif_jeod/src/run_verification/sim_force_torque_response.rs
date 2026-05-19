@@ -450,3 +450,160 @@ pub fn force_symmetric_impulse() -> VerificationCase {
         pre_step: Some((impulse_pre_step, PreStepCadence::PerRecord)),
     }
 }
+
+// ── Test 5: struct-frame external force / torque (issue #510 part 2) ─
+//
+// Exercises the new `SimContext::set_body_external_force_struct` /
+// `set_body_external_torque_struct` surface across both runtimes.
+// The struct-frame interpretation requires three distinct frames at
+// runtime (structural ≠ body ≠ inertial), so both `t_struct_body`
+// and the initial inertial-body attitude are non-trivial. The pre_step
+// fires once at the first record to set the struct-frame load (which
+// `VehicleConfig` has no field for), then the load persists through
+// the rest of the propagation. Parity is asserted at every record.
+
+/// Structural-frame force the struct-frame parity recipe applies for
+/// the entire propagation (N) — set via `pre_step` at record 0 (the
+/// only way today, since `VehicleConfig` has no
+/// `external_force_struct` field).
+fn force_struct_load() -> DVec3 {
+    DVec3::new(10.0, -3.0, 5.0)
+}
+
+/// Structural-frame torque companion for the torque variant (N·m).
+fn torque_struct_load() -> DVec3 {
+    DVec3::new(0.5, 0.0, 2.0)
+}
+
+/// Non-trivial structural-to-body rotation matrix (30° about z) —
+/// distinct from `DMat3::IDENTITY` so the `T_struct_body` factor in
+/// the force-collection chain is exercised.
+fn t_struct_body_nontrivial() -> DMat3 {
+    DMat3::from_rotation_z(std::f64::consts::FRAC_PI_6)
+}
+
+/// Non-trivial initial inertial-body attitude (45° about y) — distinct
+/// from identity so the `T_inertial_body` factor in
+/// `T_inertial_struct = T_struct_body^T * T_inertial_body` is also
+/// exercised.
+fn initial_attitude_nontrivial() -> JeodQuat {
+    JeodQuat::left_quat_from_eigen_rotation(std::f64::consts::FRAC_PI_4, DVec3::new(0.0, 1.0, 0.0))
+}
+
+fn build_force_struct_pre_step(_init: &InitialConditions) -> SimulationBuilder {
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, DT_TORQUE_S);
+    add_dummy_central_source(&mut sb);
+    let mass_props = MassProperties::with_inertia(MASS_KG, inertia_uniform(), DVec3::ZERO);
+    sb.add_body(VehicleConfig {
+        trans: super::typed_helpers::trans_typed(&TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        }),
+        rot: Some(super::typed_helpers::rot_typed(&RotationalState {
+            quaternion: initial_attitude_nontrivial(),
+            ang_vel_body: DVec3::ZERO,
+        })),
+        mass: Some(super::typed_helpers::mass_typed(&mass_props)),
+        gravity_controls: GravityControls { controls: vec![] },
+        compute_gravity_gradient: false,
+        t_struct_body: t_struct_body_nontrivial(),
+        ..Default::default()
+    });
+    sb
+}
+
+fn force_struct_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    Box::new(move |sim, time_s: f64| {
+        // Fire on the first record only (time_s ≈ DT). The setter is
+        // idempotent in principle, but firing once mirrors how a real
+        // mission would schedule a one-shot struct-frame load and
+        // tests the auto-insert path on the Bevy adapter (component
+        // is absent before the first set; afterwards force-collection
+        // reads it every step).
+        let half_dt = 0.5 * DT_TORQUE_S;
+        if (time_s - DT_TORQUE_S).abs() < half_dt {
+            sim.set_body_external_force_struct(0, force_struct_load());
+        }
+    })
+}
+
+fn torque_struct_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    Box::new(move |sim, time_s: f64| {
+        let half_dt = 0.5 * DT_TORQUE_S;
+        if (time_s - DT_TORQUE_S).abs() < half_dt {
+            sim.set_body_external_torque_struct(0, torque_struct_load());
+        }
+    })
+}
+
+fn both_struct_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    Box::new(move |sim, time_s: f64| {
+        let half_dt = 0.5 * DT_TORQUE_S;
+        if (time_s - DT_TORQUE_S).abs() < half_dt {
+            sim.set_body_external_force_struct(0, force_struct_load());
+            sim.set_body_external_torque_struct(0, torque_struct_load());
+        }
+    })
+}
+
+/// 6-DOF body with a constant **structural-frame** external force
+/// scheduled via `pre_step` at the first record. The runner mirrors
+/// `Simulation::set_body_external_force_struct`; the Bevy adapter
+/// mirrors `BevySimContext::set_body_external_force_struct` (which
+/// writes / auto-inserts `ExternalForceStructC`). Parity asserts the
+/// two propagate bit-identical trajectories — the lockstep gate for
+/// issue #510 Part 2.
+pub fn force_struct_via_pre_step() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_force_struct_via_pre_step",
+        scenario: build_force_struct_pre_step,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_TORQUE_S,
+            num_steps: num_steps(DT_TORQUE_S, T_TOTAL_DECOUPLE_S),
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: analytical_tolerances(),
+        extras: None,
+        pre_step: Some((force_struct_pre_step, PreStepCadence::PerRecord)),
+    }
+}
+
+/// Companion to [`force_struct_via_pre_step`]: same scenario, but
+/// scheduling a structural-frame torque via `pre_step`. Exercises the
+/// `T_struct_body` rotation in the torque branch of the force-collection
+/// pipeline (mirrors `simulation/step/integrate.rs:94` →
+/// `torque_body = t_struct_body * external_torque_struct`).
+pub fn torque_struct_via_pre_step() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_torque_struct_via_pre_step",
+        scenario: build_force_struct_pre_step,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_TORQUE_S,
+            num_steps: num_steps(DT_TORQUE_S, T_TOTAL_DECOUPLE_S),
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: analytical_tolerances(),
+        extras: None,
+        pre_step: Some((torque_struct_pre_step, PreStepCadence::PerRecord)),
+    }
+}
+
+/// Both struct-frame force + torque scheduled simultaneously — drives
+/// the joint code path through the force-collection branch (both
+/// `T_inertial_struct^T * ef_struct` and `t_struct_body * et_struct`
+/// active in the same body's per-step pipeline).
+pub fn force_and_torque_struct_via_pre_step() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_force_and_torque_struct_via_pre_step",
+        scenario: build_force_struct_pre_step,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_TORQUE_S,
+            num_steps: num_steps(DT_TORQUE_S, T_TOTAL_DECOUPLE_S),
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: analytical_tolerances(),
+        extras: None,
+        pre_step: Some((both_struct_pre_step, PreStepCadence::PerRecord)),
+    }
+}
