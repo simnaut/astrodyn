@@ -57,10 +57,15 @@
 //! ```
 //!
 //! - `step` — outer integration step counter, advanced once per
-//!   [`begin_step`] call.
+//!   [`begin_step`] call. **1-based**: the first emitted line carries
+//!   `step=1` (the underlying counter starts at `0` as an
+//!   "uninitialized" sentinel and is `wrapping_add(1)`'d on every
+//!   [`begin_step`]). Pair with `stage` for the full per-line address.
 //! - `stage` — RK4 stage, advanced once per [`begin_stage`] call.
 //!   Convention: 1..=4 for the four RK4 stages, 0 for the end-of-step
-//!   composition op, sentinel `99` for "no stage context" lines.
+//!   composition op (set by an explicit `begin_stage(0)`), sentinel
+//!   `99` for "no stage context yet" (the value [`begin_step`] resets
+//!   the stage to before any [`begin_stage`] runs).
 //! - `body` — index in the contact-pair body ordering (0 for vehicle
 //!   A, 1 for vehicle B in the SIM_contact two-body fixture).
 //! - `op` — short opcode that names the operation being dumped
@@ -105,9 +110,18 @@ pub fn enabled() -> bool {
 thread_local! {
     /// Outer integration-step counter. Incremented by [`begin_step`];
     /// resets are caller-managed via [`reset_counters`].
+    ///
+    /// 1-based after the first [`begin_step`] call: the counter starts
+    /// at `0` (uninitialized sentinel) and the `wrapping_add(1)` in
+    /// `begin_step` makes the *first emitted* step `1`. End-of-step
+    /// composition for step `N` reuses `step=N` with `stage=0`.
     static STEP: Cell<u64> = const { Cell::new(0) };
-    /// RK4 stage counter. Set by [`begin_stage`]; reset to 0 by
-    /// [`begin_step`] (which marks the end-of-step composition window).
+    /// RK4 stage counter. Set by [`begin_stage`]; reset by
+    /// [`begin_step`] to the sentinel `99` (meaning "between stages —
+    /// no stage context yet"). End-of-step composition is tagged with
+    /// `stage=0` by an explicit `begin_stage(0)` from the caller; the
+    /// `99` sentinel only appears on any line emitted between the start
+    /// of a step and its first `begin_stage` call.
     static STAGE: Cell<u32> = const { Cell::new(99) };
 }
 
@@ -121,10 +135,11 @@ pub fn reset_counters() {
 }
 
 /// Begin a new outer integration step. Increments the step counter
-/// (or initializes it to 0 on the first call) and sets the stage to
-/// the sentinel `99` so any dump emitted before the first
-/// [`begin_stage`] call of this step is unambiguously "no stage
-/// context".
+/// (1-based: the underlying counter starts at `0` as an
+/// "uninitialized" sentinel, and the first call makes the emitted
+/// step `1`) and sets the stage to the sentinel `99` so any dump
+/// emitted before the first [`begin_stage`] call of this step is
+/// unambiguously "no stage context".
 ///
 /// No-op when [`enabled`] returns `false`.
 #[inline]

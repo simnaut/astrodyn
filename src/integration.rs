@@ -230,6 +230,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.k_qdot[0],
         &scratch.k_alpha[0],
         half,
+        2,
         &mut scratch.stage_pos[1],
         &mut scratch.stage_vel[1],
         &mut scratch.stage_q[1],
@@ -266,6 +267,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.k_qdot[1],
         &scratch.k_alpha[1],
         half,
+        3,
         &mut scratch.stage_pos[2],
         &mut scratch.stage_vel[2],
         &mut scratch.stage_q[2],
@@ -302,6 +304,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.k_qdot[2],
         &scratch.k_alpha[2],
         dt,
+        4,
         &mut scratch.stage_pos[3],
         &mut scratch.stage_vel[3],
         &mut scratch.stage_q[3],
@@ -526,6 +529,12 @@ pub fn integrate_bodies_contact_coupled_typed<'a, F: Frame>(
 
 /// Populate one intermediate RK4 stage state from a base state and
 /// derivative step of size `h`, reusing caller-owned buffers.
+///
+/// `stage_index` is the RK4 stage these intermediate values feed into
+/// (2..=4). Used by the issue-#560 dump stream to tag the
+/// `fill_stage_*` lines with the *target* stage's counter, matching
+/// the corresponding `eval_stage_*` lines emitted later in the same
+/// stage.
 #[allow(clippy::too_many_arguments)]
 fn fill_stage_state(
     n: usize,
@@ -538,11 +547,23 @@ fn fill_stage_state(
     k_qdot: &[[f64; 4]],
     k_alpha: &[DVec3],
     h: f64,
+    stage_index: u32,
     stage_pos: &mut [DVec3],
     stage_vel: &mut [DVec3],
     stage_q: &mut [[f64; 4]],
     stage_omega: &mut [DVec3],
 ) {
+    // Issue #560 root-cause audit infrastructure — advance the stage
+    // counter to the *target* stage before emitting the `fill_stage_*`
+    // lines, so the dump stream tags these intermediate values with
+    // the same `stage=k` as the corresponding `eval_stage_*` lines
+    // emitted later. Without this, the fill dumps would still carry
+    // the previous stage's counter (advanced only inside `eval_stage`),
+    // misaligning them against the JEOD-side patch on
+    // `rk4_second_order_ode_integrator.cc`. No-op when
+    // `ASTRODYN_560_FULL_DUMP` is unset.
+    astrodyn_quantities::audit_560::begin_stage(stage_index);
+
     for i in 0..n {
         stage_pos[i] = pos0[i] + k_v[i] * h;
         stage_vel[i] = vel0[i] + k_a[i] * h;
@@ -551,13 +572,9 @@ fn fill_stage_state(
 
         // Issue #560 root-cause audit infrastructure — emit the
         // per-stage Euler-step "entry state" so the JEOD-side patch
-        // on `rk4_second_order_ode_integrator.cc` can be aligned. The
-        // stage-counter has *not* been advanced yet (that happens in
-        // `eval_stage`); these lines carry the previous stage's
-        // counter, deliberately, so the diff tool sees the entry/exit
-        // state for stage k under the same `stage=k` label as the
-        // corresponding `eval_stage` lines. No payload when
-        // `ASTRODYN_560_FULL_DUMP` is unset.
+        // on `rk4_second_order_ode_integrator.cc` can be aligned.
+        // Tagged with the target stage's counter via the
+        // `begin_stage(stage_index)` call above.
         astrodyn_quantities::audit_560::dump_vec3("fill_stage_pos", i, "pos", stage_pos[i]);
         astrodyn_quantities::audit_560::dump_vec3("fill_stage_vel", i, "vel", stage_vel[i]);
         astrodyn_quantities::audit_560::dump_quat("fill_stage_q", i, "q", stage_q[i]);

@@ -504,10 +504,14 @@ pub fn evaluate_contact_pair(
     // Issue #560 root-cause audit infrastructure — emit the
     // contact-pair inertial-frame inputs. Mirrors the JEOD patch on
     // `point_contact_pair.cc` (which dumps `rel_pos` and per-body CoM
-    // arms before invoking the detection algorithm). The body slot is
-    // always `0` here because the contact-pair eval logically belongs
-    // to "the pair", not to a single body — the diff tool aligns
-    // `evaluate_contact_pair` lines on (op, body=0, occurrence-index).
+    // arms before invoking the detection algorithm). Body-slot
+    // convention: pair-level quantities (the relative kinematics, the
+    // shared force vector) use `body=0` because they logically belong
+    // to "the pair", not to either body; per-body quantities (the
+    // body-frame torques emitted below) carry their actual body index
+    // (`body=0` for A, `body=1` for B). The diff tool aligns by
+    // `(op, body, occurrence-index)`, so the asymmetry is fine as
+    // long as the JEOD-side patch follows the same convention.
     // No-op when `ASTRODYN_560_FULL_DUMP` is unset.
     astrodyn_quantities::audit_560::dump_vec3("rel_pos", 0, "rel_pos", rel_pos);
     astrodyn_quantities::audit_560::dump_vec3(

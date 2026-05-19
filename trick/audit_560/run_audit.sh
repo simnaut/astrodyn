@@ -64,10 +64,17 @@ usage() {
   cat <<'EOF'
 Usage: run_audit.sh [--apply | --revert | --run RUN_NAME]
 
-  --apply           Patch JEOD + Trick sources in place (default if no flag).
-  --revert          Revert patched files via `git checkout --`.
+  --apply           Currently NOT IMPLEMENTED — exits non-zero with a
+                    pointer to the canonical patch series. Apply the
+                    captured patch files by hand (see below). This is
+                    also the no-args default.
+  --revert          Revert patched files via `git checkout --` in
+                    `$JEOD_HOME` / `$TRICK_HOME` for every file in the
+                    audit's source list.
   --run RUN_NAME    Run SIM_contact for the named RUN (e.g. RUN_point_off_center)
-                    and capture stderr to ./jeod_dump.txt.
+                    and capture stderr to ./jeod_dump.txt. Requires
+                    that the patches have already been applied by hand
+                    and the sim rebuilt.
 
 Environment:
   JEOD_HOME    path to a writable JEOD checkout (required)
@@ -80,6 +87,18 @@ This script is diagnostic-only and not part of the Tier 3
 regeneration flow. The patches modify source files in place — always
 `--revert` (or `git checkout --` the touched files) before resuming
 normal use of the JEOD / Trick checkouts.
+
+Applying the canonical patch series (manual workflow):
+
+  Issue #560's "Comprehensive bidirectional instrumentation deployed"
+  comment carries the exact patch hunks for both source trees. Save
+  them as `audit_560_jeod.patch` / `audit_560_trick.patch`, then:
+
+    ( cd "$JEOD_HOME"  && git apply /path/to/audit_560_jeod.patch  )
+    ( cd "$TRICK_HOME" && git apply /path/to/audit_560_trick.patch )
+
+  followed by a sim rebuild (`trick-CP` from `$JEOD_HOME/verif/SIM_contact`)
+  before `--run RUN_NAME` will capture a populated stream.
 EOF
 }
 
@@ -109,29 +128,40 @@ apply_patches() {
   require_env JEOD_HOME
   require_env TRICK_HOME
 
-  # The patch operation injects an `#include <cstdio>` (idempotently —
-  # the `grep -q` guard skips files that already carry it) plus a
-  # block of `fprintf(stderr, "[#560/FULL] ...\n", ...)` calls at the
-  # documented site in each file. The op names mirror the Rust-side
-  # `dump_*` calls so `diff_streams.py` aligns them line-by-line.
-  #
-  # The actual sed/patch invocations are kept out of this file
-  # because they reference JEOD / Trick source line numbers that
-  # vary by release. The audit chain on issue #560 carries the exact
-  # patch hunks (8 hypotheses' worth) in the GitHub comment thread;
-  # this script preserves the workflow for future numerical-parity
-  # runs.
-  #
-  # For the canonical patch set: see issue #560's "Comprehensive
-  # bidirectional instrumentation deployed" comment and the gist
-  # linked there. To apply a captured patch series:
-  #
-  #   ( cd "$JEOD_HOME"  && git apply /path/to/audit_560_jeod.patch  )
-  #   ( cd "$TRICK_HOME" && git apply /path/to/audit_560_trick.patch )
+  # `--apply` is intentionally not implemented as an in-tree sed/patch
+  # operation. The patch hunks reference JEOD / Trick source line
+  # numbers that vary by release, and the audit chain on issue #560
+  # carries the canonical patch series (8 hypotheses' worth) in the
+  # GitHub comment thread rather than as committed `.patch` files
+  # here. Auto-applying a release-specific hunk via this script would
+  # silently no-op on a version mismatch — and a silent no-op is
+  # exactly the failure mode Copilot flagged. Surface the gap loudly
+  # instead and point the operator at the canonical recipe.
 
-  echo "audit_560: patches must be applied from the captured patch series" >&2
-  echo "audit_560: see issue #560 for the canonical hunks" >&2
+  cat >&2 <<EOF
+error: --apply is not implemented in this script.
 
+The canonical patch series for the issue #560 instrumentation lives in
+the GitHub issue thread (see the "Comprehensive bidirectional
+instrumentation deployed" comment), not in this repository — the hunks
+are JEOD / Trick release-specific and would silently no-op if applied
+blind from this script.
+
+To apply by hand:
+
+  1. Download audit_560_jeod.patch / audit_560_trick.patch from issue #560.
+  2. ( cd "\$JEOD_HOME"  && git apply /path/to/audit_560_jeod.patch  )
+  3. ( cd "\$TRICK_HOME" && git apply /path/to/audit_560_trick.patch )
+  4. Rebuild SIM_contact (\`trick-CP\` from \$JEOD_HOME/verif/SIM_contact).
+  5. Re-run this script with --run RUN_NAME to capture the dump stream.
+
+Reverting (\`run_audit.sh --revert\`) still works after a manual apply.
+EOF
+
+  # Sanity check the file list against the working copies so a real
+  # version skew shows up alongside the message above (a missing file
+  # invalidates the whole patch workflow even if the operator has the
+  # patch files in hand).
   for f in "${JEOD_FILES[@]}"; do
     if [[ ! -f "$JEOD_HOME/$f" ]]; then
       echo "warning: $JEOD_HOME/$f not found (JEOD version skew?)" >&2
@@ -142,6 +172,8 @@ apply_patches() {
       echo "warning: $TRICK_HOME/$f not found (Trick version skew?)" >&2
     fi
   done
+
+  return 3
 }
 
 revert_patches() {
@@ -185,12 +217,19 @@ run_sim() {
 
 main() {
   if [[ $# -eq 0 ]]; then
-    apply_patches
-    return 0
+    # No-args matches `--apply`. `apply_patches` returns 3 to surface
+    # the unimplemented-patch-application failure mode loudly (per
+    # Copilot review on PR #590). `|| rc=$?` guards against `set -e`
+    # killing us before we can propagate that exit code.
+    local rc=0
+    apply_patches || rc=$?
+    return "$rc"
   fi
   case "$1" in
     --apply)
-      apply_patches
+      local rc=0
+      apply_patches || rc=$?
+      return "$rc"
       ;;
     --revert)
       revert_patches

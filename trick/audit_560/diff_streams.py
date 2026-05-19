@@ -4,7 +4,7 @@
 Diagnostic-only. Consumes two `[#560/FULL] ...` streams (one from
 JEOD, one from `ASTRODYN_560_FULL_DUMP=1 cargo nextest run ...`),
 aligns them by `(op, body, occurrence-index)`, and reports the first
-divergent op + a ranked table of all divergent ops.
+divergent value + a ranked table of all divergent ops.
 
 This was the diff tool that produced the audit conclusion in
 https://github.com/simnaut/astrodyn/issues/560: when both sides are
@@ -14,7 +14,7 @@ position-by-position. Every input to the force kernel (`rel_pos`,
 matches bit-for-bit to 17 sig figs; the output `force_penetration_vec`
 differs by exactly 1 ULP (1.7e-16 m). That ULP, multiplied by
 `stiffness * dt` per stage and the ~1.2 per-stage amplification of
-the stiff RK4, accumulates to the 2.5 mm mm-scale residual after the
+the stiff RK4, accumulates to the 2.5 mm residual after the
 152-stage contact event.
 
 Run:
@@ -23,11 +23,26 @@ Run:
 
 Outputs to stdout:
 
-  1. The first line where alignment fails (op or occurrence-index
-     mismatch).
-  2. The first row with |delta| > 0.
-  3. A ranked table of `(op, max_abs_delta, max_rel_delta)` for every
+  1. The first row with |delta| > 0 (across the value fields of every
+     aligned `(op, body, occurrence)` pair).
+  2. A ranked table of `(op, max_abs_delta, max_rel_delta)` for every
      op that ever differs.
+
+Alignment caveat (bucket-and-truncate):
+
+  Pairs are formed per `(op, body)` bucket by zipping the two streams'
+  occurrences positionally and truncating to `min(len(jeod), len(rust))`.
+  This is fine when both sides emit the same deterministic sequence —
+  the audit's expected operating mode — but **does NOT detect global
+  insertion / deletion mismatches**: if one side emits an extra op or
+  skips one, every subsequent occurrence in that bucket slides by one
+  and the diff lands on the wrong pair without flagging the shift.
+
+  Per-bucket count mismatches *are* surfaced as a "warning: op=X body=Y
+  occurrence count jeod=N rust=M — truncating to K" line on stderr.
+  When chasing a real divergence: read those warnings first, then
+  diff `len(jeod)` vs `len(rust)` from the "parsed N entries" lines,
+  and only trust the ranked table when every per-bucket count agrees.
 """
 
 from __future__ import annotations
@@ -118,6 +133,13 @@ def aligned_pairs(jeod: list[Entry], rust: list[Entry]) -> list[tuple[Entry, Ent
     dump were designed for: both sides emit a deterministic, ordered
     sequence of ops per stage, so positional alignment within each
     `(op, body)` bucket is well-defined.
+
+    Bucket iteration order is `sorted(...)` rather than dict-insertion
+    order so the reported "first divergent line" is repeatable across
+    runs and Python versions. Buckets that exist only on the Rust side
+    (no JEOD occurrences) emit a stderr warning — without it those
+    occurrences would silently fall out of the diff because the loop
+    iterates the JEOD-side bucket set.
     """
 
     from collections import defaultdict
@@ -130,7 +152,12 @@ def aligned_pairs(jeod: list[Entry], rust: list[Entry]) -> list[tuple[Entry, Ent
         rust_by_key[(e.op, e.body)].append(e)
 
     pairs: list[tuple[Entry, Entry]] = []
-    for key, j_list in jeod_by_key.items():
+    # Deterministic key order: sort the JEOD-side bucket set so the
+    # "first divergent line" is reproducible across input streams and
+    # Python versions. Dict-insertion order would otherwise depend on
+    # the line order in the captured `jeod_dump.txt`.
+    for key in sorted(jeod_by_key.keys()):
+        j_list = jeod_by_key[key]
         r_list = rust_by_key.get(key, [])
         n = min(len(j_list), len(r_list))
         for i in range(n):
@@ -141,6 +168,20 @@ def aligned_pairs(jeod: list[Entry], rust: list[Entry]) -> list[tuple[Entry, Ent
                 f"jeod={len(j_list)} rust={len(r_list)} — truncating to {n}",
                 file=sys.stderr,
             )
+
+    # Surface buckets that appear *only* on the Rust side. The main
+    # alignment loop iterates `jeod_by_key`, so a Rust-only op would
+    # otherwise be silently dropped from the diff — which would
+    # invalidate the audit's "every divergence accounted for" claim.
+    rust_only = sorted(set(rust_by_key.keys()) - set(jeod_by_key.keys()))
+    for key in rust_only:
+        r_count = len(rust_by_key[key])
+        print(
+            f"warning: op={key[0]} body={key[1]} present only on Rust side "
+            f"({r_count} occurrence(s)) — not aligned, not diffed",
+            file=sys.stderr,
+        )
+
     return pairs
 
 
@@ -163,7 +204,12 @@ def diff(jeod_path: str, rust_path: str) -> int:
     by_op: dict[str, Divergence] = {}
     first_divergent: tuple[Entry, Entry, str, float, float] | None = None
     for j, r in pairs:
-        for key, j_val in j.fields.items():
+        # Sort field keys so the "first divergent" report is
+        # deterministic across Python versions — `dict` iteration is
+        # insertion-ordered in CPython 3.7+ but the captured stream's
+        # field order can still vary across JEOD release patches.
+        for key in sorted(j.fields.keys()):
+            j_val = j.fields[key]
             r_val = r.fields.get(key)
             if r_val is None:
                 continue
