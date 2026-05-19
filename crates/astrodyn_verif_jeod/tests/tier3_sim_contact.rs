@@ -482,8 +482,8 @@ const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.
 // envelope, so any real torque regression trips it.
 const CONTACT_TORQUE_TOL: f64 = 2.0e-13;
 
-const POINT_OFF_CENTER_FORCE_TOL: f64 = 0.63; // N — observed 0.60 N; literal is 1.05× observed (policy).
-const POINT_OFF_CENTER_TORQUE_TOL: f64 = 0.61; // N·m — observed 0.57 N·m; literal is ~1.07× observed (policy).
+const POINT_OFF_CENTER_FORCE_TOL: f64 = 3.75e-2; // N — observed 3.574e-2 N; literal is 1.05× observed (policy).
+const POINT_OFF_CENTER_TORQUE_TOL: f64 = 3.10e-3; // N·m — observed 2.953e-3 N·m; literal is 1.05× observed (policy).
 
 /// Body state snapshot at a single checkpoint. Carries the full 6-DOF
 /// state (position, velocity, attitude, angular velocity) for each of
@@ -1039,35 +1039,40 @@ fn tier3_contact_point_off_center() {
         max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
-        "SIM_contact RUN_point_off_center: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
+        "SIM_contact RUN_point_off_center: max pos={max_pos_err:.15e} m, max vel={max_vel_err:.15e} m/s"
     );
 
-    // Oblique collision. After spring/damping unit-conversion fixes and
-    // the textbook two-body rel-vel formula
-    // `(v_a − v_b) + ω_a × arm_a − ω_b × arm_b` in
-    // `src/interactions.rs::evaluate_contact_pair`, the oblique
-    // trajectory drift sits at ~2.5 mm (head-on tests reach machine
-    // precision). The residual is a ω²-scaled per-RK4-stage force
-    // divergence of ~120 μN; four hypotheses have been audited as the
-    // source and falsified (rel-vel kinematics, per-body stage
-    // interleaving, per-stage quaternion normalization, and the
-    // inertial-frame vs subject-body-frame ordering of the contact
-    // eval). See:
-    // `src/interactions.rs::evaluate_contact_pair_matches_jeod_subject_frame_formula`,
-    // `src/integration.rs::integrate_bodies_contact_coupled_evaluates_in_lockstep`,
-    // `src/integration.rs::integrate_bodies_contact_coupled_normalizes_quat_for_contact_eval`,
-    // and `src/interactions.rs::evaluate_contact_pair_is_frame_covariant`.
+    // Oblique collision, trajectory at f64 noise floor. Issue #560 closed
+    // a mathematical formula gap in `evaluate_contact_pair`'s `rel_vel`
+    // that previously held this test at ~2.5 mm drift:
+    //
+    // The prior formula `(v_a − v_b) + ω_a × cp_a − ω_b × cp_b` is the
+    // velocity-of-contact-points formula and assumes `cp_a − cp_b = p_b − p_a`,
+    // which only holds in non-penetrating contact. During penetration
+    // (sphere centers closer than sum of radii), `cp_a − cp_b` exceeds
+    // `p_b − p_a` by the penetration ratio, producing an `ω × δ`
+    // divergence (~1.5 μm/s per stage at the test's ω ≈ 2.5e-4 rad/s)
+    // that amplified through 1000+ contact stages into mm-scale drift.
+    //
+    // The replacement formula `(v_a − v_b) − ω_a × rel_pos +
+    // (ω_b − ω_a) × cp_a` ports JEOD's `point_contact_pair.cc:79-84`
+    // subject-body-frame chain into inertial form. At identity attitude
+    // it's bit-equivalent to JEOD; at non-identity attitudes the
+    // rotation matrices factor out of the cross products by JEOD's
+    // standard convention. Both formulas reduce to `(v_a − v_b)` for
+    // head-on contact (no rotation, equal masses), so the head-on tests
+    // are unchanged.
     assert!(
-        max_pos_err < 2.7e-3,
-        "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
+        max_pos_err < 1.6e-14,
+        "veh{{1,2}} position error {max_pos_err:.3e} > 1.6e-14 m"
     );
     assert!(
-        max_vel_err < 5.7e-4,
-        "veh{{1,2}} velocity error {max_vel_err:.3e} > 0.57 mm/s"
+        max_vel_err < 3.5e-15,
+        "veh{{1,2}} velocity error {max_vel_err:.3e} > 3.5e-15 m/s"
     );
 
-    // Oblique force/torque tolerances reflect the residual ~120 μN
-    // per-stage divergence accumulated over the contact event.
+    // Force/torque tolerances reflect per-snapshot FP-rounding noise in
+    // the contact-force assertion path; trajectory is at noise floor.
     assert_contact_force_torque(
         "SIM_contact RUN_point_off_center",
         facet,
@@ -1079,6 +1084,191 @@ fn tier3_contact_point_off_center() {
         POINT_OFF_CENTER_FORCE_TOL,
         POINT_OFF_CENTER_TORQUE_TOL,
     );
+}
+
+/// #560 diagnostic: mechanism ablation + DT sweep for the
+/// `tier3_contact_point_off_center` residual. `#[ignore]` so it doesn't
+/// run in CI. Invoke with:
+///
+/// ```text
+/// cargo nextest run -p astrodyn_verif_jeod \
+///     -E 'test(tier3_contact_point_off_center_ablation)' \
+///     --no-capture --run-ignored only
+/// ```
+///
+/// Prints a table of max position / velocity error against the JEOD
+/// reference CSV for each case.
+#[test]
+#[ignore = "diagnostic for #560; run explicitly"]
+fn tier3_contact_point_off_center_ablation() {
+    let csv_path = test_data_path("contact_point_off_center_contact_state.csv");
+    let records = load_contact_csv(&csv_path);
+    let init = &records[0];
+    let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
+
+    let cases: &[(&str, f64, f64, f64, f64)] = &[
+        // (label, k, b, mu, dt)
+        (
+            "baseline       ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.01,
+        ),
+        ("damping=0      ", JEOD_SPRING_K, 0.0, JEOD_MU, 0.01),
+        ("friction=0     ", JEOD_SPRING_K, JEOD_DAMPING_B, 0.0, 0.01),
+        ("spring-only    ", JEOD_SPRING_K, 0.0, 0.0, 0.01),
+        (
+            "dt=0.02        ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.02,
+        ),
+        (
+            "dt=0.005       ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.005,
+        ),
+        (
+            "dt=0.002       ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.002,
+        ),
+        (
+            "dt=0.001       ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.001,
+        ),
+        (
+            "dt=0.0005      ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.0005,
+        ),
+        (
+            "dt=0.0001      ",
+            JEOD_SPRING_K,
+            JEOD_DAMPING_B,
+            JEOD_MU,
+            0.0001,
+        ),
+    ];
+
+    println!("{:<16} {:>12} {:>12}", "case", "max_pos(m)", "max_vel(m/s)");
+    for &(name, k, b, mu, dt) in cases {
+        let (max_pos, max_vel) =
+            run_off_center_ablation(init, &records, &checkpoints, k, b, mu, dt);
+        println!("{:<16} {:>12.3e} {:>12.3e}", name, max_pos, max_vel);
+    }
+}
+
+fn run_off_center_ablation(
+    init: &ContactRecord,
+    records: &[ContactRecord],
+    checkpoints: &[f64],
+    k: f64,
+    b: f64,
+    mu: f64,
+    dt: f64,
+) -> (f64, f64) {
+    let material = ContactMaterial::jeod_spring(k, b, mu);
+    let facet = ContactFacet::point(DVec3::ZERO, 1.0, material);
+
+    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    add_empty_space_root(&mut sim);
+
+    let mass_props = MassProperties::with_inertia(
+        100.0,
+        DMat3::from_cols(
+            DVec3::new(40.0, 0.0, 0.0),
+            DVec3::new(0.0, 40.0, 0.0),
+            DVec3::new(0.0, 0.0, 40.0),
+        ),
+        DVec3::ZERO,
+    );
+
+    sim.add_body(VehicleConfig {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
+            position: init.veh1_pos,
+            velocity: init.veh1_vel,
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            },
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&mass_props)),
+        gravity_controls: GravityControls { controls: vec![] },
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+    sim.add_body(VehicleConfig {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
+            position: init.veh2_pos,
+            velocity: init.veh2_vel,
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            },
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&mass_props)),
+        gravity_controls: GravityControls { controls: vec![] },
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+
+    sim.register_contact_pair(0, facet, 1, facet);
+
+    let steps_total = (SIM_DURATION / dt).round() as usize;
+    let mut out: Vec<CheckpointBodies> = Vec::with_capacity(checkpoints.len());
+    let mut cp_iter = checkpoints.iter().copied().peekable();
+    for step in 0..=steps_total {
+        let b_a = sim.body(0);
+        let b_b = sim.body(1);
+        let t = step as f64 * dt;
+        if let Some(&cp) = cp_iter.peek() {
+            if (t - cp).abs() <= 0.5 * dt {
+                out.push(CheckpointBodies {
+                    veh1_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_a.trans),
+                    veh1_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                        &b_a.rot.expect("6-DOF required"),
+                    ),
+                    veh2_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_b.trans),
+                    veh2_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                        &b_b.rot.expect("6-DOF required"),
+                    ),
+                });
+                cp_iter.next();
+            }
+        }
+        if step == steps_total {
+            break;
+        }
+        sim.step_n(1).expect("step_n failed");
+    }
+
+    let mut max_pos = 0.0_f64;
+    let mut max_vel = 0.0_f64;
+    for (our, rec) in out.iter().zip(records.iter()) {
+        max_pos = max_pos.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos = max_pos.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel = max_vel.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel = max_vel.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+    }
+    (max_pos, max_vel)
 }
 
 /// RUN_contact_ground: SIM_ground_contact.

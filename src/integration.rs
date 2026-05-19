@@ -192,7 +192,20 @@ pub fn integrate_bodies_contact_coupled(
         scratch.omega0[i] = body.rot.ang_vel_body;
     }
 
+    // #560/FULL: gate dumps to fire only inside this function so the
+    // post-sim `assert_contact_force_torque` path doesn't pollute the
+    // (op, body, occurrence) alignment with JEOD's strictly in-sim trace.
+    astrodyn_quantities::audit_560::enter_integration();
+    let _ = astrodyn_quantities::audit_560::advance_step();
+    for i in 0..n {
+        astrodyn_quantities::audit_560::dump_vec3("step_in_pos0", i, scratch.pos0[i]);
+        astrodyn_quantities::audit_560::dump_vec3("step_in_vel0", i, scratch.vel0[i]);
+        astrodyn_quantities::audit_560::dump_quat("step_in_q0", i, scratch.q0[i]);
+        astrodyn_quantities::audit_560::dump_vec3("step_in_omega0", i, scratch.omega0[i]);
+    }
+
     // Stage 1 (t=0): initial state is the snapshot itself.
+    astrodyn_quantities::audit_560::set_stage(1);
     eval_stage(
         &scratch.pos0,
         &scratch.vel0,
@@ -229,6 +242,7 @@ pub fn integrate_bodies_contact_coupled(
         &mut scratch.stage_q[1],
         &mut scratch.stage_omega[1],
     );
+    astrodyn_quantities::audit_560::set_stage(2);
     eval_stage(
         &scratch.stage_pos[1],
         &scratch.stage_vel[1],
@@ -264,6 +278,7 @@ pub fn integrate_bodies_contact_coupled(
         &mut scratch.stage_q[2],
         &mut scratch.stage_omega[2],
     );
+    astrodyn_quantities::audit_560::set_stage(3);
     eval_stage(
         &scratch.stage_pos[2],
         &scratch.stage_vel[2],
@@ -299,6 +314,7 @@ pub fn integrate_bodies_contact_coupled(
         &mut scratch.stage_q[3],
         &mut scratch.stage_omega[3],
     );
+    astrodyn_quantities::audit_560::set_stage(4);
     eval_stage(
         &scratch.stage_pos[3],
         &scratch.stage_vel[3],
@@ -358,7 +374,16 @@ pub fn integrate_bodies_contact_coupled(
         body.rot.quaternion = JeodQuat::new(qfinal[0], qfinal[1], qfinal[2], qfinal[3]);
         // JEOD_INV: DB.09 — quaternion normalized after every integration step
         astrodyn_dynamics::normalize_integ(&mut body.rot.quaternion);
+
+        // #560/FULL: end-of-step state. Stage marker = 0 indicates the
+        // composition step (no individual RK4 stage).
+        astrodyn_quantities::audit_560::set_stage(0);
+        astrodyn_quantities::audit_560::dump_vec3("step_out_pos", i, body.trans.position);
+        astrodyn_quantities::audit_560::dump_vec3("step_out_vel", i, body.trans.velocity);
+        astrodyn_quantities::audit_560::dump_quat("step_out_q", i, body.rot.quaternion.data);
+        astrodyn_quantities::audit_560::dump_vec3("step_out_omega", i, body.rot.ang_vel_body);
     }
+    astrodyn_quantities::audit_560::exit_integration();
 }
 
 /// Typed per-body input for [`integrate_bodies_contact_coupled_typed`].
@@ -514,6 +539,18 @@ fn fill_stage_state(
         stage_q[i] = step_q_arr(q0[i], k_qdot[i], h);
         stage_omega[i] = omega0[i] + k_alpha[i] * h;
     }
+    // #560/FULL: post-fill stage state. Stage counter is NOT yet bumped
+    // for the upcoming eval — this dump describes the INPUT to the NEXT
+    // stage's eval. We emit it under a synthetic op name to keep the
+    // (step, stage) keying for incoming-state observation.
+    if astrodyn_quantities::audit_560::enabled() {
+        for i in 0..n {
+            astrodyn_quantities::audit_560::dump_vec3("fill_stage_pos", i, stage_pos[i]);
+            astrodyn_quantities::audit_560::dump_vec3("fill_stage_vel", i, stage_vel[i]);
+            astrodyn_quantities::audit_560::dump_quat("fill_stage_q", i, stage_q[i]);
+            astrodyn_quantities::audit_560::dump_vec3("fill_stage_omega", i, stage_omega[i]);
+        }
+    }
 }
 
 /// Evaluate per-body RK4 derivatives at a given stage state.
@@ -615,6 +652,11 @@ fn eval_stage(
         k_a[i] = accel;
         k_qdot[i] = qdot;
         k_alpha[i] = alpha;
+        // #560/FULL: per-stage derivative outputs.
+        astrodyn_quantities::audit_560::dump_vec3("k_v", i, k_v[i]);
+        astrodyn_quantities::audit_560::dump_vec3("k_a", i, k_a[i]);
+        astrodyn_quantities::audit_560::dump_quat("k_qdot", i, k_qdot[i]);
+        astrodyn_quantities::audit_560::dump_vec3("k_alpha", i, k_alpha[i]);
     }
 }
 
