@@ -508,21 +508,6 @@ pub fn evaluate_contact_pair(
     // (not merely A's facet reference). Returns `None` if the pair isn't
     // interpenetrating at this stage — in that case there's no force.
     let geom = compute_contact_geometry(&facet_a_world, &facet_b_world, rel_pos)?;
-    // #560/FULL: gated dumps (only fire when in contact, matching JEOD's
-    // `if(radius > target_mag)` branch).
-    astrodyn_quantities::audit_560::dump_mat3("t_inertial_body", 0, t_inertial_body_a);
-    astrodyn_quantities::audit_560::dump_mat3("t_inertial_body", 1, t_inertial_body_b);
-    astrodyn_quantities::audit_560::dump_vec3(
-        "facet_a_offset_from_cm",
-        0,
-        facet_a_offset_from_cm_inertial,
-    );
-    astrodyn_quantities::audit_560::dump_vec3(
-        "facet_b_offset_from_cm",
-        1,
-        facet_b_offset_from_cm_inertial,
-    );
-    astrodyn_quantities::audit_560::dump_vec3("rel_pos", 0, rel_pos);
 
     // Arm from body A's CoM to the contact point on A's surface (inertial).
     // This is JEOD's `subject_contact_point` expressed about the CoM
@@ -554,14 +539,8 @@ pub fn evaluate_contact_pair(
     let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
         t_inertial_body_b.transpose() * r.ang_vel_body
     });
-    let contact_arm_b_inertial = facet_b_offset_from_cm_inertial + geom.contact_point_on_b;
     let rel_vel = (trans_a.velocity - trans_b.velocity) - omega_a_inertial.cross(rel_pos)
         + (omega_b_inertial - omega_a_inertial).cross(contact_arm_a_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("omega_inertial", 0, omega_a_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("omega_inertial", 1, omega_b_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("contact_arm_inertial", 0, contact_arm_a_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("contact_arm_inertial", 1, contact_arm_b_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("rel_vel", 0, rel_vel);
 
     // Reuse the geometry from above — avoid repeating closest-point math
     // inside the RK4 inner loop.
@@ -570,7 +549,6 @@ pub fn evaluate_contact_pair(
 
     // Force on A: inertial frame.
     let force_on_a = contact.force;
-    astrodyn_quantities::audit_560::dump_vec3("force_on_a_inertial", 0, force_on_a);
 
     // Torque arms: from each body's CoM to the contact point on its surface.
     // `contact.contact_point_on_a` is the contact point relative to facet A's
@@ -586,12 +564,6 @@ pub fn evaluate_contact_pair(
     // is inertial→body, so it applies directly: v_body = t_inertial_body * v_inertial.
     let torque_a_body = t_inertial_body_a * torque_a_inertial;
     let torque_b_body = t_inertial_body_b * torque_b_inertial;
-    astrodyn_quantities::audit_560::dump_vec3("arm_inertial", 0, arm_a_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("arm_inertial", 1, arm_b_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("torque_inertial", 0, torque_a_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("torque_inertial", 1, torque_b_inertial);
-    astrodyn_quantities::audit_560::dump_vec3("torque_body", 0, torque_a_body);
-    astrodyn_quantities::audit_560::dump_vec3("torque_body", 1, torque_b_body);
 
     Some(ContactPairEval {
         force_on_a,

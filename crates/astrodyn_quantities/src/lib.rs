@@ -185,13 +185,6 @@ pub mod qty3;
 pub mod quat;
 pub mod time_scale;
 
-// #560 audit: comprehensive bidirectional dump infrastructure for the
-// operation-level FP-parity audit. Lives in `astrodyn_quantities` so every
-// downstream crate (math, dynamics, interactions, runner, root) can share
-// the same thread-local step/stage counters. Removed once #560 closes.
-#[doc(hidden)]
-pub mod audit_560;
-
 pub use aliases::*;
 pub use body_attitude::BodyAttitude;
 pub use dims::*;

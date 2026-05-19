@@ -415,15 +415,6 @@ pub fn compute_contact_geometry(
     let contact_point_on_a = contact_a_world - a_ref;
     let contact_point_on_b = contact_b_world - b_ref;
     let penetration_depth = sum_radii - sep_len;
-    // #560/FULL: gate dumps to fire only when in contact (matches JEOD's
-    // `if(radius > target_mag)` branch). Mismatched call counts otherwise
-    // break the (op, body, occurrence) diff alignment.
-    astrodyn_quantities::audit_560::dump_vec3("geom_sep", 0, sep);
-    astrodyn_quantities::audit_560::dump_scalar("geom_sep_len", 0, sep_len);
-    astrodyn_quantities::audit_560::dump_vec3("geom_normal", 0, normal);
-    astrodyn_quantities::audit_560::dump_scalar("geom_penetration_depth", 0, penetration_depth);
-    astrodyn_quantities::audit_560::dump_vec3("geom_contact_point_on_a", 0, contact_point_on_a);
-    astrodyn_quantities::audit_560::dump_vec3("geom_contact_point_on_b", 1, contact_point_on_b);
     Some(ContactGeometry {
         contact_point_on_a,
         contact_point_on_b,
@@ -550,7 +541,6 @@ pub fn compute_contact_force_from_geometry(
     let target_cp_body = vec_target * facet_b.shape.radius();
     let target_cp_in_subj = -sep + target_cp_body; // rel_pos_subj + target_cp_body
     let penetration_vec = target_cp_in_subj - subject_cp;
-    astrodyn_quantities::audit_560::dump_vec3("force_penetration_vec", 0, penetration_vec);
 
     // 5. Spring force on A: repulsive, along `normal` (from B into A).
     let spring_force = if penetration_vec.length() < ZERO_SMALL {
@@ -558,7 +548,6 @@ pub fn compute_contact_force_from_geometry(
     } else {
         facet_a.material.stiffness * penetration_vec
     };
-    astrodyn_quantities::audit_560::dump_vec3("force_spring", 0, spring_force);
 
     // 6. Damping force using JEOD's `nvec = normalize(penetration_vec)`
     // (NOT our `geom.normal`). JEOD `spring_pair_interaction.cc:71-84`.
@@ -572,8 +561,6 @@ pub fn compute_contact_force_from_geometry(
     let v_normal_mag = rel_vel_a_wrt_b.dot(nvec);
     let damping_mag = v_normal_mag * facet_a.material.damping;
     let damping_force = nvec * -damping_mag;
-    astrodyn_quantities::audit_560::dump_scalar("force_v_normal_mag", 0, v_normal_mag);
-    astrodyn_quantities::audit_560::dump_vec3("force_damping", 0, damping_force);
     // Re-bind `normal` to nvec for downstream friction calc.
     let normal = nvec;
 
@@ -601,12 +588,8 @@ pub fn compute_contact_force_from_geometry(
         // JEOD friction magnitude: mu * |F| * (|v_tang|/|v_total|)
         let friction_mag = mu * normal_force_mag * (tangential_speed / total_rel_speed);
         let friction_force = -tangent_hat * friction_mag;
-        astrodyn_quantities::audit_560::dump_vec3("force_friction", 0, friction_force);
         total += friction_force;
-    } else {
-        astrodyn_quantities::audit_560::dump_vec3("force_friction", 0, glam::DVec3::ZERO);
     }
-    astrodyn_quantities::audit_560::dump_vec3("force_total", 0, total);
 
     ContactForce {
         force: total,
