@@ -525,12 +525,16 @@ pub fn compute_contact_force_from_geometry(
     // (B2): JEOD uses `Vector3::normalize(penetration_vector, nvec)`
     // which is `scale(1/mag, vec)` — reciprocal-multiply.
     //
-    // To recover JEOD's exact `vec`, we'd need access to `rel_pos_a_wrt_b`
-    // (= `sep` in our local frame). Reconstruct it from
-    // `sep = sep_len * normal` where `sep_len = sum_radii - penetration_depth`
-    // and `normal = geom.normal`. Since `geom.normal` was already computed
-    // via JEOD's reciprocal-multiply in `compute_contact_geometry` (B2
-    // landed), `sep_len * normal` reproduces the original `sep`.
+    // To stand in for JEOD's `vec`, we'd need access to
+    // `rel_pos_a_wrt_b` (= `sep` in our local frame). Reconstruct it
+    // from `sep = sep_len * normal`, where `sep_len = sum_radii -
+    // penetration_depth` and `normal = geom.normal` (the latter already
+    // computed via JEOD's reciprocal-multiply in `compute_contact_geometry`,
+    // B2). This is not a bit-exact roundtrip — `(sep / |sep|) * |sep|`
+    // is only approximate in f64 — but it matches JEOD's chain to ULP,
+    // which is the comparable property: JEOD recomputes `vec` from the
+    // already-normalized `rel_state.trans.position` and shares the same
+    // category of rounding error.
     let sum_radii = facet_a.shape.radius() + facet_b.shape.radius();
     let sep_len = sum_radii - penetration_depth;
     // `compute_contact_geometry` returns a degenerate-fallback normal
@@ -547,7 +551,9 @@ pub fn compute_contact_force_from_geometry(
         let inv_sep_len = 1.0 / sep_len;
         let vec = (-sep) * inv_sep_len; // JEOD's normalize(rel_pos_subj)
         let subject_cp = vec * facet_a.shape.radius();
-        let vec_target = -vec; // for identity attitudes, equivalent to JEOD's renormalize(-rel_pos)
+        // `-vec` is bit-equivalent to JEOD's `normalize(-rel_state.trans.position)`:
+        // negation is sign-only, so `|-v| = |v|` and the renormalize collapses to a sign flip.
+        let vec_target = -vec;
         let target_cp_body = vec_target * facet_b.shape.radius();
         let target_cp_in_subj = -sep + target_cp_body; // rel_pos_subj + target_cp_body
         target_cp_in_subj - subject_cp
