@@ -465,8 +465,6 @@ pub fn evaluate_contact_pair(
     let t_inertial_body_b = rot_b.map_or(DMat3::IDENTITY, |r| {
         r.quaternion.left_quat_to_transformation()
     });
-    // #560/FULL dumps are gated to fire only when geometry returns Some
-    // (i.e., bodies in contact) — see below after the `?` early-return.
     // t_inertial_struct = t_struct_body^T * t_inertial_body (inertial → struct;
     // see `compute_t_inertial_struct` in astrodyn_dynamics::forces).
     let t_inertial_struct_a =

@@ -533,14 +533,25 @@ pub fn compute_contact_force_from_geometry(
     // landed), `sep_len * normal` reproduces the original `sep`.
     let sum_radii = facet_a.shape.radius() + facet_b.shape.radius();
     let sep_len = sum_radii - penetration_depth;
-    let sep = sep_len * geom.normal;
-    let inv_sep_len = 1.0 / sep_len;
-    let vec = (-sep) * inv_sep_len; // JEOD's normalize(rel_pos_subj)
-    let subject_cp = vec * facet_a.shape.radius();
-    let vec_target = -vec; // for identity attitudes, equivalent to JEOD's renormalize(-rel_pos)
-    let target_cp_body = vec_target * facet_b.shape.radius();
-    let target_cp_in_subj = -sep + target_cp_body; // rel_pos_subj + target_cp_body
-    let penetration_vec = target_cp_in_subj - subject_cp;
+    // `compute_contact_geometry` returns a degenerate-fallback normal
+    // (`DVec3::X`) when `sep_len < ZERO_SMALL` (centers coincident or
+    // nearly so — deep penetration). In that regime the JEOD reciprocal
+    // chain below would divide by ~0 and contaminate the force with
+    // inf/NaN. Skip the chain and fall back to the algebraic equivalent
+    // (`penetration_vec = penetration_depth * normal`, matching JEOD's
+    // formula for the non-degenerate case after cancellation).
+    let penetration_vec = if sep_len < ZERO_SMALL {
+        penetration_depth * geom.normal
+    } else {
+        let sep = sep_len * geom.normal;
+        let inv_sep_len = 1.0 / sep_len;
+        let vec = (-sep) * inv_sep_len; // JEOD's normalize(rel_pos_subj)
+        let subject_cp = vec * facet_a.shape.radius();
+        let vec_target = -vec; // for identity attitudes, equivalent to JEOD's renormalize(-rel_pos)
+        let target_cp_body = vec_target * facet_b.shape.radius();
+        let target_cp_in_subj = -sep + target_cp_body; // rel_pos_subj + target_cp_body
+        target_cp_in_subj - subject_cp
+    };
 
     // 5. Spring force on A: repulsive, along `normal` (from B into A).
     let spring_force = if penetration_vec.length() < ZERO_SMALL {
