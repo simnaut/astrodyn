@@ -408,6 +408,37 @@ pub fn compute_contact_geometry(
     let contact_point_on_a = contact_a_world - a_ref;
     let contact_point_on_b = contact_b_world - b_ref;
     let penetration_depth = sum_radii - sep_len;
+
+    // Issue #560 root-cause audit infrastructure — emit the contact
+    // geometry products consumed downstream by the force law. JEOD's
+    // patched `point_contact_pair.cc::in_contact` emits the same
+    // `geom_normal` / `geom_penetration_depth` names, plus the
+    // intermediate `subject_cp`/`target_cp` that we don't materialize
+    // (our `penetration_vec = depth * normal` is one FP op vs JEOD's
+    // two cancellation-prone subtractions; the divergence between the
+    // two chains is the root cause finding documented in the audit
+    // comment on issue #560). No payload when `ASTRODYN_560_FULL_DUMP`
+    // is unset.
+    astrodyn_quantities::audit_560::dump_vec3("geom_normal", 0, "normal", normal);
+    astrodyn_quantities::audit_560::dump_scalar(
+        "geom_penetration_depth",
+        0,
+        "penetration_depth",
+        penetration_depth,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "geom_contact_point_on_a",
+        0,
+        "contact_point_on_a",
+        contact_point_on_a,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "geom_contact_point_on_b",
+        0,
+        "contact_point_on_b",
+        contact_point_on_b,
+    );
+
     Some(ContactGeometry {
         contact_point_on_a,
         contact_point_on_b,
@@ -514,12 +545,24 @@ pub fn compute_contact_force_from_geometry(
     // already available from `compute_contact_geometry`.
     let penetration_vec = penetration_depth * normal;
 
+    // Issue #560 root-cause audit infrastructure — emit the
+    // intermediate `penetration_vec` and `spring_force` so the diff
+    // tool can pin the exact ULP-rounding-path divergence vs JEOD's
+    // `target_cp - subject_cp` cancellation chain.
+    astrodyn_quantities::audit_560::dump_vec3(
+        "force_penetration_vec",
+        0,
+        "penetration_vec",
+        penetration_vec,
+    );
+
     // 5. Spring force on A: repulsive, along `normal` (from B into A).
     let spring_force = if penetration_vec.length() < ZERO_SMALL {
         DVec3::ZERO
     } else {
         facet_a.material.stiffness * penetration_vec
     };
+    astrodyn_quantities::audit_560::dump_vec3("force_spring", 0, "spring", spring_force);
 
     // 6. Damping force on A: opposes relative velocity along the normal.
     //    JEOD `spring_pair_interaction.cc:80-84`:
@@ -540,6 +583,17 @@ pub fn compute_contact_force_from_geometry(
     //    damping_force along +normal (pushes A away from B). ✓
     let v_normal_mag = rel_vel_a_wrt_b.dot(normal);
     let damping_force = -normal * (v_normal_mag * facet_a.material.damping);
+
+    // Issue #560 root-cause audit infrastructure — emit the damping
+    // intermediates. `v_normal_mag` is one of the ~25 ops in the audit
+    // catalog where Rust and JEOD pick different rounding paths.
+    astrodyn_quantities::audit_560::dump_scalar(
+        "force_v_normal_mag",
+        0,
+        "v_normal_mag",
+        v_normal_mag,
+    );
+    astrodyn_quantities::audit_560::dump_vec3("force_damping", 0, "damping", damping_force);
 
     let mut total = spring_force + damping_force;
 
@@ -564,8 +618,18 @@ pub fn compute_contact_force_from_geometry(
         let normal_force_mag = total.length();
         // JEOD friction magnitude: mu * |F| * (|v_tang|/|v_total|)
         let friction_mag = mu * normal_force_mag * (tangential_speed / total_rel_speed);
-        total -= tangent_hat * friction_mag;
+        let friction_force = -tangent_hat * friction_mag;
+        // Issue #560 root-cause audit infrastructure — emit the
+        // friction-tangent direction and scaled magnitude. JEOD's
+        // patched `spring_pair_interaction.cc::calculate_forces`
+        // emits the same names.
+        astrodyn_quantities::audit_560::dump_vec3("force_friction", 0, "friction", friction_force);
+        total += friction_force;
     }
+
+    // Issue #560 root-cause audit infrastructure — emit the composed
+    // total force. End of the contact-force chain.
+    astrodyn_quantities::audit_560::dump_vec3("force_total", 0, "total", total);
 
     ContactForce {
         force: total,

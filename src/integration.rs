@@ -184,6 +184,11 @@ pub fn integrate_bodies_contact_coupled(
 
     scratch.resize(n);
 
+    // Issue #560 root-cause audit infrastructure — begin a new outer
+    // integration step in the dump stream. No-op when
+    // `ASTRODYN_560_FULL_DUMP` is unset (the production case).
+    astrodyn_quantities::audit_560::begin_step();
+
     // Snapshot initial states into reusable buffers.
     for (i, body) in bodies.iter().enumerate() {
         scratch.pos0[i] = body.trans.position;
@@ -199,6 +204,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.q0,
         &scratch.omega0,
         0.0,
+        1,
         &mut gravity_fn,
         &mut contact_eval,
         bodies,
@@ -235,6 +241,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.stage_q[1],
         &scratch.stage_omega[1],
         0.5,
+        2,
         &mut gravity_fn,
         &mut contact_eval,
         bodies,
@@ -270,6 +277,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.stage_q[2],
         &scratch.stage_omega[2],
         0.5,
+        3,
         &mut gravity_fn,
         &mut contact_eval,
         bodies,
@@ -305,6 +313,7 @@ pub fn integrate_bodies_contact_coupled(
         &scratch.stage_q[3],
         &scratch.stage_omega[3],
         1.0,
+        4,
         &mut gravity_fn,
         &mut contact_eval,
         bodies,
@@ -318,6 +327,11 @@ pub fn integrate_bodies_contact_coupled(
     );
 
     // Combine k1..k4 into the final state per body.
+    //
+    // Issue #560 root-cause audit infrastructure — mark end-of-step
+    // composition (stage=0). No-op when `ASTRODYN_560_FULL_DUMP` is
+    // unset.
+    astrodyn_quantities::audit_560::begin_stage(0);
     let sixth = dt / 6.0;
     for (i, body) in bodies.iter_mut().enumerate() {
         let (kv1, kv2, kv3, kv4) = (
@@ -358,6 +372,27 @@ pub fn integrate_bodies_contact_coupled(
         body.rot.quaternion = JeodQuat::new(qfinal[0], qfinal[1], qfinal[2], qfinal[3]);
         // JEOD_INV: DB.09 — quaternion normalized after every integration step
         astrodyn_dynamics::normalize_integ(&mut body.rot.quaternion);
+
+        // Issue #560 root-cause audit infrastructure — emit the
+        // composed end-of-step state per body so the JEOD-side patch
+        // (which dumps the equivalent state from
+        // `dyn_body_integration.cc`) can be aligned line-by-line. No
+        // payload at all when `ASTRODYN_560_FULL_DUMP` is unset (each
+        // `dump_*` call returns at the first `enabled()` check).
+        astrodyn_quantities::audit_560::dump_vec3("composed_pos", i, "pos", body.trans.position);
+        astrodyn_quantities::audit_560::dump_vec3("composed_vel", i, "vel", body.trans.velocity);
+        astrodyn_quantities::audit_560::dump_quat(
+            "composed_quat",
+            i,
+            "q",
+            body.rot.quaternion.data,
+        );
+        astrodyn_quantities::audit_560::dump_vec3(
+            "composed_omega",
+            i,
+            "omega",
+            body.rot.ang_vel_body,
+        );
     }
 }
 
@@ -513,6 +548,20 @@ fn fill_stage_state(
         stage_vel[i] = vel0[i] + k_a[i] * h;
         stage_q[i] = step_q_arr(q0[i], k_qdot[i], h);
         stage_omega[i] = omega0[i] + k_alpha[i] * h;
+
+        // Issue #560 root-cause audit infrastructure — emit the
+        // per-stage Euler-step "entry state" so the JEOD-side patch
+        // on `rk4_second_order_ode_integrator.cc` can be aligned. The
+        // stage-counter has *not* been advanced yet (that happens in
+        // `eval_stage`); these lines carry the previous stage's
+        // counter, deliberately, so the diff tool sees the entry/exit
+        // state for stage k under the same `stage=k` label as the
+        // corresponding `eval_stage` lines. No payload when
+        // `ASTRODYN_560_FULL_DUMP` is unset.
+        astrodyn_quantities::audit_560::dump_vec3("fill_stage_pos", i, "pos", stage_pos[i]);
+        astrodyn_quantities::audit_560::dump_vec3("fill_stage_vel", i, "vel", stage_vel[i]);
+        astrodyn_quantities::audit_560::dump_quat("fill_stage_q", i, "q", stage_q[i]);
+        astrodyn_quantities::audit_560::dump_vec3("fill_stage_omega", i, "omega", stage_omega[i]);
     }
 }
 
@@ -528,6 +577,7 @@ fn eval_stage(
     stage_q: &[[f64; 4]],
     stage_omega: &[DVec3],
     time_frac: f64,
+    stage_index: u32,
     gravity_fn: &mut dyn FnMut(usize, DVec3, DVec3, f64) -> DVec3,
     contact_eval: &mut dyn FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
     bodies: &[CoupledBodyInput<'_>],
@@ -539,8 +589,24 @@ fn eval_stage(
     k_qdot: &mut [[f64; 4]],
     k_alpha: &mut [DVec3],
 ) {
+    // Issue #560 root-cause audit infrastructure — mark the start of
+    // this RK4 stage in the dump stream. The stage counter persists
+    // for the duration of `eval_stage` so the per-body force/accel
+    // dumps below are tagged consistently. No-op when
+    // `ASTRODYN_560_FULL_DUMP` is unset.
+    astrodyn_quantities::audit_560::begin_stage(stage_index);
+
     let n = bodies.len();
     for i in 0..n {
+        // Issue #560 root-cause audit infrastructure — emit the
+        // entry state of stage `stage_index` for body `i` (pre
+        // contact / gravity callback). Mirrors the JEOD patch on
+        // `dyn_body_integration.cc` (per-stage body state at entry).
+        astrodyn_quantities::audit_560::dump_vec3("eval_stage_pos", i, "pos", stage_pos[i]);
+        astrodyn_quantities::audit_560::dump_vec3("eval_stage_vel", i, "vel", stage_vel[i]);
+        astrodyn_quantities::audit_560::dump_quat("eval_stage_q", i, "q", stage_q[i]);
+        astrodyn_quantities::audit_560::dump_vec3("eval_stage_omega", i, "omega", stage_omega[i]);
+
         stage_trans_buf[i] = TranslationalState {
             position: stage_pos[i],
             velocity: stage_vel[i],
@@ -615,6 +681,16 @@ fn eval_stage(
         k_a[i] = accel;
         k_qdot[i] = qdot;
         k_alpha[i] = alpha;
+
+        // Issue #560 root-cause audit infrastructure — emit the
+        // per-body derivative outputs for stage `stage_index`.
+        // Mirrors Trick ER7's per-stage `k_v` / `k_a` / `k_qdot` /
+        // `k_alpha` dump from
+        // `rk4_second_order_ode_integrator.cc`.
+        astrodyn_quantities::audit_560::dump_vec3("k_v", i, "k_v", k_v[i]);
+        astrodyn_quantities::audit_560::dump_vec3("k_a", i, "k_a", k_a[i]);
+        astrodyn_quantities::audit_560::dump_quat("k_qdot", i, "k_qdot", k_qdot[i]);
+        astrodyn_quantities::audit_560::dump_vec3("k_alpha", i, "k_alpha", k_alpha[i]);
     }
 }
 

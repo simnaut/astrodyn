@@ -1077,6 +1077,144 @@ fn tier3_contact_point_off_center() {
     );
 }
 
+/// Permanent diagnostic ablation of `tier3_contact_point_off_center`
+/// for issue #560 root-cause audit work.
+///
+/// Identical scenario to `tier3_contact_point_off_center` — same
+/// fixture, same tolerances, same end-state assertion — but marked
+/// `#[ignore]` so it does not run in regular CI. The purpose is to
+/// keep a single-test entry point that future numerical-parity
+/// investigations can wire to the bidirectional dump infrastructure
+/// in `crates/astrodyn_quantities/src/audit_560.rs` +
+/// `trick/audit_560/` without having to re-derive the off-center
+/// fixture loading from scratch.
+///
+/// The audit conclusion (https://github.com/simnaut/astrodyn/issues/560)
+/// is that the 2.5 mm residual is collectively produced by ULP-level
+/// FP rounding-path divergences across ~25 distinct operations,
+/// amplified exponentially through stiff spring-damper contact
+/// dynamics over 152 contact-event stages — and that single-op fixes
+/// don't move the trajectory. The ablation was the test used to
+/// empirically verify that the JEOD-chain `penetration_vec =
+/// target_cp - subject_cp` substitution (one of the audit's eight
+/// hypotheses) did not change the macroscopic residual; reproducing
+/// the same conclusion for any future candidate fix is what this
+/// test exists for.
+///
+/// To run with the dump stream active:
+///
+/// ```bash
+/// ASTRODYN_560_FULL_DUMP=1 cargo nextest run \
+///   -p astrodyn_verif_jeod --test tier3_sim_contact \
+///   -E 'test(ablation)' --run-ignored ignored-only \
+///   2> rust_dump.txt
+/// ```
+///
+/// Then drive the JEOD side via `trick/audit_560/run_audit.sh` and
+/// compare via `trick/audit_560/diff_streams.py`.
+#[test]
+#[ignore = "diagnostic ablation — see #560 root-cause audit"]
+fn tier3_contact_point_off_center_ablation() {
+    let csv_path = test_data_path("contact_point_off_center_contact_state.csv");
+    let records = load_contact_csv(&csv_path);
+    assert!(records.len() > 50);
+
+    let init = &records[0];
+
+    let facet = ContactFacet::point(DVec3::ZERO, 1.0, jeod_steel());
+
+    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    add_empty_space_root(&mut sim);
+
+    let mass_props = MassProperties::with_inertia(
+        100.0,
+        DMat3::from_cols(
+            DVec3::new(40.0, 0.0, 0.0),
+            DVec3::new(0.0, 40.0, 0.0),
+            DVec3::new(0.0, 0.0, 40.0),
+        ),
+        DVec3::ZERO,
+    );
+
+    sim.add_body(VehicleConfig {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
+            position: init.veh1_pos,
+            velocity: init.veh1_vel,
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
+        gravity_controls: GravityControls { controls: vec![] },
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+    sim.add_body(VehicleConfig {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
+            position: init.veh2_pos,
+            velocity: init.veh2_vel,
+        }),
+        rot: Some(astrodyn::typed_bridge::rot_raw_to_self_ref(
+            &(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+        )),
+        mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
+        gravity_controls: GravityControls { controls: vec![] },
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+
+    let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
+    let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
+
+    let mut max_pos_err = 0.0_f64;
+    let mut max_vel_err = 0.0_f64;
+    for (our, rec) in ours.iter().zip(records.iter()) {
+        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+    }
+    println!(
+        "SIM_contact RUN_point_off_center [ablation]: \
+         max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
+    );
+
+    // Tolerance bounds match `tier3_contact_point_off_center` — the
+    // ablation is meant to reproduce the same macroscopic residual,
+    // so the same envelope applies. Anything that materially moves
+    // the residual under any candidate fix would also need to
+    // tighten the canonical test's tolerances; the ablation should
+    // not drift independently.
+    assert!(
+        max_pos_err < 2.7e-3,
+        "veh{{1,2}} position error {max_pos_err:.3e} > 2.7 mm"
+    );
+    assert!(
+        max_vel_err < 5.7e-4,
+        "veh{{1,2}} velocity error {max_vel_err:.3e} > 0.57 mm/s"
+    );
+
+    assert_contact_force_torque(
+        "SIM_contact RUN_point_off_center [ablation]",
+        facet,
+        facet,
+        &mass_props,
+        &mass_props,
+        &ours,
+        &records,
+        POINT_OFF_CENTER_FORCE_TOL,
+        POINT_OFF_CENTER_TORQUE_TOL,
+    );
+}
+
 /// RUN_contact_ground: SIM_ground_contact.
 ///
 /// Two vehicles (veh1 = line cylinder, veh2 = point sphere, 200 kg each)

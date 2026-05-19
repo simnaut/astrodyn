@@ -501,6 +501,28 @@ pub fn evaluate_contact_pair(
     // Relative position of facet A wrt facet B's reference (inertial).
     let rel_pos = a_ref_inertial - b_ref_inertial;
 
+    // Issue #560 root-cause audit infrastructure — emit the
+    // contact-pair inertial-frame inputs. Mirrors the JEOD patch on
+    // `point_contact_pair.cc` (which dumps `rel_pos` and per-body CoM
+    // arms before invoking the detection algorithm). The body slot is
+    // always `0` here because the contact-pair eval logically belongs
+    // to "the pair", not to a single body — the diff tool aligns
+    // `evaluate_contact_pair` lines on (op, body=0, occurrence-index).
+    // No-op when `ASTRODYN_560_FULL_DUMP` is unset.
+    astrodyn_quantities::audit_560::dump_vec3("rel_pos", 0, "rel_pos", rel_pos);
+    astrodyn_quantities::audit_560::dump_vec3(
+        "a_ref_inertial",
+        0,
+        "a_ref_inertial",
+        a_ref_inertial,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "b_ref_inertial",
+        0,
+        "b_ref_inertial",
+        b_ref_inertial,
+    );
+
     // Compute the detection-only contact geometry first, so we can build
     // JEOD's relative-velocity term using the actual contact point on A
     // (not merely A's facet reference). Returns `None` if the pair isn't
@@ -533,6 +555,36 @@ pub fn evaluate_contact_pair(
         + omega_a_inertial.cross(contact_arm_a_inertial)
         - omega_b_inertial.cross(contact_arm_b_inertial);
 
+    // Issue #560 root-cause audit infrastructure — emit the
+    // rel-velocity components fed into the force law. JEOD's
+    // patched `point_contact_pair.cc::in_contact` dumps `rel_velocity`
+    // alongside the per-body ω × r contributions.
+    astrodyn_quantities::audit_560::dump_vec3("rel_vel", 0, "rel_vel", rel_vel);
+    astrodyn_quantities::audit_560::dump_vec3(
+        "omega_a_inertial",
+        0,
+        "omega_a_inertial",
+        omega_a_inertial,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "omega_b_inertial",
+        0,
+        "omega_b_inertial",
+        omega_b_inertial,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "contact_arm_a_inertial",
+        0,
+        "contact_arm_a_inertial",
+        contact_arm_a_inertial,
+    );
+    astrodyn_quantities::audit_560::dump_vec3(
+        "contact_arm_b_inertial",
+        0,
+        "contact_arm_b_inertial",
+        contact_arm_b_inertial,
+    );
+
     // Reuse the geometry from above — avoid repeating closest-point math
     // inside the RK4 inner loop.
     let contact =
@@ -540,6 +592,12 @@ pub fn evaluate_contact_pair(
 
     // Force on A: inertial frame.
     let force_on_a = contact.force;
+
+    // Issue #560 root-cause audit infrastructure — emit the
+    // contact-pair force and per-body torques. The JEOD-side patch on
+    // `point_contact_pair.cc` / `point_contact_facet.cc::calculate_torque`
+    // emits the same names.
+    astrodyn_quantities::audit_560::dump_vec3("force_on_a", 0, "force_on_a", force_on_a);
 
     // Torque arms: from each body's CoM to the contact point on its surface.
     // `contact.contact_point_on_a` is the contact point relative to facet A's
@@ -555,6 +613,12 @@ pub fn evaluate_contact_pair(
     // is inertial→body, so it applies directly: v_body = t_inertial_body * v_inertial.
     let torque_a_body = t_inertial_body_a * torque_a_inertial;
     let torque_b_body = t_inertial_body_b * torque_b_inertial;
+
+    // Issue #560 root-cause audit infrastructure — emit the
+    // body-frame torques. The diff tool aligns these with JEOD's
+    // `point_contact_facet.cc::calculate_torque` dump.
+    astrodyn_quantities::audit_560::dump_vec3("torque_a_body", 0, "torque_a_body", torque_a_body);
+    astrodyn_quantities::audit_560::dump_vec3("torque_b_body", 1, "torque_b_body", torque_b_body);
 
     Some(ContactPairEval {
         force_on_a,

@@ -167,6 +167,7 @@ mod derive_utils;
 mod sealed;
 
 pub mod aliases;
+pub mod audit_560;
 pub mod body_attitude;
 pub mod body_constants;
 pub mod diagnostics;
