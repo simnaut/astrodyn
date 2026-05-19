@@ -344,13 +344,13 @@ fn tier3_apollo8_eci_integ() {
                 time: r.time,
                 position: Some(body.trans.position.raw_si()),
                 velocity: Some(body.trans.velocity.raw_si()),
-                acceleration: Some(body.trans_accel),
+                acceleration: Some(body.trans_accel.raw_si()),
                 quaternion: body
                     .rot
                     .as_ref()
                     .map(|rot| rot.q_inertial_body.as_witness().inner().to_glam()),
                 ang_vel: body.rot.as_ref().map(|rot| rot.ang_vel_body.raw_si()),
-                ang_accel: body.rot_accel,
+                ang_accel: body.rot_accel.map(|a| a.raw_si()),
             });
             ref_log.push(StateLog {
                 time: r.time,

@@ -268,13 +268,13 @@ fn tier3_sim_apollo_trajectory() {
             time: reference.time,
             position: Some(core_position),
             velocity: Some(core_velocity),
-            acceleration: Some(body.trans_accel),
+            acceleration: Some(body.trans_accel.raw_si()),
             quaternion: body
                 .rot
                 .as_ref()
                 .map(|r| r.q_inertial_body.as_witness().inner().to_glam()),
             ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body.raw_si()),
-            ang_accel: body.rot_accel,
+            ang_accel: body.rot_accel.map(|a| a.raw_si()),
         });
         ref_log.push(StateLog {
             time: reference.time,

@@ -535,7 +535,10 @@ pub fn propagate_frame_attached_state_system<P: Planet>(
                 .ok()
                 .and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
             let (integ_origin_pos, integ_origin_vel) = match integ_frame_entity {
-                Some(integ_e) if integ_e != root => rel.position_velocity(root, integ_e),
+                Some(integ_e) if integ_e != root => {
+                    let trans = rel.relative_state(root, integ_e).trans;
+                    (trans.position, trans.velocity)
+                }
                 _ => (DVec3::ZERO, DVec3::ZERO),
             };
 

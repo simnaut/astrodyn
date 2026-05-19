@@ -1115,7 +1115,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_does_not_reparent_child_frame_
         .world_mut()
         .run_system_cached_with(
             |In((from, to)): In<(Entity, Entity)>, rel: RelativeFrameState| -> DVec3 {
-                rel.position(from, to)
+                rel.relative_state(from, to).trans.position
             },
             (root_frame_entity, child_frame_entity),
         )
@@ -1483,7 +1483,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
         .world_mut()
         .run_system_cached_with(
             move |In((root, frame)): In<(Entity, Entity)>, rel: RelativeFrameState| {
-                rel.position(root, frame)
+                rel.relative_state(root, frame).trans.position
             },
             (root_e, parent_frame_entity),
         )
@@ -1774,7 +1774,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
         .world_mut()
         .run_system_cached_with(
             move |In((root, frame)): In<(Entity, Entity)>, rel: RelativeFrameState| {
-                rel.position(root, frame)
+                rel.relative_state(root, frame).trans.position
             },
             (root_e, child_frame_entity),
         )

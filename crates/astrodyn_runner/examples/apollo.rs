@@ -183,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let body = sim.body(0);
             let pos = body.trans.position.raw_si();
             let vel = body.trans.velocity.raw_si();
-            let moon_pos = sim.source_position(apollo::MOON_IDX);
+            let moon_pos = sim.source_position_typed(apollo::MOON_IDX).raw_si();
             let alt_km = (pos.length() - R_EARTH) / 1000.0;
             let dist_moon_km = (pos - moon_pos).length() / 1000.0;
             let speed = vel.length();
@@ -207,8 +207,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let final_body = sim.body(0);
-    let final_moon_dist =
-        (final_body.trans.position.raw_si() - sim.source_position(apollo::MOON_IDX)).length();
+    let final_moon_dist = (final_body.trans.position.raw_si()
+        - sim.source_position_typed(apollo::MOON_IDX).raw_si())
+    .length();
     println!();
     println!(
         "Final distance to Moon: {:.0} km after {elapsed_days:.2} days",

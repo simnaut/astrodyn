@@ -157,7 +157,10 @@ fn frame_origin_and_relative_frame_state_agree() {
         .run_system_cached_with(
             |In((ancestor, frame)): In<(Entity, Entity)>,
              rel: RelativeFrameState|
-             -> (DVec3, DVec3) { rel.position_velocity(ancestor, frame) },
+             -> (DVec3, DVec3) {
+                let trans = rel.relative_state(ancestor, frame).trans;
+                (trans.position, trans.velocity)
+            },
             (pfix_frame_e, body_frame_e),
         )
         .expect("run_system_cached_with should succeed");

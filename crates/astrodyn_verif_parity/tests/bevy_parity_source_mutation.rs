@@ -157,7 +157,7 @@ fn bevy_parity_source_mutation_source_mutator_set_state_matches_runner() {
     );
     sim.set_source_state(moon_idx, new_pos, new_vel);
 
-    let sim_pos = sim.source_position(moon_idx);
+    let sim_pos = sim.source_position_typed(moon_idx).raw_si();
     let sim_node_vel = sim
         .frame_tree()
         .get(sim.source_frame(moon_idx))

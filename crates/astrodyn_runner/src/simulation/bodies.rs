@@ -589,15 +589,46 @@ impl Simulation {
     /// Set the externally applied force (inertial frame, N) for a body.
     ///
     /// Added to `total_force.force` each step after force collection.
+    ///
+    /// Prefer [`set_body_external_force_typed`](Self::set_body_external_force_typed)
+    /// for the typed-input path; the raw entry point stays for callers
+    /// that have not yet migrated.
     pub fn set_body_external_force(&mut self, idx: usize, force: DVec3) {
         self.bodies[idx].external_force = force;
+    }
+
+    /// Typed sibling of [`set_body_external_force`](Self::set_body_external_force).
+    /// The `Force<RootInertial>` argument's phantom enforces at compile
+    /// time that the value is in the root-inertial frame, matching the
+    /// `external_force` storage convention.
+    pub fn set_body_external_force_typed(
+        &mut self,
+        idx: usize,
+        force: astrodyn::Force<astrodyn::RootInertial>,
+    ) {
+        self.set_body_external_force(idx, force.raw_si());
     }
 
     /// Set the externally applied torque (body frame, N*m) for a body.
     ///
     /// Added to `total_force.torque` each step after force collection.
+    ///
+    /// Prefer [`set_body_external_torque_typed`](Self::set_body_external_torque_typed)
+    /// for the typed-input path; the raw entry point stays for callers
+    /// that have not yet migrated.
     pub fn set_body_external_torque(&mut self, idx: usize, torque: DVec3) {
         self.bodies[idx].external_torque = torque;
+    }
+
+    /// Typed sibling of [`set_body_external_torque`](Self::set_body_external_torque).
+    /// The `Torque<BodyFrame<SelfRef>>` argument's phantom enforces at
+    /// compile time that the value is expressed in the body frame.
+    pub fn set_body_external_torque_typed(
+        &mut self,
+        idx: usize,
+        torque: astrodyn::Torque<astrodyn::BodyFrame<astrodyn::SelfRef>>,
+    ) {
+        self.set_body_external_torque(idx, torque.raw_si());
     }
 
     /// Set the externally applied force in the body's structural frame
@@ -617,8 +648,22 @@ impl Simulation {
     /// point is preserved for callers that already produce
     /// inertial-frame contributions (custom thrusters, debugging, etc.);
     /// the two contribute additively at force collection.
+    ///
+    /// Prefer [`set_body_external_force_struct_typed`](Self::set_body_external_force_struct_typed)
+    /// for the typed-input path.
     pub fn set_body_external_force_struct(&mut self, idx: usize, force_struct: DVec3) {
         self.bodies[idx].external_force_struct = force_struct;
+    }
+
+    /// Typed sibling of [`set_body_external_force_struct`](Self::set_body_external_force_struct).
+    /// The `Force<StructuralFrame<SelfRef>>` argument's phantom enforces
+    /// at compile time that the value is in the body's structural frame.
+    pub fn set_body_external_force_struct_typed(
+        &mut self,
+        idx: usize,
+        force_struct: astrodyn::Force<astrodyn::StructuralFrame<astrodyn::SelfRef>>,
+    ) {
+        self.set_body_external_force_struct(idx, force_struct.raw_si());
     }
 
     /// Set the externally applied torque in the body's structural frame
@@ -627,8 +672,22 @@ impl Simulation {
     /// Mirrors JEOD's `Torque` model. Rotated to body frame at force
     /// collection via the body's structural-to-body transform; companion
     /// to [`set_body_external_force_struct`](Self::set_body_external_force_struct).
+    ///
+    /// Prefer [`set_body_external_torque_struct_typed`](Self::set_body_external_torque_struct_typed)
+    /// for the typed-input path.
     pub fn set_body_external_torque_struct(&mut self, idx: usize, torque_struct: DVec3) {
         self.bodies[idx].external_torque_struct = torque_struct;
+    }
+
+    /// Typed sibling of [`set_body_external_torque_struct`](Self::set_body_external_torque_struct).
+    /// The `Torque<StructuralFrame<SelfRef>>` argument's phantom enforces
+    /// at compile time that the value is in the body's structural frame.
+    pub fn set_body_external_torque_struct_typed(
+        &mut self,
+        idx: usize,
+        torque_struct: astrodyn::Torque<astrodyn::StructuralFrame<astrodyn::SelfRef>>,
+    ) {
+        self.set_body_external_torque_struct(idx, torque_struct.raw_si());
     }
 
     /// Set a body's translational position (inertial frame, m).

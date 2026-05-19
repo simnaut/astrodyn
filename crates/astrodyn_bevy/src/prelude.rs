@@ -27,14 +27,15 @@
 
 pub use crate::{
     Abm4StateC, AerodynamicForceC, AstrodynAppExt, AstrodynPlugin, AstrodynSet, AtmosphericStateC,
-    BodyActionCommandsExt, BodyActionEvent, BodyActionsR, BodyFrameMarker, ClosureJointKinematicsC,
-    DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC,
-    FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC,
-    GravitySourceC, GravityTorqueC, InertialFrameMarker, IntegrationDtR, IntegrationFrameMarker,
-    IntegratorTypeC, JointKinematicsC, MassPropertiesC, MultiDofJointKinematicsC, PfixFrameEntityC,
-    PlanetFixedFrameMarker, PlanetFixedRotationC, RadiationForceC, RootFrameEntityR,
-    RotationalStateC, ScenarioHandles, SimulationBuilderBevyExt, SimulationTimeR,
-    SinusoidalJointKinematicsC, SourceInertialPositionC, SourceInertialVelocityC,
+    BodyActionCommandsExt, BodyActionEvent, BodyActionsR, BodyFrameMarker, BodyMutator, BodyReader,
+    ClosureJointKinematicsC, DetachedSubtreeStateC, DynamicsConfigC, ExternalForceC,
+    ExternalForceStructC, ExternalTorqueC, ExternalTorqueStructC, FrameAngVelC, FrameDerivativesC,
+    FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker, IntegrationDtR,
+    IntegrationFrameMarker, IntegratorTypeC, JointKinematicsC, MassPropertiesC,
+    MultiDofJointKinematicsC, PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC,
+    RadiationForceC, RootFrameEntityR, RotationalStateC, ScenarioHandles, SimulationBuilderBevyExt,
+    SimulationTimeR, SinusoidalJointKinematicsC, SourceInertialPositionC, SourceInertialVelocityC,
     StructuralTransformC, TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
 };
 // ECS-native frame-tree mission-code surface.

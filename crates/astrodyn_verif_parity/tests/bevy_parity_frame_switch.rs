@@ -194,7 +194,7 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         .world_mut()
         .run_system_cached_with(
             |In((from, to)): In<(Entity, Entity)>, rel: RelativeFrameState| -> glam::DVec3 {
-                rel.position(from, to)
+                rel.relative_state(from, to).trans.position
             },
             (moon_frame_entity, body_frame_entity),
         )

@@ -1,3 +1,8 @@
+// JEOD_INV: TS.01 — `<SelfRef>` wildcards on the typed body-load setters
+// (`set_body_external_torque_typed`, `set_body_external_*_struct_typed`)
+// are the runner-side storage-boundary surface mirroring
+// `crate::simulation::bodies`'s typed setters; the underlying `BodyIdx`
+// resolves per-entity body identity at call time.
 //! Branded `Simulation<'sim>` wrapper with compile-time index isolation
 //! between concurrent simulations (#152).
 //!
@@ -51,7 +56,7 @@
 //!
 //! `BrandedSimulation` covers the most common index-using methods:
 //! `add_source`, `add_body`, `set_source_position`, `set_source_state`,
-//! `source_position`, `body`, plus `step`, `step_until`, `validate`,
+//! `source_position_typed`, `body`, plus `step`, `step_until`, `validate`,
 //! and `unbranded()` / `unbranded_mut()` escape hatches that expose the
 //! inner `Simulation` for methods not yet branded. Adding more branded
 //! methods later is mechanical.
@@ -166,19 +171,8 @@ impl<'sim> BrandedSimulation<'sim> {
         self.inner.set_source_state(idx.raw, position, velocity);
     }
 
-    /// Read a source's inertial position.
-    ///
-    /// Prefer [`source_position_typed`](Self::source_position_typed) for the
-    /// typed-result path.
-    // ESCAPE_HATCH: pending H4 typed-migration follow-up (see #485 task 18).
-    pub fn source_position(&self, idx: SourceIdx<'sim>) -> DVec3 {
-        self.inner.source_position(idx.raw)
-    }
-
-    /// Typed sibling of [`source_position`](Self::source_position). Returns
-    /// the source's inertial-frame position already wrapped in
-    /// `Position<RootInertial>` (the runner-wide convention; mirrors
-    /// `Simulation::source_position_typed`).
+    /// Read a source's inertial position as `Position<RootInertial>` (the
+    /// runner-wide convention; mirrors `Simulation::source_position_typed`).
     pub fn source_position_typed(
         &self,
         idx: SourceIdx<'sim>,
@@ -193,13 +187,81 @@ impl<'sim> BrandedSimulation<'sim> {
     }
 
     /// Set a body's external (non-gravity) force in inertial coordinates.
+    ///
+    /// Prefer [`set_body_external_force_typed`](Self::set_body_external_force_typed)
+    /// for the typed-input path.
     pub fn set_body_external_force(&mut self, idx: BodyIdx<'sim>, force: DVec3) {
         self.inner.set_body_external_force(idx.raw, force);
     }
 
+    /// Typed sibling of [`set_body_external_force`](Self::set_body_external_force).
+    /// Mirrors `Simulation::set_body_external_force_typed`.
+    pub fn set_body_external_force_typed(
+        &mut self,
+        idx: BodyIdx<'sim>,
+        force: astrodyn::Force<astrodyn::RootInertial>,
+    ) {
+        self.inner.set_body_external_force_typed(idx.raw, force);
+    }
+
     /// Set a body's external (non-gravity) torque in body-frame coordinates.
+    ///
+    /// Prefer [`set_body_external_torque_typed`](Self::set_body_external_torque_typed)
+    /// for the typed-input path.
     pub fn set_body_external_torque(&mut self, idx: BodyIdx<'sim>, torque: DVec3) {
         self.inner.set_body_external_torque(idx.raw, torque);
+    }
+
+    /// Typed sibling of [`set_body_external_torque`](Self::set_body_external_torque).
+    /// Mirrors `Simulation::set_body_external_torque_typed`.
+    pub fn set_body_external_torque_typed(
+        &mut self,
+        idx: BodyIdx<'sim>,
+        torque: astrodyn::Torque<astrodyn::BodyFrame<astrodyn::SelfRef>>,
+    ) {
+        self.inner.set_body_external_torque_typed(idx.raw, torque);
+    }
+
+    /// Set a body's external force in the body's structural frame.
+    /// Companion to [`set_body_external_force`](Self::set_body_external_force);
+    /// mirrors `Simulation::set_body_external_force_struct`.
+    ///
+    /// Prefer [`set_body_external_force_struct_typed`](Self::set_body_external_force_struct_typed)
+    /// for the typed-input path.
+    pub fn set_body_external_force_struct(&mut self, idx: BodyIdx<'sim>, force_struct: DVec3) {
+        self.inner
+            .set_body_external_force_struct(idx.raw, force_struct);
+    }
+
+    /// Typed sibling of [`set_body_external_force_struct`](Self::set_body_external_force_struct).
+    pub fn set_body_external_force_struct_typed(
+        &mut self,
+        idx: BodyIdx<'sim>,
+        force_struct: astrodyn::Force<astrodyn::StructuralFrame<astrodyn::SelfRef>>,
+    ) {
+        self.inner
+            .set_body_external_force_struct_typed(idx.raw, force_struct);
+    }
+
+    /// Set a body's external torque in the body's structural frame.
+    /// Companion to [`set_body_external_torque`](Self::set_body_external_torque);
+    /// mirrors `Simulation::set_body_external_torque_struct`.
+    ///
+    /// Prefer [`set_body_external_torque_struct_typed`](Self::set_body_external_torque_struct_typed)
+    /// for the typed-input path.
+    pub fn set_body_external_torque_struct(&mut self, idx: BodyIdx<'sim>, torque_struct: DVec3) {
+        self.inner
+            .set_body_external_torque_struct(idx.raw, torque_struct);
+    }
+
+    /// Typed sibling of [`set_body_external_torque_struct`](Self::set_body_external_torque_struct).
+    pub fn set_body_external_torque_struct_typed(
+        &mut self,
+        idx: BodyIdx<'sim>,
+        torque_struct: astrodyn::Torque<astrodyn::StructuralFrame<astrodyn::SelfRef>>,
+    ) {
+        self.inner
+            .set_body_external_torque_struct_typed(idx.raw, torque_struct);
     }
 
     /// Set a body's inertial position directly (e.g. for fixed-trajectory

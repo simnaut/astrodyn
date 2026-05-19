@@ -4,7 +4,9 @@
 //! Aggregates per-step force / torque contributions from the interaction
 //! systems into [`TotalForceC`] / [`FrameDerivativesC`] for the integrator.
 
-use astrodyn::{Acceleration, AngularAcceleration, BodyFrame, RootInertial, SelfRef};
+use astrodyn::{
+    Acceleration, AngularAcceleration, BodyFrame, Force, RootInertial, SelfRef, Torque,
+};
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -40,6 +42,8 @@ pub fn force_collection_system(
             Option<&StructuralTransformC>,
             Option<&ExternalForceC>,
             Option<&ExternalTorqueC>,
+            Option<&ExternalForceStructC>,
+            Option<&ExternalTorqueStructC>,
         ),
         Without<crate::DetachedSubtreeStateC>,
     >,
@@ -56,6 +60,8 @@ pub fn force_collection_system(
         struct_xform,
         ext_force,
         ext_torque,
+        ext_force_struct,
+        ext_torque_struct,
     ) in &mut query
     {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
@@ -147,6 +153,50 @@ pub fn force_collection_system(
                     frame_derivs.rot_accel +=
                         // allowed: same untyped inverse_inertia boundary as above.
                         AngularAcceleration::<BodyFrame<SelfRef>>::from_raw_si(alpha_contrib);
+                }
+            }
+        }
+
+        // Struct-frame external force/torque: rotate to inertial / body
+        // using the body's current attitude. Mirrors the runner's
+        // `simulation/step/integrate.rs:85-105`, which in turn mirrors
+        // JEOD's `dyn_body_collect.cc:219-221`
+        // (`extern_forc_inrtl = T_inertial_struct^T · extern_forc_struct`).
+        if ext_force_struct.is_some() || ext_torque_struct.is_some() {
+            let ef_struct_raw = ext_force_struct.map_or(DVec3::ZERO, |c| c.0.raw_si());
+            let et_struct_raw = ext_torque_struct.map_or(DVec3::ZERO, |c| c.0.raw_si());
+            if ef_struct_raw != DVec3::ZERO || et_struct_raw != DVec3::ZERO {
+                let t_inertial_body = rot_state.map_or(glam::DMat3::IDENTITY, |r| {
+                    r.0.q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation()
+                });
+                let t_inertial_struct =
+                    astrodyn::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
+                let force_inertial = t_inertial_struct.transpose() * ef_struct_raw;
+                let torque_body = t_struct_body * et_struct_raw;
+                // allowed: typed re-wrap at the totals accumulator —
+                // `force_inertial` is in root-inertial by construction
+                // (computed from a structural-frame load and the body's
+                // attitude), so the phantom is asserted at the boundary.
+                total.0.force += Force::<RootInertial>::from_raw_si(force_inertial);
+                // allowed: typed re-wrap — `torque_body` is in the body
+                // frame by construction (rotated from structural via
+                // `t_struct_body`).
+                total.0.torque += Torque::<BodyFrame<SelfRef>>::from_raw_si(torque_body);
+                if let Some(mass) = mass {
+                    if force_inertial != DVec3::ZERO {
+                        let accel_contrib = force_inertial * mass.0.inverse_mass;
+                        frame_derivs.trans_accel +=
+                            // allowed: scalar inverse_mass is untyped by design; rewrap.
+                            Acceleration::<RootInertial>::from_raw_si(accel_contrib);
+                    }
+                    if torque_body != DVec3::ZERO {
+                        let alpha_contrib = mass.0.inverse_inertia * torque_body;
+                        frame_derivs.rot_accel +=
+                            // allowed: same untyped inverse_inertia boundary as above.
+                            AngularAcceleration::<BodyFrame<SelfRef>>::from_raw_si(alpha_contrib);
+                    }
                 }
             }
         }

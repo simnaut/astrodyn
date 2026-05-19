@@ -223,8 +223,8 @@ fn run_integ_test(
             time: record.time,
             position: Some(body.trans.position.raw_si()),
             velocity: Some(body.trans.velocity.raw_si()),
-            acceleration: Some(body.trans_accel),
-            ang_accel: body.rot_accel,
+            acceleration: Some(body.trans_accel.raw_si()),
+            ang_accel: body.rot_accel.map(|a| a.raw_si()),
             ..Default::default()
         });
     }
