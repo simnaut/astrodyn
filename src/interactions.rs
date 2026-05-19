@@ -1028,6 +1028,217 @@ mod tests {
         );
     }
 
+    /// Falsification guard for the "subject-body-frame vs inertial-frame
+    /// contact eval" hypothesis (Direction 4-C of the SIM_contact
+    /// off-center residual investigation; see the candidate catalog in
+    /// `crates/astrodyn_verif_jeod/tests/tier3_sim_contact.rs`).
+    ///
+    /// **The hypothesis.** Our [`evaluate_contact_pair`] builds the
+    /// spring / damping / friction force entirely in the inertial frame
+    /// (`src/interactions.rs:516-552`): facet endpoints, the contact
+    /// geometry, `rel_vel = ω × arm + (v_a − v_b)`, and the resulting
+    /// spring + damping + friction force are all expressed in inertial.
+    /// JEOD's `point_contact_pair::in_contact`
+    /// (`models/interactions/contact/src/point_contact_pair.cc:47-88`)
+    /// instead computes the relative state in the **subject
+    /// vehicle_point frame** — `rel_state.rel_state.trans.position` and
+    /// `.velocity` are already in subject body coordinates by the time
+    /// `in_contact` runs — and `SpringPairInteraction::calculate_forces`
+    /// (`spring_pair_interaction.cc:57-128`) consumes those subject-body
+    /// quantities and produces the spring + damping + friction in
+    /// subject body frame. The result is then routed through
+    /// `Vector3::transform_transpose(vp.T_parent_this, force, vec)` to
+    /// reach inertial and `Vector3::transform(structure.T_parent_this,
+    /// vec, tmp_force)` to reach the subject's structure frame. The
+    /// body's `collect.effector_forc` is therefore a structure-frame
+    /// accumulator (see `force.hh:67-74`: "The force vector is expressed
+    /// in the structural frame of that DynBody object"); the integrator
+    /// reaches inertial in `dyn_body_collect.cc:219-221` via the inverse
+    /// rotation, then divides by mass. For the SIM_contact fixture
+    /// (vehicle_point = structure = body = composite_body, all coincident
+    /// with CoM at the structural origin), the JEOD-frame pipeline
+    /// reduces to: compute `force_body` in the subject body frame, then
+    /// `force_inertial = T_inertial_body^T * force_body`.
+    ///
+    /// The catalog flagged D4-C as the only D4 candidate whose
+    /// arithmetic bound (ω² · h · c ≈ 1.75e-7 N at the original 5e-4
+    /// rad/s estimate; ω peaks at ~4e-2 rad/s during the actual
+    /// off-center contact event, lifting the bound to ~1.1 mN) brackets
+    /// the observed ~120 μN per-stage residual.
+    ///
+    /// **The guard.** A frame-covariance witness: if we run
+    /// [`evaluate_contact_pair`] at a baseline state and again at the
+    /// *same* state rotated by an arbitrary rigid rotation `R` (the
+    /// "rotated" state has every position, velocity, ω, and quaternion
+    /// transformed by `R`), the two output forces must satisfy
+    /// `force_rotated == R * force_baseline` to within f64 round-off.
+    /// This holds iff [`evaluate_contact_pair`] commutes with the choice
+    /// of inertial-frame orientation — which is precisely the property
+    /// D4-C asks about: if the inertial-frame ordering produced a
+    /// systematic, frame-dependent residual at the ω²·h·c scale,
+    /// rotating the inputs into a different inertial orientation would
+    /// shift the computed force away from `R * force_baseline` by that
+    /// scale.
+    ///
+    /// **What the guard pins.** The observed |force_rotated −
+    /// R·force_baseline| at this fixture is a few hundred ULPs of
+    /// |F| ≈ 430 N, well below 1e-10 N — six orders of magnitude below
+    /// the 120 μN per-stage residual. This falsifies D4-C: a
+    /// systematic-frame-ordering error would shift the rotated force by
+    /// the ω²·h·c bound; instead the shift is at FP round-off. A future
+    /// refactor that introduces an extra non-covariant operation (e.g.
+    /// a frame-specific epsilon clip, or a hardcoded axis) would still
+    /// pass [`evaluate_contact_pair_matches_jeod_subject_frame_formula`]
+    /// (algebraic equivalence) but fail this covariance check.
+    #[test]
+    fn evaluate_contact_pair_is_frame_covariant() {
+        // Material matches the JEOD SIM_contact steel pair: k = 3502.5
+        // N/m, b = 70.05 N·s/m, μ = 0.05 (see
+        // `Contact_Modified_data/contact/contact_params.py`).
+        let radius: f64 = 1.0;
+        let mat = scenario_material(3502.5, 70.05, 0.05);
+        let facet = astrodyn_interactions::ContactFacet::point(DVec3::ZERO, radius, mat);
+        let mass = MassProperties::with_inertia(
+            100.0,
+            DMat3::from_diagonal(DVec3::new(40.0, 40.0, 40.0)),
+            DVec3::ZERO,
+        );
+
+        // Baseline attitudes (non-identity, non-aligned) and a non-zero
+        // ω representative of the off-center scenario's peak (~4e-2
+        // rad/s from peak torque ~34 N·m / inertia 40 kg·m² over the
+        // ~0.05 s contact event).
+        let q_a_base =
+            JeodQuat::left_quat_from_eigen_rotation(0.37, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let q_b_base =
+            JeodQuat::left_quat_from_eigen_rotation(-0.81, DVec3::new(-2.0, 1.0, -1.5).normalize());
+
+        // Off-centre, overlapping (centres ~1.86 m apart < sum of radii
+        // 2 m), mirroring mid-event geometry in `RUN_point_off_center`.
+        let trans_a_base = TranslationalState {
+            position: DVec3::new(0.1, -0.2, 0.3),
+            velocity: DVec3::new(0.05, -0.1, 0.02),
+        };
+        let trans_b_base = TranslationalState {
+            position: DVec3::new(1.9, 0.3, 0.1),
+            velocity: DVec3::new(-0.07, 0.04, -0.01),
+        };
+        let rot_a_base = RotationalState {
+            quaternion: q_a_base,
+            ang_vel_body: DVec3::new(0.04, -0.02, 0.03),
+        };
+        let rot_b_base = RotationalState {
+            quaternion: q_b_base,
+            ang_vel_body: DVec3::new(-0.03, 0.01, -0.02),
+        };
+
+        let t_struct_body = DMat3::IDENTITY;
+        let baseline = evaluate_contact_pair(
+            &facet,
+            &facet,
+            &trans_a_base,
+            &trans_b_base,
+            Some(&rot_a_base),
+            Some(&rot_b_base),
+            t_struct_body,
+            t_struct_body,
+            Some(&mass),
+            Some(&mass),
+        )
+        .expect("non-trivial overlap by construction");
+
+        // Inertial-frame rotation R (non-trivial, non-axis-aligned).
+        // The "rotated" state describes the same physical configuration
+        // re-expressed in a different choice of inertial basis: every
+        // inertial-frame vector `v` becomes `R · v`; every body's
+        // body-to-inertial rotation `T_inertial_body` becomes
+        // `T_new_inertial_body = T_inertial_body · R^T` (so that
+        // `v_body = T_new_inertial_body · v_new_inertial`); every
+        // body-frame quantity (ω_body, mass tensor) is unchanged.
+        // [`evaluate_contact_pair`] should commute with this relabel:
+        // `force_rotated == R · force_baseline` to f64 round-off.
+        let r_axis = DVec3::new(0.7, -0.5, 0.2).normalize();
+        let r_angle = 1.3_f64;
+        let r_inertial_to_rotated = DMat3::from_axis_angle(r_axis, r_angle);
+        let r_t = r_inertial_to_rotated.transpose();
+
+        let trans_a_rot = TranslationalState {
+            position: r_inertial_to_rotated * trans_a_base.position,
+            velocity: r_inertial_to_rotated * trans_a_base.velocity,
+        };
+        let trans_b_rot = TranslationalState {
+            position: r_inertial_to_rotated * trans_b_base.position,
+            velocity: r_inertial_to_rotated * trans_b_base.velocity,
+        };
+        // Body attitude: build `T_new_inertial_body = T_inertial_body * R^T`
+        // explicitly and round-trip through the matrix→quat helper to
+        // avoid quaternion-composition-order ambiguity.
+        let t_inertial_body_a_base = q_a_base.left_quat_to_transformation();
+        let t_inertial_body_b_base = q_b_base.left_quat_to_transformation();
+        let t_inertial_body_a_rot = t_inertial_body_a_base * r_t;
+        let t_inertial_body_b_rot = t_inertial_body_b_base * r_t;
+        let q_a_rot = JeodQuat::left_quat_from_transformation(&t_inertial_body_a_rot);
+        let q_b_rot = JeodQuat::left_quat_from_transformation(&t_inertial_body_b_rot);
+
+        let rot_a_rot = RotationalState {
+            quaternion: q_a_rot,
+            // ω is body-frame; unchanged by the inertial-frame relabel.
+            ang_vel_body: rot_a_base.ang_vel_body,
+        };
+        let rot_b_rot = RotationalState {
+            quaternion: q_b_rot,
+            ang_vel_body: rot_b_base.ang_vel_body,
+        };
+
+        let rotated = evaluate_contact_pair(
+            &facet,
+            &facet,
+            &trans_a_rot,
+            &trans_b_rot,
+            Some(&rot_a_rot),
+            Some(&rot_b_rot),
+            t_struct_body,
+            t_struct_body,
+            Some(&mass),
+            Some(&mass),
+        )
+        .expect("non-trivial overlap by construction");
+
+        let expected = r_inertial_to_rotated * baseline.force_on_a;
+        let diff = rotated.force_on_a - expected;
+        let mag_ref = baseline
+            .force_on_a
+            .length()
+            .max(rotated.force_on_a.length());
+        println!(
+            "D4-C covariance: baseline={:?} rotated={:?} R*baseline={:?} \
+             |diff|={:.3e} |F|={:.3e} rel={:.3e}",
+            baseline.force_on_a,
+            rotated.force_on_a,
+            expected,
+            diff.length(),
+            mag_ref,
+            diff.length() / mag_ref.max(f64::MIN_POSITIVE),
+        );
+
+        // The 120 μN per-stage residual sits at ~3e-7 of |F| ≈ 430 N.
+        // If [`evaluate_contact_pair`] had a frame-dependent error at
+        // that scale, |diff| would be at or above 1.2e-4 N. The
+        // observed |diff| is at f64 round-off (~1e-12 N at this
+        // fixture). 1e-10 N leaves comfortable headroom for
+        // cross-platform FP variance while still being ~6 orders of
+        // magnitude tighter than the residual — a real D4-C effect
+        // would trip this without ambiguity.
+        assert!(
+            diff.length() < 1.0e-10,
+            "contact force is not frame-covariant: rotating every input by R produced \
+             a force that differs from R·force_baseline by |diff|={:.3e} N. \
+             A genuine subject-body-frame vs inertial-frame discrepancy at the \
+             120 μN-residual scale would show |diff| > 1.2e-4 N here.",
+            diff.length(),
+        );
+    }
+
     /// `IntegrableObject::advance_intermediate` requires `snapshot`
     /// to have populated `scratch.temps_snapshot` to the same length
     /// as `temperatures`. Without the preceding snapshot, the scratch
