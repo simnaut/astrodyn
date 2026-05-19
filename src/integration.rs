@@ -1810,13 +1810,10 @@ mod tests {
             });
             // Zero contact for this guard — the property under test
             // is the stage *input* ordering, not the contact
-            // arithmetic (see Direction 1 guard
-            // `evaluate_contact_pair_matches_jeod_subject_frame_formula`
-            // for the contact-force algebra). The derivative
-            // time-shift discriminator below reconstructs a contact
-            // force in post from the recorded snapshots, which keeps
-            // the contact-force shape and the lockstep contract
-            // independent.
+            // arithmetic. The derivative time-shift discriminator
+            // below reconstructs a contact force in post from the
+            // recorded snapshots, which keeps the contact-force shape
+            // and the lockstep contract independent.
             for entry in out.iter_mut() {
                 *entry = (DVec3::ZERO, DVec3::ZERO);
             }
