@@ -120,7 +120,7 @@ sha2 = "0.10"
 # emits criterion-integrated flamegraph SVGs under
 # `target/criterion/<group>/<bench>/profile/`.
 criterion = "0.5"
-pprof = { version = "0.14", features = ["flamegraph", "criterion"] }
+pprof = { version = "0.15", features = ["flamegraph", "criterion"] }
 
 # Workspace-wide lint policy. Inherited by every member that adds
 # `[lints] workspace = true` to its Cargo.toml. Single point of truth
