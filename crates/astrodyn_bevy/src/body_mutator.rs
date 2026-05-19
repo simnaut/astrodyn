@@ -483,7 +483,7 @@ fn _entity_label(names: &Query<&'static Name>, entity: Entity) -> String {
 
 /// Assert that `body` is a registered dynamic body (carries
 /// [`DynamicsConfigC`]). The same misuse → fail-loud pattern
-/// [`source_mutator::_fetch_frame_entity`] applies for source-targeted
+/// `source_mutator::_fetch_frame_entity` applies for source-targeted
 /// queries — passing a non-body entity (e.g. a gravity source) panics
 /// here with a diagnostic naming the misuse.
 fn _assert_is_body(
