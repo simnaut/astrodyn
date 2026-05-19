@@ -567,6 +567,10 @@ mod tests {
         // Deliberately no SunMarker / SunBundle in the world; the
         // `Without<SunMarker>` body still appears in the system's
         // query, and the missing-Sun branch panics naming it.
+        // JEOD_INV: IN.09 — body carrying SolarBetaC without a
+        // SunMarker in the World; per-step safety net inside
+        // solar_beta_system (the startup `validation` pass is the
+        // first line, this is the fallback for bodies that bypass it).
         app.add_systems(Update, solar_beta_system::<Earth>);
         app.update();
     }
