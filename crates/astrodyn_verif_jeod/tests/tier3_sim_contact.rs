@@ -73,7 +73,9 @@ const JEOD_MU: f64 = 0.05;
 const DT: f64 = 0.01;
 
 /// Log cycle (for matching checkpoints): 0.05 s (from input.py LOG_CYCLE).
-#[allow(dead_code)] // Retained for documentation; checkpoints come from CSV rows.
+/// Used by `tier3_contact_point_off_center_stage4_probe` to walk the CSV
+/// rows in lockstep with manual RK4 propagation; the standard tests
+/// derive checkpoint times directly from CSV rows.
 const LOG_CYCLE: f64 = 0.05;
 
 /// Simulation duration (from input.py `exec_set_terminate_time(10)`).
@@ -883,6 +885,233 @@ fn tier3_contact_point_off_center() {
         &records,
         POINT_OFF_CENTER_FORCE_TOL,
         POINT_OFF_CENTER_TORQUE_TOL,
+    );
+}
+
+/// Issue #460: probes whether the `POINT_OFF_CENTER_*_TOL` headroom over
+/// head-on tolerances is a force/torque sampling artifact rather than a
+/// physics gap.
+///
+/// JEOD's `ContactSurface::collect_forces_torques` is registered as a
+/// derivative-class job in `Contact_S_modules/sv_dyn.sm:134`, so the
+/// `contact_force` column logged at time `t` is whatever stage 4 of the
+/// most-recent RK4 step wrote — evaluated at the intermediate state
+/// `y_n + dt·k3`, not the integrated end-of-step state `y_{n+1}`.
+/// `tier3_contact_point_off_center` re-evaluates `evaluate_contact_pair`
+/// at `y_{n+1}` from the checkpoint snapshot, so for ω ≠ 0 the two
+/// samples drift by O(h^5) × spring stiffness even when the underlying
+/// physics is bit-identical.
+///
+/// This probe propagates the same scenario directly through
+/// `integrate_bodies_contact_coupled` (no `Simulation` wrapping), with a
+/// recording closure that captures stage 4's force/torque per step.
+/// Asserting (a) trajectory at the production f64-noise floor confirms
+/// the manual propagation is bit-equivalent to `Simulation::step()` for
+/// the SIM_contact scenario, then (b) stage-4 force/torque at the
+/// head-on tolerances confirms no physics gap remains in `#460`.
+#[test]
+fn tier3_contact_point_off_center_stage4_probe() {
+    use astrodyn::{integrate_bodies_contact_coupled, CoupledBodyInput, CoupledIntegScratch};
+    use std::cell::Cell;
+
+    let csv_path = test_data_path("contact_point_off_center_contact_state.csv");
+    let records = load_contact_csv(&csv_path);
+    let init = &records[0];
+
+    let facet = ContactFacet::point(DVec3::ZERO, 1.0, jeod_steel());
+    let mass_props = MassProperties::with_inertia(
+        100.0,
+        DMat3::from_cols(
+            DVec3::new(40.0, 0.0, 0.0),
+            DVec3::new(0.0, 40.0, 0.0),
+            DVec3::new(0.0, 0.0, 40.0),
+        ),
+        DVec3::ZERO,
+    );
+    let masses = [mass_props, mass_props];
+
+    let mut trans = [
+        TranslationalState {
+            position: init.veh1_pos,
+            velocity: init.veh1_vel,
+        },
+        TranslationalState {
+            position: init.veh2_pos,
+            velocity: init.veh2_vel,
+        },
+    ];
+    let mut rot = [
+        RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        },
+        RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        },
+    ];
+
+    let mut scratch = CoupledIntegScratch::new();
+
+    // Stage-4 captures, refreshed every step.
+    let stage_call_count: Cell<usize> = Cell::new(0);
+    let stage4_force_a: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_torque_a_body: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_torque_b_body: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_quat_a: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+    let stage4_quat_b: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+
+    let steps_total = (SIM_DURATION / DT).round() as usize;
+    let log_step_stride = (LOG_CYCLE / DT).round() as usize;
+
+    let mut max_pos_err = 0.0_f64;
+    let mut max_vel_err = 0.0_f64;
+    let mut max_force_err_struct = 0.0_f64;
+    let mut max_torque_err_body = 0.0_f64;
+
+    for step in 0..=steps_total {
+        if step % log_step_stride == 0 {
+            let log_idx = step / log_step_stride;
+            assert!(
+                log_idx < records.len(),
+                "step {step} maps to log idx {log_idx} >= {} CSV rows",
+                records.len()
+            );
+            let rec = &records[log_idx];
+            max_pos_err = max_pos_err.max((trans[0].position - rec.veh1_pos).length());
+            max_pos_err = max_pos_err.max((trans[1].position - rec.veh2_pos).length());
+            max_vel_err = max_vel_err.max((trans[0].velocity - rec.veh1_vel).length());
+            max_vel_err = max_vel_err.max((trans[1].velocity - rec.veh2_vel).length());
+            // Stage-4 sample only exists after the first step.
+            if step > 0 {
+                let t_inertial_body_a = stage4_quat_a.get().left_quat_to_transformation();
+                let t_inertial_body_b = stage4_quat_b.get().left_quat_to_transformation();
+                let force_a_struct = t_inertial_body_a * stage4_force_a.get();
+                let force_b_struct = t_inertial_body_b * (-stage4_force_a.get());
+                max_force_err_struct =
+                    max_force_err_struct.max((force_a_struct - rec.veh1_force).length());
+                max_force_err_struct =
+                    max_force_err_struct.max((force_b_struct - rec.veh2_force).length());
+                max_torque_err_body = max_torque_err_body
+                    .max((stage4_torque_a_body.get() - rec.veh1_torque).length());
+                max_torque_err_body = max_torque_err_body
+                    .max((stage4_torque_b_body.get() - rec.veh2_torque).length());
+            }
+        }
+
+        if step == steps_total {
+            break;
+        }
+
+        stage_call_count.set(0);
+        let (trans_a, trans_b) = trans.split_at_mut(1);
+        let (rot_a, rot_b) = rot.split_at_mut(1);
+        let mut inputs = [
+            CoupledBodyInput {
+                trans: &mut trans_a[0],
+                rot: &mut rot_a[0],
+                mass: &masses[0],
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+            CoupledBodyInput {
+                trans: &mut trans_b[0],
+                rot: &mut rot_b[0],
+                mass: &masses[1],
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+        ];
+
+        integrate_bodies_contact_coupled(
+            &mut inputs,
+            &mut scratch,
+            |_, _, _, _| DVec3::ZERO,
+            |stage_trans, stage_rot, out| {
+                let call = stage_call_count.get();
+                stage_call_count.set(call + 1);
+
+                let ev = evaluate_contact_pair(
+                    &facet,
+                    &facet,
+                    &stage_trans[0],
+                    &stage_trans[1],
+                    Some(&stage_rot[0]),
+                    Some(&stage_rot[1]),
+                    DMat3::IDENTITY,
+                    DMat3::IDENTITY,
+                    Some(&masses[0]),
+                    Some(&masses[1]),
+                );
+
+                let (force_a, torque_a, torque_b) = match ev {
+                    Some(eval) => {
+                        out[0].0 += eval.force_on_a;
+                        out[1].0 -= eval.force_on_a;
+                        out[0].1 += eval.torque_a_body;
+                        out[1].1 += eval.torque_b_body;
+                        (eval.force_on_a, eval.torque_a_body, eval.torque_b_body)
+                    }
+                    None => (DVec3::ZERO, DVec3::ZERO, DVec3::ZERO),
+                };
+
+                // Stage 4 is the 4th (zero-indexed 3) contact_eval call
+                // per coupled-RK4 step; this is what JEOD's derivative
+                // job leaves in `contact_surface.contact_force` at the
+                // moment the logger samples.
+                if call == 3 {
+                    stage4_force_a.set(force_a);
+                    stage4_torque_a_body.set(torque_a);
+                    stage4_torque_b_body.set(torque_b);
+                    stage4_quat_a.set(stage_rot[0].quaternion);
+                    stage4_quat_b.set(stage_rot[1].quaternion);
+                }
+            },
+            DT,
+        );
+    }
+
+    println!(
+        "tier3_contact_point_off_center_stage4_probe: pos={max_pos_err:.3e} m, \
+         vel={max_vel_err:.3e} m/s, stage-4 force={max_force_err_struct:.3e} N, \
+         stage-4 torque={max_torque_err_body:.3e} N·m"
+    );
+
+    // Same bar as `tier3_contact_point_off_center` — proves the manual
+    // propagation here is bit-equivalent to `Simulation::step()` for
+    // SIM_contact (gravity-free, 2 bodies, single contact pair).
+    assert!(
+        max_pos_err < 1.6e-14,
+        "probe trajectory diverged from production: pos err {max_pos_err:.3e}"
+    );
+    assert!(
+        max_vel_err < 3.5e-15,
+        "probe trajectory diverged from production: vel err {max_vel_err:.3e}"
+    );
+
+    // Sampling at JEOD's actual logged-stage state collapses the gap to
+    // FP-noise on off-center geometry: observed 9.1e-9 N force and
+    // 2.03e-13 N·m torque (vs `POINT_OFF_CENTER_*_TOL` of 3.75e-2 N /
+    // 3.10e-3 N·m at end-of-step sampling — a 6- and 10-orders-of-
+    // magnitude collapse). The head-on `CONTACT_TORQUE_TOL` (2.0e-13)
+    // is fractionally tighter because head-on FP rounding paths happen
+    // to be cleaner; both are at the off-center / head-on noise floors
+    // respectively. Tolerances below are 1.1× observed to leave
+    // cross-platform headroom while still tripping on any real physics
+    // regression that breaks per-stage parity.
+    const PROBE_STAGE4_FORCE_TOL: f64 = 1.0e-8; // 1.1× observed 9.089e-9 N
+    const PROBE_STAGE4_TORQUE_TOL: f64 = 2.5e-13; // 1.23× observed 2.025e-13 N·m
+    assert!(
+        max_force_err_struct < PROBE_STAGE4_FORCE_TOL,
+        "stage-4 force err {max_force_err_struct:.3e} N >= tol \
+         {PROBE_STAGE4_FORCE_TOL:.3e} N — per-stage parity regressed; \
+         the sampling-artifact hypothesis no longer fully explains the residual"
+    );
+    assert!(
+        max_torque_err_body < PROBE_STAGE4_TORQUE_TOL,
+        "stage-4 torque err {max_torque_err_body:.3e} N·m >= tol \
+         {PROBE_STAGE4_TORQUE_TOL:.3e} N·m — per-stage parity regressed; \
+         the sampling-artifact hypothesis no longer fully explains the residual"
     );
 }
 
