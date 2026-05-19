@@ -507,23 +507,25 @@ fn find_test_fn_body_end(lines: &[&str], attr_idx: usize) -> Option<usize> {
     None
 }
 
-/// Direction 6 (informational seed from #531): every `enforced`
-/// catalog row should have at least one negative test driving the
-/// misconfiguration. Emits a `::warning::`-style coverage report and
-/// PASSES regardless — the bidirectional gate is staged in chunks
-/// (this PR seeds the matcher + a handful of tests; subsequent PRs
-/// fill in the per-section bodies; the final PR in the chain promotes
-/// this to a hard `assert!`).
+/// Direction 6 (promoted in #535): every `enforced` catalog row
+/// must have at least one `#[should_panic(expected = "…")]` negative
+/// test driving the misconfiguration. The matcher is grep-based
+/// (see `find_negative_tests` above): a `// JEOD_INV: XX.YY` token
+/// inside the test function body OR on the 6 lines immediately
+/// preceding the `#[should_panic]` attribute counts.
 ///
-/// Rationale: today the bidirectional `tag ↔ catalog` checks above
-/// only prove the tag *exists* at the enforcement site. They do not
-/// prove the `assert!` actually fires under misconfiguration — an
+/// Rationale: the bidirectional `tag ↔ catalog` checks above only
+/// prove the tag *exists* at the enforcement site. They do not prove
+/// the `assert!` actually fires under misconfiguration — an
 /// AI-authored refactor could neuter a panic site to a silent
 /// `if … return` and CI would stay green. A `#[should_panic(expected
 /// = "…")]` negative test that drives the failure and pins the panic
 /// message text closes that gap.
+///
+/// `partial` rows are reported but not required (best-effort per the
+/// #535 acceptance criteria).
 #[test]
-fn enforced_rows_have_negative_tests_or_warn() {
+fn every_enforced_row_has_a_negative_test() {
     let catalog = parse_catalog();
     let neg_tests = find_negative_tests();
 
@@ -556,7 +558,7 @@ fn enforced_rows_have_negative_tests_or_warn() {
     let partial_total = covered_partial.len() + missing_partial.len();
 
     eprintln!();
-    eprintln!("=== Negative-test coverage (#531 seed gate, informational) ===");
+    eprintln!("=== Negative-test coverage (#535 promoted gate) ===");
     eprintln!(
         "enforced: {}/{} rows have a #[should_panic] negative test",
         covered_enforced.len(),
@@ -596,22 +598,29 @@ fn enforced_rows_have_negative_tests_or_warn() {
     eprintln!("================================================================");
     eprintln!();
 
-    // Pass unconditionally this round. The gate is promoted to an
-    // assertion once the catalog body lands (tracked as follow-up
-    // sub-issues of #517 / #531).
-    //
-    // Sanity check: the matcher must locate at least the seed tests
-    // landed alongside this gate; if zero rows are covered, the
-    // scanner is broken and the informational-mode escape hatch is
-    // hiding the breakage.
+    // Promoted gate (#535): every `enforced` row in the catalog must
+    // carry a tagged `#[should_panic]` negative test. The eprintln
+    // report above lists any missing rows so CI failure output names
+    // them; this assertion is the actual fail-loud guarantee.
+    assert!(
+        missing_enforced.is_empty(),
+        "Invariants marked `enforced` in `docs/JEOD_invariants.md` but lacking a \
+         #[should_panic] negative test: {:?}. Add a `#[should_panic(expected = \"<substring>\")]` \
+         test that drives the misconfiguration near the enforcement site, tagged with \
+         `// JEOD_INV: XX.YY` inside the test body or within the 6 lines preceding the \
+         attribute.",
+        missing_enforced
+    );
+
+    // Defensive sanity guard: if the scanner ever silently returns
+    // zero matches the assertion above would trivially pass on an
+    // empty `missing_enforced` vec only when the catalog itself is
+    // empty (already false today). This assert documents the implicit
+    // dependency and surfaces scanner breakage as a distinct failure.
     assert!(
         !covered_enforced.is_empty(),
-        "Negative-test scanner found zero covered `enforced` rows. \
-         The seed tests in `gravity_controls.rs`, `mass.rs`, and \
-         `crates/astrodyn_quantities/tests/quat_normalize_panic.rs` \
-         should each contribute coverage; if all of them are missing \
-         the scanner has regressed (window, brace-counting, or root \
-         set), not the test suite."
+        "Negative-test scanner found zero covered `enforced` rows — the scanner \
+         has regressed (window, brace-counting, or root set), not the test suite."
     );
 }
 
