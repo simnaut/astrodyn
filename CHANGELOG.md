@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-19
+
+### Changed
+
+- **MSRV bumped to 1.89** (was 1.87). Forced by `bevy 0.18.1` declaring
+  its own `rust-version = "1.89"`; cargo's MSRV-aware resolution refuses
+  to build the workspace on older toolchains. README § "Minimum
+  supported Rust version" updated.
+
+### Breaking
+
+- `astrodyn::source_frames::SourceFrameIds` gained a `pub central: bool`
+  field (originally landed in #568 without a version bump). Downstream
+  code constructing this struct via struct literal must add the new
+  field. Detected and gated by the new `cargo-semver-checks` CI job.
+
+### Tooling
+
+Bundled as part of [#527](https://github.com/simnaut/astrodyn/issues/527):
+
+- `cargo-deny` supply-chain fence (`deny.toml`, advisories + licenses +
+  bans + sources). Caught and cleared two real `rustls-webpki`
+  vulnerabilities (RUSTSEC-2026-0099 / -0104) during initial wiring.
+- Dependabot weekly cadence on `cargo` and `github-actions`, grouped
+  minor/patch.
+- MSRV CI gate using `dtolnay/rust-toolchain@1.89`.
+- `cargo-semver-checks` gating the public `astrodyn` surface against
+  the crates.io baseline.
+- `cargo-hack` feature-powerset on `astrodyn_ephemeris` to keep the
+  `--no-default-features` air-gapped build path honest.
+- CI ergonomics: cancel-superseded `concurrency:` blocks on both
+  `ci.yml` and the new `tooling.yml`, plus `RUST_BACKTRACE=1` so
+  Tier 3 / parity panics emit stack traces.
+
 ## [0.1.0] - 2026-04-28
 
 Initial public release. The original phased implementation plan
@@ -63,4 +97,5 @@ Fourteen workspace crates at this version:
   `run_verification` scenario rigs) and `astrodyn_verif_parity`
   (runner ↔ Bevy bit-identical parity tests).
 
+[0.2.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.2.0
 [0.1.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.0

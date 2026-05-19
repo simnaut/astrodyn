@@ -34,7 +34,7 @@ all-features = true
 ignored = ["sha2"]
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 log = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }

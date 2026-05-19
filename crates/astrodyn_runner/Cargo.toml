@@ -16,7 +16,7 @@ rust-version.workspace = true
 bench = false
 
 [dependencies]
-astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn = { path = "../..", version = "0.2.0" }
 glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }

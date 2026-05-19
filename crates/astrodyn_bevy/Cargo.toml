@@ -22,7 +22,7 @@ rust-version.workspace = true
 schedule_audit = ["bevy/debug"]
 
 [dependencies]
-astrodyn = { path = "../..", version = "0.1.0" }
+astrodyn = { path = "../..", version = "0.2.0" }
 glam = { workspace = true }
 bevy = { workspace = true }
 bevy_reflect = { workspace = true }

@@ -24,16 +24,16 @@ exclude = [
 ]
 
 [dependencies]
-astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.1.0" }
-astrodyn_math = { path = "crates/astrodyn_math", version = "0.1.0" }
-astrodyn_dynamics = { path = "crates/astrodyn_dynamics", version = "0.1.0" }
-astrodyn_gravity = { path = "crates/astrodyn_gravity", version = "0.1.0" }
-astrodyn_time = { path = "crates/astrodyn_time", version = "0.1.0" }
-astrodyn_frames = { path = "crates/astrodyn_frames", version = "0.1.0" }
-astrodyn_atmosphere = { path = "crates/astrodyn_atmosphere", version = "0.1.0" }
-astrodyn_interactions = { path = "crates/astrodyn_interactions", version = "0.1.0" }
-astrodyn_ephemeris = { path = "crates/astrodyn_ephemeris", version = "0.1.0" }
-astrodyn_planet = { path = "crates/astrodyn_planet", version = "0.1.0" }
+astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.2.0" }
+astrodyn_math = { path = "crates/astrodyn_math", version = "0.2.0" }
+astrodyn_dynamics = { path = "crates/astrodyn_dynamics", version = "0.2.0" }
+astrodyn_gravity = { path = "crates/astrodyn_gravity", version = "0.2.0" }
+astrodyn_time = { path = "crates/astrodyn_time", version = "0.2.0" }
+astrodyn_frames = { path = "crates/astrodyn_frames", version = "0.2.0" }
+astrodyn_atmosphere = { path = "crates/astrodyn_atmosphere", version = "0.2.0" }
+astrodyn_interactions = { path = "crates/astrodyn_interactions", version = "0.2.0" }
+astrodyn_ephemeris = { path = "crates/astrodyn_ephemeris", version = "0.2.0" }
+astrodyn_planet = { path = "crates/astrodyn_planet", version = "0.2.0" }
 glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
@@ -67,21 +67,29 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1"
+# 0.1.1 → 0.2.0: PR #568 added a `pub` field (`SourceFrameIds.central`)
+# to a struct-literal-constructible `pub struct` after 0.1.1 was
+# published. Under cargo-semver-checks's rules (and pre-1.0 semver, where
+# the middle digit is the major axis) that's a breaking change requiring
+# a minor-axis bump. The version propagates to all 17 workspace members
+# via `version.workspace = true`; path-dep version constraints across the
+# crate Cargo.tomls are updated from `0.1.0` to `0.2.0` in the same
+# commit so resolution still picks the in-tree copies.
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/simnaut/astrodyn"
-# Declared MSRV. The binding constraints are (a) the `bevy = "0.18"`
-# dep tree (released targeting Rust ~1.85) and (b) usage of
-# `u{32,usize}::is_multiple_of` (stabilized in Rust 1.87) inside the
-# Gauss–Jackson integrator. 1.87 is the conservative-but-modern floor
-# that satisfies both. Cargo surfaces a clean
-# `error: package requires Rust 1.87` for older toolchains instead of
-# the cryptic compile errors users would otherwise see. The
-# `clippy::incompatible_msrv` lint also fires against any stdlib item
-# stabilized after this floor, preventing silent MSRV drift. See
-# `README.md` § "Minimum supported Rust version" for the bump policy.
-rust-version = "1.87"
+# Declared MSRV. The binding constraint is bevy 0.18.1, which declares
+# `rust-version = "1.89"` in its own metadata — MSRV-aware resolution
+# in cargo 1.85+ refuses to build with anything older. Our own direct
+# usage (`u{32,usize}::is_multiple_of`, stabilized in 1.87) sits below
+# this floor. Cargo surfaces a clean `error: package requires Rust 1.89`
+# for older toolchains instead of the cryptic transitive compile errors
+# users would otherwise see. The `clippy::incompatible_msrv` lint also
+# fires against any stdlib item stabilized after this floor, preventing
+# silent MSRV drift. See `README.md` § "Minimum supported Rust version"
+# for the bump policy.
+rust-version = "1.89"
 
 # Workspace-wide attribution metadata. `notice` points at the repo-root
 # NOTICE.md that documents the verbatim NASA JEOD source mirror under

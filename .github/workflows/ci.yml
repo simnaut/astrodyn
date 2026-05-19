@@ -5,8 +5,24 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel superseded runs on PR branches so rapid-fire pushes don't burn double
+# minutes through the test matrix. The expression gates `cancel-in-progress`
+# on the ref so a push to main never cancels an in-flight `test-tier3-full`,
+# `test-parity-trajectory-full`, or `perf-baseline-track` run — those are
+# main-only and produce the artifacts (perf-history, Tier 3 cross-val report)
+# the project relies on.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
+  # Tier 3 / parity panics emit only the panic line by default; this flag
+  # turns every panicking test into a usable stack trace without per-step
+  # opt-in. Cheap and uniformly applied — the rust toolchain reads
+  # `RUST_BACKTRACE` from the environment regardless of which `cargo` /
+  # `nextest` invocation drove the test.
+  RUST_BACKTRACE: 1
 
 jobs:
   check:

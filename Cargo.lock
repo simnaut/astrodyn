@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_atmosphere",
  "astrodyn_dynamics",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_atmosphere"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_bevy"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn",
  "astrodyn_runner",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_dynamics"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_frames",
  "astrodyn_math",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_ephemeris"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anise",
  "astrodyn_quantities",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_frames"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_gravity"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_dynamics",
  "astrodyn_frames",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_interactions"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_atmosphere",
  "astrodyn_dynamics",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_math"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "astrodyn_verif_jeod_fixtures",
@@ -363,7 +363,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_planet"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_math",
  "astrodyn_quantities",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_quantities"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "glam 0.30.10",
  "proptest",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_runner"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn",
  "glam 0.30.10",
@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_time"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "log",
@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_verif_jeod"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn",
  "astrodyn_runner",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_verif_jeod_fixtures"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn_quantities",
  "glam 0.30.10",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_verif_nesc"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn",
  "astrodyn_runner",
@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "astrodyn_verif_parity"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "astrodyn",
  "astrodyn_bevy",
@@ -4021,9 +4021,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "ring",
  "rustls-pki-types",

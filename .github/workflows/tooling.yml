@@ -1,0 +1,102 @@
+# Tooling-hygiene CI (#527): supply-chain, MSRV, public-API, feature matrix.
+#
+# Lives separately from `ci.yml` so the heavy Tier 3 / parity / perf-budget
+# matrix can evolve independently of the supply-chain / API-surface fences.
+# All jobs here are unconditional on PRs and pushes to main — they are cheap
+# enough (no fixture data, no Tier 3 propagation) that path-filtering would
+# add more complexity than it saves.
+
+name: Tooling
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on PR branches; never cancel a run on main so the
+# advisory database refresh and MSRV gate complete for every merged commit.
+concurrency:
+  group: tooling-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tier 3 / parity panics in `ci.yml` already benefit from a stack trace; the
+  # tooling jobs here inherit the same posture for `cargo check` ICEs and
+  # cargo-deny crashes.
+  RUST_BACKTRACE: 1
+
+jobs:
+  cargo-deny:
+    # Supply-chain fence. `cargo deny check` runs all four sections from
+    # `deny.toml` at the repo root: advisories (RUSTSEC), licenses (SPDX
+    # allowlist), bans (duplicate detection — warn-mode), sources (crates.io-
+    # only). New advisories against any dep fail this job.
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          # Advisories DB is fetched fresh on every run; no caching of the
+          # advisory state — a 24-hour-old cache hit would defeat the point.
+
+  msrv:
+    # MSRV gate at Rust 1.89 (matches `rust-version` in [workspace.package]).
+    # `cargo check --workspace --all-targets` exercises lib, bin, test, bench,
+    # and example targets — catches stdlib drift (cfg-gated syntax, transitive-
+    # dep MSRV bumps) that `clippy::incompatible_msrv` on stable cannot see.
+    # The 1.89 floor is set by bevy 0.18.1's own `rust-version` declaration;
+    # see `README.md` § "Minimum supported Rust version" for the bump policy.
+    name: MSRV (1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache key from the stable-toolchain jobs in `ci.yml` so
+          # 1.89 artifacts don't poison `cargo build` on stable and vice versa.
+          key: msrv-1.89
+      - run: cargo check --workspace --all-targets
+
+  cargo-semver-checks:
+    # Public-API regression fence on the single crate published to crates.io
+    # (`astrodyn`). Other workspace members are path-only deps inside this
+    # repo and have no external consumers; running semver-checks on them
+    # would just compare against a missing crates.io baseline.
+    #
+    # Gating from day one (per #527 decision): a breaking change to
+    # `astrodyn`'s public surface fails this job. Intentional breaks during
+    # the 0.1.x line bump the minor version in the same PR — semver-checks
+    # honors the version-bump signal.
+    name: cargo-semver-checks (astrodyn)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: semver-checks
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: astrodyn
+
+  cargo-hack:
+    # Feature-matrix fence on `astrodyn_ephemeris`. `README.md` documents
+    # `--no-default-features` as the air-gapped build path (used with the
+    # `$ASTRODYN_EPHEMERIS_KERNELS_DIR` flow), but the default workspace
+    # `cargo check` only ever exercises the default feature set. Without this
+    # job, a regression that breaks the no-default build surfaces only in
+    # customer environments. Extend `-p` as other crates grow feature flags.
+    name: cargo-hack (astrodyn_ephemeris feature-powerset)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cargo-hack
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack check -p astrodyn_ephemeris --feature-powerset --no-dev-deps

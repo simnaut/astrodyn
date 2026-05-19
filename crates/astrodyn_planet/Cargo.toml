@@ -14,7 +14,7 @@ rust-version.workspace = true
 all-features = true
 
 [dependencies]
-astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.1.0" }
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
 glam = { workspace = true }
 # `regex` is consumed only by the `extract_planet_pfixposn` regen binary;
 # excluded from publishes via `[package] exclude` if/when this crate is
@@ -28,7 +28,7 @@ sha2 = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]
-astrodyn_math = { path = "../astrodyn_math", version = "0.1.0" }
+astrodyn_math = { path = "../astrodyn_math", version = "0.2.0" }
 
 [lints]
 workspace = true
