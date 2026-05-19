@@ -739,20 +739,20 @@ mod tests {
         ContactMaterial::jeod_spring(stiffness, damping, mu)
     }
 
-    /// Covers the per-body `ω × r_contact_arm` terms in
-    /// `evaluate_contact_pair`'s textbook two-body rel-vel formula.
+    /// Covers the `ω`-dependent terms in `evaluate_contact_pair`'s
+    /// rel-vel formula (`(v_a − v_b) − ω_a × rel_pos + (ω_b − ω_a) × cp_a`,
+    /// matching JEOD `point_contact_pair.cc:79-84`).
     ///
     /// Two equal-mass, equal-inertia spheres at rest translationally but
     /// with a non-zero angular velocity on A only. The pair is at an
-    /// off-centre geometry (veh2 offset in +y), so `r_A_contact` has a
+    /// off-centre geometry (veh2 offset in +y), so `rel_pos` has a
     /// non-zero tangential component in the y direction. With
-    /// translational `v_rel = 0`, any non-zero friction force proves that
-    /// `ω_a × arm_a − ω_b × arm_b` propagates into `rel_vel`
-    /// (issue #117 — matches JEOD `point_contact_pair.cc:83-84` for
-    /// sphere-sphere contact). This locks the kinematic plumbing against
-    /// regressions that Tier 3 doesn't catch on its own — the symmetric
-    /// SIM_contact scenarios produce `ω_a = ω_b` so the per-body terms
-    /// don't cancel even though `ω_rel = 0`.
+    /// translational `v_rel = 0`, any non-zero friction force proves
+    /// that the kinematic `ω`-cross terms propagate into `rel_vel`.
+    /// This locks the kinematic plumbing against regressions that
+    /// Tier 3 doesn't catch on its own — the symmetric SIM_contact
+    /// scenarios produce `ω_a = ω_b` so the per-body terms don't
+    /// cancel even though `ω_rel = 0`.
     #[test]
     fn evaluate_contact_pair_uses_omega_cross_contact_arm_in_rel_vel() {
         // Identity attitudes and t_struct_body so all frames coincide
