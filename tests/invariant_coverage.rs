@@ -612,11 +612,15 @@ fn every_enforced_row_has_a_negative_test() {
         missing_enforced
     );
 
-    // Defensive sanity guard: if the scanner ever silently returns
-    // zero matches the assertion above would trivially pass on an
-    // empty `missing_enforced` vec only when the catalog itself is
-    // empty (already false today). This assert documents the implicit
-    // dependency and surfaces scanner breakage as a distinct failure.
+    // Defensive sanity guard with a dedicated error message for
+    // scanner breakage. If the scanner ever silently returns zero
+    // matches, every `enforced` row lands in `missing_enforced` and
+    // the assertion above already fails — but the failure message
+    // would name all 75 rows and read as "the entire catalog regressed
+    // overnight." This second assert fires on the same condition
+    // (`covered_enforced.is_empty()` ↔ scanner returned nothing) and
+    // points the reader at the scanner (window, brace-counting, root
+    // set) instead.
     assert!(
         !covered_enforced.is_empty(),
         "Negative-test scanner found zero covered `enforced` rows — the scanner \
