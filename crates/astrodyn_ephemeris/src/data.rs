@@ -166,27 +166,27 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 #[cfg(feature = "fetch")]
 mod fetch {
-    use std::io::Read;
-
     use sha2::{Digest, Sha256};
 
     use super::{EphemerisError, KernelSpec};
 
     pub fn download(spec: &KernelSpec) -> Result<Vec<u8>, EphemerisError> {
-        let resp = ureq::get(spec.url)
+        let mut resp = ureq::get(spec.url)
             .call()
             .map_err(|e| EphemerisError::LoadError(format!("GET {}: {e}", spec.url)))?;
-        // `with_capacity` is a hint only; the explicit length check below is
-        // the authoritative validation, so a truncating cast on 32-bit
-        // targets degrades to a re-allocation rather than a wrong result.
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "capacity hint; length is validated below"
-        )]
-        let mut bytes = Vec::with_capacity(spec.bytes as usize);
-        resp.into_reader().read_to_end(&mut bytes).map_err(|e| {
-            EphemerisError::LoadError(format!("reading response body from {}: {e}", spec.url))
-        })?;
+        // ureq 3's default `read_to_vec()` caps at 10 MiB; SPICE kernels can
+        // be hundreds of MB, so we pass the expected byte count through as
+        // the explicit limit. A server returning more than `spec.bytes`
+        // surfaces as a ureq error; a short response is caught by the
+        // explicit length check below.
+        let bytes = resp
+            .body_mut()
+            .with_config()
+            .limit(spec.bytes)
+            .read_to_vec()
+            .map_err(|e| {
+                EphemerisError::LoadError(format!("reading response body from {}: {e}", spec.url))
+            })?;
         if bytes.len() as u64 != spec.bytes {
             return Err(EphemerisError::LoadError(format!(
                 "{}: expected {} bytes from {}, got {}",
