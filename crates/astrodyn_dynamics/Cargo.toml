@@ -29,7 +29,7 @@ uom = { workspace = true }
 astrodyn_math = { path = "../astrodyn_math", version = "0.2.0", features = ["test-utils"] }
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0", features = ["test-utils"] }
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures" }
-sha2 = "0.10"
+sha2 = "0.11"
 proptest = "1"
 
 [lints]

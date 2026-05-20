@@ -350,7 +350,12 @@ fn read_size_and_sha256(path: &Path) -> (u64, String) {
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    (bytes.len() as u64, format!("{:x}", hasher.finalize()))
+    let hex: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    (bytes.len() as u64, hex)
 }
 
 /// Current UTC time formatted as `YYYY-MM-DDThh:mm:ssZ`.

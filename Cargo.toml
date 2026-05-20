@@ -113,7 +113,7 @@ log = "0.4"
 thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 typenum = "1.20"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Benchmarking — dev-only deps, opted into per-crate via
 # `[dev-dependencies]` on the crates that own `benches/`. `pprof`

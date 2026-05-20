@@ -198,7 +198,11 @@ mod fetch {
         }
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
-        let got = format!("{:x}", hasher.finalize());
+        let got: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         if got != spec.sha256 {
             return Err(EphemerisError::LoadError(format!(
                 "{}: SHA-256 mismatch (expected {}, got {}) — refusing to cache \
