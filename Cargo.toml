@@ -119,7 +119,7 @@ sha2 = "0.10"
 # `[dev-dependencies]` on the crates that own `benches/`. `pprof`
 # emits criterion-integrated flamegraph SVGs under
 # `target/criterion/<group>/<bench>/profile/`.
-criterion = "0.5"
+criterion = "0.8"
 pprof = { version = "0.15", features = ["flamegraph", "criterion"] }
 
 # Workspace-wide lint policy. Inherited by every member that adds
