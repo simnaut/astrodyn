@@ -73,7 +73,9 @@ const JEOD_MU: f64 = 0.05;
 const DT: f64 = 0.01;
 
 /// Log cycle (for matching checkpoints): 0.05 s (from input.py LOG_CYCLE).
-#[allow(dead_code)] // Retained for documentation; checkpoints come from CSV rows.
+/// Used by `tier3_contact_point_off_center_stage4_probe` to walk the CSV
+/// rows in lockstep with manual RK4 propagation; the standard tests
+/// derive checkpoint times directly from CSV rows.
 const LOG_CYCLE: f64 = 0.05;
 
 /// Simulation duration (from input.py `exec_set_terminate_time(10)`).
@@ -257,38 +259,51 @@ fn line_mass_props() -> MassProperties {
     )
 }
 
-// Tolerances for contact-force/torque comparisons. The evaluator is
-// re-run at logged (end-of-step) states — not at the RK4 stages JEOD
-// used during integration — so a small difference is expected. Values
-// follow CLAUDE.md's "5% above observed maximum" tolerance policy,
-// with one explicitly-noted exception for `CONTACT_TORQUE_TOL` where
-// the observed max sits at the machine-precision noise floor.
+// Tolerances for contact-force/torque comparisons. Sampled at stage 4
+// of the RK4 step that produced the logged state — matching JEOD's
+// derivative-class `collect_forces_torques` logging
+// (`Contact_S_modules/sv_dyn.sm:134`), where `contact_force` at log
+// time t reflects stage 4 of the last integration step. With the
+// sampling state matched, observed errors collapse to the FP noise
+// floor for both head-on and off-center scenarios, so all five
+// inter-body contact tests share a single tolerance pair.
 //
 // All scenarios — head-on and off-center oblique — match JEOD to the
 // f64 noise floor (~1e-14 m position / ~1e-15 m/s velocity over 10 s).
 // The off-center case previously sat at ~2.5 mm trajectory drift until
 // #560 fixed a formula gap in `evaluate_contact_pair`'s `rel_vel`; see
 // the rel-vel comment block in `src/interactions.rs::evaluate_contact_pair`
-// for the derivation.
-const CONTACT_FORCE_TOL: f64 = 0.034; // N — observed max 32 mN; literal is 1.05× observed (policy).
+// for the derivation. Issue #460 closed the residual per-stage
+// divergence by switching this test path to stage-4 sampling — see
+// `tier3_contact_point_off_center_stage4_probe` for the load-bearing
+// regression guard on the stage-equivalence invariant.
 
-// `CONTACT_TORQUE_TOL` is the documented noise-floor exception: the
-// observed max (~1.2e-13 N·m) is f64 round-off on torque arms of order
-// 1 m crossed with forces of order 1 N. A strict 1.05× literal
-// (~1.26e-13) would false-fail on platforms whose FP rounding paths
-// differ by a few ULPs. `2.0e-13` sits ~1.7× above the observed
-// noise floor — large enough to absorb cross-platform FP variance,
-// still ~12 orders of magnitude tighter than the pre-issue-#117
-// envelope, so any real torque regression trips it.
-const CONTACT_TORQUE_TOL: f64 = 2.0e-13;
+// `CONTACT_FORCE_TOL` covers the loosest observed stage-4 force error
+// across the five inter-body tests (off-center oblique at 9.089e-9 N
+// — see `tier3_contact_point_off_center_stage4_probe`). Head-on tests
+// sit ~3 orders of magnitude tighter (~1.7e-12 N). The literal is
+// ~1.1× the off-center observed for cross-platform FP headroom, which
+// is generous on head-on but still ~7 orders of magnitude tighter
+// than the pre-#460 `POINT_OFF_CENTER_FORCE_TOL` of 0.0375 N — any
+// real per-stage force regression trips this bar with room to spare.
+const CONTACT_FORCE_TOL: f64 = 1.0e-8;
 
-const POINT_OFF_CENTER_FORCE_TOL: f64 = 3.75e-2; // N — observed 3.574e-2 N; literal is 1.05× observed (policy).
-const POINT_OFF_CENTER_TORQUE_TOL: f64 = 3.10e-3; // N·m — observed 2.953e-3 N·m; literal is 1.05× observed (policy).
+// `CONTACT_TORQUE_TOL` is the noise-floor tolerance, set above the
+// loosest observed stage-4 torque error: off-center oblique at
+// 2.025e-13 N·m (head-on rotated tops out at 1.191e-13). FP round-off
+// on torque arms of order 1 m crossed with forces of order 1 N sits
+// at ~1e-13 N·m; a strict 1.05× literal would false-fail on platforms
+// whose FP rounding paths differ by a few ULPs. `3.0e-13` is ~1.5×
+// the off-center observed and ~2.5× the head-on rotated observed —
+// large enough to absorb cross-platform FP variance, still ~10 orders
+// of magnitude tighter than the pre-#460 `POINT_OFF_CENTER_TORQUE_TOL`
+// of 3.1e-3 N·m.
+const CONTACT_TORQUE_TOL: f64 = 3.0e-13;
 
 /// Body state snapshot at a single checkpoint. Carries the full 6-DOF
 /// state (position, velocity, attitude, angular velocity) for each of
-/// the two bodies so tests can both compare trajectories AND re-evaluate
-/// contact force/torque at the logged state.
+/// the two bodies. Used by `tier3_contact_ground`, which compares
+/// trajectories only.
 #[derive(Debug, Clone, Copy)]
 struct CheckpointBodies {
     veh1_trans: TranslationalState,
@@ -297,44 +312,208 @@ struct CheckpointBodies {
     veh2_rot: RotationalState,
 }
 
-/// Propagate two bodies with contact forces evaluated at each RK4 stage
-/// inside `Simulation::step()`. Returns per-step full-6-DOF snapshots at
-/// `LOG_CYCLE` intervals.
+/// Contact checkpoint: body state at log time PLUS the per-body
+/// stage-4 contact force/torque captures from the step that produced
+/// that state.
+///
+/// JEOD's `ContactSurface::contact_force` is overwritten by every call
+/// to the derivative-class `collect_forces_torques` job
+/// (`Contact_S_modules/sv_dyn.sm:134`), so the CSV value at log time
+/// `t` is the result of stage 4 of the most-recent RK4 step,
+/// evaluated at the intermediate state `y_n + dt·k3` — not the
+/// integrated end-of-step state `y_{n+1}`. Stage 4 attitude is
+/// captured alongside force/torque so the test can transform the
+/// inertial-frame force into the body/struct frame using the same
+/// attitude the contact evaluator saw.
+#[derive(Debug, Clone, Copy)]
+struct ContactCheckpoint {
+    state: CheckpointBodies,
+    /// Inertial-frame contact force on body A from stage 4. `ZERO`
+    /// before any step has been taken (matches JEOD's t=0 logging,
+    /// where `contact_force` is initialized to zero before the first
+    /// derivative-job call).
+    stage4_force_on_a_inertial: DVec3,
+    /// Body-frame contact torques from stage 4.
+    stage4_torque_a_body: DVec3,
+    stage4_torque_b_body: DVec3,
+    /// Stage-4 attitudes (used to transform the inertial-frame force
+    /// into each body's body/struct frame to compare against the CSV).
+    stage4_q_a: JeodQuat,
+    stage4_q_b: JeodQuat,
+}
+
+/// Propagate two bodies with contact forces evaluated at every RK4
+/// stage inside `Simulation::step()`. Returns one checkpoint per CSV
+/// row, carrying the body state plus a stage-4 force/torque capture
+/// that matches JEOD's logged-value semantics (see [`ContactCheckpoint`]).
+///
+/// The stage-4 capture is produced by **replaying** the most-recent
+/// RK4 step from a snapshot of the pre-step state through
+/// `integrate_bodies_contact_coupled` with a recording closure. The
+/// replay performs the same arithmetic as production
+/// `Simulation::step()` (deterministic, gravity-free, single contact
+/// pair) so the captured force/torque is bit-equivalent to what JEOD's
+/// derivative-class call left in `contact_surface.contact_force` at
+/// log time. This avoids exposing per-stage diagnostics on
+/// `Simulation` (production-API thrift) while keeping the comparison
+/// JEOD-faithful.
 ///
 /// `facet_a` and `facet_b` define the two contact facets — the shape
-/// positions are relative to each body's structural frame origin, which in
-/// SIM_contact coincides with the body's CoM and inertial position.
+/// positions are relative to each body's structural frame origin,
+/// which in SIM_contact coincides with the body's CoM and inertial
+/// position. `mass_a` and `mass_b` mirror what `Simulation::step()`
+/// passes to `evaluate_contact_pair`.
+#[allow(clippy::too_many_arguments)]
 fn propagate_with_contact(
     sim: &mut Simulation,
     facet_a: ContactFacet,
     facet_b: ContactFacet,
+    mass_a: &MassProperties,
+    mass_b: &MassProperties,
     checkpoints: &[f64],
-) -> Vec<CheckpointBodies> {
+) -> Vec<ContactCheckpoint> {
+    use astrodyn::{integrate_bodies_contact_coupled, CoupledBodyInput, CoupledIntegScratch};
+    use std::cell::Cell;
+
     // Register the contact pair so forces are computed at every RK4 stage
     // (matching JEOD's check_contact derivative-class job).
     sim.register_contact_pair(0, facet_a, 1, facet_b);
 
-    let mut out = Vec::with_capacity(checkpoints.len());
+    let mut out: Vec<ContactCheckpoint> = Vec::with_capacity(checkpoints.len());
     let mut cp_iter = checkpoints.iter().copied().peekable();
 
     let steps_total = (SIM_DURATION / DT).round() as usize;
+    // Pre-step state snapshot for replay-on-checkpoint. Carries
+    // `y_{step-1}` so when we hit a log time we can reproduce the
+    // step that just finished and extract stage 4.
+    let mut prev_state: Option<CheckpointBodies> = None;
+    let mut replay_scratch = CoupledIntegScratch::new();
+
     for step in 0..=steps_total {
         let b_a = sim.body(0);
         let b_b = sim.body(1);
+        let current_state = CheckpointBodies {
+            veh1_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_a.trans),
+            veh1_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                &b_a.rot.expect("6-DOF required for SIM_contact"),
+            ),
+            veh2_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_b.trans),
+            veh2_rot: astrodyn::typed_bridge::rot_typed_to_raw(
+                &b_b.rot.expect("6-DOF required for SIM_contact"),
+            ),
+        };
 
         // Record output at checkpoints (±0.5·dt tolerance on time)
         let t = step as f64 * DT;
         if let Some(&cp) = cp_iter.peek() {
             if (t - cp).abs() <= 0.5 * DT {
-                out.push(CheckpointBodies {
-                    veh1_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_a.trans),
-                    veh1_rot: astrodyn::typed_bridge::rot_typed_to_raw(
-                        &b_a.rot.expect("6-DOF required for SIM_contact"),
+                // Replay the step from `prev_state` (= y_{step-1}) to
+                // capture stage 4 of the call that produced
+                // `current_state`. For step 0 there is no preceding
+                // step, so leave the stage-4 capture at zero — matches
+                // JEOD's t=0 CSV row where contact_force is initialized
+                // but no derivative call has run yet.
+                let (s4_force_a, s4_tq_a, s4_tq_b, s4_q_a, s4_q_b) = match prev_state {
+                    None => (
+                        DVec3::ZERO,
+                        DVec3::ZERO,
+                        DVec3::ZERO,
+                        JeodQuat::identity(),
+                        JeodQuat::identity(),
                     ),
-                    veh2_trans: astrodyn::typed_bridge::trans_typed_to_raw(&b_b.trans),
-                    veh2_rot: astrodyn::typed_bridge::rot_typed_to_raw(
-                        &b_b.rot.expect("6-DOF required for SIM_contact"),
-                    ),
+                    Some(prev) => {
+                        let mut trans = [prev.veh1_trans, prev.veh2_trans];
+                        let mut rot = [prev.veh1_rot, prev.veh2_rot];
+                        let masses = [*mass_a, *mass_b];
+
+                        let stage_call_count: Cell<usize> = Cell::new(0);
+                        let s4_force_on_a: Cell<DVec3> = Cell::new(DVec3::ZERO);
+                        let s4_torque_a: Cell<DVec3> = Cell::new(DVec3::ZERO);
+                        let s4_torque_b: Cell<DVec3> = Cell::new(DVec3::ZERO);
+                        let s4_q_a_cell: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+                        let s4_q_b_cell: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+
+                        let (trans_a_slice, trans_b_slice) = trans.split_at_mut(1);
+                        let (rot_a_slice, rot_b_slice) = rot.split_at_mut(1);
+                        let mut inputs = [
+                            CoupledBodyInput {
+                                trans: &mut trans_a_slice[0],
+                                rot: &mut rot_a_slice[0],
+                                mass: &masses[0],
+                                non_grav_non_contact_force: DVec3::ZERO,
+                                non_contact_torque_body: DVec3::ZERO,
+                            },
+                            CoupledBodyInput {
+                                trans: &mut trans_b_slice[0],
+                                rot: &mut rot_b_slice[0],
+                                mass: &masses[1],
+                                non_grav_non_contact_force: DVec3::ZERO,
+                                non_contact_torque_body: DVec3::ZERO,
+                            },
+                        ];
+
+                        integrate_bodies_contact_coupled(
+                            &mut inputs,
+                            &mut replay_scratch,
+                            |_, _, _, _| DVec3::ZERO,
+                            |stage_trans, stage_rot, accum| {
+                                let call = stage_call_count.get();
+                                stage_call_count.set(call + 1);
+
+                                let ev = evaluate_contact_pair(
+                                    &facet_a,
+                                    &facet_b,
+                                    &stage_trans[0],
+                                    &stage_trans[1],
+                                    Some(&stage_rot[0]),
+                                    Some(&stage_rot[1]),
+                                    DMat3::IDENTITY,
+                                    DMat3::IDENTITY,
+                                    Some(&masses[0]),
+                                    Some(&masses[1]),
+                                );
+
+                                let (force_a, torque_a, torque_b) = match ev {
+                                    Some(eval) => {
+                                        accum[0].0 += eval.force_on_a;
+                                        accum[1].0 -= eval.force_on_a;
+                                        accum[0].1 += eval.torque_a_body;
+                                        accum[1].1 += eval.torque_b_body;
+                                        (eval.force_on_a, eval.torque_a_body, eval.torque_b_body)
+                                    }
+                                    None => (DVec3::ZERO, DVec3::ZERO, DVec3::ZERO),
+                                };
+
+                                // Stage 4 is the 4th (zero-indexed 3)
+                                // contact_eval call per step.
+                                if call == 3 {
+                                    s4_force_on_a.set(force_a);
+                                    s4_torque_a.set(torque_a);
+                                    s4_torque_b.set(torque_b);
+                                    s4_q_a_cell.set(stage_rot[0].quaternion);
+                                    s4_q_b_cell.set(stage_rot[1].quaternion);
+                                }
+                            },
+                            DT,
+                        );
+
+                        (
+                            s4_force_on_a.get(),
+                            s4_torque_a.get(),
+                            s4_torque_b.get(),
+                            s4_q_a_cell.get(),
+                            s4_q_b_cell.get(),
+                        )
+                    }
+                };
+
+                out.push(ContactCheckpoint {
+                    state: current_state,
+                    stage4_force_on_a_inertial: s4_force_a,
+                    stage4_torque_a_body: s4_tq_a,
+                    stage4_torque_b_body: s4_tq_b,
+                    stage4_q_a: s4_q_a,
+                    stage4_q_b: s4_q_b,
                 });
                 cp_iter.next();
             }
@@ -344,33 +523,28 @@ fn propagate_with_contact(
             break;
         }
 
+        // Snapshot before stepping so we can replay this step if the
+        // NEXT iteration's checkpoint lands on the new state.
+        prev_state = Some(current_state);
         sim.step_n(1).expect("step_n failed");
     }
     out
 }
 
 /// Per-checkpoint assertion on contact force and torque against the JEOD
-/// CSV. JEOD logs `contact_surface.contact_force` in each body's
-/// *structural* frame; our [`evaluate_contact_pair`] returns
-/// `force_on_a` in the inertial frame and `torque_*_body` in each body's
-/// *body* frame. For all SIM_contact scenarios, `t_struct_body = I`
-/// (structure frame coincides with body frame), so we only need the
-/// body attitude to transform the inertial force back to the structural
-/// frame, and the logged torque can be compared to `torque_*_body`
-/// directly.
-///
-/// The contact evaluator is re-run at the logged (end-of-step) states,
-/// not the stage states JEOD used during integration, so a small
-/// mismatch is expected; tolerances are per-test and set 5 % above
-/// observed maxima per CLAUDE.md's cross-validation policy.
+/// CSV. JEOD logs `contact_surface.contact_force` / `contact_torque` in
+/// each body's *structural* frame as the result of stage 4 of the
+/// most-recent RK4 step (the last derivative-class call before
+/// sampling). Our [`ContactCheckpoint`] carries the matching stage-4
+/// capture: an inertial-frame force on body A, body-frame torques per
+/// body, and the stage-4 attitudes used to transform the inertial
+/// force into the body/struct frame for comparison. For all current
+/// SIM_contact scenarios `t_struct_body = I`, so body and struct
+/// frames coincide.
 #[allow(clippy::too_many_arguments)]
 fn assert_contact_force_torque(
     label: &str,
-    facet_a: ContactFacet,
-    facet_b: ContactFacet,
-    mass_a: &MassProperties,
-    mass_b: &MassProperties,
-    ours: &[CheckpointBodies],
+    ours: &[ContactCheckpoint],
     records: &[ContactRecord],
     force_tol: f64,
     torque_tol: f64,
@@ -381,50 +555,34 @@ fn assert_contact_force_torque(
     let mut max_torque_err_1 = 0.0_f64;
     let mut max_torque_err_2 = 0.0_f64;
     let mut any_contact = false;
-    for (b, rec) in ours.iter().zip(records.iter()) {
-        let eval = evaluate_contact_pair(
-            &facet_a,
-            &facet_b,
-            &b.veh1_trans,
-            &b.veh2_trans,
-            Some(&b.veh1_rot),
-            Some(&b.veh2_rot),
-            DMat3::IDENTITY, // t_struct_body_a (SIM_contact: struct == body)
-            DMat3::IDENTITY, // t_struct_body_b
-            Some(mass_a),
-            Some(mass_b),
-        );
-        let (force_on_a_struct, torque_a_struct, force_on_b_struct, torque_b_struct) = match eval {
-            Some(ev) => {
-                any_contact = true;
-                // t_struct_body = I ⇒ t_inertial_struct = t_inertial_body.
-                let t_inertial_body_1 = b.veh1_rot.quaternion.left_quat_to_transformation();
-                let t_inertial_body_2 = b.veh2_rot.quaternion.left_quat_to_transformation();
-                let force_on_a_struct = t_inertial_body_1 * ev.force_on_a;
-                let force_on_b_struct = t_inertial_body_2 * (-ev.force_on_a);
-                (
-                    force_on_a_struct,
-                    ev.torque_a_body,
-                    force_on_b_struct,
-                    ev.torque_b_body,
-                )
-            }
-            None => (DVec3::ZERO, DVec3::ZERO, DVec3::ZERO, DVec3::ZERO),
-        };
-        max_force_err_1 = max_force_err_1.max((force_on_a_struct - rec.veh1_force).length());
-        max_force_err_2 = max_force_err_2.max((force_on_b_struct - rec.veh2_force).length());
-        max_torque_err_1 = max_torque_err_1.max((torque_a_struct - rec.veh1_torque).length());
-        max_torque_err_2 = max_torque_err_2.max((torque_b_struct - rec.veh2_torque).length());
+    for (cp, rec) in ours.iter().zip(records.iter()) {
+        // t_struct_body = I for SIM_contact ⇒ struct == body frame.
+        let t_inertial_body_a = cp.stage4_q_a.left_quat_to_transformation();
+        let t_inertial_body_b = cp.stage4_q_b.left_quat_to_transformation();
+        let force_a_struct = t_inertial_body_a * cp.stage4_force_on_a_inertial;
+        let force_b_struct = t_inertial_body_b * (-cp.stage4_force_on_a_inertial);
+        if cp.stage4_force_on_a_inertial != DVec3::ZERO
+            || cp.stage4_torque_a_body != DVec3::ZERO
+            || cp.stage4_torque_b_body != DVec3::ZERO
+        {
+            any_contact = true;
+        }
+        max_force_err_1 = max_force_err_1.max((force_a_struct - rec.veh1_force).length());
+        max_force_err_2 = max_force_err_2.max((force_b_struct - rec.veh2_force).length());
+        max_torque_err_1 =
+            max_torque_err_1.max((cp.stage4_torque_a_body - rec.veh1_torque).length());
+        max_torque_err_2 =
+            max_torque_err_2.max((cp.stage4_torque_b_body - rec.veh2_torque).length());
     }
 
     println!(
-        "{label}: contact force err max = ({max_force_err_1:.3e}, {max_force_err_2:.3e}) N; \
+        "{label}: stage-4 contact force err max = ({max_force_err_1:.3e}, {max_force_err_2:.3e}) N; \
          torque err max = ({max_torque_err_1:.3e}, {max_torque_err_2:.3e}) N*m"
     );
 
     assert!(
         any_contact,
-        "{label}: evaluate_contact_pair never reported contact — scenario never in contact?"
+        "{label}: stage-4 capture was zero at every checkpoint — scenario never in contact?"
     );
     assert!(
         max_force_err_1 < force_tol,
@@ -468,7 +626,7 @@ fn tier3_contact_point_pair() {
 
     let mut sim = make_two_body_sim(100.0, DVec3::new(40.0, 40.0, 40.0));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
-    let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
+    let ours = propagate_with_contact(&mut sim, facet, facet, &mass, &mass, &checkpoints);
     assert_eq!(ours.len(), records.len());
 
     let mut max_pos_err_1 = 0.0_f64;
@@ -476,10 +634,10 @@ fn tier3_contact_point_pair() {
     let mut max_vel_err_1 = 0.0_f64;
     let mut max_vel_err_2 = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err_1 = max_pos_err_1.max((our.veh1_trans.position - rec.veh1_pos).length());
-        max_pos_err_2 = max_pos_err_2.max((our.veh2_trans.position - rec.veh2_pos).length());
-        max_vel_err_1 = max_vel_err_1.max((our.veh1_trans.velocity - rec.veh1_vel).length());
-        max_vel_err_2 = max_vel_err_2.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+        max_pos_err_1 = max_pos_err_1.max((our.state.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err_2 = max_pos_err_2.max((our.state.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err_1 = max_vel_err_1.max((our.state.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err_2 = max_vel_err_2.max((our.state.veh2_trans.velocity - rec.veh2_vel).length());
     }
 
     println!("SIM_contact RUN_point:");
@@ -525,10 +683,6 @@ fn tier3_contact_point_pair() {
 
     assert_contact_force_torque(
         "SIM_contact RUN_point",
-        facet,
-        facet,
-        &mass,
-        &mass,
         &ours,
         &records,
         CONTACT_FORCE_TOL,
@@ -557,16 +711,16 @@ fn tier3_contact_line_pair() {
     let mass = line_mass_props();
     let mut sim = make_two_body_sim(200.0, DVec3::new(100.0, 116.6667, 116.6667));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
-    let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
+    let ours = propagate_with_contact(&mut sim, facet, facet, &mass, &mass, &checkpoints);
     assert_eq!(ours.len(), records.len());
 
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.state.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.state.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.state.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.state.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!("SIM_contact RUN_line: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s");
 
@@ -577,10 +731,6 @@ fn tier3_contact_line_pair() {
 
     assert_contact_force_torque(
         "SIM_contact RUN_line",
-        facet,
-        facet,
-        &mass,
-        &mass,
         &ours,
         &records,
         CONTACT_FORCE_TOL,
@@ -608,16 +758,23 @@ fn tier3_contact_line_point() {
 
     let mut sim = make_two_body_sim(200.0, DVec3::new(100.0, 116.6667, 116.6667));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
-    let ours = propagate_with_contact(&mut sim, line_facet, point_facet, &checkpoints);
+    let ours = propagate_with_contact(
+        &mut sim,
+        line_facet,
+        point_facet,
+        &mass,
+        &mass,
+        &checkpoints,
+    );
     assert_eq!(ours.len(), records.len());
 
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.state.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.state.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.state.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.state.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_line_point: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
@@ -630,10 +787,6 @@ fn tier3_contact_line_point() {
 
     assert_contact_force_torque(
         "SIM_contact RUN_line_point",
-        line_facet,
-        point_facet,
-        &mass,
-        &mass,
         &ours,
         &records,
         CONTACT_FORCE_TOL,
@@ -725,16 +878,23 @@ fn tier3_contact_line_side_to_side() {
     sim.validate().unwrap();
 
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
-    let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
+    let ours = propagate_with_contact(
+        &mut sim,
+        facet,
+        facet,
+        &mass_props,
+        &mass_props,
+        &checkpoints,
+    );
     assert_eq!(ours.len(), records.len());
 
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.state.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.state.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.state.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.state.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_line_side: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
@@ -750,10 +910,6 @@ fn tier3_contact_line_side_to_side() {
 
     assert_contact_force_torque(
         "SIM_contact RUN_line_side",
-        facet,
-        facet,
-        &mass_props,
-        &mass_props,
         &ours,
         &records,
         CONTACT_FORCE_TOL,
@@ -828,15 +984,22 @@ fn tier3_contact_point_off_center() {
     sim.validate().unwrap();
 
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
-    let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
+    let ours = propagate_with_contact(
+        &mut sim,
+        facet,
+        facet,
+        &mass_props,
+        &mass_props,
+        &checkpoints,
+    );
 
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.state.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.state.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.state.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.state.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_point_off_center: max pos={max_pos_err:.15e} m, max vel={max_vel_err:.15e} m/s"
@@ -871,18 +1034,237 @@ fn tier3_contact_point_off_center() {
         "veh{{1,2}} velocity error {max_vel_err:.3e} > 3.5e-15 m/s"
     );
 
-    // Force/torque tolerances reflect per-snapshot FP-rounding noise in
-    // the contact-force assertion path; trajectory is at noise floor.
+    // Force/torque comparison now samples stage-4 captures (matching
+    // JEOD's logging convention), so off-center reuses the same
+    // tolerances as the head-on tests.
     assert_contact_force_torque(
         "SIM_contact RUN_point_off_center",
-        facet,
-        facet,
-        &mass_props,
-        &mass_props,
         &ours,
         &records,
-        POINT_OFF_CENTER_FORCE_TOL,
-        POINT_OFF_CENTER_TORQUE_TOL,
+        CONTACT_FORCE_TOL,
+        CONTACT_TORQUE_TOL,
+    );
+}
+
+/// Issue #460: probes whether the `POINT_OFF_CENTER_*_TOL` headroom over
+/// head-on tolerances is a force/torque sampling artifact rather than a
+/// physics gap.
+///
+/// JEOD's `ContactSurface::collect_forces_torques` is registered as a
+/// derivative-class job in `Contact_S_modules/sv_dyn.sm:134`, so the
+/// `contact_force` column logged at time `t` is whatever stage 4 of the
+/// most-recent RK4 step wrote — evaluated at the intermediate state
+/// `y_n + dt·k3`, not the integrated end-of-step state `y_{n+1}`.
+/// `tier3_contact_point_off_center` re-evaluates `evaluate_contact_pair`
+/// at `y_{n+1}` from the checkpoint snapshot, so for ω ≠ 0 the two
+/// samples drift by O(h^5) × spring stiffness even when the underlying
+/// physics is bit-identical.
+///
+/// This probe propagates the same scenario directly through
+/// `integrate_bodies_contact_coupled` (no `Simulation` wrapping), with a
+/// recording closure that captures stage 4's force/torque per step.
+/// Asserting (a) trajectory at the production f64-noise floor confirms
+/// the manual propagation is bit-equivalent to `Simulation::step()` for
+/// the SIM_contact scenario, then (b) stage-4 force/torque at the
+/// head-on tolerances confirms no physics gap remains in `#460`.
+#[test]
+fn tier3_contact_point_off_center_stage4_probe() {
+    use astrodyn::{integrate_bodies_contact_coupled, CoupledBodyInput, CoupledIntegScratch};
+    use std::cell::Cell;
+
+    let csv_path = test_data_path("contact_point_off_center_contact_state.csv");
+    let records = load_contact_csv(&csv_path);
+    let init = &records[0];
+
+    let facet = ContactFacet::point(DVec3::ZERO, 1.0, jeod_steel());
+    let mass_props = MassProperties::with_inertia(
+        100.0,
+        DMat3::from_cols(
+            DVec3::new(40.0, 0.0, 0.0),
+            DVec3::new(0.0, 40.0, 0.0),
+            DVec3::new(0.0, 0.0, 40.0),
+        ),
+        DVec3::ZERO,
+    );
+    let masses = [mass_props, mass_props];
+
+    let mut trans = [
+        TranslationalState {
+            position: init.veh1_pos,
+            velocity: init.veh1_vel,
+        },
+        TranslationalState {
+            position: init.veh2_pos,
+            velocity: init.veh2_vel,
+        },
+    ];
+    let mut rot = [
+        RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        },
+        RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        },
+    ];
+
+    let mut scratch = CoupledIntegScratch::new();
+
+    // Stage-4 captures, refreshed every step.
+    let stage_call_count: Cell<usize> = Cell::new(0);
+    let stage4_force_a: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_torque_a_body: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_torque_b_body: Cell<DVec3> = Cell::new(DVec3::ZERO);
+    let stage4_quat_a: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+    let stage4_quat_b: Cell<JeodQuat> = Cell::new(JeodQuat::identity());
+
+    let steps_total = (SIM_DURATION / DT).round() as usize;
+    let log_step_stride = (LOG_CYCLE / DT).round() as usize;
+
+    let mut max_pos_err = 0.0_f64;
+    let mut max_vel_err = 0.0_f64;
+    let mut max_force_err_struct = 0.0_f64;
+    let mut max_torque_err_body = 0.0_f64;
+
+    for step in 0..=steps_total {
+        if step % log_step_stride == 0 {
+            let log_idx = step / log_step_stride;
+            assert!(
+                log_idx < records.len(),
+                "step {step} maps to log idx {log_idx} >= {} CSV rows",
+                records.len()
+            );
+            let rec = &records[log_idx];
+            max_pos_err = max_pos_err.max((trans[0].position - rec.veh1_pos).length());
+            max_pos_err = max_pos_err.max((trans[1].position - rec.veh2_pos).length());
+            max_vel_err = max_vel_err.max((trans[0].velocity - rec.veh1_vel).length());
+            max_vel_err = max_vel_err.max((trans[1].velocity - rec.veh2_vel).length());
+            // Stage-4 sample only exists after the first step.
+            if step > 0 {
+                let t_inertial_body_a = stage4_quat_a.get().left_quat_to_transformation();
+                let t_inertial_body_b = stage4_quat_b.get().left_quat_to_transformation();
+                let force_a_struct = t_inertial_body_a * stage4_force_a.get();
+                let force_b_struct = t_inertial_body_b * (-stage4_force_a.get());
+                max_force_err_struct =
+                    max_force_err_struct.max((force_a_struct - rec.veh1_force).length());
+                max_force_err_struct =
+                    max_force_err_struct.max((force_b_struct - rec.veh2_force).length());
+                max_torque_err_body = max_torque_err_body
+                    .max((stage4_torque_a_body.get() - rec.veh1_torque).length());
+                max_torque_err_body = max_torque_err_body
+                    .max((stage4_torque_b_body.get() - rec.veh2_torque).length());
+            }
+        }
+
+        if step == steps_total {
+            break;
+        }
+
+        stage_call_count.set(0);
+        let (trans_a, trans_b) = trans.split_at_mut(1);
+        let (rot_a, rot_b) = rot.split_at_mut(1);
+        let mut inputs = [
+            CoupledBodyInput {
+                trans: &mut trans_a[0],
+                rot: &mut rot_a[0],
+                mass: &masses[0],
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+            CoupledBodyInput {
+                trans: &mut trans_b[0],
+                rot: &mut rot_b[0],
+                mass: &masses[1],
+                non_grav_non_contact_force: DVec3::ZERO,
+                non_contact_torque_body: DVec3::ZERO,
+            },
+        ];
+
+        integrate_bodies_contact_coupled(
+            &mut inputs,
+            &mut scratch,
+            |_, _, _, _| DVec3::ZERO,
+            |stage_trans, stage_rot, out| {
+                let call = stage_call_count.get();
+                stage_call_count.set(call + 1);
+
+                let ev = evaluate_contact_pair(
+                    &facet,
+                    &facet,
+                    &stage_trans[0],
+                    &stage_trans[1],
+                    Some(&stage_rot[0]),
+                    Some(&stage_rot[1]),
+                    DMat3::IDENTITY,
+                    DMat3::IDENTITY,
+                    Some(&masses[0]),
+                    Some(&masses[1]),
+                );
+
+                let (force_a, torque_a, torque_b) = match ev {
+                    Some(eval) => {
+                        out[0].0 += eval.force_on_a;
+                        out[1].0 -= eval.force_on_a;
+                        out[0].1 += eval.torque_a_body;
+                        out[1].1 += eval.torque_b_body;
+                        (eval.force_on_a, eval.torque_a_body, eval.torque_b_body)
+                    }
+                    None => (DVec3::ZERO, DVec3::ZERO, DVec3::ZERO),
+                };
+
+                // Stage 4 is the 4th (zero-indexed 3) contact_eval call
+                // per coupled-RK4 step; this is what JEOD's derivative
+                // job leaves in `contact_surface.contact_force` at the
+                // moment the logger samples.
+                if call == 3 {
+                    stage4_force_a.set(force_a);
+                    stage4_torque_a_body.set(torque_a);
+                    stage4_torque_b_body.set(torque_b);
+                    stage4_quat_a.set(stage_rot[0].quaternion);
+                    stage4_quat_b.set(stage_rot[1].quaternion);
+                }
+            },
+            DT,
+        );
+    }
+
+    println!(
+        "tier3_contact_point_off_center_stage4_probe: pos={max_pos_err:.3e} m, \
+         vel={max_vel_err:.3e} m/s, stage-4 force={max_force_err_struct:.3e} N, \
+         stage-4 torque={max_torque_err_body:.3e} N·m"
+    );
+
+    // Same bar as `tier3_contact_point_off_center` — proves the manual
+    // propagation here is bit-equivalent to `Simulation::step()` for
+    // SIM_contact (gravity-free, 2 bodies, single contact pair).
+    assert!(
+        max_pos_err < 1.6e-14,
+        "probe trajectory diverged from production: pos err {max_pos_err:.3e}"
+    );
+    assert!(
+        max_vel_err < 3.5e-15,
+        "probe trajectory diverged from production: vel err {max_vel_err:.3e}"
+    );
+
+    // Probe uses the same unified `CONTACT_*_TOL` as the main inter-body
+    // contact tests — both paths sample at stage 4 of the same RK4
+    // step, so they target the same FP noise floor. The probe runs an
+    // independent propagation (direct `integrate_bodies_contact_coupled`,
+    // bypassing `Simulation::step`), so it catches divergence between
+    // production and the bare integrator while the main test guards
+    // the per-stage parity invariant from production's perspective.
+    assert!(
+        max_force_err_struct < CONTACT_FORCE_TOL,
+        "stage-4 force err {max_force_err_struct:.3e} N >= tol \
+         {CONTACT_FORCE_TOL:.3e} N — per-stage parity regressed; \
+         the sampling-artifact hypothesis no longer fully explains the residual"
+    );
+    assert!(
+        max_torque_err_body < CONTACT_TORQUE_TOL,
+        "stage-4 torque err {max_torque_err_body:.3e} N·m >= tol \
+         {CONTACT_TORQUE_TOL:.3e} N·m — per-stage parity regressed; \
+         the sampling-artifact hypothesis no longer fully explains the residual"
     );
 }
 
