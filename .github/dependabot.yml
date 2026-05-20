@@ -33,3 +33,11 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # `dtolnay/rust-toolchain` uses Rust release tags (`@1.89`, `@stable`)
+      # as its version selector, not action-version tags. Dependabot misreads
+      # these as action versions and tries to bump (e.g. PR #602 proposed
+      # `@1.100`, a Rust release that doesn't exist). The single pinned use
+      # is the MSRV gate in `tooling.yml` — by design it tracks the workspace
+      # `rust-version`, not floats. Skip all version updates for this action.
+      - dependency-name: "dtolnay/rust-toolchain"
