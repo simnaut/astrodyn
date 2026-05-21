@@ -135,9 +135,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anise"
-version = "0.9.6"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09d6a013230ef1a3fceebc1e229efc16c6d84402ea9d07f3beac46bfded635b8"
+checksum = "2aaa9f5dd971824c921eb40dcc4394f4d2ca45fce4f8f738ba34f4589c3d3a94"
 dependencies = [
  "bytes",
  "const_format",
@@ -157,7 +157,8 @@ dependencies = [
  "serde-lexpr",
  "serde_derive",
  "serde_dhall",
- "snafu 0.9.0",
+ "snafu",
+ "sofars",
  "tabled",
  "ureq",
  "url",
@@ -2571,16 +2572,16 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "hifitime"
-version = "4.2.5"
+version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40f327fab876db009c736d1042522e0fcbaf808288ee6d0ef9551bafac02f7e0"
+checksum = "a978b79fb40cea4c6592890ffe0021dfea5c51a107fbac565abae82fd24a15af"
 dependencies = [
  "js-sys",
  "lexical-core",
  "num-traits",
  "serde",
  "serde_derive",
- "snafu 0.8.9",
+ "snafu",
  "wasm-bindgen",
  "web-sys",
  "web-time",
@@ -4297,34 +4298,12 @@ dependencies = [
 
 [[package]]
 name = "snafu"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e84b3f4eacbf3a1ce05eac6763b4d629d60cbc94d632e4092c54ade71f1e1a2"
-dependencies = [
- "backtrace",
- "snafu-derive 0.8.9",
-]
-
-[[package]]
-name = "snafu"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1d4bced6a69f90b2056c03dcff2c4737f98d6fb9e0853493996e1d253ca29c6"
 dependencies = [
  "backtrace",
- "snafu-derive 0.9.0",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
+ "snafu-derive",
 ]
 
 [[package]]
@@ -4338,6 +4317,12 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "sofars"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dd1c9b1b5d34e1e949deb0dac9ad612e20746c59eaa737e52fd29703c19ec5c"
 
 [[package]]
 name = "spin"
