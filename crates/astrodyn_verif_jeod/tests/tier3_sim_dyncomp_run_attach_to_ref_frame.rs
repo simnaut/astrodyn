@@ -91,7 +91,7 @@
 //! policy, each tolerance is set just above the per-component max
 //! observed in this test's JSON report.
 //!
-//! [`propagate_frame_attached_state`]: astrodyn_runner::Simulation::is_frame_attached
+//! [`propagate_frame_attached_state`]: astrodyn_runner::Simulation::step
 //! [`tier3_sim_ref_attach_matrix`]: ../tier3_sim_ref_attach/index.html
 
 use std::path::PathBuf;

@@ -190,6 +190,9 @@ impl Simulation {
     }
 
     /// Get the inertial frame ID for a gravity source.
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn source_frame(&self, source_idx: usize) -> FrameId {
         self.source_frame_ids
             .get(source_idx)
@@ -228,6 +231,9 @@ impl Simulation {
     }
 
     /// Set the position of a gravity source relative to the root inertial frame.
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
         sim_set_source_position(
             &mut self.frame_tree,
@@ -242,6 +248,9 @@ impl Simulation {
     ///
     /// Prefer this over [`set_source_position`](Simulation::set_source_position)
     /// when velocity is also available, to keep position and velocity consistent.
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3) {
         sim_set_source_state(
             &mut self.frame_tree,
@@ -285,6 +294,9 @@ impl Simulation {
     /// attaching to it is semantically the same as attaching to root (see
     /// [`is_root_equivalent_frame`](Self::is_root_equivalent_frame) and
     /// `JEOD_INV: RF.13`).
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn source_inertial_frame_id(&self, source_idx: usize) -> FrameId {
         let len = self.source_frame_ids.len();
         self.source_frame_ids
@@ -305,6 +317,9 @@ impl Simulation {
     /// for the rotating-frame attachment use case (JEOD's
     /// `attach_to_frame("Earth.pfix")` pattern from
     /// `verif/SIM_dyncomp/SET_test/RUN_attach_to_ref_frame/input.py`).
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn source_pfix_frame_id(&self, source_idx: usize) -> Option<FrameId> {
         let len = self.source_frame_ids.len();
         self.source_frame_ids
@@ -337,6 +352,9 @@ impl Simulation {
     }
 
     /// Get the current ΔC20 tidal correction for a gravity source.
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
     pub fn source_delta_c20(&self, source_idx: usize) -> f64 {
         assert!(
             source_idx < self.gravity_data.len(),

@@ -390,12 +390,19 @@ impl Simulation {
     /// Whether the given body is currently attached to a reference
     /// frame.
     ///
+    /// `#[cfg(test)]` because the only consumers are this module's
+    /// internal tests; external code queries attach state via
+    /// [`Self::attach_to_frame`] / [`Self::detach_from_frame`] return
+    /// paths or the `frame_attach.is_some()` field on
+    /// [`SimBody`](super::types::SimBody).
+    ///
     /// # Panics
     /// Panics if `body_idx` is out of range. Mirrors the same guard on
     /// [`Self::attach_to_frame`] / [`Self::detach_from_frame`] so a
     /// stale index produces an actionable diagnostic naming the
     /// misconfiguration rather than a generic slice-bounds panic.
-    pub fn is_frame_attached(&self, body_idx: usize) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_frame_attached(&self, body_idx: usize) -> bool {
         assert!(
             body_idx < self.bodies.len(),
             "is_frame_attached: body index {body_idx} out of range (have {} bodies)",

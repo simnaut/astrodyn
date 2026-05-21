@@ -303,6 +303,9 @@ impl Simulation {
     ///
     /// Returns a [`VehicleOutput`] containing the current integrated state
     /// plus any derived states that were configured.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn body(&self, idx: usize) -> VehicleOutput {
         self.bodies[idx].output()
     }
@@ -341,6 +344,9 @@ impl Simulation {
     /// Mass-tree node id of body `idx`, or `None` if the body has not
     /// been registered via [`Self::add_body_to_tree`]. Stable for the
     /// lifetime of the simulation.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn body_mass_id(&self, idx: usize) -> Option<MassBodyId> {
         self.bodies[idx].mass_body_id
     }
@@ -593,6 +599,9 @@ impl Simulation {
     /// Prefer [`set_body_external_force_typed`](Self::set_body_external_force_typed)
     /// for the typed-input path; the raw entry point stays for callers
     /// that have not yet migrated.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_external_force(&mut self, idx: usize, force: DVec3) {
         self.bodies[idx].external_force = force;
     }
@@ -616,6 +625,9 @@ impl Simulation {
     /// Prefer [`set_body_external_torque_typed`](Self::set_body_external_torque_typed)
     /// for the typed-input path; the raw entry point stays for callers
     /// that have not yet migrated.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_external_torque(&mut self, idx: usize, torque: DVec3) {
         self.bodies[idx].external_torque = torque;
     }
@@ -651,6 +663,9 @@ impl Simulation {
     ///
     /// Prefer [`set_body_external_force_struct_typed`](Self::set_body_external_force_struct_typed)
     /// for the typed-input path.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_external_force_struct(&mut self, idx: usize, force_struct: DVec3) {
         self.bodies[idx].external_force_struct = force_struct;
     }
@@ -675,6 +690,9 @@ impl Simulation {
     ///
     /// Prefer [`set_body_external_torque_struct_typed`](Self::set_body_external_torque_struct_typed)
     /// for the typed-input path.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_external_torque_struct(&mut self, idx: usize, torque_struct: DVec3) {
         self.bodies[idx].external_torque_struct = torque_struct;
     }
@@ -694,6 +712,9 @@ impl Simulation {
     ///
     /// Used for prescribed-motion tests where position is set externally
     /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
         self.bodies[idx].trans.position = Position::<IntegrationFrame>::from_raw_si(position);
         let fid = self.bodies[idx].body_frame_id;
@@ -765,6 +786,9 @@ impl Simulation {
     /// method will desynchronize the body's mass from the tree's copy. Use
     /// [`sync_body_mass_from_tree`](Self::sync_body_mass_from_tree) instead
     /// when the mass tree has been modified via `attach`/`detach`.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
     pub fn set_body_mass(&mut self, idx: usize, mut mass: MassProperties) {
         mass.dirty = true;
         mass.recompute_derived();

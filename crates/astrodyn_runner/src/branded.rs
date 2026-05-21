@@ -54,12 +54,16 @@
 //! callers to the branded form (mechanical refactor: wrap each test
 //! body in a closure).
 //!
-//! `BrandedSimulation` covers the most common index-using methods:
-//! `add_source`, `add_body`, `set_source_position`, `set_source_state`,
-//! `source_position_typed`, `body`, plus `step`, `step_until`, `validate`,
-//! and `unbranded()` / `unbranded_mut()` escape hatches that expose the
-//! inner `Simulation` for methods not yet branded. Adding more branded
-//! methods later is mechanical.
+//! `BrandedSimulation` covers the common index-using methods:
+//! `add_source`, `add_body`, the `set_source_*` / `set_body_*` setters,
+//! `source_frame`, `source_position_typed`, `body`, `body_frame_id`,
+//! `body_mass_id`, `srp_plate_temperatures`, `register_contact_pair`,
+//! `register_ground_contact_pair`, plus non-index forwarders (`step`,
+//! `step_until`, `validate`, `num_sources`, `num_bodies`, `frame_tree`,
+//! `time`). The `unbranded()` / `unbranded_mut()` escape hatches expose
+//! the inner `Simulation` for methods not yet branded (mass-tree
+//! topology, frame attachment, ephemeris introspection, RNP cadence
+//! tuning). Adding more branded methods later is mechanical.
 //!
 //! ## Tradeoff
 //!
@@ -78,7 +82,8 @@ use glam::DVec3;
 
 use crate::{Simulation, VehicleOutput};
 use astrodyn::{
-    GravitySourceEntry, MassProperties, SimulationTime, ValidationError, VehicleConfig,
+    ContactFacet, DragConfig, EphemerisBody, FrameId, FrameTree, GravitySourceEntry, GroundFacet,
+    MassBodyId, MassProperties, RotationalState, SimulationTime, ValidationError, VehicleConfig,
 };
 
 /// Invariant lifetime brand. The `fn(&'sim ()) -> &'sim ()` form is
@@ -180,10 +185,46 @@ impl<'sim> BrandedSimulation<'sim> {
         self.inner.source_position_typed(idx.raw)
     }
 
+    /// Inertial frame id for a gravity source. Mirrors
+    /// [`Simulation::source_frame`].
+    pub fn source_frame(&self, idx: SourceIdx<'sim>) -> FrameId {
+        self.inner.source_frame(idx.raw)
+    }
+
+    /// Configure ephemeris-based position updates for a source. Mirrors
+    /// [`Simulation::set_source_ephemeris`].
+    pub fn set_source_ephemeris(
+        &mut self,
+        idx: SourceIdx<'sim>,
+        target: EphemerisBody,
+        observer: EphemerisBody,
+    ) {
+        self.inner.set_source_ephemeris(idx.raw, target, observer);
+    }
+
     /// Read a body's current state. The body must have been added via
     /// `self.add_body` (the `'sim` brand on the index witnesses this).
     pub fn body(&self, idx: BodyIdx<'sim>) -> VehicleOutput {
         self.inner.body(idx.raw)
+    }
+
+    /// Frame-tree node id of the body's reference frame. Mirrors
+    /// [`Simulation::body_frame_id`].
+    pub fn body_frame_id(&self, idx: BodyIdx<'sim>) -> FrameId {
+        self.inner.body_frame_id(idx.raw)
+    }
+
+    /// Mass-tree id of the body, or `None` if not registered in the
+    /// mass tree. Mirrors [`Simulation::body_mass_id`].
+    pub fn body_mass_id(&self, idx: BodyIdx<'sim>) -> Option<MassBodyId> {
+        self.inner.body_mass_id(idx.raw)
+    }
+
+    /// Per-plate SRP temperatures (K) for a body's flat-plate SRP
+    /// configuration, or `None` if the body has no flat-plate SRP.
+    /// Mirrors [`Simulation::srp_plate_temperatures`].
+    pub fn srp_plate_temperatures(&self, idx: BodyIdx<'sim>) -> Option<&[f64]> {
+        self.inner.srp_plate_temperatures(idx.raw)
     }
 
     /// Set a body's external (non-gravity) force in inertial coordinates.
@@ -280,6 +321,54 @@ impl<'sim> BrandedSimulation<'sim> {
         self.inner.set_body_mass(idx.raw, mass);
     }
 
+    /// Replace a body's rotational state. Mirrors
+    /// [`Simulation::set_body_rot`]; panics if the body is 3-DOF.
+    pub fn set_body_rot(&mut self, idx: BodyIdx<'sim>, rot: RotationalState) {
+        self.inner.set_body_rot(idx.raw, rot);
+    }
+
+    /// Toggle a body's aerodynamic drag configuration mid-run. Mirrors
+    /// [`Simulation::set_body_drag`].
+    pub fn set_body_drag(&mut self, idx: BodyIdx<'sim>, drag: Option<DragConfig>) {
+        self.inner.set_body_drag(idx.raw, drag);
+    }
+
+    /// Register a contact interaction between two bodies. Mirrors
+    /// [`Simulation::register_contact_pair`]. Both `body_a` and `body_b`
+    /// carry the same `'sim` brand, so cross-simulation indices fail to
+    /// compile — the same bug class the branding was introduced for.
+    pub fn register_contact_pair(
+        &mut self,
+        body_a: BodyIdx<'sim>,
+        facet_a: ContactFacet,
+        body_b: BodyIdx<'sim>,
+        facet_b: ContactFacet,
+    ) {
+        self.inner
+            .register_contact_pair(body_a.raw, facet_a, body_b.raw, facet_b);
+    }
+
+    /// Register a ground-contact interaction between a vehicle body and
+    /// a planetary surface. Mirrors
+    /// [`Simulation::register_ground_contact_pair`]. The brand ties the
+    /// body and source indices to this simulation; the returned
+    /// contact-pair receipt is `()` — the underlying API has no
+    /// reader that takes a contact-pair index.
+    pub fn register_ground_contact_pair(
+        &mut self,
+        body_a: BodyIdx<'sim>,
+        vehicle_facet: ContactFacet,
+        ground_facet: GroundFacet,
+        planet_source: SourceIdx<'sim>,
+    ) {
+        self.inner.register_ground_contact_pair(
+            body_a.raw,
+            vehicle_facet,
+            ground_facet,
+            planet_source.raw,
+        );
+    }
+
     // ── Pass-through forwarders for the common non-index methods ──
 
     /// Advance the simulation by one timestep.
@@ -306,6 +395,17 @@ impl<'sim> BrandedSimulation<'sim> {
     /// Number of registered gravity sources.
     pub fn num_sources(&self) -> usize {
         self.inner.num_sources()
+    }
+
+    /// Number of registered bodies. Mirrors [`Simulation::num_bodies`].
+    pub fn num_bodies(&self) -> usize {
+        self.inner.num_bodies()
+    }
+
+    /// Read-only access to the reference frame tree. Mirrors
+    /// [`Simulation::frame_tree`].
+    pub fn frame_tree(&self) -> &FrameTree {
+        self.inner.frame_tree()
     }
 
     /// Current simulation time.
