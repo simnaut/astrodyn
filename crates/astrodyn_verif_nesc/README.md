@@ -220,6 +220,8 @@ follow-up.
 
 ## See also
 
+- [`ARTIFACTS.md`](ARTIFACTS.md) — concise index of upstream NESC links
+  (final report, appendix, case pages, ephemeris kernels)
 - Issue #399 — verification track umbrella issue
 - `crates/astrodyn_verif_jeod/` — parallel JEOD/Trick verification track
 - `crates/astrodyn_verif_parity/tests/bevy_parity_nesc_*.rs` — Bevy ↔
