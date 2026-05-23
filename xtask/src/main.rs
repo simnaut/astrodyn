@@ -39,6 +39,11 @@ Subcommands:
                             walk the sequence without uploading to
                             crates.io (the registry is still queried
                             to resolve dependencies).
+    crap                    Report-only CRAP metric (Change Risk
+                            Anti-Patterns) per function, ranked to
+                            surface untested physics. Reads an LLVM
+                            coverage export JSON (cargo-llvm-cov);
+                            generates one itself if --input is omitted.
 
 regenerate-tier3 options:
     --force                 Set FORCE=1 in the container so all sims
@@ -96,6 +101,26 @@ publish options:
                             first-publish dry-runs (deps aren't on the
                             registry yet); harmless on republishes.
 
+crap options:
+    --input <path>          Read an existing LLVM coverage export JSON
+                            (`cargo llvm-cov ... --json`) instead of
+                            generating one. Decouples the report from
+                            the slow instrumented build and lets CI
+                            cache the coverage artifact.
+    --all                   Rank every workspace `/src/` function, not
+                            just the 10 astrodyn_* physics crates.
+                            Default scope is physics-only because that
+                            is where silently-wrong numerics hide.
+    --threshold <f>         CRAP score at/above which a function is
+                            flagged `!!`. Default 30 (the conventional
+                            \"needs attention\" line).
+    --top <n>               Print only the worst <n> functions. Default:
+                            all that exceed the coverage cutoff.
+    --min-coverage <pct>    Only list functions below this line/region
+                            coverage (0-100). Default 100 (everything
+                            not fully covered). The prioritization knob:
+                            set 50 to focus on genuinely thin coverage.
+
     -h, --help              Print this help.
 ";
 
@@ -118,6 +143,9 @@ fn main() {
         }
         "publish" => {
             publish(args.collect());
+        }
+        "crap" => {
+            crap(args.collect());
         }
         other => {
             eprintln!("xtask: unknown subcommand `{other}`\n\n{HELP}");
@@ -724,4 +752,377 @@ fn workspace_version() -> String {
         "could not find `[workspace.package].version` in {}",
         manifest_path.display()
     );
+}
+
+// ---------------------------------------------------------------------------
+// `cargo xtask crap` — Change Risk Anti-Patterns metric (report-only).
+//
+// CRAP(f) = comp(f)^2 * (1 - cov(f))^3 + comp(f)
+//
+// where comp is cyclomatic complexity and cov is test coverage in [0, 1].
+// A fully-covered function collapses to its bare complexity; an uncovered
+// one grows quadratically with branching. The conventional "needs
+// attention" line is CRAP >= 30.
+//
+// We read an LLVM coverage *export* JSON (the schema cargo-llvm-cov emits
+// with `--json`), which gives, per function, the source file, the per-region
+// execution counts, and the region spans. From that:
+//   - coverage  = covered code-regions / total code-regions
+//   - complexity= count of code-regions  (PROXY, see below)
+//
+// COMPLEXITY PROXY: LLVM emits a coverage-mapping region at each control-flow
+// branch, so a function's code-region count tracks its cyclomatic complexity
+// closely. It is not exact CC. The honest follow-up is to join true CC from
+// `rust-code-analysis` by (file, line); this prototype deliberately stays on
+// a single data source (the coverage run) so it adds no toolchain beyond the
+// cargo-llvm-cov we already need for coverage.
+//
+// PRIORITIZING UNTESTED PHYSICS: the default scope is the 10 astrodyn_*
+// physics crates and only their `/src/` functions (requiring `/src/` drops
+// test/bench/example code). That focuses the ranking on the surface CLAUDE.md
+// calls out — code that "compiles, runs, and silently produces wrong physics"
+// — rather than orchestration or Bevy glue. `--all` widens to every workspace
+// `/src/` function. Within scope we sort by CRAP descending and tag every
+// zero-coverage function, so the top of the list is exactly the high-branching,
+// thinly-tested numerics worth a Tier 2 test next.
+// ---------------------------------------------------------------------------
+
+const PHYSICS_CRATES: &[&str] = &[
+    "astrodyn_quantities",
+    "astrodyn_math",
+    "astrodyn_dynamics",
+    "astrodyn_gravity",
+    "astrodyn_frames",
+    "astrodyn_planet",
+    "astrodyn_time",
+    "astrodyn_ephemeris",
+    "astrodyn_atmosphere",
+    "astrodyn_interactions",
+];
+
+struct CrapArgs {
+    input: Option<PathBuf>,
+    all: bool,
+    threshold: f64,
+    top: Option<usize>,
+    min_coverage: f64,
+}
+
+impl CrapArgs {
+    fn parse(argv: Vec<String>) -> Self {
+        let mut a = Self {
+            input: None,
+            all: false,
+            threshold: 30.0,
+            top: None,
+            min_coverage: 100.0,
+        };
+        let mut iter = argv.into_iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--all" => a.all = true,
+                "--input" => {
+                    a.input = Some(PathBuf::from(iter.next().unwrap_or_else(|| {
+                        eprintln!("crap: --input needs a path");
+                        exit(2);
+                    })));
+                }
+                "--threshold" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("crap: --threshold needs a value");
+                        exit(2);
+                    });
+                    a.threshold = v.parse().unwrap_or_else(|e| {
+                        eprintln!("crap: --threshold `{v}` is not a number: {e}");
+                        exit(2);
+                    });
+                }
+                "--top" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("crap: --top needs a value");
+                        exit(2);
+                    });
+                    a.top = Some(v.parse().unwrap_or_else(|e| {
+                        eprintln!("crap: --top `{v}` is not a usize: {e}");
+                        exit(2);
+                    }));
+                }
+                "--min-coverage" => {
+                    let v = iter.next().unwrap_or_else(|| {
+                        eprintln!("crap: --min-coverage needs a value");
+                        exit(2);
+                    });
+                    a.min_coverage = v.parse().unwrap_or_else(|e| {
+                        eprintln!("crap: --min-coverage `{v}` is not a number: {e}");
+                        exit(2);
+                    });
+                }
+                "-h" | "--help" => {
+                    println!("{HELP}");
+                    exit(0);
+                }
+                other => {
+                    eprintln!("crap: unknown arg `{other}`\n\n{HELP}");
+                    exit(2);
+                }
+            }
+        }
+        a
+    }
+}
+
+struct FnCrap {
+    name: String,
+    file: String,
+    line: u64,
+    complexity: u64,
+    coverage: f64,
+    crap: f64,
+}
+
+fn crap(argv: Vec<String>) {
+    let args = CrapArgs::parse(argv);
+
+    let json = match &args.input {
+        Some(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!("crap: cannot read --input {}: {e}", path.display());
+            exit(1);
+        }),
+        None => run_llvm_cov_json(),
+    };
+
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
+        eprintln!(
+            "crap: input is not valid JSON: {e}. Expected an LLVM coverage \
+             export (`cargo llvm-cov ... --json`)."
+        );
+        exit(1);
+    });
+
+    let functions = parsed
+        .get("data")
+        .and_then(|d| d.get(0))
+        .and_then(|d| d.get("functions"))
+        .and_then(|f| f.as_array())
+        .unwrap_or_else(|| {
+            eprintln!(
+                "crap: no `data[0].functions` array in the input. This subcommand \
+                 expects the LLVM coverage *export* schema (`--json`), not the \
+                 summary/report format."
+            );
+            exit(1);
+        });
+
+    let mut rows: Vec<FnCrap> = Vec::new();
+    for func in functions {
+        let Some(row) = function_to_crap(func) else {
+            continue;
+        };
+        if !in_scope(&row.file, args.all) {
+            continue;
+        }
+        rows.push(row);
+    }
+
+    if rows.is_empty() {
+        eprintln!(
+            "crap: no in-scope functions found. If you ran with the default \
+             physics-only scope, try --all, or check that the coverage export \
+             actually covers the astrodyn_* crates."
+        );
+        exit(1);
+    }
+
+    // Worst first; stable tie-break on name so output is deterministic.
+    rows.sort_by(|a, b| {
+        b.crap
+            .partial_cmp(&a.crap)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    let cutoff = args.min_coverage / 100.0;
+    let listed: Vec<&FnCrap> = rows
+        .iter()
+        .filter(|r| r.coverage < cutoff)
+        .take(args.top.unwrap_or(usize::MAX))
+        .collect();
+
+    let scope = if args.all {
+        "all workspace /src/ functions"
+    } else {
+        "astrodyn_* physics crates"
+    };
+    println!(
+        "CRAP report  —  scope: {scope}  —  {} function(s), {} below {:.0}% coverage",
+        rows.len(),
+        rows.iter().filter(|r| r.coverage < cutoff).count(),
+        args.min_coverage,
+    );
+    println!(
+        "complexity = LLVM code-region count (cyclomatic-complexity proxy); \
+         flag !! at CRAP >= {:.0}\n",
+        args.threshold
+    );
+    #[allow(
+        clippy::print_literal,
+        reason = "column-header labels are intentionally literals, width-aligned to the data rows"
+    )]
+    {
+        println!(
+            "{:>8}  {:>4}  {:>6}  {:>3}  {:<40}  {}",
+            "CRAP", "cx", "cov%", "", "function", "location"
+        );
+    }
+    for r in &listed {
+        let flag = if r.coverage == 0.0 {
+            "ZERO"
+        } else if r.crap >= args.threshold {
+            "!!"
+        } else {
+            ""
+        };
+        println!(
+            "{:>8.1}  {:>4}  {:>6.1}  {:>3}  {:<40}  {}:{}",
+            r.crap,
+            r.complexity,
+            r.coverage * 100.0,
+            flag,
+            truncate(&r.name, 40),
+            short_path(&r.file),
+            r.line,
+        );
+    }
+
+    let flagged = rows.iter().filter(|r| r.crap >= args.threshold).count();
+    println!(
+        "\n{flagged} function(s) at/above the CRAP {:.0} threshold. \
+         Report-only: no exit-code gating.",
+        args.threshold
+    );
+}
+
+// Convert one LLVM export `functions[]` entry into a CRAP row, or None if it
+// has no code regions (e.g. a fully-inlined or zero-region shim we can't score).
+fn function_to_crap(func: &serde_json::Value) -> Option<FnCrap> {
+    let regions = func.get("regions")?.as_array()?;
+    let filenames = func.get("filenames")?.as_array()?;
+    let file = filenames.first()?.as_str()?.to_string();
+
+    // Region layout: [LineStart, ColStart, LineEnd, ColEnd, ExecCount,
+    // FileID, ExpandedFileID, Kind]. Kind 0 = Code. We score on code regions
+    // only — expansion/skipped/gap regions aren't executable branch points.
+    let mut total = 0u64;
+    let mut covered = 0u64;
+    let mut min_line = u64::MAX;
+    for region in regions {
+        let Some(r) = region.as_array() else { continue };
+        let kind = r.get(7).and_then(|v| v.as_u64()).unwrap_or(0);
+        if kind != 0 {
+            continue;
+        }
+        total += 1;
+        let exec = r.get(4).and_then(|v| v.as_u64()).unwrap_or(0);
+        if exec > 0 {
+            covered += 1;
+        }
+        if let Some(line) = r.first().and_then(|v| v.as_u64()) {
+            min_line = min_line.min(line);
+        }
+    }
+    if total == 0 {
+        return None;
+    }
+
+    let complexity = total;
+    // Region counts per function are tiny (tens, not billions), far below
+    // f64's 2^52 integer-exact ceiling, so these casts cannot lose precision.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "per-function region counts are small integers, exact in f64"
+    )]
+    let (coverage, c) = (covered as f64 / total as f64, complexity as f64);
+    let crap = c * c * (1.0 - coverage).powi(3) + c;
+
+    let raw_name = func.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let name = rustc_demangle::demangle(raw_name).to_string();
+
+    Some(FnCrap {
+        name,
+        file,
+        line: if min_line == u64::MAX { 0 } else { min_line },
+        complexity,
+        coverage,
+        crap,
+    })
+}
+
+// In scope iff it lives under some crate's `/src/` (drops tests/benches/
+// examples) and, unless --all, under one of the physics crates.
+fn in_scope(file: &str, all: bool) -> bool {
+    if !file.contains("/src/") {
+        return false;
+    }
+    if all {
+        return true;
+    }
+    PHYSICS_CRATES
+        .iter()
+        .any(|c| file.contains(&format!("/crates/{c}/src/")))
+}
+
+fn run_llvm_cov_json() -> String {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+
+    eprintln!(
+        "crap: no --input given; running `cargo llvm-cov nextest --json` \
+         (instrumented build — this is slow). Pass --input <json> to reuse a \
+         cached export."
+    );
+    let out = Command::new("cargo")
+        .current_dir(&workspace_root)
+        .args(["llvm-cov", "nextest", "--json"])
+        .output()
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "crap: failed to spawn cargo-llvm-cov: {e}. Install it with \
+                 `cargo install cargo-llvm-cov`, or pass --input <json>."
+            );
+            exit(1);
+        });
+    if !out.status.success() {
+        eprintln!(
+            "crap: `cargo llvm-cov nextest --json` exited non-zero:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        exit(1);
+    }
+    String::from_utf8(out.stdout).unwrap_or_else(|e| {
+        eprintln!("crap: cargo-llvm-cov produced non-UTF8 output: {e}");
+        exit(1);
+    })
+}
+
+// Trim an absolute path down to the part from `crates/` (or the last two
+// components) so the table stays narrow.
+fn short_path(file: &str) -> String {
+    if let Some(idx) = file.find("crates/") {
+        return file[idx..].to_string();
+    }
+    if let Some(idx) = file.find("/src/") {
+        // Workspace-root crate: keep `src/...`.
+        return file[idx + 1..].to_string();
+    }
+    file.to_string()
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{kept}…")
 }
