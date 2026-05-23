@@ -1,10 +1,17 @@
-# Tooling-hygiene CI (#527): supply-chain, MSRV, public-API, feature matrix.
+# Tooling-hygiene CI (#527): supply-chain, MSRV, public-API, feature matrix,
+# plus an advisory CRAP-metric report.
 #
 # Lives separately from `ci.yml` so the heavy Tier 3 / parity / perf-budget
 # matrix can evolve independently of the supply-chain / API-surface fences.
-# All jobs here are unconditional on PRs and pushes to main — they are cheap
-# enough (no fixture data, no Tier 3 propagation) that path-filtering would
-# add more complexity than it saves.
+# The fence jobs (cargo-deny, msrv, semver-checks, cargo-hack) are
+# unconditional on PRs and pushes to main — they are cheap enough (no fixture
+# data, no Tier 3 propagation) that path-filtering would add more complexity
+# than it saves. The `crap` job is the exception: it builds the whole
+# instrumented workspace and runs the full test suite for an accurate coverage
+# picture, so it runs on push-to-main only and is non-gating
+# (`continue-on-error`). It produces a prioritized list of high-complexity,
+# thinly-tested physics functions — a where-to-look signal, never a merge gate
+# (definition-of-done stays with Tier 3 cross-validation).
 
 name: Tooling
 
@@ -100,3 +107,50 @@ jobs:
           key: cargo-hack
       - uses: taiki-e/install-action@cargo-hack
       - run: cargo hack check -p astrodyn_ephemeris --feature-powerset --no-dev-deps
+
+  crap:
+    # Advisory CRAP-metric report (`cargo xtask crap`). Builds the workspace
+    # instrumented and runs the FULL test suite under cargo-llvm-cov so that
+    # physics exercised only via Tier 3 integration is credited as covered —
+    # a Tier-3-excluded coverage run would falsely flag well-validated gravity
+    # / RNP kernels as untested. That makes this the heaviest job in the file,
+    # so it runs on push-to-main only (not every PR) and never gates: it exists
+    # to surface a worklist of high-complexity, thinly-tested numerics, not to
+    # block merges. The ranked table is printed to the log and the job summary;
+    # the raw coverage export is uploaded for offline inspection / reuse.
+    name: CRAP report (advisory)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # cargo-llvm-cov drives `llvm-cov`/`llvm-profdata` from this component.
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: crap-coverage
+      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
+      - name: Generate coverage export (full suite)
+        run: cargo llvm-cov nextest --workspace --json --output-path crap-coverage.json
+      - name: Rank physics functions by CRAP
+        run: |
+          cargo run -p xtask -- crap --input crap-coverage.json | tee crap-report.txt
+          {
+            echo '### CRAP report (advisory — physics crates)'
+            echo '```'
+            cat crap-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crap-coverage-export
+          path: crap-coverage.json
