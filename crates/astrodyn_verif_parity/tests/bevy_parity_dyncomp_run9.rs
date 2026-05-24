@@ -1,4 +1,4 @@
-//! Bevy ↔ runner parity for SIM_dyncomp RUN_9A / RUN_9C / RUN_9D —
+//! Bevy ↔ runner parity for SIM_dyncomp RUN_9A / RUN_9B / RUN_9C / RUN_9D —
 //! scheduled external force / torque pulses (`t ∈ [1000, 2000) s`) on
 //! the 6-DOF ISS scenario, via the `VerificationCaseParityExt` trait
 //! (issue #389).
@@ -24,6 +24,11 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 #[test]
 fn bevy_parity_dyncomp_run9a_torque() {
     sim_dyncomp::run9a_torque().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_dyncomp_run9b_torque_initial_rate() {
+    sim_dyncomp::run9b_torque_initial_rate().run_and_assert_parity::<astrodyn::Earth>();
 }
 
 #[test]

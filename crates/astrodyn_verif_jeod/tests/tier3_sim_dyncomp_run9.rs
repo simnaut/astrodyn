@@ -1,4 +1,4 @@
-//! Tier 3: SIM_dyncomp RUN_9A / RUN_9C / RUN_9D.
+//! Tier 3: SIM_dyncomp RUN_9A / RUN_9B / RUN_9C / RUN_9D.
 //!
 //! The recipe factories (`sim_dyncomp::run9{a,c,d}_*`) carry the JEOD
 //! pulse-window schedule (`t ∈ [1000, 2000) s` with body-frame
@@ -16,6 +16,11 @@ use astrodyn_verif_jeod::VerificationCaseExt;
 #[test]
 fn tier3_simulation_run9a_torque() {
     sim_dyncomp::run9a_torque().run_and_assert();
+}
+
+#[test]
+fn tier3_simulation_run9b_torque_initial_rate() {
+    sim_dyncomp::run9b_torque_initial_rate().run_and_assert();
 }
 
 #[test]
