@@ -203,6 +203,13 @@ const PERMANENT_GAPS: &[(&str, &str)] = &[
         "drag_analytical",
         "analytical drag verification — out of trait scope (no propagation)",
     ),
+    (
+        "csr_compare",
+        "GGM05C 70×70 gravity-acceleration octant cross-check (#207) — the \
+         JEOD vehicle is non-integrating (teleported through octant \
+         positions), so this is a per-step gravity-evaluation comparison, \
+         not a `Simulation::step()` trajectory; no Bevy parity counterpart.",
+    ),
 ];
 
 /// Union of the two gap arrays. The coverage check unions both into the
