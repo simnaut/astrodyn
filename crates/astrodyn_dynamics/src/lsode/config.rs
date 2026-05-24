@@ -138,10 +138,18 @@ impl LsodeConfig {
             self.rel_tolerance
         );
         assert!(
-            self.abs_tolerance.is_finite() && self.abs_tolerance > 0.0,
-            "LsodeConfig.abs_tolerance = {} must be finite and > 0 (an all-zero error weight \
-             divides by zero in the WRMS norm).",
+            self.abs_tolerance.is_finite() && self.abs_tolerance >= 0.0,
+            "LsodeConfig.abs_tolerance = {} must be finite and ≥ 0.",
             self.abs_tolerance
+        );
+        // ewt = rtol·|y| + atol must be able to be positive: at least one
+        // tolerance must be > 0 (JEOD allows atol=0 with rtol>0, e.g. its
+        // RUN_lsode uses rtol=2.3e-16, atol=0). The per-step ewt>0 check
+        // still fires if a component's |y| is zero under atol=0.
+        assert!(
+            self.rel_tolerance > 0.0 || self.abs_tolerance > 0.0,
+            "LsodeConfig: at least one of rel_tolerance / abs_tolerance must be > 0 \
+             (both zero makes the error weight identically zero)."
         );
         assert!(
             self.method == IntegrationMethod::ImplicitAdamsNonStiff

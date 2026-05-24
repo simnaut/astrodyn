@@ -422,6 +422,12 @@ impl Simulation {
             {
                 body.abm4_state = Some(astrodyn::Abm4State::new());
             }
+            // Auto-initialize LSODE state for bodies that need it.
+            if let astrodyn::IntegratorType::Lsode(ref config) = body.integrator {
+                if body.lsode_state.is_none() {
+                    body.lsode_state = Some(astrodyn::LsodeState::new(*config));
+                }
+            }
         }
         if !fatal.is_empty() {
             return Err(fatal);

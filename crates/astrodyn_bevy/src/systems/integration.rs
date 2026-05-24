@@ -784,6 +784,11 @@ pub fn integration_system<P: Planet>(
             integrator_type,
             gj_state.as_mut().map(|g| g.0.inner_mut()),
             abm4_state.as_mut().map(|a| a.0.inner_mut()),
+            // LSODE Bevy support (an `LsodeStateC` component, mirroring
+            // `Abm4StateC`) is a follow-on (#200 Phase 6B); no Bevy body
+            // selects `IntegratorType::Lsode` yet, and the runner-side
+            // `integrate_body` panics loudly if one does without state.
+            None,
         );
         // Re-wrap kernel-mutated state back into typed components;
         // integrate_body signature is untyped, so re-wrapping is the
@@ -3134,6 +3139,7 @@ pub fn staging_system<P: Planet>(
             astrodyn::reset_integrators(
                 gj_opt.as_mut().map(|c| c.0.inner_mut()),
                 abm_opt.as_mut().map(|c| c.0.inner_mut()),
+                None, // no Bevy LsodeStateC yet (#200 Phase 6B)
             );
         }
     }

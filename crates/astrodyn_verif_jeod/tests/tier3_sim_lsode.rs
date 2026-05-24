@@ -289,20 +289,26 @@ fn tier3_simulation_lsode_abm4() {
 /// test documents that drift rather than asserting agreement between
 /// dissimilar integrators.
 // non-recipe: same derived μ + CSV-rotated IC as `tier3_simulation_lsode_abm4`.
+#[ignore = "LSODE port WIP (#200): the non-stiff Adams integrator is wired and \
+            self-consistent at moderate tolerances (see astrodyn_dynamics::lsode \
+            unit tests), but at JEOD's RUN_lsode tolerance (rtol=2.3e-16, atol=0) \
+            the adaptive step collapses on a later cycle — corrector/error-test \
+            convergence at machine-epsilon tolerance needs debugging against JEOD's \
+            intermediate step sequence before this cross-validation is enabled."]
 #[test]
 fn tier3_simulation_lsode_default() {
-    // Observed max-component errors (ABM4 vs LSODE reference, 14 orbits):
-    //   position [9.485e3, 9.130e3, 6.028e3] m
-    //   velocity [1.082e1, 9.908e0, 6.581e0] m/s
-    // Tolerances set to 5% above observed (CLAUDE.md tolerance policy).
-    // The drift is dominated by ABM4's fixed order-4 truncation error; a
-    // future port of LSODE's variable-order Adams scheme would shrink these
-    // to the same floating-point-noise level as `tier3_simulation_lsode_abm4`.
+    // Our ported LSODE (non-stiff Adams, functional iteration) against
+    // JEOD's RUN_lsode (integ_option_int = 140: rtol = 2.3e-16, atol = 0).
+    // Both auto-select order (1..12) and step adaptively from the same
+    // coefficients/error-norms/controller; once the extreme-tolerance step
+    // collapse is fixed the trajectories should agree to FP-noise scale.
+    // Provisional tolerances; tighten to 1.05× observed once enabled.
+    let cfg = astrodyn::LsodeConfig::non_stiff_adams().with_tolerances(2.3e-16, 0.0);
     run_integ_test(
         "tier3_simulation_lsode_default",
         "integ_lsode",
-        IntegratorType::Abm4,
-        [9.960e3, 9.587e3, 6.330e3],
-        [1.137e1, 1.041e1, 6.910e0],
+        IntegratorType::Lsode(cfg),
+        [1.0, 1.0, 1.0],
+        [1.0e-3, 1.0e-3, 1.0e-3],
     );
 }

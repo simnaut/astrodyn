@@ -322,6 +322,7 @@ pub(crate) struct SimBody {
     // ── Integrator state ──
     pub gj_state: Option<astrodyn::GaussJacksonState>,
     pub abm4_state: Option<astrodyn::Abm4State>,
+    pub lsode_state: Option<astrodyn::LsodeState>,
 }
 
 impl SimBody {
@@ -413,6 +414,7 @@ impl SimBody {
 
             gj_state: None,
             abm4_state: None,
+            lsode_state: None,
         }
     }
 

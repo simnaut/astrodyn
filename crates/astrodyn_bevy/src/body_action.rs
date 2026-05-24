@@ -688,6 +688,7 @@ pub fn body_action_system<P: Planet>(
             astrodyn::reset_integrators(
                 gj.as_deref_mut().map(|c| c.0.inner_mut()),
                 abm.as_deref_mut().map(|c| c.0.inner_mut()),
+                None, // no Bevy LsodeStateC yet (#200 Phase 6B)
             );
         }
         // Do not advance idx: the queue shifted left by one when we
