@@ -1346,7 +1346,7 @@ pub fn run10a_gravity_torque() -> VerificationCase {
 /// cylinder mass, with a small initial LVLH pitch rate.
 ///
 /// Identical to RUN_10A (gravity-gradient libration of the 1000 kg
-/// cylinder at 5° pitch / 1° yaw from LVLH) except JEOD's
+/// cylinder at 85° pitch / 1° yaw from LVLH) except JEOD's
 /// `RUN_10B/input.py` adds `vehicle.lvlh_init.ang_velocity =
 /// [0, 0.01, 0] deg/s` — a 0.01 deg/s rate on the LVLH pitch axis. That
 /// rate is baked into the t=0 row of `dyncomp_run10b_state.csv` (read by

@@ -1,0 +1,31 @@
+[34mBuilding with the following compilation flags:[0m
+TRICK_CFLAGS   = [36m-Wall -I/jeod/models[0m
+TRICK_CXXFLAGS = [36m-std=c++11 -Wall -I/jeod/models[0m
+Building JPL DE4XX ephemeris files
+make[1]: Entering directory '/jeod'
+Building JEOD Library
+make -C /jeod/build_Linux_11.5_x86_64 install
+make[2]: Entering directory '/jeod/build_Linux_11.5_x86_64'
+make[3]: Entering directory '/jeod/build_Linux_11.5_x86_64'
+make[4]: Entering directory '/jeod/build_Linux_11.5_x86_64'
+make[4]: Entering directory '/jeod/build_Linux_11.5_x86_64'
+make[4]: Entering directory '/jeod/build_Linux_11.5_x86_64'
+make[4]: Leaving directory '/jeod/build_Linux_11.5_x86_64'
+make[4]: Leaving directory '/jeod/build_Linux_11.5_x86_64'
+[  6%] Built target de421
+[ 31%] Built target de440
+make[4]: Leaving directory '/jeod/build_Linux_11.5_x86_64'
+[100%] Built target de405
+make[3]: Leaving directory '/jeod/build_Linux_11.5_x86_64'
+Install the project...
+-- Install configuration: "Debug"
+-- Up-to-date: /jeod/lib_jeod_Linux_11.5_x86_64/de4xx_lib/libde405.so
+-- Up-to-date: /jeod/lib_jeod_Linux_11.5_x86_64/de4xx_lib/libde421.so
+-- Up-to-date: /jeod/lib_jeod_Linux_11.5_x86_64/de4xx_lib/libde440.so
+make[2]: Leaving directory '/jeod/build_Linux_11.5_x86_64'
+make[1]: Leaving directory '/jeod'
+ln -snf /jeod/lib_jeod_Linux_11.5_x86_64/de4xx_lib build/de4xx_lib;
+cd build;\
+lib_rel_path=`python3 -c 'import os.path, sys; print(os.path.relpath("/jeod/lib_jeod_Linux_11.5_x86_64/de4xx_lib", "."))'`;\
+ln -snf ${lib_rel_path} de4xx_lib
+[32mTrick Build Process Complete[00m

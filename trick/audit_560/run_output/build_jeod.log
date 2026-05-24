@@ -1,0 +1,9 @@
+[  1%] Built target de421
+[  4%] Built target de440
+[ 12%] Built target de405
+[ 12%] Building CXX object CMakeFiles/jeod.dir/models/dynamics/dyn_body/src/dyn_body_integration.cc.o
+[ 13%] Building CXX object CMakeFiles/jeod.dir/models/interactions/contact/src/point_contact_facet.cc.o
+[ 13%] Building CXX object CMakeFiles/jeod.dir/models/interactions/contact/src/point_contact_pair.cc.o
+[ 14%] Building CXX object CMakeFiles/jeod.dir/models/interactions/contact/src/spring_pair_interaction.cc.o
+[ 15%] Linking CXX static library libjeod.a
+[100%] Built target jeod

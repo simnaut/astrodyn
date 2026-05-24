@@ -1,0 +1,26 @@
+|L   0|2026/05/19,01:29:34.462465|88f33eaab928| |T 0|10.000000| [00m
+     REALTIME SHUTDOWN STATS:
+            ACTUAL INIT TIME:        1.378
+         ACTUAL ELAPSED TIME:        1.600
+[00m|L   0|2026/05/19,01:29:36.239325|88f33eaab928| |T 0|10.000000| [00m
+SIMULATION TERMINATED IN
+  PROCESS: 0
+  ROUTINE: Executive_loop_single_thread.cpp:98
+  DIAGNOSTIC: Reached termination time
+
+              SIMULATION START TIME:        0.000
+               SIMULATION STOP TIME:       10.000
+            SIMULATION ELAPSED TIME:       10.000
+                 USER CPU TIME USED:        1.439
+               SYSTEM CPU TIME USED:        0.160
+              SIMULATION / CPU TIME:        6.253
+       INITIALIZATION USER CPU TIME:        1.306
+     INITIALIZATION SYSTEM CPU TIME:        0.070
+               SIMULATION RAM USAGE:      157.055MB
+      (External program RAM usage not included!)
+  VOLUNTARY CONTEXT SWITCHES (INIT):            7
+INVOLUNTARY CONTEXT SWITCHES (INIT):            8
+   VOLUNTARY CONTEXT SWITCHES (RUN):           11
+ INVOLUNTARY CONTEXT SWITCHES (RUN):            0
+
+[00m
