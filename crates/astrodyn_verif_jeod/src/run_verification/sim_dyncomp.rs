@@ -89,7 +89,12 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
+    // hardcoded J2000. This builder uses spherical point-mass gravity with no
+    // rotation model, so the epoch is numerically inert today, but matching
+    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
+    // if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
@@ -135,7 +140,12 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
         DVec3::from_slice(&mass_init.position),
     );
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
+    // hardcoded J2000. This builder uses spherical point-mass gravity with no
+    // rotation model, so the epoch is numerically inert today, but matching
+    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
+    // if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
@@ -289,7 +299,12 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     });
     let rot_state = init_lvlh_rot_state(&state_py);
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
+    // hardcoded J2000. This builder uses spherical point-mass gravity with no
+    // rotation model, so the epoch is numerically inert today, but matching
+    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
+    // if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
@@ -1071,7 +1086,12 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
+    // hardcoded J2000. This builder uses spherical point-mass gravity with no
+    // rotation model, so the epoch is numerically inert today, but matching
+    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
+    // if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
     sb.add_body(VehicleConfig {
@@ -1761,7 +1781,12 @@ fn build_run9_scenario(init: &InitialConditions, case: &'static str) -> Simulati
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
+    // hardcoded J2000. This builder uses spherical point-mass gravity with no
+    // rotation model, so the epoch is numerically inert today, but matching
+    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
+    // if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
