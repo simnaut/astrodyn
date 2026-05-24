@@ -89,11 +89,7 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
 
-    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
-    // hardcoded J2000. This builder uses spherical point-mass gravity with no
-    // rotation model, so the epoch is numerically inert today, but matching
-    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
-    // if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
@@ -140,11 +136,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
         DVec3::from_slice(&mass_init.position),
     );
 
-    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
-    // hardcoded J2000. This builder uses spherical point-mass gravity with no
-    // rotation model, so the epoch is numerically inert today, but matching
-    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
-    // if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
@@ -299,11 +291,7 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     });
     let rot_state = init_lvlh_rot_state(&state_py);
 
-    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
-    // hardcoded J2000. This builder uses spherical point-mass gravity with no
-    // rotation model, so the epoch is numerically inert today, but matching
-    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
-    // if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
@@ -1086,11 +1074,7 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let mu_earth = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
-    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
-    // hardcoded J2000. This builder uses spherical point-mass gravity with no
-    // rotation model, so the epoch is numerically inert today, but matching
-    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
-    // if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
@@ -1302,13 +1286,7 @@ fn build_run6_maneuver(init: &InitialConditions, case: &'static str) -> Simulati
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
-    // Use the SIM_dyncomp epoch (parsed from Modified_data/time.py) like every
-    // other RUN_6 builder, not a hardcoded J2000 anchor. The maneuver runs use
-    // spherical point-mass gravity with no rotation model, so the epoch is
-    // numerically inert today, but matching JEOD's configured epoch keeps these
-    // cases correct if a time-dependent model (Earth RNP / derived frames) is
-    // enabled later, and keeps the module-doc "all parameters loaded from JEOD
-    // source" statement accurate.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
@@ -1454,11 +1432,7 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
-    // Use the SIM_dyncomp epoch (parsed from Modified_data/time.py), not a
-    // hardcoded J2000 anchor, matching the other RUN_* builders. RUN_10 uses
-    // spherical point-mass gravity with no rotation model, so the epoch is
-    // numerically inert today, but this keeps the case consistent with JEOD's
-    // configured epoch and correct if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
@@ -1781,11 +1755,7 @@ fn build_run9_scenario(init: &InitialConditions, case: &'static str) -> Simulati
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
-    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py), not a
-    // hardcoded J2000. This builder uses spherical point-mass gravity with no
-    // rotation model, so the epoch is numerically inert today, but matching
-    // JEOD's epoch keeps every SIM_dyncomp builder consistent and stays correct
-    // if a time-dependent model is enabled later.
+    // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
