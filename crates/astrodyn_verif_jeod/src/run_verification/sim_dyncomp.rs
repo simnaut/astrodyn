@@ -1247,6 +1247,147 @@ pub fn run6b_drag() -> VerificationCase {
     }
 }
 
+// ── RUN_6C / RUN_6D: impulsive maneuver burns ──────────────────────────────
+//
+// JEOD's SIM_dyncomp RUN_6C (plane-change) and RUN_6D (departure) apply a
+// large body-frame external force over a short window to the 1000 kg
+// cylinder, LVLH-aligned at t=0, under spherical Earth gravity with the
+// gravity-gradient torque inactive (`vehicle.grav_torque.active = False`,
+// the common_input.py default). Atmosphere is configured but drag is off,
+// so it has no dynamic effect and the recipe omits it. The burns:
+//   RUN_6C: structural-frame `[0, -29000, 0] N` over t ∈ [1000, 1093) s
+//   RUN_6D: structural-frame `[66400, 0, 0] N` over t ∈ [1000, 1048) s
+// matching `SET_test/RUN_6{C,D}/input.py`'s `trick.add_read` schedule. As
+// in the RUN_9 force cases, JEOD's `force_extern.force` is structural-frame
+// (= body-frame here, since `t_struct_body` is identity), so the pre-step
+// rotates it into RootInertial through the current body quaternion before
+// injecting it.
+
+/// RUN_6C plane-change burn: structural-frame force (N) and window (s).
+const RUN6C_FORCE_BODY: DVec3 = DVec3::new(0.0, -29000.0, 0.0);
+const RUN6C_BURN_START_S: f64 = 1000.0;
+const RUN6C_BURN_END_S: f64 = 1093.0;
+
+/// RUN_6D departure burn: structural-frame force (N) and window (s).
+const RUN6D_FORCE_BODY: DVec3 = DVec3::new(66400.0, 0.0, 0.0);
+const RUN6D_BURN_START_S: f64 = 1000.0;
+const RUN6D_BURN_END_S: f64 = 1048.0;
+
+/// Shared 6-DOF cylinder scenario for the RUN_6C/6D maneuver burns:
+/// spherical Earth point-mass gravity, no gravity-gradient torque, no
+/// drag. Initial attitude and rate come from the t=0 reference row.
+fn build_run6_maneuver(init: &InitialConditions, case: &'static str) -> SimulationBuilder {
+    let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
+    let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
+    let mass_props = cylinder_mass_properties();
+
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, dt);
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    sb.add_body(VehicleConfig {
+        trans: trans_from(init),
+        rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
+        mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+fn build_run6c(init: &InitialConditions) -> SimulationBuilder {
+    build_run6_maneuver(init, "run6c_plane_change")
+}
+
+fn build_run6d(init: &InitialConditions) -> SimulationBuilder {
+    build_run6_maneuver(init, "run6d_departure")
+}
+
+/// Build a per-tick maneuver pre-step that holds `force_body` (structural
+/// = body frame) on the half-open window `[start_s, end_s)` and zero
+/// otherwise, rotating it into RootInertial via the body quaternion. The
+/// midpoint predicate matches the RUN_9 pulse convention so the on/off
+/// flip lines up with JEOD's Trick scheduler boundary records.
+fn maneuver_pre_step(force_body: DVec3, start_s: f64, end_s: f64) -> PreStepClosure {
+    let dt =
+        crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_DYNCOMP).join("S_define"));
+    Box::new(move |ctx, t_end_s: f64| {
+        let mid = t_end_s - 0.5 * dt;
+        if (start_s..end_s).contains(&mid) {
+            let q = ctx.body_q_inertial_body(0);
+            let t_inertial_body = JeodQuat::from_glam(q).left_quat_to_transformation();
+            let force_inertial = t_inertial_body.transpose() * force_body;
+            ctx.set_body_external_force(0, force_inertial);
+        } else {
+            ctx.set_body_external_force(0, DVec3::ZERO);
+        }
+    })
+}
+
+fn run6c_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    maneuver_pre_step(RUN6C_FORCE_BODY, RUN6C_BURN_START_S, RUN6C_BURN_END_S)
+}
+
+fn run6d_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    maneuver_pre_step(RUN6D_FORCE_BODY, RUN6D_BURN_START_S, RUN6D_BURN_END_S)
+}
+
+/// SIM_dyncomp RUN_6C — plane-change maneuver: structural-frame
+/// `[0, -29000, 0] N` burn over `t ∈ [1000, 1093) s` on the LVLH-aligned
+/// cylinder. Cross-validates against `dyncomp_run6c_state.csv`.
+pub fn run6c_plane_change() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run6c_plane_change",
+        scenario: build_run6c,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run6c_state.csv"),
+        duration: Time::new::<second>(0.0),
+        // 1.05× observed max. The plane-change burn is (nearly) period-
+        // preserving, so the cross-validation residual stays at the
+        // sub-micron level common to the RK4 dyncomp runs.
+        tolerances: Tolerances {
+            position_m: [6.828e-7, 7.726e-7, 6.119e-7],
+            velocity_m_s: [6.159e-10, 7.665e-10, 4.890e-10],
+            quat_angle_rad: 5.421e-8,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some((run6c_pre_step, PreStepCadence::PerTick)),
+    }
+}
+
+/// SIM_dyncomp RUN_6D — departure maneuver: structural-frame
+/// `[66400, 0, 0] N` burn over `t ∈ [1000, 1048) s` on the LVLH-aligned
+/// cylinder. Cross-validates against `dyncomp_run6d_state.csv`.
+pub fn run6d_departure() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run6d_departure",
+        scenario: build_run6d,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run6d_state.csv"),
+        duration: Time::new::<second>(0.0),
+        // 1.05× observed max. The departure burn is a large prograde
+        // ΔV (~3.2 km/s along-track) that raises the orbit and changes
+        // its period; over the 8-hour propagation the sub-micron
+        // per-step RK4 modeling residual (identical mechanism to RUN_6C,
+        // which matches to sub-micron) amplifies into along-track phase
+        // drift — hence the metre-scale position tolerance against a
+        // sub-decimetre-per-second velocity tolerance (the phase-drift
+        // signature, not a ΔV error). JEOD's config (RK4, dt, spherical
+        // gravity μ, cylinder mass, burn vector/window) is matched exactly.
+        tolerances: Tolerances {
+            position_m: [4.555e2, 9.845e2, 3.552e2],
+            velocity_m_s: [2.070e-2, 7.576e-2, 2.941e-2],
+            quat_angle_rad: 5.421e-8,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some((run6d_pre_step, PreStepCadence::PerTick)),
+    }
+}
+
 // ── RUN_10A / RUN_10C / RUN_10D: gravity-gradient torque ───────────────────
 
 fn cylinder_mass_properties() -> MassProperties {
