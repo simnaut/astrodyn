@@ -68,6 +68,7 @@ pub mod gauss_jackson;
 pub mod integration;
 pub mod kinematic_joint;
 pub mod kinematic_propagation;
+pub mod lsode;
 pub mod mass;
 pub mod mass_body;
 pub mod mass_storage;
