@@ -116,18 +116,18 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling — drag-family recipe factory not yet defined \
          (#389 follow-up)",
     ),
-    // `lsode` (tier3_sim_lsode.rs) covered by
-    // `bevy_parity_lsode_abm4.rs`: the `RUN_abm4` half of the tier3
-    // file (the half whose JEOD reference uses our ABM4 implementation
-    // on both sides) runs lockstep through both runtimes and asserts
-    // bit-identical state at every checkpoint. The `RUN_lsode` half
-    // documents the drift between our fixed-order ABM4 and JEOD's
-    // adaptive LSODE — there is no Bevy-side LSODE to assert parity
-    // against until LSODE itself is ported (see
-    // `crates/astrodyn_dynamics/src/abm4.rs` doc rationale for the
-    // future-work scoping). The prefix-match in `is_covered_by_parity`
-    // satisfies this entry implicitly, so the topic is not listed
-    // here.
+    // `lsode` (tier3_sim_lsode.rs) covered by two parity wrappers, both
+    // satisfying this topic implicitly via the prefix-match in
+    // `is_covered_by_parity` (so neither is listed in a gap array):
+    //   * `bevy_parity_lsode_abm4.rs` — the `RUN_abm4` half (our ABM4 on
+    //     both sides) runs lockstep through both runtimes.
+    //   * `bevy_parity_lsode.rs` — the `RUN_lsode` half. Since the LSODE
+    //     non-stiff Adams family landed (#200), the Bevy `LsodeStateC`
+    //     component path threads the Nordsieck history through the ECS,
+    //     and this wrapper asserts bit-identical runner≡Bevy state at
+    //     every checkpoint over the full 80 000 s window — closing the
+    //     "no Bevy-side LSODE to assert parity against" gap the older
+    //     `bevy_parity_lsode_abm4.rs` doc described.
     //
     // `time_docker` (tier3_sim_time_docker.rs) covered by
     // `bevy_parity_time_docker.rs`: all six SIM_1..6 cases run as a

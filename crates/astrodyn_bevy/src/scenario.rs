@@ -60,7 +60,7 @@
 //! source_ephem_bodies[i]    →  EphemerisBodyC on the source entity
 //! sun_source / moon_source  →  SunMarker / MoonMarker on the source entity
 //! bodies[i]                 →  cfg.spawn_bevy::<P>(commands, &source_entities)
-//! integrator (GJ / ABM4)    →  GaussJacksonStateC / Abm4StateC inserted
+//! integrator (GJ/ABM4/LSODE)→  GaussJacksonStateC / Abm4StateC / LsodeStateC inserted
 //! mass_tree_names[i]        →  pre-allocated MassBodyIdC(id) on the body
 //! mass_tree_attachments     →  MassTreeR.attach() + MassChildOf on child
 //! ```
@@ -93,15 +93,15 @@ use bevy::prelude::*;
 use glam::DVec3;
 
 use astrodyn::{
-    Abm4State, FrameTransform, GaussJacksonState, IntegratorType, MassBodyId, MassTree,
+    Abm4State, FrameTransform, GaussJacksonState, IntegratorType, LsodeState, MassBodyId, MassTree,
     MassTreeAttachment, Planet, PlanetFixed, RootInertial, RotationModel, SimulationBuilder,
     ValidationError, VehicleConfig,
 };
 
 use crate::components::{
-    Abm4StateC, EphemerisBodyC, GaussJacksonStateC, GravitySourceC, MassBodyIdC, MassChildOf,
-    MoonMarker, PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
-    SourceInertialVelocityC, SunMarker, TidalConfigC, TranslationalStateC,
+    Abm4StateC, EphemerisBodyC, GaussJacksonStateC, GravitySourceC, LsodeStateC, MassBodyIdC,
+    MassChildOf, MoonMarker, PlanetFixedRotationC, PlanetOmegaC, RotationModelC,
+    SourceInertialPositionC, SourceInertialVelocityC, SunMarker, TidalConfigC, TranslationalStateC,
 };
 use crate::{
     AstrodynPlugin, AtmosphereModelR, EphemerisR, IntegrationDtR, MassTreeR, PolarMotionR,
@@ -460,6 +460,11 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                     app.world_mut()
                         .entity_mut(entity)
                         .insert(Abm4StateC(Abm4State::new()));
+                }
+                IntegratorType::Lsode(config) => {
+                    app.world_mut()
+                        .entity_mut(entity)
+                        .insert(LsodeStateC(LsodeState::new(config)));
                 }
                 _ => {}
             }

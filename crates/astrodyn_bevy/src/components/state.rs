@@ -307,6 +307,19 @@ pub struct GaussJacksonStateC(pub astrodyn::GaussJacksonState);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Abm4StateC(pub astrodyn::Abm4State);
 
+/// Persistent LSODE (Livermore Solver) integrator state.
+///
+/// Required on entities using `IntegratorType::Lsode`. Created once with
+/// `LsodeState::new(config)` — using the same `LsodeConfig` carried by the
+/// `IntegratorTypeC` — and maintained across steps. When absent,
+/// `integration_system` will panic if `IntegratorTypeC` is `Lsode`.
+///
+/// Unlike `Abm4StateC`, this has no `Default`: the Nordsieck history is
+/// sized and primed from the config, so the state cannot be constructed
+/// without one (mirrors `GaussJacksonStateC`).
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct LsodeStateC(pub astrodyn::LsodeState);
+
 /// Typed structural→body rotation for a vehicle entity.
 ///
 /// Stores the rotation that maps structural-frame vectors into body-frame

@@ -294,8 +294,15 @@ pub fn integration_system<P: Planet>(
             &GravityControlsC,
             &mut TotalForceC,
             Option<&IntegratorTypeC>,
-            Option<&mut GaussJacksonStateC>,
-            Option<&mut Abm4StateC>,
+            // Persistent multistep integrator states, nested in one
+            // sub-tuple to keep the outer query within Bevy's QueryData
+            // tuple-arity limit. At most one is present per body (the
+            // one matching `IntegratorTypeC`); RK4/RKF45 bodies carry none.
+            (
+                Option<&mut GaussJacksonStateC>,
+                Option<&mut Abm4StateC>,
+                Option<&mut LsodeStateC>,
+            ),
             Option<&mut FlatPlateConfigC>,
             Option<&StructuralTransformC>,
             Option<&mut RadiationForceC>,
@@ -490,8 +497,7 @@ pub fn integration_system<P: Planet>(
         controls,
         mut total_force,
         integrator,
-        mut gj_state,
-        mut abm4_state,
+        (mut gj_state, mut abm4_state, mut lsode_state),
         mut flat_config,
         struct_xform,
         mut srp_force,
@@ -534,6 +540,15 @@ pub fn integration_system<P: Planet>(
                 "Entity {entity:?}: IntegratorTypeC is Abm4 but \
                  Abm4StateC component is missing. Add \
                  Abm4StateC(Abm4State::new()) to the entity."
+            );
+        }
+        if matches!(integrator_type, astrodyn::IntegratorType::Lsode(..)) {
+            assert!(
+                lsode_state.is_some(),
+                "Entity {entity:?}: IntegratorTypeC is Lsode but \
+                 LsodeStateC component is missing. Create the state from \
+                 the same config used in IntegratorTypeC, e.g.: \
+                 LsodeStateC(LsodeState::new(config))"
             );
         }
 
@@ -784,11 +799,7 @@ pub fn integration_system<P: Planet>(
             integrator_type,
             gj_state.as_mut().map(|g| g.0.inner_mut()),
             abm4_state.as_mut().map(|a| a.0.inner_mut()),
-            // LSODE Bevy support (an `LsodeStateC` component, mirroring
-            // `Abm4StateC`) is a follow-on (#200 Phase 6B); no Bevy body
-            // selects `IntegratorType::Lsode` yet, and the runner-side
-            // `integrate_body` panics loudly if one does without state.
-            None,
+            lsode_state.as_mut().map(|l| l.0.inner_mut()),
         );
         // Re-wrap kernel-mutated state back into typed components;
         // integrate_body signature is untyped, so re-wrapping is the
@@ -1227,6 +1238,7 @@ pub fn staging_system<P: Planet>(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
         Option<&mut Abm4StateC>,
+        Option<&mut LsodeStateC>,
     )>,
     // `frame_origin` performs the per-body root-inertial lift required by
     // the cross-integration-frame attach path. The merge kernel composes
@@ -3119,13 +3131,16 @@ pub fn staging_system<P: Planet>(
     // JEOD_INV: IG.37 — kept strictly before Site B so a regression
     // that drops Site B leaves the dirty flag set and panics on next
     // integrate.
-    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+    for (body_id, mut gj_opt, mut abm_opt, mut lsode_opt) in &mut integrators {
         if affected_ids.binary_search(&body_id.0).is_ok() {
             if let Some(ref mut gj) = gj_opt {
                 gj.0.mark_topology_dirty();
             }
             if let Some(ref mut abm) = abm_opt {
                 abm.0.mark_topology_dirty();
+            }
+            if let Some(ref mut lsode) = lsode_opt {
+                lsode.0.mark_topology_dirty();
             }
         }
     }
@@ -3134,12 +3149,12 @@ pub fn staging_system<P: Planet>(
     // `dyn_body_attach.cc::reset_integrators()` (lines 860, 871) and
     // `dyn_body_detach.cc:271-273`.
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
-    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+    for (body_id, mut gj_opt, mut abm_opt, mut lsode_opt) in &mut integrators {
         if affected_ids.binary_search(&body_id.0).is_ok() {
             astrodyn::reset_integrators(
                 gj_opt.as_mut().map(|c| c.0.inner_mut()),
                 abm_opt.as_mut().map(|c| c.0.inner_mut()),
-                None, // no Bevy LsodeStateC yet (#200 Phase 6B)
+                lsode_opt.as_mut().map(|c| c.0.inner_mut()),
             );
         }
     }
