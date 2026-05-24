@@ -183,25 +183,17 @@ impl LsodeState {
 }
 
 /// Evaluate the flattened-system derivative `y_dot = [vel; accel]` at the
-/// state currently stored in Nordsieck column 0, writing it into `save`.
-/// `accel_fn` supplies the translational acceleration; `frac` is the
-/// fraction of the cycle for time-dependent gravity (ephemeris).
+/// state `y = [position; velocity]`, writing it into `save`. `accel_fn`
+/// supplies the translational acceleration; `frac` is the fraction of the
+/// cycle for time-dependent gravity (ephemeris).
 fn eval_derivative(
-    nordsieck: &Nordsieck,
+    y: &[f64; N_ODES],
     accel_fn: &impl Fn(&TranslationalState, f64) -> DVec3,
     frac: f64,
     save: &mut [f64; N_ODES],
 ) {
-    let pos = DVec3::new(
-        nordsieck.history[0][0],
-        nordsieck.history[1][0],
-        nordsieck.history[2][0],
-    );
-    let vel = DVec3::new(
-        nordsieck.history[3][0],
-        nordsieck.history[4][0],
-        nordsieck.history[5][0],
-    );
+    let pos = DVec3::new(y[0], y[1], y[2]);
+    let vel = DVec3::new(y[3], y[4], y[5]);
     let accel = accel_fn(
         &TranslationalState {
             position: pos,
@@ -265,7 +257,7 @@ pub fn lsode_translational_step(
         for i in 0..N_ODES {
             lsode.nordsieck.history[i][0] = y0[i];
         }
-        eval_derivative(&lsode.nordsieck, &accel_fn, 0.0, &mut save);
+        eval_derivative(&y0, &accel_fn, 0.0, &mut save);
         for i in 0..N_ODES {
             lsode.nordsieck.history[i][1] = save[i];
         }
@@ -409,6 +401,15 @@ fn dstode_step(
         let tesco1 = lsode.test_coeffs[1][lsode.order - 1];
 
         // ── Functional-iteration corrector. ──
+        // `history[i][0]` stays at the PREDICTED value throughout the
+        // corrector (JEOD never modifies it here); the working corrected
+        // state lives in `y_work = history[0] + el0·save`. The single
+        // post-acceptance update `history[jj] += el[jj]·accum` (including
+        // jj=0) then brings column 0 from predicted to corrected exactly
+        // once — modifying `history[0]` here too would double-apply the
+        // correction to the solution.
+        let pred0: [f64; N_ODES] = std::array::from_fn(|i| lsode.nordsieck.history[i][0]);
+        let mut y_work = pred0;
         for i in 0..N_ODES {
             accum[i] = 0.0;
         }
@@ -416,8 +417,7 @@ fn dstode_step(
         let mut converged = false;
         let mut corrector_failed = false;
         for iter in 0..lsode.config.max_correction_iters {
-            // y currently sits in Nordsieck column 0; evaluate derivative.
-            eval_derivative(&lsode.nordsieck, accel_fn, frac, &mut save);
+            eval_derivative(&y_work, accel_fn, frac, &mut save);
             // residual: save = h·f − h·y'_pred ; increment = save − accum.
             let mut incr = [0.0_f64; N_ODES];
             for i in 0..N_ODES {
@@ -426,7 +426,7 @@ fn dstode_step(
             }
             let iter_delta = weighted_rms_norm(&incr, &lsode.error_weight);
             for i in 0..N_ODES {
-                lsode.nordsieck.history[i][0] = lsode.nordsieck.history[i][0] + el0 * incr[i];
+                y_work[i] = pred0[i] + el0 * save[i];
                 accum[i] = save[i];
             }
             if iter != 0 {
@@ -514,7 +514,7 @@ fn dstode_step(
         if lsode.order_select_para == 0 {
             let r_inc = compute_r_inc(lsode, &accum);
             select_new_order(lsode, &accum, dsm, step_error, r_inc, max_step_size_inv);
-        } else if lsode.order_select_para == 1 && lsode.num_cols != lsode.max_order + 1 {
+        } else if lsode.order_select_para == 1 && lsode.num_cols != lsode.max_order {
             for i in 0..N_ODES {
                 lsode.nordsieck.history[i][lsode.max_order] = accum[i];
             }
@@ -549,14 +549,19 @@ fn apply_step_ratio(lsode: &mut LsodeState, ratio: f64, max_step_size_inv: f64) 
 
 /// Order-increase step-ratio indicator (`compute_new_order_prep`'s
 /// `step_ratio_order_inc`). Uses the accumulated correction minus the
-/// previous step's stashed accum (`history[max_order]`). Returns 0 when
-/// the order is already at the array maximum (no spare column).
+/// previous step's stashed accum (the spare column `history[max_order]`).
+/// Returns 0 when no spare column is available — mirroring JEOD's
+/// `num_nordsiek_cols != max_history_size` guard, where `max_history_size`
+/// is the spare-column index (`max_order` here): the effective maximum
+/// order is therefore `max_order - 1`, so column `max_order` is *always*
+/// a free spare (never an active Nordsieck column) and the stash can never
+/// collide with the working history.
 #[allow(
     clippy::cast_precision_loss,
     reason = "column count ≤ 13 is exactly representable in f64"
 )]
 fn compute_r_inc(lsode: &LsodeState, accum: &[f64; N_ODES]) -> f64 {
-    if lsode.num_cols == lsode.max_order + 1 {
+    if lsode.num_cols == lsode.max_order {
         return 0.0;
     }
     let diff: [f64; N_ODES] =
@@ -575,9 +580,10 @@ fn fail_reset_order_1(
 ) {
     let ratio = (lsode.config.min_step_size / lsode.step_size.abs()).max(0.1);
     lsode.step_size *= ratio;
-    // Recompute the first derivative at the current state.
+    // Recompute the first derivative at the current state (column 0).
+    let y0: [f64; N_ODES] = std::array::from_fn(|i| lsode.nordsieck.history[i][0]);
     let mut save = [0.0_f64; N_ODES];
-    eval_derivative(&lsode.nordsieck, accel_fn, 0.0, &mut save);
+    eval_derivative(&y0, accel_fn, 0.0, &mut save);
     for i in 0..N_ODES {
         lsode.nordsieck.history[i][1] = lsode.step_size * save[i];
     }

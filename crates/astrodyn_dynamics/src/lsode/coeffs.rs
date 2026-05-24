@@ -167,6 +167,24 @@ mod tests {
     }
 
     #[test]
+    fn adams_full_el_vector_orders_4_5_match_elco() {
+        let (el, _) = calculate_integration_coefficients(IntegrationMethod::ImplicitAdamsNonStiff);
+        // ODEPACK ELCO for Adams order 4: [3/8, 1, 11/12, 1/3, 1/24].
+        assert_close(el[0][3], 3.0 / 8.0, "AM4 el0");
+        assert_exact(el[1][3], 1.0, "AM4 el1");
+        assert_close(el[2][3], 11.0 / 12.0, "AM4 el2");
+        assert_close(el[3][3], 1.0 / 3.0, "AM4 el3");
+        assert_close(el[4][3], 1.0 / 24.0, "AM4 el4");
+        // Adams order 5: [251/720, 1, 25/24, 35/72, 5/48, 1/120].
+        assert_close(el[0][4], 251.0 / 720.0, "AM5 el0");
+        assert_exact(el[1][4], 1.0, "AM5 el1");
+        assert_close(el[2][4], 25.0 / 24.0, "AM5 el2");
+        assert_close(el[3][4], 35.0 / 72.0, "AM5 el3");
+        assert_close(el[4][4], 5.0 / 48.0, "AM5 el4");
+        assert_close(el[5][4], 1.0 / 120.0, "AM5 el5");
+    }
+
+    #[test]
     fn bdf_order1_is_backward_euler() {
         let (el, _) = calculate_integration_coefficients(IntegrationMethod::ImplicitBackDiffStiff);
         // BDF1 = backward Euler: el = [1, 1].
