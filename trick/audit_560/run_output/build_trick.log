@@ -1,0 +1,278 @@
+/trick/bin/trick-ICG -sim_services -m -std=c++17 -I/trick/trick_source -I/trick/include -I/trick/include/trick/compat -DTRICK_VER=25 -DTRICK_MINOR=0 -fpic -I/usr/include/udunits2 -DUSE_ER7_UTILS_INTEGRATORS /trick/include/trick/files_to_ICG.hh
+make[1]: Entering directory '/trick/trick_source/sim_services/ExternalApplications'
+make[1]: Entering directory '/trick/trick_source/sim_services/Clock'
+make[1]: Entering directory '/trick/trick_source/sim_services/CheckPointAgent'
+make[1]: Entering directory '/trick/trick_source/sim_services/CheckPointRestart'
+make[1]: Entering directory '/trick/trick_source/sim_services/Collect'
+make[1]: Entering directory '/trick/trick_source/sim_services/CommandLineArguments'
+make[1]: Entering directory '/trick/trick_source/sim_services/DataRecord'
+make[1]: Entering directory '/trick/trick_source/sim_services/DebugPause'
+make[1]: Entering directory '/trick/trick_source/sim_services/EchoJobs'
+make[1]: Entering directory '/trick/trick_source/sim_services/Environment'
+make[1]: Entering directory '/trick/trick_source/sim_services/EventManager'
+make[1]: Entering directory '/trick/trick_source/sim_services/Executive'
+make[1]: Entering directory '/trick/trick_source/sim_services/FrameLog'
+make[1]: Entering directory '/trick/trick_source/sim_services/JITInputFile'
+make[1]: Entering directory '/trick/trick_source/sim_services/JSONVariableServer'
+make[1]: Entering directory '/trick/trick_source/sim_services/Integrator'
+make[1]: Entering directory '/trick/trick_source/sim_services/UnitTest'
+make[1]: Entering directory '/trick/trick_source/sim_services/MasterSlave'
+make[1]: Entering directory '/trick/trick_source/sim_services/MemoryManager'
+make[1]: Entering directory '/trick/trick_source/sim_services/Message'
+make[1]: Entering directory '/trick/trick_source/sim_services/MonteCarlo'
+make[1]: Entering directory '/trick/trick_source/sim_services/MonteCarloGeneration'
+make[1]: Entering directory '/trick/trick_source/sim_services/RealtimeInjector'
+make[1]: Entering directory '/trick/trick_source/sim_services/RealtimeSync'
+make[1]: Entering directory '/trick/trick_source/sim_services/ScheduledJobQueue'
+make[1]: Entering directory '/trick/trick_source/sim_services/Scheduler'
+make[1]: Entering directory '/trick/trick_source/sim_services/Sie'
+make[1]: Entering directory '/trick/trick_source/sim_services/SimObject'
+[32m/trick/trick_source/sim_services/Clock object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Clock'
+make[1]: Entering directory '/trick/trick_source/sim_services/SimTime'
+[32m/trick/trick_source/sim_services/EventManager object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/EventManager'
+[32m/trick/trick_source/sim_services/DataRecord object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/DataRecord'
+make[1]: Entering directory '/trick/trick_source/sim_services/ThreadBase'
+[32m/trick/trick_source/sim_services/CheckPointAgent object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/CheckPointAgent'
+make[1]: Entering directory '/trick/trick_source/sim_services/Timer'
+[32m/trick/trick_source/sim_services/JSONVariableServer object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/JSONVariableServer'
+make[1]: Entering directory '/trick/trick_source/sim_services/UdUnits'
+make[1]: Entering directory '/trick/trick_source/sim_services/UnitsMap'
+[32m/trick/trick_source/sim_services/CheckPointRestart object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/CheckPointRestart'
+[32m/trick/trick_source/sim_services/FrameLog object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/FrameLog'
+[32m/trick/trick_source/sim_services/ExternalApplications object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/ExternalApplications'
+[32m/trick/trick_source/sim_services/EchoJobs object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/EchoJobs'
+[32m/trick/trick_source/sim_services/Environment object files up to date[00m
+make[1]: Entering directory '/trick/trick_source/sim_services/VariableServer'
+make[1]: Leaving directory '/trick/trick_source/sim_services/Environment'
+[32m/trick/trick_source/sim_services/Collect object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Collect'
+[32m/trick/trick_source/sim_services/CommandLineArguments object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/CommandLineArguments'
+[32m/trick/trick_source/sim_services/JITInputFile object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/JITInputFile'
+[32m/trick/trick_source/sim_services/UnitTest object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/UnitTest'
+make[1]: Entering directory '/trick/trick_source/sim_services/Zeroconf'
+make[1]: Entering directory '/trick/trick_source/sim_services/include'
+[32m/trick/trick_source/sim_services/MasterSlave object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/MasterSlave'
+make[1]: Entering directory '/trick/trick_source/sim_services/mains'
+[32m/trick/trick_source/sim_services/Message object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Message'
+[32m/trick/trick_source/sim_services/MemoryManager object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/MemoryManager'
+[32m/trick/trick_source/sim_services/DebugPause object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/DebugPause'
+make[1]: Entering directory '/trick/trick_source/trick_utils/compareFloatingPoint'
+[32m/trick/trick_source/sim_services/Sie object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Sie'
+make[1]: Entering directory '/trick/trick_source/trick_utils/interpolator'
+[32m/trick/trick_source/sim_services/MonteCarloGeneration object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/MonteCarloGeneration'
+make[1]: Entering directory '/trick/trick_source/trick_utils/trick_adt'
+[32m/trick/trick_source/sim_services/ScheduledJobQueue object files up to date[00m
+make[1]: Entering directory '/trick/trick_source/trick_utils/comm'
+make[1]: Leaving directory '/trick/trick_source/sim_services/ScheduledJobQueue'
+[32m/trick/trick_source/sim_services/MonteCarlo object files up to date[00m
+[32m/trick/trick_source/sim_services/Executive object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/MonteCarlo'
+make[1]: Leaving directory '/trick/trick_source/sim_services/Executive'
+[32m/trick/trick_source/sim_services/Scheduler object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Scheduler'
+make[1]: Entering directory '/trick/trick_source/trick_utils/connection_handlers'
+[32m/trick/trick_source/sim_services/RealtimeInjector object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/RealtimeInjector'
+make[1]: Entering directory '/trick/trick_source/trick_utils/shm'
+[32m/trick/trick_source/sim_services/SimObject object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/SimObject'
+make[1]: Entering directory '/trick/trick_source/trick_utils/math'
+[32m/trick/trick_source/sim_services/Integrator object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Integrator'
+[32m/trick/trick_source/sim_services/RealtimeSync object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/RealtimeSync'
+make[1]: Entering directory '/trick/trick_source/trick_utils/optimization'
+make[1]: Entering directory '/trick/trick_source/trick_utils/units'
+make[1]: Entering directory '/trick/trick_source/trick_utils/unicode'
+make[1]: Entering directory '/trick/trick_source/trick_utils/var_binary_parser'
+make[1]: Entering directory '/trick/trick_source/sim_services/InputProcessor'
+make[1]: Entering directory '/trick/trick_source/trick_swig'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/abm4'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/beeman'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/core'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/euler'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/mm4'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/nl2'
+[32m/trick/trick_source/sim_services/Timer object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/Timer'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/position_verlet'
+[32m/trick/trick_source/sim_services/SimTime object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/SimTime'
+[32m/trick/trick_source/sim_services/UnitsMap object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/UnitsMap'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rk2_heun'
+[32m/trick/trick_source/sim_services/ThreadBase object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/ThreadBase'
+[32m/trick/trick_source/sim_services/VariableServer object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/VariableServer'
+[32m/trick/trick_source/sim_services/Zeroconf object files up to date[00m
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rk2_midpoint'
+[32m/trick/trick_source/sim_services/UdUnits object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/UdUnits'
+make[1]: Leaving directory '/trick/trick_source/sim_services/Zeroconf'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rk4'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rkf45'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rkf78'
+[32m/trick/trick_source/trick_utils/interpolator object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/interpolator'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rkg4'
+[32m/trick/trick_source/trick_utils/compareFloatingPoint object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/compareFloatingPoint'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/rkn4'
+[32m/trick/trick_source/sim_services/mains object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/mains'
+[32m/trick/trick_source/trick_utils/trick_adt object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/trick_adt'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/symplectic_euler'
+[32m/trick/trick_source/trick_utils/comm object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/comm'
+[32m/trick/trick_source/sim_services/include object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/include'
+make[1]: Entering directory '/trick/trick_source/er7_utils/integration/velocity_verlet'
+[32m/trick/trick_source/trick_utils/connection_handlers object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/connection_handlers'
+make[1]: Entering directory '/trick/trick_source/er7_utils/interface'
+make[1]: Entering directory '/trick/trick_source/er7_utils/math'
+make[1]: Entering directory '/trick/trick_source/er7_utils/trick/integration'
+[32m/trick/trick_source/trick_utils/unicode object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/unicode'
+[32m/trick/trick_source/trick_utils/optimization object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/optimization'
+make[1]: Nothing to be done for 'trick'.
+make[1]: Leaving directory '/trick/trick_source/trick_swig'
+make[1]: Nothing to be done for 'trick'.
+make[1]: Leaving directory '/trick/trick_source/trick_utils/var_binary_parser'
+[32m/trick/trick_source/trick_utils/shm object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/shm'
+[32m/trick/trick_source/trick_utils/units object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/units'
+make[1]: Entering directory '/trick/trick_source/data_products'
+[32m/trick/trick_source/trick_utils/math object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/trick_utils/math'
+ar crs /trick/lib64/libtrick.a /trick/trick_source/sim_services/ExternalApplications/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Clock/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/CheckPointAgent/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/CheckPointRestart/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Collect/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/CommandLineArguments/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/DataRecord/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/DebugPause/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/EchoJobs/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Environment/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/EventManager/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Executive/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/FrameLog/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/JITInputFile/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/JSONVariableServer/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Integrator/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/UnitTest/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/MasterSlave/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Message/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/MonteCarlo/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/MonteCarloGeneration/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/RealtimeInjector/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/RealtimeSync/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/ScheduledJobQueue/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Scheduler/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Sie/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/SimObject/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/SimTime/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/ThreadBase/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Timer/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/UdUnits/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/UnitsMap/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/VariableServer/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/Zeroconf/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/include/object_Linux_11.5_x86_64/*.o /trick/trick_source/sim_services/mains/object_Linux_11.5_x86_64/*.o /trick/trick_source/trick_utils/compareFloatingPoint/object_Linux_11.5_x86_64/*.o /trick/trick_source/trick_utils/interpolator/object_Linux_11.5_x86_64/*.o /trick/trick_source/trick_utils/trick_adt/object_Linux_11.5_x86_64/*.o /trick/trick_source/trick_utils/shm/object_Linux_11.5_x86_64/*.o /trick/trick_source/trick_utils/unicode/object_Linux_11.5_x86_64/*.o
+[32m/trick/trick_source/er7_utils/integration/abm4 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/abm4'
+[32m/trick/trick_source/sim_services/InputProcessor object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/sim_services/InputProcessor'
+ar crs /trick/lib64/libtrick_pyip.a /trick/trick_source/sim_services/InputProcessor/object_Linux_11.5_x86_64/*.o  /trick/trick_source/trick_swig/object_Linux_11.5_x86_64/*.o 
+[32m/trick/trick_source/er7_utils/integration/beeman object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/beeman'
+[32m/trick/trick_source/er7_utils/integration/core object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/core'
+[32m/trick/trick_source/er7_utils/integration/euler object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/euler'
+[32m/trick/trick_source/er7_utils/integration/mm4 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/mm4'
+[32m/trick/trick_source/er7_utils/integration/nl2 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/nl2'
+[32m/trick/trick_source/er7_utils/integration/position_verlet object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/position_verlet'
+[32m/trick/trick_source/er7_utils/integration/rk2_heun object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rk2_heun'
+cd ./src ; /usr/bin/g++ -std=c++17 -Wno-unused-parameter -isystem/trick/trick_source -isystem/trick/include -isystem/trick/include/trick/compat -DTRICK_VER=25 -DTRICK_MINOR=0 -fpic -I/usr/include/udunits2 -DUSE_ER7_UTILS_INTEGRATORS -c rk4_second_order_ode_integrator.cc -o ../object_Linux_11.5_x86_64/rk4_second_order_ode_integrator.o
+[32m/trick/trick_source/er7_utils/integration/rkg4 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rkg4'
+[32m/trick/trick_source/er7_utils/integration/rkf45 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rkf45'
+[32m/trick/trick_source/er7_utils/integration/rkf78 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rkf78'
+[32m/trick/trick_source/er7_utils/integration/rk2_midpoint object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rk2_midpoint'
+[32m/trick/trick_source/er7_utils/integration/symplectic_euler object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/symplectic_euler'
+[32m/trick/trick_source/er7_utils/integration/velocity_verlet object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/velocity_verlet'
+[32m/trick/trick_source/er7_utils/math object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/math'
+[32m/trick/trick_source/er7_utils/interface object files up to date[00m
+[32m/trick/trick_source/er7_utils/integration/rkn4 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/interface'
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rkn4'
+[32m/trick/trick_source/er7_utils/trick/integration object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/trick/integration'
+
+==: Compile data_products/Var
+
+==: Compile data_products/Log
+make[2]: Entering directory '/trick/trick_source/data_products/Var'
+
+==: Compile data_products/EQParse
+make[2]: Entering directory '/trick/trick_source/data_products/Log'
+make[2]: Entering directory '/trick/trick_source/data_products/EQParse'
+
+==: Compile data_products/units
+make[2]: Entering directory '/trick/trick_source/data_products/units'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/trick/trick_source/data_products/EQParse'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/trick/trick_source/data_products/Var'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/trick/trick_source/data_products/Log'
+ar crs ../lib_Linux_11.5_x86_64/libtrick_units.a object_Linux_11.5_x86_64/init_units_system.o object_Linux_11.5_x86_64/map_trick_units_to_udunits.o object_Linux_11.5_x86_64/units_conv.o
+make[2]: Leaving directory '/trick/trick_source/data_products/units'
+
+==: Compile data_products/DPX
+
+==: Compile data_products/Apps/Trk2csv
+make[2]: Entering directory '/trick/trick_source/data_products/DPX'
+
+==: Compile data_products/Apps/ExternalPrograms
+make[2]: Entering directory '/trick/trick_source/data_products/Apps/Trk2csv'
+make[2]: Entering directory '/trick/trick_source/data_products/Apps/ExternalPrograms'
+make[3]: Entering directory '/trick/trick_source/data_products/Apps/ExternalPrograms'
+#@ /bin/cp object_Linux_11.5_x86_64/*.so /trick/lib_Linux_11.5_x86_64
+make[3]: Leaving directory '/trick/trick_source/data_products/Apps/ExternalPrograms'
+make[2]: Leaving directory '/trick/trick_source/data_products/Apps/ExternalPrograms'
+[32m/trick/trick_source/er7_utils/integration/rk4 object files up to date[00m
+make[1]: Leaving directory '/trick/trick_source/er7_utils/integration/rk4'
+ar crs /trick/lib64/liber7_utils.a /trick/trick_source/er7_utils/integration/abm4/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/beeman/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/core/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/euler/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/mm4/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/nl2/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/position_verlet/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rk2_heun/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rk2_midpoint/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rk4/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rkf45/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rkf78/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rkg4/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/rkn4/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/symplectic_euler/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/integration/velocity_verlet/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/interface/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/math/object_Linux_11.5_x86_64/*.o  /trick/trick_source/er7_utils/trick/integration/object_Linux_11.5_x86_64/*.o 
+
+==: Compile DPM
+
+make[3]: Entering directory '/trick/trick_source/data_products/DPX/DPM'
+==: Compile DPC
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/trick/trick_source/data_products/Apps/Trk2csv'
+
+==: Compile DPV/UTILS
+make[3]: Entering directory '/trick/trick_source/data_products/DPX/DPC'
+make[3]: Entering directory '/trick/trick_source/data_products/DPX/DPV/UTILS'
+
+Trick libs compiled:
+Tue May 19 01:18:34 UTC 2026
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/trick/trick_source/data_products/DPX/DPM'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/trick/trick_source/data_products/DPX/DPC'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/trick/trick_source/data_products/DPX/DPV/UTILS'
+===== Making APPS =====
+
+==: Compile APPS/GXPLOT
+make[3]: Entering directory '/trick/trick_source/data_products/DPX/APPS/GXPLOT'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/trick/trick_source/data_products/DPX/APPS/GXPLOT'
+make[2]: Leaving directory '/trick/trick_source/data_products/DPX'
+[32m== Trick data_products make complete ==[00m
+make[1]: Leaving directory '/trick/trick_source/data_products'
+
+[32mTrick compilation complete:[00m
+Tue May 19 01:18:34 UTC 2026

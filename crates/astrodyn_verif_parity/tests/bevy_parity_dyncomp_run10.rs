@@ -12,6 +12,11 @@ fn bevy_parity_dyncomp_run10a_gravity_torque() {
 }
 
 #[test]
+fn bevy_parity_dyncomp_run10b_gravity_torque_circular_rate() {
+    sim_dyncomp::run10b_gravity_torque_circular_rate().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
 fn bevy_parity_dyncomp_run10c_gravity_torque_elliptical() {
     sim_dyncomp::run10c_gravity_torque_elliptical().run_and_assert_parity::<astrodyn::Earth>();
 }

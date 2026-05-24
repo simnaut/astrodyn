@@ -1309,6 +1309,10 @@ fn build_run10a(init: &InitialConditions) -> SimulationBuilder {
     build_run10(init, "run10a")
 }
 
+fn build_run10b(init: &InitialConditions) -> SimulationBuilder {
+    build_run10(init, "run10b")
+}
+
 fn build_run10c(init: &InitialConditions) -> SimulationBuilder {
     build_run10(init, "run10c")
 }
@@ -1331,6 +1335,36 @@ pub fn run10a_gravity_torque() -> VerificationCase {
             velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
             quat_angle_rad: 7.556e-5,
             ang_vel_rad_s: [1e-15, 1.172e-7, 9.301e-8],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// SIM_dyncomp RUN_10B — gravity-gradient torque, circular orbit,
+/// cylinder mass, with a small initial LVLH pitch rate.
+///
+/// Identical to RUN_10A (gravity-gradient libration of the 1000 kg
+/// cylinder at 85° pitch / 1° yaw from LVLH) except JEOD's
+/// `RUN_10B/input.py` adds `vehicle.lvlh_init.ang_velocity =
+/// [0, 0.01, 0] deg/s` — a 0.01 deg/s rate on the LVLH pitch axis. That
+/// rate is baked into the t=0 row of `dyncomp_run10b_state.csv` (read by
+/// `rot_from`), so the scenario builder is shared with RUN_10A.
+pub fn run10b_gravity_torque_circular_rate() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run10b_gravity_torque_circular_rate",
+        scenario: build_run10b,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run10b_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        // 1.05× observed max per component (CLAUDE.md tolerance policy);
+        // the body-X rate is identically zero, so it keeps the 1e-15
+        // floor the RUN_10A/C/D siblings use for that axis.
+        tolerances: Tolerances {
+            position_m: [1.370e-6, 2.154e-6, 1.826e-6],
+            velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
+            quat_angle_rad: 1.088e-4,
+            ang_vel_rad_s: [1e-15, 1.808e-7, 1.195e-7],
             extras: &[],
         },
         extras: None,
@@ -1627,6 +1661,10 @@ fn build_run9a(init: &InitialConditions) -> SimulationBuilder {
     build_run9_scenario(init, "run9a_torque")
 }
 
+fn build_run9b(init: &InitialConditions) -> SimulationBuilder {
+    build_run9_scenario(init, "run9b_torque_initial_rate")
+}
+
 fn build_run9c(init: &InitialConditions) -> SimulationBuilder {
     build_run9_scenario(init, "run9c_force_torque")
 }
@@ -1756,5 +1794,34 @@ pub fn run9d_force_torque_rate() -> VerificationCase {
         },
         extras: None,
         pre_step: Some((run9_force_torque_pre_step, PreStepCadence::PerTick)),
+    }
+}
+
+/// SIM_dyncomp RUN_9B — point-mass 6-DOF + scheduled external torque,
+/// with a non-zero initial inertial angular rate.
+///
+/// JEOD's `RUN_9B/input.py` starts the ISS at the Docking Torque
+/// Equilibrium Attitude *with orbit angular rate* (~0.065 deg/s) and
+/// applies the same body-frame `[10, 0, 0] N·m` torque as RUN_9A during
+/// `t ∈ [1000, 2000) s`, with no external force. The only difference
+/// from RUN_9A is the non-zero initial rate, which the recipe picks up
+/// from the t=0 row of `dyncomp_run9b_state.csv` via `rot_from`; the
+/// scenario builder and torque pre-step are shared with RUN_9A.
+pub fn run9b_torque_initial_rate() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run9b_torque_initial_rate",
+        scenario: build_run9b,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run9b_state.csv"),
+        duration: Time::new::<second>(0.0),
+        // 1.05× observed max per component (CLAUDE.md tolerance policy).
+        tolerances: Tolerances {
+            position_m: [1.370e-6, 2.154e-6, 1.826e-6],
+            velocity_m_s: [1.446e-9, 2.389e-9, 1.814e-9],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [1.651e-18, 1.367e-18, 6.262e-19],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some((run9a_pre_step, PreStepCadence::PerTick)),
     }
 }

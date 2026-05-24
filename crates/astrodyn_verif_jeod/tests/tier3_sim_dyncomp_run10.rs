@@ -1,4 +1,4 @@
-//! Tier 3: SIM_dyncomp RUN_10A/10C/10D — Gravity gradient torque
+//! Tier 3: SIM_dyncomp RUN_10A/10B/10C/10D — Gravity gradient torque
 
 #![allow(
     clippy::float_cmp,
@@ -29,6 +29,11 @@ use astrodyn_verif_jeod::VerificationCaseExt;
 #[test]
 fn tier3_simulation_run10a_gravity_torque() {
     sim_dyncomp::run10a_gravity_torque().run_and_assert();
+}
+
+#[test]
+fn tier3_simulation_run10b_gravity_torque_circular_rate() {
+    sim_dyncomp::run10b_gravity_torque_circular_rate().run_and_assert();
 }
 
 #[test]
