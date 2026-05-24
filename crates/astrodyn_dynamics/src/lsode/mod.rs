@@ -34,5 +34,7 @@
 
 pub mod coeffs;
 pub mod config;
+pub mod error_weights;
+pub mod nordsieck;
 
 pub use config::{CorrectorMethod, IntegrationMethod, LsodeConfig};
