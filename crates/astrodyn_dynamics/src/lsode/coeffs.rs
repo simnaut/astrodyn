@@ -156,6 +156,17 @@ mod tests {
     }
 
     #[test]
+    fn adams_el0_matches_known_beta0_orders_4_to_8() {
+        let (el, _) = calculate_integration_coefficients(IntegrationMethod::ImplicitAdamsNonStiff);
+        // Known Adams-Moulton β0 coefficients (= el[0][nq-1]).
+        assert_close(el[0][3], 9.0 / 24.0, "AM4 el0");
+        assert_close(el[0][4], 251.0 / 720.0, "AM5 el0");
+        assert_close(el[0][5], 95.0 / 288.0, "AM6 el0");
+        assert_close(el[0][6], 19_087.0 / 60_480.0, "AM7 el0");
+        assert_close(el[0][7], 5_257.0 / 17_280.0, "AM8 el0");
+    }
+
+    #[test]
     fn bdf_order1_is_backward_euler() {
         let (el, _) = calculate_integration_coefficients(IntegrationMethod::ImplicitBackDiffStiff);
         // BDF1 = backward Euler: el = [1, 1].

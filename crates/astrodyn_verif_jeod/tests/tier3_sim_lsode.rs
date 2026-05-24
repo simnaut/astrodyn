@@ -289,12 +289,13 @@ fn tier3_simulation_lsode_abm4() {
 /// test documents that drift rather than asserting agreement between
 /// dissimilar integrators.
 // non-recipe: same derived μ + CSV-rotated IC as `tier3_simulation_lsode_abm4`.
-#[ignore = "LSODE port WIP (#200): the non-stiff Adams integrator is wired and \
-            self-consistent at moderate tolerances (see astrodyn_dynamics::lsode \
-            unit tests), but at JEOD's RUN_lsode tolerance (rtol=2.3e-16, atol=0) \
-            the adaptive step collapses on a later cycle — corrector/error-test \
-            convergence at machine-epsilon tolerance needs debugging against JEOD's \
-            intermediate step sequence before this cross-validation is enabled."]
+#[ignore = "LSODE port WIP (#200): the integrator now runs JEOD's full RUN_lsode \
+            scenario to completion (the earlier step-collapse was fixed by adding the \
+            JEOD-faithful order-decrease on error-test failure). It does not yet MATCH \
+            JEOD to FP-noise (~5.6 km over 14 orbits) because our adaptive controller \
+            settles at a lower effective order than JEOD's (which climbs to ~order 12 \
+            for μm accuracy) — a high-order order/step-selection fidelity gap to close \
+            against JEOD's intermediate order/step sequence before enabling."]
 #[test]
 fn tier3_simulation_lsode_default() {
     // Our ported LSODE (non-stiff Adams, functional iteration) against
