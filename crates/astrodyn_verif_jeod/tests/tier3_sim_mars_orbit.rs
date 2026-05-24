@@ -197,3 +197,162 @@ fn tier3_simulation_mars_dawn() {
     // Observed max per-component: 3.8 m × 1.05 = 3.99 ≈ 4.0 m.
     report.assert_position([4.0, 4.0, 4.0]);
 }
+
+// ── SIM_Mars RUN_phobos / RUN_orb_init_phobos (BCH.04, VRF.mars.02-03) ──
+//
+// A spacecraft in a Mars orbit at Phobos's orbital radius (a ≈ 9379 km),
+// Mars gravity truncated to 8×8 (JEOD `set_grav_controls_8x8()`), Sun
+// third-body, epoch 2010-09-10 00:00:00 UTC, 24-hour propagation. RUN_phobos
+// initializes from a Cartesian state; RUN_orb_init_phobos from orbital
+// elements (JEOD's element set 10 in the Mars alt-inertial frame). Both
+// resolve to a t=0 Cartesian state in the reference CSV, which the tests
+// read as the JEOD-source initial condition (same approach as RUN_dawn).
+// Our element→Cartesian initialization itself is exercised by the
+// SIM_orbinit family; here both runs cross-validate the propagated Mars
+// 8×8 + Sun trajectory.
+//
+// Bevy-adapter parity for the Mars-central + Sun-third-body path is
+// covered transitively by `bevy_parity_mars_orbit` (RUN_dawn): the
+// runner↔Bevy bit-identity property is independent of the SH degree/order
+// (both runtimes call the same `astrodyn_gravity` kernel), so the 110×110
+// Dawn parity wrapper already proves the 8×8 Phobos path tracks bit-for-bit.
+
+/// Build the shared Mars 8×8 + Sun third-body scenario at the Phobos
+/// epoch (2010-09-10 00:00:00 UTC), seeded with the given initial state.
+fn build_phobos_sim(init_pos: DVec3, init_vel: DVec3) -> Simulation {
+    let mu_sun = load_mu_sun();
+    let sh_data = astrodyn::gravity_fixtures::load_mars_mro110b2();
+    let mars_mu = sh_data.mu;
+
+    // JEOD RUN_phobos epoch: 2010-09-10 00:00:00 UTC (TAI-UTC = 34 s).
+    let time = astrodyn::recipes::epoch::at_utc(2010, 9, 10, 0, 0, 0.0);
+
+    let bsp_path = astrodyn::ephemeris_assets::de421_path();
+    let ephemeris = astrodyn::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
+    let epoch_tdb_jd = time.tdb_julian_date();
+    let (sun_pos_typed, _) = ephemeris
+        .get_state_typed(
+            astrodyn::EphemerisBody::Sun,
+            astrodyn::EphemerisBody::Mars,
+            epoch_tdb_jd,
+        )
+        .expect("Sun-Mars state from DE421");
+    let sun_pos_from_mars = sun_pos_typed.raw_si();
+
+    let mut sim = Simulation::new(time, 10.0);
+    let mars = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mars_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: astrodyn::Position::<astrodyn::RootInertial>::zero(),
+            velocity: astrodyn::Velocity::<astrodyn::RootInertial>::zero(),
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            rotation_model: RotationModel::MarsIAU,
+            delta_c20: 0.0,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+            marker_only: false,
+        },
+    );
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            sun_pos_from_mars.m_at::<astrodyn::RootInertial>(),
+            None,
+        ),
+    );
+    sim.set_source_ephemeris(
+        sun,
+        astrodyn::EphemerisBody::Sun,
+        astrodyn::EphemerisBody::Mars,
+    );
+    sim.ephemeris = Some(ephemeris);
+
+    sim.add_body(VehicleConfig {
+        trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
+            position: init_pos,
+            velocity: init_vel,
+        }),
+        gravity_controls: GravityControls {
+            controls: vec![
+                GravityControl::new_nonspherical(mars, 8, 8, GravityGradient::Skip),
+                GravityControl::new_third_body(sun),
+            ],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim
+}
+
+/// Cross-validate a Phobos-orbit reference CSV against the Mars 8×8 + Sun
+/// scenario, asserting per-component position error within `tol`.
+fn run_phobos_case(csv_name: &str, report_name: &str, tol: [f64; 3]) {
+    let csv_path = test_data_path(csv_name);
+    let ref_states = load_interleaved_csv(&csv_path, report_name);
+    assert!(
+        !ref_states.is_empty(),
+        "No reference data for {report_name}"
+    );
+
+    let init = &ref_states[0];
+    let mut sim = build_phobos_sim(init.position.unwrap(), init.velocity.unwrap());
+
+    let mut our_states = vec![StateLog {
+        time: 0.0,
+        position: init.position,
+        velocity: init.velocity,
+        ..Default::default()
+    }];
+    for record in &ref_states[1..] {
+        sim.step_until(record.time).expect("step_until failed");
+        let body = sim.body(0);
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
+            acceleration: Some(body.trans_accel.raw_si()),
+            ang_accel: body.rot_accel.map(|a| a.raw_si()),
+            ..Default::default()
+        });
+    }
+
+    let report = CrossvalReport::compute(report_name, &our_states, &ref_states[..our_states.len()]);
+    report.write();
+    println!(
+        "  {report_name}: max position error = {:.1} m (Mars 8x8 + Sun, 24h)",
+        report.max_position_component()
+    );
+    report.assert_position(tol);
+}
+
+#[test]
+fn tier3_simulation_mars_phobos() {
+    // 1.05× observed max per component (set after first run).
+    run_phobos_case("mars_phobos_mars.csv", "tier3_mars_phobos", PHOBOS_TOL);
+}
+
+#[test]
+fn tier3_simulation_mars_orb_init_phobos() {
+    // 1.05× observed max per component (set after first run).
+    run_phobos_case(
+        "mars_orb_init_phobos_mars.csv",
+        "tier3_mars_orb_init_phobos",
+        ORB_INIT_PHOBOS_TOL,
+    );
+}
+
+// 1.05× observed max per component over the 24-hour propagation
+// (~3 Phobos-altitude orbits). Residual is dominated by the Sun
+// third-body ephemeris difference (JEOD DE405 vs our DE421) and
+// Lyapunov divergence in the 8×8 Mars field, as for the Dawn case.
+const PHOBOS_TOL: [f64; 3] = [11.29, 11.82, 7.63];
+const ORB_INIT_PHOBOS_TOL: [f64; 3] = [17.31, 17.59, 10.93];

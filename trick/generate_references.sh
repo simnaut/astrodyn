@@ -1663,29 +1663,31 @@ for i in range(3):
 trick.add_data_record_group(dr)
 '
 
-# Group 26: SIM_Earth_Moon (Clementine lunar orbit)
+# ── Snippet: SIM_Earth_Moon RUN_rosetta (Earth swing-by, 15000s arc) ──
+# RUN_rosetta's input.py sets a 15000s terminate time and is Earth-centric
+# (integ frame Earth.inertial), so the same composite_body state log is
+# Earth-centered. We do NOT override the terminate time (unlike the clem
+# snippet's 7-day override) — the input.py 15000s stands.
+ROSETTA_SNIPPET='
+dr = trick.sim_services.DRAscii("earth_moon_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"vehicle.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"vehicle.dyn_body.composite_body.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+
+# Group 26: SIM_Earth_Moon (Clementine lunar orbit + Rosetta swing-by).
+# Both reuse the one SIM executable; run_sim_with_ascii skips per-run when
+# the output already exists and builds the exe on the first miss.
 run_earth_moon_group() {
     local sim_dir="verif/Integrated_Validation/SIM_Earth_Moon"
-    local -a RUNS=(
-        "SET_test/RUN_clem:earth_moon_clem:earth_moon_clem_earth_moon.csv"
-    )
-    local needs_build=0
-    for entry in "${RUNS[@]}"; do
-        IFS=: read -r _run_dir label required <<< "$entry"
-        if ! has_output "$label" "$required"; then
-            needs_build=1
-            break
-        fi
-    done
-    if [ "$needs_build" = "0" ]; then
-        echo "=== Skipping SIM_Earth_Moon group (all outputs exist) ==="
-        return 0
-    fi
     local fail=0
-    for entry in "${RUNS[@]}"; do
-        IFS=: read -r run_dir label required <<< "$entry"
-        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$EARTH_MOON_SNIPPET" "$required" || fail=1
-    done
+    run_sim_with_ascii "$sim_dir" "SET_test/RUN_clem" "earth_moon_clem" \
+        "$EARTH_MOON_SNIPPET" "earth_moon_clem_earth_moon.csv" || fail=1
+    run_sim_with_ascii "$sim_dir" "SET_test/RUN_rosetta" "earth_moon_rosetta" \
+        "$ROSETTA_SNIPPET" "earth_moon_rosetta_earth_moon.csv" || fail=1
     return $fail
 }
 throttled_bg run_earth_moon_group
@@ -1707,6 +1709,8 @@ run_mars_group() {
     local sim_dir="verif/Integrated_Validation/SIM_Mars"
     local -a RUNS=(
         "SET_test/RUN_dawn:mars_dawn:mars_dawn_mars.csv"
+        "SET_test/RUN_phobos:mars_phobos:mars_phobos_mars.csv"
+        "SET_test/RUN_orb_init_phobos:mars_orb_init_phobos:mars_orb_init_phobos_mars.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

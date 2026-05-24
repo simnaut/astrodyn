@@ -20,6 +20,7 @@
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::crossval::{CrossvalReport, StateLog};
 use astrodyn_verif_jeod::setups::earth_moon_clem::earth_moon_clem;
+use astrodyn_verif_jeod::setups::earth_moon_rosetta::earth_moon_rosetta;
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 use glam::DVec3;
 
@@ -131,3 +132,71 @@ fn tier3_simulation_earth_moon_clem() {
     // Tolerance: observed max × 1.05.
     report.assert_position([0.832, 0.331, 0.972]);
 }
+
+/// Rosetta Earth swing-by: Earth point-mass + J2 (degree 2/order 0) +
+/// Moon & Sun point-mass third bodies + cannonball SRP, matching JEOD
+/// SIM_Earth_Moon RUN_rosetta. Hyperbolic Earth flyby, 15000 s (4.17 hr),
+/// Earth-centered inertial. `BCH.02` mission benchmark.
+#[test]
+fn tier3_simulation_earth_moon_rosetta() {
+    let csv_path = test_data_path("earth_moon_rosetta_earth_moon.csv");
+    let ref_states = load_interleaved_csv(&csv_path, "SIM_Earth_Moon RUN_rosetta");
+    assert!(
+        !ref_states.is_empty(),
+        "No reference data for SIM_Earth_Moon RUN_rosetta"
+    );
+
+    // JEOD t=0 state from the CSV's first row (single source of truth).
+    let init = &ref_states[0];
+    let init_pos = init.position.unwrap();
+    let init_vel = init.velocity.unwrap();
+
+    // 32 Hz RK4, matching the SIM_Earth_Moon S_define dynamics rate.
+    let mut sim = earth_moon_rosetta(0.03125, Some((init_pos, init_vel)))
+        .build()
+        .expect("earth_moon_rosetta scenario must validate");
+
+    let mut our_states = vec![StateLog {
+        time: 0.0,
+        position: Some(init_pos),
+        velocity: Some(init_vel),
+        ..Default::default()
+    }];
+
+    for record in &ref_states[1..] {
+        sim.step_until(record.time).expect("step_until failed");
+        let body = sim.body(0);
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position.raw_si()),
+            velocity: Some(body.trans.velocity.raw_si()),
+            acceleration: Some(body.trans_accel.raw_si()),
+            ang_accel: body.rot_accel.map(|a| a.raw_si()),
+            ..Default::default()
+        });
+    }
+
+    let report = CrossvalReport::compute(
+        "tier3_earth_moon_rosetta",
+        &our_states,
+        &ref_states[..our_states.len()],
+    );
+    report.write();
+
+    let max_pos = report.max_position_component();
+    println!(
+        "  Earth-Moon Rosetta: max position error = {max_pos:.2} m \
+         (Earth pt-mass+J2 + Moon/Sun 3rd-body + cannonball SRP, dt=0.03125s, 15000s)"
+    );
+    // Tolerance: observed max × 1.05 (set after first run). Residual is
+    // dominated by the DE405 (JEOD) vs DE421 (ours) ephemeris difference
+    // over the hyperbolic flyby, same as the Clementine case.
+    report.assert_position([ROSETTA_TOL_X, ROSETTA_TOL_Y, ROSETTA_TOL_Z]);
+}
+
+// 1.05× observed max per component (CLAUDE.md policy). Observed
+// [1.166, 3.577, 3.029] m over the 15000 s flyby — dominated by the
+// DE405 (JEOD) vs DE421 (ours) ephemeris difference, as for Clementine.
+const ROSETTA_TOL_X: f64 = 1.225;
+const ROSETTA_TOL_Y: f64 = 3.756;
+const ROSETTA_TOL_Z: f64 = 3.181;

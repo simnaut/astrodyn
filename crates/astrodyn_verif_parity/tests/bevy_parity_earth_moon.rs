@@ -31,6 +31,7 @@ use std::time::Duration;
 use astrodyn_bevy::{SimulationBuilderBevyExt, TranslationalStateC};
 use astrodyn_runner::SimulationBuilderExt;
 use astrodyn_verif_jeod::setups::earth_moon_clem::earth_moon_clem;
+use astrodyn_verif_jeod::setups::earth_moon_rosetta::earth_moon_rosetta;
 use bevy::prelude::*;
 
 /// Integration timestep matching the runner-side tier3 test (32 Hz RK4).
@@ -113,6 +114,69 @@ fn bevy_parity_earth_moon_clem() {
             assert!(
                 r_vel[i].to_bits() == b_vel[i].to_bits(),
                 "earth_moon_clem translational bit-parity broke at t={t} on velocity[{i}]: \
+                 runner={} bevy={}",
+                r_vel[i],
+                b_vel[i],
+            );
+        }
+    }
+}
+
+/// Rosetta Earth swing-by parity: Earth is the central gravity source
+/// (point-mass + J2), Moon and Sun point-mass third bodies, cannonball
+/// SRP — every body integrates in `PlanetInertial<Earth>`. Drives
+/// [`earth_moon_rosetta`] through both runtimes and asserts bit-identical
+/// translational state, transferring the runner-side RUN_rosetta
+/// cross-validation to the Bevy adapter.
+#[test]
+fn bevy_parity_earth_moon_rosetta() {
+    let runner_builder = earth_moon_rosetta(DT, None);
+    let mut runner = runner_builder.build().expect("runner build");
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    let handles = earth_moon_rosetta(DT, None)
+        .populate_app::<astrodyn::Earth>(&mut app)
+        .expect("populate_app under <Earth>");
+    let vehicle = handles.body_entities[0];
+
+    app.world_mut().run_schedule(Startup);
+
+    let steps_per_checkpoint = (CHECKPOINT_CADENCE_S / DT).round() as usize;
+    assert!(steps_per_checkpoint >= 1);
+
+    let mut t = 0.0_f64;
+    while t + CHECKPOINT_CADENCE_S <= PARITY_WINDOW_S {
+        runner.step_n(steps_per_checkpoint).expect("runner step_n");
+        for _ in 0..steps_per_checkpoint {
+            app.world_mut()
+                .resource_mut::<Time<Fixed>>()
+                .advance_by(Duration::from_secs_f64(DT));
+            app.world_mut().run_schedule(FixedUpdate);
+        }
+        t += CHECKPOINT_CADENCE_S;
+
+        let r_pos = runner.body(0).trans.position.raw_si();
+        let r_vel = runner.body(0).trans.velocity.raw_si();
+        let bevy_trans = app
+            .world()
+            .get::<TranslationalStateC<astrodyn::Earth>>(vehicle)
+            .expect("vehicle entity carries TranslationalStateC<Earth>")
+            .0;
+        let b_pos = bevy_trans.position.raw_si();
+        let b_vel = bevy_trans.velocity.raw_si();
+
+        for i in 0..3 {
+            assert!(
+                r_pos[i].to_bits() == b_pos[i].to_bits(),
+                "earth_moon_rosetta translational bit-parity broke at t={t} on position[{i}]: \
+                 runner={} bevy={}",
+                r_pos[i],
+                b_pos[i],
+            );
+            assert!(
+                r_vel[i].to_bits() == b_vel[i].to_bits(),
+                "earth_moon_rosetta translational bit-parity broke at t={t} on velocity[{i}]: \
                  runner={} bevy={}",
                 r_vel[i],
                 b_vel[i],
