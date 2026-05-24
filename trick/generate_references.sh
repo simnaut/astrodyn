@@ -525,6 +525,23 @@ for ii in range(3):
 trick.add_data_record_group(dr)
 '
 
+# ── ASCII logging snippet for SIM_csr_compare (gravity-accel octant sweep) ──
+# Non-integrating vehicle teleported through octant positions at t=1..5;
+# logs gravity potential + acceleration + position at 1 Hz (matches the
+# DRBinary "gravity_compare" group the input.py defines). The cross-check
+# (#207) evaluates our GGM05C 70x70 accel at these positions vs grav_accel.
+CSR_COMPARE_SNIPPET='
+dr = trick.sim_services.DRAscii("csr_compare_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+dr.add_variable("vehicle.dyn_body.grav_interaction.grav_pot")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.grav_interaction.grav_accel[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
 # ── ASCII logging snippet for SIM_2_SHADOW_CALC (eclipse geometry) ──
 # Logs vehicle position, flux magnitude, and radiation force/torque.
 SHADOW_CALC_SNIPPET='
@@ -907,6 +924,10 @@ PID_INTEG=$LAST_BG_PID
 # Group 9: SIM_3_ORBIT (radiation pressure SRP verification)
 throttled_bg run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET"
 PID_SRP_ORBIT=$LAST_BG_PID
+
+# Group 9b: SIM_csr_compare (GGM05C 70x70 gravity-accel octant sweep, #207)
+throttled_bg run_sim_with_ascii "models/environment/gravity/verif/SIM_csr_compare" "SET_test/RUN_01" "csr_compare_run01" "$CSR_COMPARE_SNIPPET"
+PID_CSR_COMPARE=$LAST_BG_PID
 
 # Group 10: SIM_torque_compare_simple (high-resolution gravity torque, 6 runs)
 run_torque_compare_simple_group() {
@@ -2592,6 +2613,7 @@ echo "=== Waiting for all sim groups to complete ==="
 FAIL=0
 
 wait $PID_DYNCOMP       || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
+wait $PID_CSR_COMPARE   || { echo "WARN: SIM_csr_compare group had failures"; FAIL=1; }
 wait $PID_ORBINIT       || { echo "WARN: SIM_orbinit group had failures"; FAIL=1; }
 wait $PID_ORBELEM       || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
 wait $PID_LVLH          || { echo "WARN: SIM_LVLH group had failures"; FAIL=1; }
