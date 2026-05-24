@@ -1,4 +1,5 @@
-//! Tier 3: SIM_dyncomp RUN_6A/6B — Drag (constant density and MET atmosphere)
+//! Tier 3: SIM_dyncomp RUN_6A/6B/6C/6D — Drag (constant density and MET
+//! atmosphere) and impulsive maneuver burns (plane-change, departure)
 //!
 //! All simulation parameters (epoch, step size, mu, mass) are loaded from JEOD
 //! source files rather than hardcoded, per issue #44.
@@ -18,4 +19,14 @@ fn tier3_simulation_run6a_const_density_drag() {
 #[test]
 fn tier3_simulation_run6b_drag() {
     sim_dyncomp::run6b_drag().run_and_assert();
+}
+
+#[test]
+fn tier3_simulation_run6c_plane_change() {
+    sim_dyncomp::run6c_plane_change().run_and_assert();
+}
+
+#[test]
+fn tier3_simulation_run6d_departure() {
+    sim_dyncomp::run6d_departure().run_and_assert();
 }

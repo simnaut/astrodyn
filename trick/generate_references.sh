@@ -276,6 +276,8 @@ run_dyncomp_group() {
         "SET_test/RUN_5B:dyncomp_run5b:dyncomp_run5b_state.csv"
         "SET_test/RUN_5C:dyncomp_run5c:dyncomp_run5c_state.csv"
         "SET_test/RUN_6A:dyncomp_run6a:dyncomp_run6a_state.csv"
+        "SET_test/RUN_6C:dyncomp_run6c:dyncomp_run6c_state.csv"
+        "SET_test/RUN_6D:dyncomp_run6d:dyncomp_run6d_state.csv"
         "SET_test/RUN_9C:dyncomp_run9c:dyncomp_run9c_state.csv"
         "SET_test/RUN_9D:dyncomp_run9d:dyncomp_run9d_state.csv"
         "SET_test/RUN_10C:dyncomp_run10c:dyncomp_run10c_state.csv"
