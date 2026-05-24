@@ -704,6 +704,54 @@ mod tests {
         }
     }
 
+    /// Tight-tolerance (rtol=2.3e-16, atol=0) continuous integration over
+    /// many dyn_dt cycles using JEOD's `RUN_lsode` initial conditions and
+    /// derived μ — the exact scenario the (currently `#[ignore]`d) Tier 3
+    /// `tier3_simulation_lsode_default` cross-validates. Confirms the
+    /// integrator core is stable and efficient in isolation (order climbs
+    /// to ~7, a few internal steps per ~15.5 s cycle, no step collapse);
+    /// the Tier 3 collapse is therefore in how the `Simulation` pipeline
+    /// feeds the derivative across LSODE's internal sub-steps, not in the
+    /// integrator (#200 Phase 6A follow-up).
+    #[test]
+    fn lsode_tight_tolerance_run_lsode_ics_is_stable() {
+        // μ = sma³·ω² and the t=0 prop_integ_state from
+        // SIM_integ_test/RUN_lsode (JEOD source values).
+        let mu = 6_811_137.0_f64.powi(3) * 1.123_154_395_240_404_1e-3_f64.powi(2);
+        let start = TranslationalState {
+            position: DVec3::new(2_554_176.375, 5_859_203.640_407_667, 2_353_189.957_992_002),
+            velocity: DVec3::new(
+                6_580.790_321_332_448,
+                -1_407.722_362_559_127,
+                -3_637.771_420_498,
+            ),
+        };
+        let mut lsode = LsodeState::new(LsodeConfig {
+            rel_tolerance: 2.3e-16,
+            abs_tolerance: 0.0,
+            ..LsodeConfig::default()
+        });
+        let accel = kepler_accel(mu);
+        let dt = 15.539_530_979_805_79; // sim_dt · time_scale
+        let mut s = start;
+        for _ in 0..20 {
+            s = lsode_translational_step(&s, &accel, dt, &mut lsode);
+        }
+        // Stable: reached order > 3 with a healthy step, far under the
+        // per-cycle step budget (no collapse). `num_steps_taken` for 20
+        // cycles of a smooth orbit stays small (tens, not hundreds).
+        assert!(lsode.order >= 4, "order stuck low ({})", lsode.order);
+        assert!(
+            lsode.num_steps_taken < 200,
+            "too many internal steps ({}) — step collapsed",
+            lsode.num_steps_taken
+        );
+        // Energy conserved across the 20 cycles.
+        let e0 = 0.5 * start.velocity.length_squared() - mu / start.position.length();
+        let e = 0.5 * s.velocity.length_squared() - mu / s.position.length();
+        assert!(((e - e0) / e0).abs() < 1e-10, "energy drift too large");
+    }
+
     /// A circular LEO propagated one period should return near its start
     /// (closed orbit), and conserve energy — a self-consistency check that
     /// the adaptive Adams driver integrates a smooth orbit stably.
