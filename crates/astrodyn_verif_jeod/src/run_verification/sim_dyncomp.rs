@@ -1282,7 +1282,14 @@ fn build_run6_maneuver(init: &InitialConditions, case: &'static str) -> Simulati
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Use the SIM_dyncomp epoch (parsed from Modified_data/time.py) like every
+    // other RUN_6 builder, not a hardcoded J2000 anchor. The maneuver runs use
+    // spherical point-mass gravity with no rotation model, so the epoch is
+    // numerically inert today, but matching JEOD's configured epoch keeps these
+    // cases correct if a time-dependent model (Earth RNP / derived frames) is
+    // enabled later, and keeps the module-doc "all parameters loaded from JEOD
+    // source" statement accurate.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
