@@ -1434,7 +1434,12 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let earth_mu = astrodyn::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
-    let time = SimulationTime::at_j2000(default_leap_second_table());
+    // Use the SIM_dyncomp epoch (parsed from Modified_data/time.py), not a
+    // hardcoded J2000 anchor, matching the other RUN_* builders. RUN_10 uses
+    // spherical point-mass gravity with no rotation model, so the epoch is
+    // numerically inert today, but this keeps the case consistent with JEOD's
+    // configured epoch and correct if a time-dependent model is enabled later.
+    let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
