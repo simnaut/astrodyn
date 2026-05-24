@@ -15,3 +15,4 @@
 //! its dispatcher.
 
 pub mod earth_moon_clem;
+pub mod earth_moon_rosetta;
