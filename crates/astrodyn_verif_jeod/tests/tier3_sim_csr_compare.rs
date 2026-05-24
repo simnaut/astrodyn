@@ -19,8 +19,11 @@
 //! `grav_accel` being compared against is JEOD output, so computational
 //! independence holds. The Earth orientation in this sim is the default
 //! planet-generic (no RNP/rotation object in the S_define), so the
-//! planet-fixed frame coincides with the integration frame and no rotation is
-//! applied to the evaluation (`t_inertial_pfix = None`).
+//! planet-fixed frame coincides with the integration frame: JEOD evaluates
+//! gravity with `pfix->state.rot.T_parent_this` left at its uninitialized
+//! identity (see `spherical_harmonics_calc_nonspherical.cc`), so we pass the
+//! identity rotation `t_inertial_pfix = Some(&DMat3::IDENTITY)` — required
+//! because `evaluate_accel_only` panics on `None` for non-spherical gravity.
 //!
 //! Reference CSV regenerated via `cargo xtask regenerate-tier3` (the
 //! `csr_compare_run01` entry in `trick/generate_references.sh`).

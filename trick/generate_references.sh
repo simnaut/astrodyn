@@ -2611,6 +2611,7 @@ echo "=== Waiting for all sim groups to complete ==="
 FAIL=0
 
 wait $PID_DYNCOMP       || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
+wait $PID_CSR_COMPARE   || { echo "WARN: SIM_csr_compare group had failures"; FAIL=1; }
 wait $PID_ORBINIT       || { echo "WARN: SIM_orbinit group had failures"; FAIL=1; }
 wait $PID_ORBELEM       || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
 wait $PID_LVLH          || { echo "WARN: SIM_LVLH group had failures"; FAIL=1; }
