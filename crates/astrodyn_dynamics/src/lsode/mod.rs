@@ -78,8 +78,14 @@ pub struct LsodeState {
     order: usize,
     /// Number of active Nordsieck columns (`= order + 1`).
     num_cols: usize,
-    /// Maximum order (clamped to the family cap).
-    max_order: usize,
+    /// Spare-column index in the Nordsieck array (JEOD's `max_history_size`
+    /// = `max_order_internal`, the family cap clamped by config). The
+    /// history array has `max_history_size + 1` columns, and the order
+    /// increase is gated on `num_cols != max_history_size`, so the
+    /// **effective maximum integration order is `max_history_size - 1`**
+    /// and column `max_history_size` is always a free spare for the
+    /// order-increase indicator (never an active Nordsieck column).
+    max_history_size: usize,
     /// Current internal step size `h` (`step_size`).
     step_size: f64,
     /// Step size from the previous step (`prev_step_size`, HOLD).
@@ -113,7 +119,9 @@ impl LsodeState {
     /// Create a fresh LSODE state from `config` (validated here).
     pub fn new(config: LsodeConfig) -> Self {
         config.check();
-        let max_order = config.effective_max_order();
+        // The Nordsieck array needs `max_history_size + 1` columns
+        // (working columns 0..effective-max-order plus the spare).
+        let max_history_size = config.effective_max_order();
         let (method_coeffs, test_coeffs) =
             coeffs::calculate_integration_coefficients(config.method);
         Self {
@@ -121,10 +129,10 @@ impl LsodeState {
             method_coeffs,
             test_coeffs,
             el: [0.0; 13],
-            nordsieck: Nordsieck::new(N_ODES, max_order),
+            nordsieck: Nordsieck::new(N_ODES, max_history_size),
             order: 1,
             num_cols: 2,
-            max_order,
+            max_history_size,
             step_size: 0.0,
             prev_step_size: 0.0,
             stage_target_time: 0.0,
@@ -234,6 +242,15 @@ pub fn lsode_translational_step(
         !lsode.topology_dirty,
         "LsodeState used while topology-dirty — reset_for_topology_change() must run after \
          an attach/detach before the next integration step."
+    );
+    // LSODE is a forward-time multistep method: its Nordsieck history encodes
+    // a positive step direction, so a non-positive or non-finite dyn_dt is a
+    // misconfiguration (e.g. a negative time_scale_factor for reverse-time —
+    // use RK4/RKF45 for that). Fail loudly rather than corrupt the history.
+    assert!(
+        dyn_dt.is_finite() && dyn_dt > 0.0,
+        "LSODE requires a finite, strictly-positive dyn_dt (got {dyn_dt}); it is forward-time \
+         only. For reverse-time integration select IntegratorType::Rk4 or Rkf45."
     );
     let eps = f64::EPSILON;
     let max_step_size_inv = if lsode.config.max_step_size > 0.0 {
@@ -352,9 +369,14 @@ fn compute_inverted_ewt(lsode: &mut LsodeState) {
         &mut ewt,
     );
     for i in 0..N_ODES {
+        // ewt = rtol·|y| + atol. With atol = 0 this is 0 whenever a state
+        // component is exactly 0 (e.g. a velocity passing through zero),
+        // even though rtol > 0 — the config-time `rtol>0 || atol>0` guard
+        // (IG.20) does not prevent it. Fail loudly with the fix (IG.23).
         assert!(
             ewt[i] > 0.0,
-            "LSODE: error weight {i} fell to <= 0 ({}). atol must be > 0.",
+            "LSODE: error weight for component {i} is {} (≤ 0). With atol = 0 this happens when \
+             y[{i}] is exactly 0; set abs_tolerance > 0 for components that may pass through zero.",
             ewt[i]
         );
         lsode.error_weight[i] = 1.0 / ewt[i];
@@ -505,18 +527,18 @@ fn dstode_step(
         }
 
         // ── Order/step selection (mirrors corrector_converged's branching). ──
-        // `max_order` is the spare-column index (`max_history_size`); the
-        // stash of `accum` for the order-increase indicator happens ONLY on
-        // the step where the countdown hits 1 (the step *before* selection),
-        // so that when the countdown hits 0 the next step reads last step's
-        // accum — not this step's (which would zero the r_inc difference).
+        // The stash of `accum` into the spare column `history[max_history_size]`
+        // (for the order-increase indicator) happens ONLY on the step where
+        // the countdown hits 1 (the step *before* selection), so that when the
+        // countdown hits 0 the next step reads last step's accum — not this
+        // step's (which would zero the r_inc difference).
         lsode.order_select_para -= 1;
         if lsode.order_select_para == 0 {
             let r_inc = compute_r_inc(lsode, &accum);
             select_new_order(lsode, &accum, dsm, step_error, r_inc, max_step_size_inv);
-        } else if lsode.order_select_para == 1 && lsode.num_cols != lsode.max_order {
+        } else if lsode.order_select_para == 1 && lsode.num_cols != lsode.max_history_size {
             for i in 0..N_ODES {
-                lsode.nordsieck.history[i][lsode.max_order] = accum[i];
+                lsode.nordsieck.history[i][lsode.max_history_size] = accum[i];
             }
         }
         lsode.prev_step_size = lsode.step_size;
@@ -549,23 +571,23 @@ fn apply_step_ratio(lsode: &mut LsodeState, ratio: f64, max_step_size_inv: f64) 
 
 /// Order-increase step-ratio indicator (`compute_new_order_prep`'s
 /// `step_ratio_order_inc`). Uses the accumulated correction minus the
-/// previous step's stashed accum (the spare column `history[max_order]`).
-/// Returns 0 when no spare column is available — mirroring JEOD's
-/// `num_nordsiek_cols != max_history_size` guard, where `max_history_size`
-/// is the spare-column index (`max_order` here): the effective maximum
-/// order is therefore `max_order - 1`, so column `max_order` is *always*
-/// a free spare (never an active Nordsieck column) and the stash can never
-/// collide with the working history.
+/// previous step's stashed accum (the spare column
+/// `history[max_history_size]`). Returns 0 when no spare column is
+/// available — mirroring JEOD's `num_nordsiek_cols != max_history_size`
+/// guard. Since the effective maximum order is `max_history_size - 1`,
+/// column `max_history_size` is *always* a free spare (never an active
+/// Nordsieck column), so the stash can never collide with the working
+/// history.
 #[allow(
     clippy::cast_precision_loss,
     reason = "column count ≤ 13 is exactly representable in f64"
 )]
 fn compute_r_inc(lsode: &LsodeState, accum: &[f64; N_ODES]) -> f64 {
-    if lsode.num_cols == lsode.max_order {
+    if lsode.num_cols == lsode.max_history_size {
         return 0.0;
     }
     let diff: [f64; N_ODES] =
-        std::array::from_fn(|i| accum[i] - lsode.nordsieck.history[i][lsode.max_order]);
+        std::array::from_fn(|i| accum[i] - lsode.nordsieck.history[i][lsode.max_history_size]);
     let dup = weighted_rms_norm(&diff, &lsode.error_weight) / lsode.test_coeffs[2][lsode.order - 1];
     let exup = 1.0 / (lsode.num_cols as f64 + 1.0);
     1.0 / (1.4 * dup.powf(exup) + 0.0000014)
