@@ -19,6 +19,7 @@
 use astrodyn_dynamics::{
     Abm4State as RawAbm4State, GaussJacksonConfig as RawGaussJacksonConfig,
     GaussJacksonState as RawGaussJacksonState, IntegratorType as RawIntegratorType,
+    LsodeConfig as RawLsodeConfig, LsodeState as RawLsodeState,
 };
 
 /// Integration method selection.
@@ -44,6 +45,10 @@ pub enum IntegratorType {
     /// Persistent [`Abm4State`] must be retained externally. Translational-
     /// only; 6-DOF is not yet supported.
     Abm4,
+    /// LSODE (Livermore Solver) — variable-order, variable-step Nordsieck
+    /// multistep. Carries an [`LsodeConfig`]; persistent [`LsodeState`] must
+    /// be retained externally. Forward-time only; translational-only.
+    Lsode(LsodeConfig),
 }
 
 impl From<IntegratorType> for RawIntegratorType {
@@ -53,6 +58,7 @@ impl From<IntegratorType> for RawIntegratorType {
             IntegratorType::Rkf45 => RawIntegratorType::Rkf45,
             IntegratorType::GaussJackson(cfg) => RawIntegratorType::GaussJackson(cfg.into()),
             IntegratorType::Abm4 => RawIntegratorType::Abm4,
+            IntegratorType::Lsode(cfg) => RawIntegratorType::Lsode(cfg.into()),
         }
     }
 }
@@ -64,6 +70,7 @@ impl From<RawIntegratorType> for IntegratorType {
             RawIntegratorType::Rkf45 => IntegratorType::Rkf45,
             RawIntegratorType::GaussJackson(cfg) => IntegratorType::GaussJackson(cfg.into()),
             RawIntegratorType::Abm4 => IntegratorType::Abm4,
+            RawIntegratorType::Lsode(cfg) => IntegratorType::Lsode(cfg.into()),
         }
     }
 }
@@ -221,6 +228,121 @@ impl From<RawGaussJacksonState> for GaussJacksonState {
 impl From<GaussJacksonState> for RawGaussJacksonState {
     #[inline]
     fn from(value: GaussJacksonState) -> Self {
+        value.0
+    }
+}
+
+/// Configuration for the LSODE integrator.
+///
+/// Opaque newtype over [`astrodyn_dynamics::LsodeConfig`]. Defaults to the
+/// non-stiff implicit-Adams family with functional iteration (JEOD's
+/// `RUN_lsode` configuration). The stiff BDF family is not yet selectable.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LsodeConfig(RawLsodeConfig);
+
+impl LsodeConfig {
+    /// Non-stiff implicit-Adams configuration (the default).
+    pub fn non_stiff_adams() -> Self {
+        Self(RawLsodeConfig::default())
+    }
+
+    /// Set the relative and absolute error tolerances (RTOL, ATOL).
+    pub fn with_tolerances(mut self, rel_tolerance: f64, abs_tolerance: f64) -> Self {
+        self.0.rel_tolerance = rel_tolerance;
+        self.0.abs_tolerance = abs_tolerance;
+        self
+    }
+
+    /// Set the maximum integration order (clamped to the family cap).
+    pub fn with_max_order(mut self, max_order: usize) -> Self {
+        self.0.max_order = max_order;
+        self
+    }
+
+    /// Set the maximum number of internal steps per integrate-to-target
+    /// call (MXSTEP).
+    pub fn with_max_num_steps(mut self, max_num_steps: usize) -> Self {
+        self.0.max_num_steps = max_num_steps;
+        self
+    }
+
+    /// Validate the configuration, panicking on invalid values. See
+    /// [`astrodyn_dynamics::LsodeConfig::check`].
+    pub fn validate(&self) {
+        self.0.check()
+    }
+}
+
+impl From<LsodeConfig> for RawLsodeConfig {
+    fn from(value: LsodeConfig) -> Self {
+        value.0
+    }
+}
+
+impl From<RawLsodeConfig> for LsodeConfig {
+    fn from(value: RawLsodeConfig) -> Self {
+        Self(value)
+    }
+}
+
+/// Persistent LSODE integrator state.
+///
+/// Opaque newtype over [`astrodyn_dynamics::LsodeState`] (the Nordsieck
+/// history + adaptive-control bookkeeping). Only the methods the kernel and
+/// runner call across the boundary are exposed.
+#[derive(Debug, Clone)]
+pub struct LsodeState(RawLsodeState);
+
+impl LsodeState {
+    /// Create a new LSODE integrator with the given configuration.
+    pub fn new(config: LsodeConfig) -> Self {
+        Self(RawLsodeState::new(config.into()))
+    }
+
+    /// Returns the configuration this integrator was created with.
+    pub fn config(&self) -> LsodeConfig {
+        LsodeConfig(*self.0.config())
+    }
+
+    /// Mark the multistep history stale after a topology change.
+    pub fn mark_topology_dirty(&mut self) {
+        self.0.mark_topology_dirty()
+    }
+
+    /// Returns true if the history is awaiting a reset.
+    pub fn is_topology_dirty(&self) -> bool {
+        self.0.is_topology_dirty()
+    }
+
+    /// Reset to a cold start (history re-primed on the next step).
+    pub fn reset_for_topology_change(&mut self) {
+        self.0.reset_for_topology_change()
+    }
+
+    /// Mutable reference to the wrapped raw state, for the integration
+    /// kernel to pass through to `lsode_translational_step`.
+    #[inline]
+    pub fn inner_mut(&mut self) -> &mut RawLsodeState {
+        &mut self.0
+    }
+
+    /// Shared reference to the wrapped raw state.
+    #[inline]
+    pub fn inner(&self) -> &RawLsodeState {
+        &self.0
+    }
+}
+
+impl From<RawLsodeState> for LsodeState {
+    #[inline]
+    fn from(value: RawLsodeState) -> Self {
+        Self(value)
+    }
+}
+
+impl From<LsodeState> for RawLsodeState {
+    #[inline]
+    fn from(value: LsodeState) -> Self {
         value.0
     }
 }

@@ -72,6 +72,17 @@ pub enum IntegratorType {
     /// Requires persistent `Abm4State` across steps, stored externally.
     /// Translational-only; 6-DOF is not yet supported.
     Abm4,
+    /// LSODE (Livermore Solver) — variable-order, variable-step Nordsieck
+    /// multistep. Port of JEOD's `utils/integration/lsode`; the non-stiff
+    /// implicit-Adams family (orders 1–12) with functional-iteration
+    /// corrector is implemented (Phase 6A of #200), the stiff BDF family is
+    /// deferred. Unlike JEOD's re-entrant form, this calls the derivative
+    /// closure inline (see [`crate::lsode`]).
+    ///
+    /// Requires persistent [`crate::lsode::LsodeState`] across steps, stored
+    /// externally. **Forward-time only** (multistep). Translational-only;
+    /// 6-DOF is not yet supported.
+    Lsode(crate::lsode::LsodeConfig),
 }
 
 /// Advance translational state by one RK4 step.

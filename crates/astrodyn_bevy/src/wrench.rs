@@ -122,6 +122,7 @@ fn reset_multi_step_history(
     astrodyn::reset_integrators(
         gj.as_mut().map(|g| g.0.inner_mut()),
         abm.as_mut().map(|a| a.0.inner_mut()),
+        None, // no Bevy LsodeStateC yet (#200 Phase 6B)
     );
 }
 

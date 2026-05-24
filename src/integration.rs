@@ -685,6 +685,7 @@ pub fn integrate_body(
     integrator: IntegratorType,
     gj_state: Option<&mut astrodyn_dynamics::GaussJacksonState>,
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
+    lsode_state: Option<&mut astrodyn_dynamics::LsodeState>,
 ) {
     // JEOD_INV: DB.07 — translational_dynamics gates integration (force
     // collection ran unconditionally upstream; the gate lives here, not at
@@ -758,6 +759,12 @@ pub fn integrate_body(
                          Set rotational_dynamics=false for ABM4 bodies."
                     );
                 }
+                IntegratorType::Lsode(..) => {
+                    panic!(
+                        "LSODE 6-DOF integration not yet supported. \
+                         Set rotational_dynamics=false for LSODE bodies."
+                    );
+                }
             };
             *trans = new_state.trans;
             *rot = new_state.rot;
@@ -788,6 +795,13 @@ pub fn integrate_body(
                  Runner: call Simulation::validate(); Bevy: add Abm4StateC.",
             );
             *trans = astrodyn_dynamics::abm4_translational_step(trans, accel, integ_dyndt, abm);
+        }
+        IntegratorType::Lsode(..) => {
+            let lsode = lsode_state.expect(
+                "LSODE integrator requires a persistent LsodeState passed in via lsode_state. \
+                 Runner: call Simulation::validate(); Bevy: add LsodeStateC.",
+            );
+            *trans = astrodyn_dynamics::lsode_translational_step(trans, accel, integ_dyndt, lsode);
         }
         IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
@@ -1337,6 +1351,7 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
     integrator: IntegratorType,
     gj_state: Option<&mut astrodyn_dynamics::GaussJacksonState>,
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
+    lsode_state: Option<&mut astrodyn_dynamics::LsodeState>,
 ) {
     use uom::si::time::second;
     // allowed: typed-sibling boundary at the gateway-owned `IntegratorType`
@@ -1376,6 +1391,7 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
         integrator,
         gj_state,
         abm4_state,
+        lsode_state,
     );
     // allowed: typed↔raw kernel boundary writeback. See note above.
     *trans = TranslationalStateTyped::<F> {
@@ -1442,12 +1458,16 @@ fn compute_total_accel(eval: &CoupledStageEval, mass: Option<&MassProperties>) -
 pub fn reset_integrators(
     gj_state: Option<&mut astrodyn_dynamics::GaussJacksonState>,
     abm4_state: Option<&mut astrodyn_dynamics::Abm4State>,
+    lsode_state: Option<&mut astrodyn_dynamics::LsodeState>,
 ) {
     if let Some(gj) = gj_state {
         gj.reset_for_topology_change();
     }
     if let Some(abm) = abm4_state {
         abm.reset_for_topology_change();
+    }
+    if let Some(lsode) = lsode_state {
+        lsode.reset_for_topology_change();
     }
 }
 
@@ -1494,6 +1514,7 @@ mod tests {
             dt,
             tsf,
             IntegratorType::Rk4,
+            None,
             None,
             None,
         );
@@ -2466,6 +2487,7 @@ mod tests {
                 1.0,
                 IntegratorType::GaussJackson(crate::GaussJacksonConfig::from(gj_cfg)),
                 Some(&mut gj),
+                None,
                 None,
             );
         }

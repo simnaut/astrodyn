@@ -892,6 +892,7 @@ impl Simulation {
         astrodyn::reset_integrators(
             body.gj_state.as_mut().map(|s| s.inner_mut()),
             body.abm4_state.as_mut().map(|s| s.inner_mut()),
+            body.lsode_state.as_mut().map(|s| s.inner_mut()),
         );
     }
 

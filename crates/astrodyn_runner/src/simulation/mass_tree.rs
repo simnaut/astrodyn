@@ -1091,6 +1091,9 @@ impl Simulation {
             if let Some(ref mut abm) = body.abm4_state {
                 abm.mark_topology_dirty();
             }
+            if let Some(ref mut lsode) = body.lsode_state {
+                lsode.mark_topology_dirty();
+            }
         }
     }
 
@@ -1126,6 +1129,7 @@ impl Simulation {
             astrodyn::reset_integrators(
                 body.gj_state.as_mut().map(|s| s.inner_mut()),
                 body.abm4_state.as_mut().map(|s| s.inner_mut()),
+                body.lsode_state.as_mut().map(|s| s.inner_mut()),
             );
         }
     }
@@ -1411,6 +1415,7 @@ impl Simulation {
             astrodyn::reset_integrators(
                 body.gj_state.as_mut().map(|s| s.inner_mut()),
                 body.abm4_state.as_mut().map(|s| s.inner_mut()),
+                body.lsode_state.as_mut().map(|s| s.inner_mut()),
             );
         }
 
@@ -1716,6 +1721,7 @@ impl Simulation {
         astrodyn::reset_integrators(
             body.gj_state.as_mut().map(|s| s.inner_mut()),
             body.abm4_state.as_mut().map(|s| s.inner_mut()),
+            body.lsode_state.as_mut().map(|s| s.inner_mut()),
         );
 
         if log::log_enabled!(target: "apollo_trace", log::Level::Debug) {

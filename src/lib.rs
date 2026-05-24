@@ -154,7 +154,9 @@ pub use integration::{
     integrate_body_coupled, integrate_body_coupled_typed, integrate_body_typed, reset_integrators,
     CoupledBodyInput, CoupledBodyInputTyped, CoupledIntegScratch, CoupledStageEval,
 };
-pub use integrator::{Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType};
+pub use integrator::{
+    Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorType, LsodeConfig, LsodeState,
+};
 pub use interactions::{
     evaluate_contact_pair, evaluate_ground_contact_pair, ContactPairEval, FlatPlateStageInputs,
     FlatPlateState, GroundContactPairEval, ThermalIntegrationOrder,

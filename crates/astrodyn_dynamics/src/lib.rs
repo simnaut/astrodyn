@@ -68,6 +68,7 @@ pub mod gauss_jackson;
 pub mod integration;
 pub mod kinematic_joint;
 pub mod kinematic_propagation;
+pub mod lsode;
 pub mod mass;
 pub mod mass_body;
 pub mod mass_storage;
@@ -107,6 +108,7 @@ pub use kinematic_propagation::{
     compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,
     KinematicChildOutputs,
 };
+pub use lsode::{lsode_translational_step, LsodeConfig, LsodeState};
 pub use mass::{
     MassProperties, MassPropertiesTyped, INERTIA_CONSISTENCY_TOL, MAX_SAFE_MASS_KG,
     MIN_SAFE_MASS_KG,

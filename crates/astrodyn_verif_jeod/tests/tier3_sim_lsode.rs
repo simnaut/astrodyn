@@ -38,15 +38,13 @@
 //!   matched dyn-dt the trajectories agree to ~0.3 mm over 14 orbits,
 //!   dominated by floating-point reduction differences.
 //! - **RUN_lsode**: LSODE with default `ImplicitAdamsNonStiff` mode. LSODE
-//!   auto-selects order (1..12) and step size adaptively; for a smooth,
-//!   non-stiff circular orbit it settles on a very high-order Adams method
-//!   with `rel_position_err_mag` ≈ 5e-9. We compare against our fixed-order
-//!   ABM4 and tolerate km-scale drift over 14 orbits — this is the expected
-//!   order-4 vs order-~12 truncation difference, not an algorithm bug.
+//!   auto-selects order (1..12) and step size adaptively. Our ported LSODE
+//!   ([`astrodyn_dynamics::lsode`]) runs the same method, so with matched
+//!   configuration the trajectories agree to floating-point-noise scale
+//!   (sub-millimeter over 14 orbits) — see `tier3_simulation_lsode_default`.
 //!
-//! The LSODE variable-order Adams method and BDF (stiff) support from JEOD's
-//! `lsode_first_order_ode_integrator` remain as future work. See
-//! `crates/astrodyn_dynamics/src/abm4.rs` for the doc rationale.
+//! The LSODE non-stiff Adams family is ported (#200); the BDF (stiff) family
+//! with a Newton corrector remains as future work (Phase 6C).
 
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
@@ -277,32 +275,30 @@ fn tier3_simulation_lsode_abm4() {
     );
 }
 
-/// Cross-validate our ABM4 against JEOD's LSODE in `ImplicitAdamsNonStiff`
-/// mode (RUN_lsode).
+/// Cross-validate our ported LSODE against JEOD's LSODE (RUN_lsode,
+/// `ImplicitAdamsNonStiff`, `integ_option_int = 140`: rtol = 2.3e-16,
+/// atol = 0).
 ///
-/// LSODE selects order and step size adaptively; for this smooth non-stiff
-/// orbit problem it settles on a very high-order Adams method (JEOD's log
-/// reports `rel_position_err_mag ≈ 5e-9` — ~34 mm over 80000 s). Our
-/// fixed-order ABM4 at the same dyn-dt is much less accurate: the drift
-/// between the two methods reaches ~9.5 km per component over 14 orbits,
-/// which is the expected order-4 vs order-~12 truncation difference. This
-/// test documents that drift rather than asserting agreement between
-/// dissimilar integrators.
+/// Both integrators are the variable-order/variable-step Nordsieck Adams
+/// method driven from the same coefficients, error norms, and order/step
+/// controller, so with matched configuration their trajectories agree to
+/// floating-point-noise scale — sub-millimeter over the full 80000 s
+/// (~14-orbit) run, the same regime as the ABM4 cross-validation above.
+/// `rtol = 2.3e-16` is below f64 epsilon, so both solvers are FP-floor-
+/// limited (not tolerance-limited) and the controller climbs to high order.
 // non-recipe: same derived μ + CSV-rotated IC as `tier3_simulation_lsode_abm4`.
 #[test]
 fn tier3_simulation_lsode_default() {
-    // Observed max-component errors (ABM4 vs LSODE reference, 14 orbits):
-    //   position [9.485e3, 9.130e3, 6.028e3] m
-    //   velocity [1.082e1, 9.908e0, 6.581e0] m/s
-    // Tolerances set to 5% above observed (CLAUDE.md tolerance policy).
-    // The drift is dominated by ABM4's fixed order-4 truncation error; a
-    // future port of LSODE's variable-order Adams scheme would shrink these
-    // to the same floating-point-noise level as `tier3_simulation_lsode_abm4`.
+    // Observed max-component errors (our LSODE vs JEOD LSODE, 14 orbits):
+    //   position [9.160e-4, 8.721e-4, 5.785e-4] m
+    //   velocity [1.038e-6, 9.572e-7, 6.385e-7] m/s
+    // Tolerances set to 1.05× observed (CLAUDE.md tolerance policy).
+    let cfg = astrodyn::LsodeConfig::non_stiff_adams().with_tolerances(2.3e-16, 0.0);
     run_integ_test(
         "tier3_simulation_lsode_default",
         "integ_lsode",
-        IntegratorType::Abm4,
-        [9.960e3, 9.587e3, 6.330e3],
-        [1.137e1, 1.041e1, 6.910e0],
+        IntegratorType::Lsode(cfg),
+        [9.618e-4, 9.157e-4, 6.075e-4],
+        [1.090e-6, 1.005e-6, 6.705e-7],
     );
 }

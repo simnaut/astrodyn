@@ -186,6 +186,7 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
             astrodyn::IntegratorType::Rk4,
             None,
             None,
+            None,
         );
     }
 
