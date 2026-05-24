@@ -345,7 +345,7 @@ Our port wraps ANISE (`crates/astrodyn_ephemeris`, 243 lines: `ephemeris.rs` + `
 
 ## Section IG: Integration
 
-Source: `../jeod/models/utils/integration/` (core + `gauss_jackson/` + `lsode/`). Error identifiers live in `include/integration_messages.hh` and `er7_utils::IntegrationMessages::*`. Our port implements RK4, RKF45 (with adaptive step), ABM4, and a full Gauss-Jackson in `crates/astrodyn_dynamics/src/` (`integration.rs`, `rkf45.rs`, `abm4.rs`, `gauss_jackson/`). LSODE's stiff-ODE path is not ported; the non-stiff-Adams mode maps to our ABM4 for cross-validation (see `tier3_sim_lsode.rs`).
+Source: `../jeod/models/utils/integration/` (core + `gauss_jackson/` + `lsode/`). Error identifiers live in `include/integration_messages.hh` and `er7_utils::IntegrationMessages::*`. Our port implements RK4, RKF45 (with adaptive step), ABM4, a full Gauss-Jackson, and LSODE's non-stiff variable-order Adams family in `crates/astrodyn_dynamics/src/` (`integration.rs`, `rkf45.rs`, `abm4.rs`, `gauss_jackson/`, `lsode/`). LSODE cross-validates against JEOD's `RUN_lsode` to sub-millimeter (`tier3_sim_lsode.rs`); the stiff BDF path (Newton corrector + Jacobian) is not yet ported. The config-validation rows below that our port enforces (IG.17, IG.20) are marked `enforced`; the remaining LSODE rows describe JEOD C++ guards we have not separately mirrored as asserts and stay `n/a`.
 
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
@@ -365,10 +365,10 @@ Source: `../jeod/models/utils/integration/` (core + `gauss_jackson/` + `lsode/`)
 | IG.14 | LSODE: `error_control_indicator` must be a legal enum value (`lsode_control_data_interface.cc`) | fatal | initialization | n/a |
 | IG.15 | LSODE: `integration_method` ∈ {1, 2} (`lsode_control_data_interface.cc`) | fatal | initialization | n/a |
 | IG.16 | LSODE: `corrector_method` ∈ [1, 5]; method=1 (user-supplied Jacobian) and methods 4–5 (banded Jacobian) explicitly unsupported (`lsode_control_data_interface.cc`, `lsode_first_order_ode_integrator__support.cc`) | fatal | initialization | n/a |
-| IG.17 | LSODE: `max_order` ≥ 0 (`lsode_control_data_interface.cc`) | fatal | initialization | n/a |
+| IG.17 | LSODE: `max_order` ≥ 0 (`lsode_control_data_interface.cc`) | fatal | initialization | enforced (`lsode/config.rs` `LsodeConfig::check` — tightened to `[1, family cap]`: Adams 12 / BDF 5) |
 | IG.18 | LSODE: `max_num_steps` > 0, `max_num_small_step_warnings` ≥ 0 (`lsode_control_data_interface.cc`) | fatal | initialization | n/a |
 | IG.19 | LSODE: `max_step_size` ≥ 0, `min_step_size` ≥ 0 (`lsode_control_data_interface.cc`) | fatal | initialization | n/a |
-| IG.20 | LSODE: relative and absolute tolerance vectors must be populated and all values ≥ 0 (`lsode_control_data_interface.cc`, both rel and abs variants) | fatal | initialization | n/a |
+| IG.20 | LSODE: relative and absolute tolerance vectors must be populated and all values ≥ 0 (`lsode_control_data_interface.cc`, both rel and abs variants) | fatal | initialization | enforced (`lsode/config.rs` `LsodeConfig::check` — rtol/atol finite & ≥ 0, and not both zero so the error weight can be positive; scalar tolerances, the common-tolerance form) |
 | IG.21 | LSODE: `initial_step_size` sign must match `cycle_target_time` sign (`lsode_first_order_ode_integrator__manager.cc`) | fatal | initialization | n/a |
 | IG.22 | LSODE runtime: step size must not become so small that `t + dt == t` at machine precision; accumulates up to `max_num_small_step_warnings` before suppression (`lsode_first_order_ode_integrator__manager.cc`) | warn | runtime | n/a |
 | IG.23 | LSODE runtime: `error_weight` must remain > 0 during stepping (`lsode_first_order_ode_integrator__manager.cc`, two sites) | fatal | runtime | n/a |

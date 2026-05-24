@@ -122,7 +122,8 @@ impl LsodeConfig {
     ///   requires a Newton corrector with a Jacobian.
     /// - negative or non-finite step-size bounds.
     pub fn check(&self) {
-        // JEOD_INV: IL.01 — order ∈ [1, family cap].
+        // JEOD_INV: IG.17 — LSODE max_order within the family cap (we
+        // tighten JEOD's `≥ 0` to `[1, cap]`: Adams 12 / BDF 5).
         assert!(
             self.max_order >= 1 && self.max_order <= self.method.max_method_order(),
             "LsodeConfig.max_order = {} out of range [1, {}] for {:?}: set max_order within \
@@ -131,7 +132,9 @@ impl LsodeConfig {
             self.method.max_method_order(),
             self.method
         );
-        // JEOD_INV: IL.02 — error weights must be positive (rtol·|y| + atol > 0).
+        // JEOD_INV: IG.20 — LSODE relative/absolute tolerances finite and
+        // ≥ 0 (and not both zero, so the error weight rtol·|y|+atol can be
+        // positive — the per-step ewt>0 guard is IG.23).
         assert!(
             self.rel_tolerance.is_finite() && self.rel_tolerance >= 0.0,
             "LsodeConfig.rel_tolerance = {} must be finite and ≥ 0.",
@@ -174,5 +177,47 @@ impl LsodeConfig {
             self.max_num_steps,
             self.max_correction_iters
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // JEOD_INV: IG.17 — max_order out of the family cap is rejected.
+    #[test]
+    #[should_panic(expected = "max_order")]
+    fn ig_17_rejects_out_of_range_order() {
+        LsodeConfig {
+            max_order: 0,
+            ..LsodeConfig::default()
+        }
+        .check();
+    }
+
+    // JEOD_INV: IG.20 — tolerances that cannot yield a positive error
+    // weight (both rtol and atol zero) are rejected.
+    #[test]
+    #[should_panic(expected = "at least one")]
+    fn ig_20_rejects_both_tolerances_zero() {
+        LsodeConfig {
+            rel_tolerance: 0.0,
+            abs_tolerance: 0.0,
+            ..LsodeConfig::default()
+        }
+        .check();
+    }
+
+    #[test]
+    fn run_lsode_config_validates() {
+        // JEOD RUN_lsode: rtol=2.3e-16, atol=0 — atol=0 is allowed when
+        // rtol>0 (regression guard for the IG.20 relaxation).
+        LsodeConfig::default().check();
+        LsodeConfig {
+            rel_tolerance: 2.3e-16,
+            abs_tolerance: 0.0,
+            ..LsodeConfig::default()
+        }
+        .check();
     }
 }
