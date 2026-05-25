@@ -6,9 +6,10 @@
 
 use astrodyn_dynamics::state::TranslationalStateTyped;
 use astrodyn_dynamics::{
-    DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState,
+    compute_t_inertial_struct, DynamicsConfig, MassProperties, RotationalState, SixDofState,
+    TranslationalState,
 };
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 
 use crate::integrator::IntegratorType;
 use astrodyn_math::JeodQuat;
@@ -628,6 +629,61 @@ fn step_q_arr(q_base: [f64; 4], k_qdot: [f64; 4], h: f64) -> [f64; 4] {
     ]
 }
 
+/// External wrench specified in the body's **structural** frame, applied by
+/// [`integrate_body`] at each integrator derivative evaluation.
+///
+/// JEOD recomputes `extern_forc_inrtl = T_inertial_structᵀ · extern_forc_struct`
+/// inside the derivative function (`dyn_body_collect.cc:214-224`, reached via
+/// `DynManager::compute_derivatives` at every RK4 stage), so a rotating body
+/// sees the force rotated by its *intermediate-stage* attitude. The torque
+/// transform `extern_torq_body = T_struct_body · extern_torq_struct`
+/// (`:245-252`) uses only the fixed structure→body rotation, so it is constant
+/// over a step. Holding the force constant over the step — the prior runner
+/// behaviour — drifts by `O(ω·dt)` and is only acceptable at low angular rates.
+///
+/// `t_struct_body` is irrelevant when both vectors are zero; use [`Self::NONE`]
+/// for bodies with no structural load.
+#[derive(Debug, Clone, Copy)]
+pub struct StructuralWrench {
+    /// External force in the structural frame (N).
+    pub force_struct: DVec3,
+    /// External torque in the structural frame (N·m).
+    pub torque_struct: DVec3,
+    /// Structure→body rotation (identity when structure = body).
+    pub t_struct_body: DMat3,
+}
+
+impl StructuralWrench {
+    /// No structural load. Identity `t_struct_body` (unused while both vectors
+    /// are zero).
+    pub const NONE: Self = Self {
+        force_struct: DVec3::ZERO,
+        torque_struct: DVec3::ZERO,
+        t_struct_body: DMat3::IDENTITY,
+    };
+
+    /// True when neither a structural force nor torque is present.
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.force_struct == DVec3::ZERO && self.torque_struct == DVec3::ZERO
+    }
+
+    /// Body-frame torque contribution `T_struct_body · torque_struct`
+    /// (constant over a step; `t_struct_body` is step-fixed).
+    #[inline]
+    fn torque_body(&self) -> DVec3 {
+        self.t_struct_body * self.torque_struct
+    }
+
+    /// Inertial-frame force `T_inertial_structᵀ · force_struct` for a given
+    /// stage attitude `t_inertial_body` (recomputed per stage by the caller).
+    #[inline]
+    fn force_inertial(&self, t_inertial_body: &DMat3) -> DVec3 {
+        let t_inertial_struct = compute_t_inertial_struct(&self.t_struct_body, t_inertial_body);
+        t_inertial_struct.transpose() * self.force_struct
+    }
+}
+
 /// Integrate a single body's state forward by one timestep.
 ///
 /// Handles 6-DOF vs 3-DOF routing based on configuration flags and
@@ -680,6 +736,7 @@ pub fn integrate_body(
     gravity_fn: impl Fn(DVec3, DVec3, f64) -> DVec3,
     non_grav_force: DVec3,
     torque: DVec3,
+    wrench: StructuralWrench,
     dt: f64,
     time_scale_factor: f64,
     integrator: IntegratorType,
@@ -724,12 +781,24 @@ pub fn integrate_body(
                 rot: *rot,
             };
 
-            let constant_torque = torque;
+            // Body-frame structural torque is step-constant (T_struct_body is
+            // fixed); add it once. JEOD: `extern_torq_body = T_struct_body ·
+            // extern_torq_struct` (dyn_body_collect.cc:245-252).
+            let constant_torque = torque + wrench.torque_body();
+            let inverse_mass = mass_props.inverse_mass;
             // Gravity recomputed at each integrator intermediate state for
-            // multi-stage accuracy. Non-gravity acceleration held constant
-            // (negligible change over one step).
+            // multi-stage accuracy. The structural external force is likewise
+            // re-rotated to inertial using the intermediate-stage attitude
+            // (JEOD recomputes `extern_forc_inrtl` in the per-stage derivative
+            // function); the inertial external force is held constant.
             let accel = |s: &SixDofState, time_frac: f64| {
-                gravity_fn(s.trans.position, s.trans.velocity, time_frac) + non_grav_accel
+                let mut a =
+                    gravity_fn(s.trans.position, s.trans.velocity, time_frac) + non_grav_accel;
+                if wrench.force_struct != DVec3::ZERO {
+                    let t_inertial_body = s.rot.quaternion.left_quat_to_transformation();
+                    a += wrench.force_inertial(&t_inertial_body) * inverse_mass;
+                }
+                a
             };
             let torque_fn = |_s: &SixDofState| constant_torque;
             let new_state = match integrator {
@@ -778,9 +847,22 @@ pub fn integrate_body(
         );
     }
 
-    // 3-DOF path: translational only
+    // 3-DOF path: translational only. A 3-DOF body has no integrated attitude,
+    // so a structural external force rotates with identity (matching JEOD's
+    // identity structure attitude when rotational dynamics are off) and is held
+    // constant over the step. Structural torque is dropped — there is no
+    // rotational state to integrate.
+    let struct_accel = if wrench.force_struct != DVec3::ZERO {
+        let m = mass.expect(
+            "structural external force requires MassProperties on a 3-DOF body: \
+             provide MassProperties or clear the structural force",
+        );
+        wrench.force_inertial(&DMat3::IDENTITY) * m.inverse_mass
+    } else {
+        DVec3::ZERO
+    };
     let accel = |s: &TranslationalState, time_frac: f64| {
-        gravity_fn(s.position, s.velocity, time_frac) + non_grav_accel
+        gravity_fn(s.position, s.velocity, time_frac) + non_grav_accel + struct_accel
     };
     match integrator {
         IntegratorType::Rk4 => {
@@ -1346,6 +1428,7 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
     gravity_fn: impl Fn(Position<F>, Velocity<F>, f64) -> Acceleration<F>,
     non_grav_force: Force<F>,
     torque: Torque<BodyFrame<V>>,
+    wrench: StructuralWrench,
     dt: Time,
     time_scale_factor: f64,
     integrator: IntegratorType,
@@ -1386,6 +1469,7 @@ pub fn integrate_body_typed<V: Vehicle, F: Frame>(
         raw_gravity_fn,
         non_grav_force.raw_si(),
         torque.raw_si(),
+        wrench,
         dt.get::<second>(),
         time_scale_factor,
         integrator,
@@ -1511,6 +1595,7 @@ mod tests {
             |pos, _vel, _time_frac| -mu / pos.length().powi(3) * pos,
             srp_force,
             DVec3::ZERO,
+            StructuralWrench::NONE,
             dt,
             tsf,
             IntegratorType::Rk4,
@@ -2483,6 +2568,7 @@ mod tests {
                 |pos, _vel, _time_frac| -mu / pos.length().powi(3) * pos,
                 DVec3::ZERO,
                 DVec3::ZERO,
+                StructuralWrench::NONE,
                 1.0,
                 1.0,
                 IntegratorType::GaussJackson(crate::GaussJacksonConfig::from(gj_cfg)),

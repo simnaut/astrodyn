@@ -1244,15 +1244,16 @@ fn tier3_sim_compute_child_derivative_full_trajectory() {
 // member at any given window.
 //
 // The full-window residuals are dominated by RK4 + JEOD `%g`-formatted
-// CSV print precision plus the per-step rotate-once-vs-rotate-each-
-// stage approximation in the struct-frame external force / torque
-// resolution. With the wrench-aggregation pass and immediate kinematic
-// re-propagation post-attach in place, the full trajectory closes
-// within `~3 cm` position and `~2e-7 rad` quaternion-angle against
-// the JEOD reference CSV across the 60 s window.
+// CSV print precision. The struct-frame external force is resolved to
+// inertial per RK4 sub-stage from the intermediate attitude (the runner's
+// `StructuralWrench` path, JEOD_INV DB.28), matching JEOD's per-derivative
+// `extern_forc_inrtl` recompute. With the wrench-aggregation pass and
+// immediate kinematic re-propagation post-attach in place, the full
+// trajectory closes within `~4 cm` position and `~2e-7 rad` quaternion-angle
+// against the JEOD reference CSV across the 60 s window.
 // ════════════════════════════════════════════════════════════════════
 
-const VEH_FULL_TRAJECTORY_POSITION_TOL_M: f64 = 3.6e-2;
-const VEH_FULL_TRAJECTORY_VELOCITY_TOL_MPS: f64 = 1.0e-3;
-const VEH_FULL_TRAJECTORY_QUAT_ANGLE_TOL_RAD: f64 = 2.0e-7;
-const VEH_FULL_TRAJECTORY_ANG_VEL_TOL_RAD_PER_S: f64 = 4.1e-8;
+const VEH_FULL_TRAJECTORY_POSITION_TOL_M: f64 = 4.0e-2;
+const VEH_FULL_TRAJECTORY_VELOCITY_TOL_MPS: f64 = 9.25e-4;
+const VEH_FULL_TRAJECTORY_QUAT_ANGLE_TOL_RAD: f64 = 2.01e-7;
+const VEH_FULL_TRAJECTORY_ANG_VEL_TOL_RAD_PER_S: f64 = 4.03e-8;
