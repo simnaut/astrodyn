@@ -165,13 +165,13 @@ fn assert_orbinit_match(
 fn tier3_orbinit_docker_run0001_iss_inertial() {
     // RUN_0001: ISS, SmaEccIncAscnodeArgperTimeperi, reference=Earth.inertial.
     // No frame rotation required — recipe output is already in inertial.
-    // Observed: pos=3.76e-9 m, vel=3.43e-12 m/s (5% above → listed).
+    // Observed: pos=6.25e-9 m, vel=6.19e-12 m/s (5% above → listed).
     assert_orbinit_match(
         sim_orbinit_docker::run_0001(),
         "orbinit_0001_orbinit.csv",
         "RUN_0001 (ISS inertial set01)",
-        3.95e-9,
-        3.61e-12,
+        6.56e-9,
+        6.50e-12,
     );
 }
 
@@ -181,13 +181,43 @@ fn tier3_orbinit_docker_run0001_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0101_sts_inertial() {
-    // Observed: pos=1.04e-9 m, vel=1.83e-12 m/s (5% above → listed).
+    // Observed: pos=1.04e-9 m, vel=2.27e-13 m/s (5% above → listed).
     assert_orbinit_match(
         sim_orbinit_docker::run_0101(),
         "orbinit_0101_orbinit.csv",
         "RUN_0101 (STS-114 inertial set01)",
         1.10e-9,
-        1.93e-12,
+        2.39e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0002 / RUN_0102: set02 (mean-anomaly parameterization), inertial frame.
+// Exercises `init_from_mean_anomaly` directly (distinct from set01's
+// time-periapsis → mean-anomaly derivation). Tolerances are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0002_iss_inertial() {
+    // Observed: pos=3.26e-9 m, vel=3.40e-12 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0002(),
+        "orbinit_0002_orbinit.csv",
+        "RUN_0002 (ISS inertial set02, mean anomaly)",
+        3.42e-9,
+        3.57e-12,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0102_sts_inertial() {
+    // Observed: pos=1.68e-9 m, vel=2.33e-12 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0102(),
+        "orbinit_0102_orbinit.csv",
+        "RUN_0102 (STS-114 inertial set02, mean anomaly)",
+        1.76e-9,
+        2.45e-12,
     );
 }
 

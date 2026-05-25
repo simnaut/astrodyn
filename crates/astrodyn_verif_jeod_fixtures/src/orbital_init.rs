@@ -18,7 +18,6 @@
 //! binary; runtime test paths never call them.
 
 use regex::Regex;
-use std::f64::consts::PI;
 
 use crate::body_init_fixtures::{
     load_vehicle_bundle, BodyInitFixtureError, OrbitalInitRecord, TransStateRecord,
@@ -33,7 +32,7 @@ use crate::body_init_fixtures::{
 /// - `key = value` (bare numeric)
 ///
 /// Unit conversions applied automatically:
-/// - `"degree"` -> radians (multiply by PI/180)
+/// - `"degree"` -> radians (via `f64::to_radians`)
 /// - `"km"` -> meters (multiply by 1000)
 /// - `"s"` -> seconds (no conversion)
 #[derive(Debug, Clone)]
@@ -171,12 +170,12 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
             match key {
                 "semi_major_axis" => semi_major_axis = Some(val * 1000.0), // assume km
                 "eccentricity" => eccentricity = Some(val),
-                "inclination" => inclination = Some(val * PI / 180.0), // assume degrees
-                "ascending_node" => ascending_node = Some(val * PI / 180.0),
-                "arg_periapsis" => arg_periapsis = Some(val * PI / 180.0),
+                "inclination" => inclination = Some(val.to_radians()), // assume degrees
+                "ascending_node" => ascending_node = Some(val.to_radians()),
+                "arg_periapsis" => arg_periapsis = Some(val.to_radians()),
                 "time_periapsis" => time_periapsis = Some(val),
-                "mean_anomaly" => mean_anomaly = Some(val * PI / 180.0),
-                "true_anomaly" => true_anomaly = Some(val * PI / 180.0),
+                "mean_anomaly" => mean_anomaly = Some(val.to_radians()),
+                "true_anomaly" => true_anomaly = Some(val.to_radians()),
                 _ => {}
             }
             continue;
@@ -218,7 +217,7 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
 /// Convert a raw value from the given unit string to SI (meters, radians, seconds).
 fn convert_units(val: f64, unit: &str) -> Result<f64, BodyInitFixtureError> {
     match unit {
-        "degree" => Ok(val * PI / 180.0),
+        "degree" => Ok(val.to_radians()),
         "km" => Ok(val * 1000.0),
         "s" => Ok(val),
         "m" => Ok(val),
@@ -372,8 +371,7 @@ vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
         let rec = parse_orbital_init_py(py).unwrap();
         assert!((rec.semi_major_axis - 6_732_901.201_52).abs() < 1e-6);
         assert!((rec.eccentricity - 0.00129073350).abs() < 1e-12);
-        let deg2rad = PI / 180.0;
-        assert!((rec.inclination - 51.670450765 * deg2rad).abs() < 1e-12);
+        assert!((rec.inclination - 51.670450765_f64.to_radians()).abs() < 1e-12);
         assert_eq!(rec.planet_name, "Earth");
         assert_eq!(rec.reference_frame, "Earth.inertial");
         assert!((rec.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-9);

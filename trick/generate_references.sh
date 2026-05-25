@@ -696,6 +696,9 @@ run_orbinit_group() {
         "SET_test/RUN_0201:orbinit_0201:orbinit_0201_orbinit.csv"
         "SET_test/RUN_0301:orbinit_0301:orbinit_0301_orbinit.csv"
         "SET_test/RUN_0401:orbinit_0401:orbinit_0401_orbinit.csv"
+        # set02 mean-anomaly parameterization (ISS + STS, inertial)
+        "SET_test/RUN_0002:orbinit_0002:orbinit_0002_orbinit.csv"
+        "SET_test/RUN_0102:orbinit_0102:orbinit_0102_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

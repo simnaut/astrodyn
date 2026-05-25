@@ -13,12 +13,18 @@
 //! parity wrapper drives bit-identity at the same propagation depth as
 //! the matching tier3 runner test.
 //!
-//! Five recipes correspond to JEOD's RUN list:
+//! The recipes correspond to JEOD's RUN list:
 //!   * RUN_0001 — ISS orbital elements (set01) in `Earth.inertial`;
+//!   * RUN_0002 — ISS orbital elements (set02, mean anomaly) in `Earth.inertial`;
 //!   * RUN_0101 — STS-114 orbital elements (set01) in `Earth.inertial`;
+//!   * RUN_0102 — STS-114 orbital elements (set02, mean anomaly) in `Earth.inertial`;
 //!   * RUN_0201 — ISS orbital elements (set01) in `Earth.pfix`;
 //!   * RUN_0301 — STS-114 orbital elements (set01) in `Earth.pfix`;
 //!   * RUN_0401 — STS-114 direct Cartesian state in `Earth.inertial`.
+//!
+//! Both parameterizations resolve to [`init_from_mean_anomaly`]; set01
+//! derives `M = t_peri·√(μ/a³)` from the fixture's `time_periapsis`, while
+//! set02 reads the fixture's `mean_anomaly` field directly.
 //!
 //! The orbital-element-to-Cartesian conversion is the substance of this
 //! test; it runs inside every scenario factory rather than being
@@ -154,6 +160,35 @@ fn orbital_element_state(vehicle: &str, init_name: &str, mu_earth: f64) -> Trans
     }
 }
 
+/// Materialize a JEOD set02 (`SmaEccIncAscnodeArgperMeanAnomaly`) fixture
+/// into an inertial-frame translational state. Unlike set01, the mean
+/// anomaly is supplied directly by the deck (fixture field `mean_anomaly`,
+/// stored in radians by `extract_body_init`), so this is exactly
+/// [`init_from_mean_anomaly`] with no time-periapsis derivation. The set02
+/// decks are `Earth.inertial` only.
+fn mean_anomaly_element_state(vehicle: &str, init_name: &str, mu_earth: f64) -> TranslationalState {
+    let init = load_orbital_init(vehicle, init_name);
+    let mean_anomaly = init.mean_anomaly.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set02 expected mean_anomaly in the fixture")
+    });
+    assert_eq!(
+        init.reference_frame.as_str(),
+        "Earth.inertial",
+        "{vehicle}/{init_name}: set02 recipe only supports Earth.inertial frames, \
+         got '{}' — add frame handling if a pfix set02 RUN is introduced",
+        init.reference_frame,
+    );
+    init_from_mean_anomaly(
+        init.semi_major_axis,
+        init.eccentricity,
+        init.inclination,
+        init.ascending_node,
+        init.arg_periapsis,
+        mean_anomaly,
+        mu_earth,
+    )
+}
+
 /// Materialize a JEOD direct-Cartesian fixture (RUN_0401 only) into an
 /// inertial-frame translational state. The fixture is a pass-through:
 /// `position`/`velocity` arrays are taken verbatim.
@@ -244,11 +279,61 @@ fn build_run_0401(_init: &InitialConditions) -> SimulationBuilder {
     build_orbinit_docker(mu, state)
 }
 
+/// RUN_0002: ISS set02 (mean-anomaly) elements from the committed
+/// `iss.json` fixture (`trans_Orbit_inertial_body_set02`), in
+/// `Earth.inertial`.
+fn build_run_0002(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = mean_anomaly_element_state("ISS", "trans_Orbit_inertial_body_set02", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0102: STS-114 set02 (mean-anomaly) elements from the committed
+/// `sts_114.json` fixture (`trans_Orbit_inertial_body_set02`), in
+/// `Earth.inertial`.
+fn build_run_0102(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = mean_anomaly_element_state("STS_114", "trans_Orbit_inertial_body_set02", mu);
+    build_orbinit_docker(mu, state)
+}
+
 /// RUN_0001: ISS orbital elements (set01) in `Earth.inertial`.
 pub fn run_0001() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0001",
         scenario: build_run_0001,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0002: ISS orbital elements (set02, mean-anomaly) in `Earth.inertial`.
+pub fn run_0002() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0002",
+        scenario: build_run_0002,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0102: STS-114 orbital elements (set02, mean-anomaly) in `Earth.inertial`.
+pub fn run_0102() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0102",
+        scenario: build_run_0102,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,
