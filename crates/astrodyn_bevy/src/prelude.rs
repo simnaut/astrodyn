@@ -32,7 +32,7 @@ pub use crate::{
     ExternalForceStructC, ExternalTorqueC, ExternalTorqueStructC, FrameAngVelC, FrameDerivativesC,
     FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker, IntegrationDtR,
-    IntegrationFrameMarker, IntegratorTypeC, JointKinematicsC, MassPropertiesC,
+    IntegrationFrameMarker, IntegratorTypeC, JointKinematicsC, LsodeStateC, MassPropertiesC,
     MultiDofJointKinematicsC, PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC,
     RadiationForceC, RootFrameEntityR, RotationalStateC, ScenarioHandles, SimulationBuilderBevyExt,
     SimulationTimeR, SinusoidalJointKinematicsC, SourceInertialPositionC, SourceInertialVelocityC,

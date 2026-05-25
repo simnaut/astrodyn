@@ -97,12 +97,12 @@ use astrodyn::{aggregate_wrenches_via_storage, EdgeGeometry, MassStorage, Vec3Ex
 
 use crate::components::{
     Abm4StateC, DynamicsConfigC, FrameDerivativesC, GaussJacksonStateC, GravityAccelerationC,
-    KinematicChildC, MassChildOf, MassPropertiesC, RotationalStateC, StructuralTransformC,
-    TotalForceC,
+    KinematicChildC, LsodeStateC, MassChildOf, MassPropertiesC, RotationalStateC,
+    StructuralTransformC, TotalForceC,
 };
 use crate::mass_tree::MassTreeView;
 
-/// Clear multi-step integrator (Gauss-Jackson, ABM4) predictor /
+/// Clear multi-step integrator (Gauss-Jackson, ABM4, LSODE) predictor /
 /// corrector history for an entity that's about to resume root-side
 /// integration after being a kinematic child of a `MassChildOf`
 /// chain. Single-step integrators (RK4, RKF4(5)) carry no per-step
@@ -116,13 +116,15 @@ fn reset_multi_step_history(
     entity: Entity,
     gj_q: &mut Query<&mut GaussJacksonStateC>,
     abm_q: &mut Query<&mut Abm4StateC>,
+    lsode_q: &mut Query<&mut LsodeStateC>,
 ) {
     let mut gj = gj_q.get_mut(entity).ok();
     let mut abm = abm_q.get_mut(entity).ok();
+    let mut lsode = lsode_q.get_mut(entity).ok();
     astrodyn::reset_integrators(
         gj.as_mut().map(|g| g.0.inner_mut()),
         abm.as_mut().map(|a| a.0.inner_mut()),
-        None, // no Bevy LsodeStateC yet (#200 Phase 6B)
+        lsode.as_mut().map(|l| l.0.inner_mut()),
     );
 }
 
@@ -194,6 +196,7 @@ pub fn wrench_aggregation_system(
     // be reset on topology change.
     mut gj_q: Query<&mut GaussJacksonStateC>,
     mut abm_q: Query<&mut Abm4StateC>,
+    mut lsode_q: Query<&mut LsodeStateC>,
 ) {
     // Fast path: no MassChildOf edges in the world means no chains —
     // every entity is its own root and the existing per-entity
@@ -214,7 +217,7 @@ pub fn wrench_aggregation_system(
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     if parents_q.is_empty() {
         for entity in kinematic_q.iter() {
-            reset_multi_step_history(entity, &mut gj_q, &mut abm_q);
+            reset_multi_step_history(entity, &mut gj_q, &mut abm_q, &mut lsode_q);
             commands.entity(entity).remove::<KinematicChildC>();
         }
         return;
@@ -456,7 +459,7 @@ pub fn wrench_aggregation_system(
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     for entity in kinematic_q.iter() {
         if !should_be_kinematic.contains(&entity) {
-            reset_multi_step_history(entity, &mut gj_q, &mut abm_q);
+            reset_multi_step_history(entity, &mut gj_q, &mut abm_q, &mut lsode_q);
             commands.entity(entity).remove::<KinematicChildC>();
         }
     }

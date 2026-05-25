@@ -124,8 +124,8 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
 use crate::components::{
-    Abm4StateC, DynamicsConfigC, GaussJacksonStateC, MassPropertiesC, RotationalStateC,
-    TranslationalStateC,
+    Abm4StateC, DynamicsConfigC, GaussJacksonStateC, LsodeStateC, MassPropertiesC,
+    RotationalStateC, TranslationalStateC,
 };
 
 /// Set of planet `TypeId`s for which a per-planet body-action pipeline
@@ -554,6 +554,7 @@ pub fn body_action_system<P: Planet>(
             Option<&mut MassPropertiesC>,
             Option<&mut GaussJacksonStateC>,
             Option<&mut Abm4StateC>,
+            Option<&mut LsodeStateC>,
         ),
         // JEOD_INV: BA.01 — subject must be a DynBody-equivalent entity. `DynamicsConfigC`
         // is required on every dynamic body; gating the query on it both narrows
@@ -578,7 +579,7 @@ pub fn body_action_system<P: Planet>(
         // entry stripped, so a recovered World won't replay the
         // bad action on the next tick.
         let action = queue.pending.remove(idx);
-        let (mut trans, mut rot, mut mass, mut gj, mut abm) = bodies
+        let (mut trans, mut rot, mut mass, mut gj, mut abm, mut lsode) = bodies
             .get_mut(action.entity)
             .unwrap_or_else(|err| {
                 panic!(
@@ -688,7 +689,7 @@ pub fn body_action_system<P: Planet>(
             astrodyn::reset_integrators(
                 gj.as_deref_mut().map(|c| c.0.inner_mut()),
                 abm.as_deref_mut().map(|c| c.0.inner_mut()),
-                None, // no Bevy LsodeStateC yet (#200 Phase 6B)
+                lsode.as_deref_mut().map(|c| c.0.inner_mut()),
             );
         }
         // Do not advance idx: the queue shifted left by one when we
