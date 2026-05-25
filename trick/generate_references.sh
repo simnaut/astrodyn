@@ -2471,7 +2471,13 @@ run_time_v3_group() {
 throttled_bg run_time_v3_group
 PID_TIME_V3=$LAST_BG_PID
 
-# ── Snippet: SIM_4_common_usage RUN_JEOD2x (TAI + UTC + UT1 across leap sec) ──
+# ── Snippet: SIM_4_common_usage (TAI + UTC + UT1 across leap sec) ──
+# Two RUNs, identical except for the UTC/UT1 convention:
+#   RUN_JEOD2x            — true_utc / true_ut1 (default): UTC/UT1 track the
+#                           leap-second table, so UTC TJT jumps at 1999-01-01.
+#   RUN_JEOD1x_compatible — true_utc=False / true_ut1=False: the TAI-UTC and
+#                           TAI-UT1 offsets are frozen at the epoch value, so
+#                           UTC/UT1 TJT do NOT jump across the boundary.
 # Log every 60 s to keep the CSV small; run spans 86460 s, crossing the
 # 1999-01-01 leap second boundary.
 TIME_V4_SNIPPET='
@@ -2495,6 +2501,7 @@ run_time_v4_group() {
     local sim_dir="models/environment/time/verif/SIM_4_common_usage"
     local -a RUNS=(
         "SET_test/RUN_JEOD2x:time_v4_common:time_v4_common_time_v4.csv"
+        "SET_test/RUN_JEOD1x_compatible:time_v4_jeod1x:time_v4_jeod1x_time_v4.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
