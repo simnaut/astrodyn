@@ -74,7 +74,10 @@ jobs:
     name: cargo-semver-checks (astrodyn)
     runs-on: ubuntu-latest
     steps:
+      # Full history so the `main` baseline rev below is available locally.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -82,6 +85,13 @@ jobs:
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           package: astrodyn
+          # Compare against the `main` branch, not the crates.io release.
+          # The published 0.1.1 baseline is unbuildable on a fresh (unlocked)
+          # resolve since nalgebra 0.35.0 (2026-05-24) — anise pulls two
+          # incompatible nalgebra majors via its hyperdual edge. A published
+          # manifest can't be patched; `main` can, so the git baseline stays
+          # buildable. (Also a better regression fence for a pre-1.0 crate.)
+          baseline-rev: main
 
   cargo-hack:
     # Feature-matrix fence on `astrodyn_ephemeris`. `README.md` documents
