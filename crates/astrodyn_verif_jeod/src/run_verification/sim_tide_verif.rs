@@ -76,7 +76,18 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
     }
 }
 
-fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
+/// Shared SIM_tide_verif scenario builder.
+///
+/// `split_gravity = false` (RUN_01): a single full spherical-harmonics Earth
+/// control (`new_nonspherical`, includes the central term).
+///
+/// `split_gravity = true` (RUN_02): Earth gravity is split into a spherical
+/// (point-mass) control plus a perturbing-only spherical-harmonics control
+/// (`perturbing_only`, excludes the n=0,1 central term). The sum is
+/// mathematically identical to RUN_01's combined evaluation — RUN_02 verifies
+/// that the spherical + perturbing-only split reproduces the full field
+/// (JEOD `earth_spherical_grav_ctrl` + `earth_grav_ctrl.perturbing_only`).
+fn build_tide(init: &InitialConditions, split_gravity: bool) -> SimulationBuilder {
     let sim_dir = crate::jeod_inputs::path(SIM_DYNCOMP);
     let dt = crate::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
@@ -182,16 +193,44 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![
-                GravityControl::new_nonspherical(earth, 8, 8, GravityGradient::Compute),
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
-            ],
+            controls: {
+                let mut controls = if split_gravity {
+                    // RUN_02: spherical central + perturbing-only harmonics.
+                    vec![
+                        GravityControl::new_spherical(earth, GravityGradient::Compute),
+                        GravityControl {
+                            perturbing_only: true,
+                            ..GravityControl::new_nonspherical(earth, 8, 8, GravityGradient::Compute)
+                        },
+                    ]
+                } else {
+                    // RUN_01: single full spherical-harmonics control.
+                    vec![GravityControl::new_nonspherical(
+                        earth,
+                        8,
+                        8,
+                        GravityGradient::Compute,
+                    )]
+                };
+                controls.push(GravityControl::new_third_body(sun));
+                controls.push(GravityControl::new_third_body(moon));
+                controls
+            },
         },
         compute_gravity_gradient: true,
         ..Default::default()
     });
     sb
+}
+
+/// RUN_01 scenario: single full spherical-harmonics Earth control.
+fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
+    build_tide(init, false)
+}
+
+/// RUN_02 scenario: spherical + perturbing-only spherical-harmonics split.
+fn build_tide_run02(init: &InitialConditions) -> SimulationBuilder {
+    build_tide(init, true)
 }
 
 /// Pre-step factory: capture DE421 + the epoch TDB once, then push
@@ -241,6 +280,37 @@ pub fn run01() -> VerificationCase {
             quat_angle_rad: 0.0,
             ang_vel_rad_s: [0.0; 3],
             extras: &[("dc20", 1.0e-14)],
+        },
+        extras: Some(ExtrasComparator::TideDc20 {
+            earth_source_idx: EARTH_IDX,
+        }),
+        pre_step: Some((tide_pre_step, PreStepCadence::PerRecord)),
+    }
+}
+
+/// SIM_tide_verif RUN_02 — same scenario as RUN_01 but with Earth gravity
+/// split into a spherical (point-mass) control plus a perturbing-only
+/// spherical-harmonics control (`earth_grav_ctrl.perturbing_only = True` +
+/// a separate `earth_spherical_grav_ctrl`). The split is mathematically
+/// equivalent to RUN_01's combined evaluation; validating against the
+/// distinct JEOD `tide_run02` log confirms the spherical + perturbing-only
+/// decomposition reproduces the full field (trajectory and per-step ΔC20).
+pub fn run02() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_tide_run02",
+        scenario: build_tide_run02,
+        reference: CsvReference::Tide("tide_run02_tide.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            // 1.05× observed (CLAUDE.md). Observed: pos [6.49e-3, 9.85e-3,
+            // 6.71e-3] m, vel [7.68e-6, 1.02e-5, 7.90e-6] m/s, dC20 1.12e-15.
+            // (Far tighter than RUN_01's — the spherical + perturbing-only
+            // split reproduces JEOD's split-control log to ~cm over 8 h.)
+            position_m: [6.82e-3, 1.035e-2, 7.05e-3],
+            velocity_m_s: [8.06e-6, 1.072e-5, 8.30e-6],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[("dc20", 1.18e-15)],
         },
         extras: Some(ExtrasComparator::TideDc20 {
             earth_source_idx: EARTH_IDX,

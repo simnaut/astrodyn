@@ -18,3 +18,8 @@ use astrodyn_verif_parity::VerificationCaseParityExt;
 fn bevy_parity_tide_verif_run01() {
     sim_tide_verif::run01().run_and_assert_parity::<astrodyn::Earth>();
 }
+
+#[test]
+fn bevy_parity_tide_verif_run02() {
+    sim_tide_verif::run02().run_and_assert_parity::<astrodyn::Earth>();
+}
