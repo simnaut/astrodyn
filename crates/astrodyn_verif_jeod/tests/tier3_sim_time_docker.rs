@@ -4,7 +4,7 @@
 //! CSVs from the six canonical time verification sims:
 //!
 //!   SIM_1_dyn_only       — DynamicTime only (no TAI)
-//!   SIM_2_dyn_plus_STD   — Dyn + TAI
+//!   SIM_2_dyn_plus_STD   — Dyn + TAI (init by value / calendar / scale-factor)
 //!   SIM_3_dyn_plus_UDE   — Dyn + UDE
 //!   SIM_4_common_usage   — TAI + UTC + UT1 across a leap-second boundary
 //!   SIM_5_all_inclusive  — all 10+ scales incl. MET (UDE_initialized run)
@@ -229,6 +229,180 @@ fn tier3_time_v2_std() {
         rows.len()
     );
 
+    assert!(
+        max_tai_s_err < 1e-9,
+        "TAI seconds error {max_tai_s_err:.4e} s"
+    );
+    assert!(
+        max_tai_tjt_err < 1e-6,
+        "TAI TJT error {max_tai_tjt_err:.4e} s"
+    );
+    assert!(max_dyn_err < 1e-12, "DYN error {max_dyn_err:.4e} s");
+}
+
+/// SIM_2 RUN_initialize_by_calendar: TAI initialized by calendar to
+/// 2005-12-31 23:59:50 (the same epoch JEOD uses in SIM_6 RUN_tai_initialized).
+/// This is the calendar-init counterpart to `tier3_time_v2_std`'s init-by-value:
+/// `time_manager_init.sim_start_format = calendar` plus
+/// `time_tai.set_date_and_time(2005, 12, 31, 23, 59, 50.0)`. With
+/// `scale_factor = 1` throughout, DYN tracks sim time and TAI advances 1 s per
+/// step. We seed our `SimulationTime` from the CSV's t=0 TAI TJT (JEOD source
+/// data, not intermediate output) and verify TAI seconds, TAI TJT, and DYN.
+#[test]
+fn tier3_time_v2_calendar() {
+    let csv = test_data_path("time_v2_calendar_time_v2.csv");
+    let rows = load_time_csv(&csv);
+    let init = &rows[0];
+    let init_tai_tjt = init.tai_tjt.expect("SIM_2 calendar CSV must log TAI TJT");
+    let init_tai_seconds = init
+        .tai_seconds
+        .expect("SIM_2 calendar CSV must log TAI seconds");
+
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
+    let dt = if rows.len() > 1 {
+        rows[1].time - rows[0].time
+    } else {
+        1.0
+    };
+
+    let mut max_tai_s_err = 0.0_f64;
+    let mut max_tai_tjt_err = 0.0_f64;
+    let mut max_dyn_err = 0.0_f64;
+
+    for (i, rec) in rows.iter().enumerate() {
+        if i > 0 {
+            mgr.advance(dt);
+        }
+        let tai_tjt = rec.tai_tjt.expect("SIM_2 calendar CSV must log TAI TJT");
+        let tai_seconds = rec
+            .tai_seconds
+            .expect("SIM_2 calendar CSV must log TAI seconds");
+        let dyn_seconds = rec.dyn_seconds.expect("SIM_2 calendar CSV must log DYN");
+        let elapsed = tai_seconds - init_tai_seconds;
+        max_tai_s_err = max_tai_s_err.max((mgr.tai_seconds - elapsed).abs());
+        max_tai_tjt_err = max_tai_tjt_err.max((mgr.tai_tjt - tai_tjt).abs() * SECONDS_PER_DAY);
+        max_dyn_err = max_dyn_err.max((mgr.get_seconds(TimeScaleId::DYN) - dyn_seconds).abs());
+    }
+
+    println!(
+        "  time_v2 calendar: {} points, TAI_s={max_tai_s_err:.2e}s, \
+         TAI_tjt={max_tai_tjt_err:.2e}s, DYN={max_dyn_err:.2e}s",
+        rows.len()
+    );
+
+    // TAI seconds and DYN are exact integer-second tracks for dt=1; TAI TJT
+    // carries only calendar→TJT rounding noise, bounded by 1e-6 s like the
+    // other SIM_2 runs. (The println! above reports the actual observed maxima.)
+    assert!(
+        max_tai_s_err < 1e-9,
+        "TAI seconds error {max_tai_s_err:.4e} s"
+    );
+    assert!(
+        max_tai_tjt_err < 1e-6,
+        "TAI TJT error {max_tai_tjt_err:.4e} s"
+    );
+    assert!(max_dyn_err < 1e-12, "DYN error {max_dyn_err:.4e} s");
+}
+
+/// SIM_2 RUN_scale_factor_changes: TAI initialized by calendar to
+/// 2005-12-31 23:59:50, then `time_manager.dyn_time.scale_factor` is reassigned
+/// mid-run via Trick `add_read` events — t=5 → -1.0 (reverse), t=10 → 0.5
+/// (half-rate forward), t=20 → -2.0 (double-rate reverse). This exercises
+/// JEOD `TimeDyn::update_offset` (`offset = seconds - scale_factor * simtime`),
+/// the same rate/direction-change machinery as `astrodyn_time`'s
+/// `DynamicTime::update_offset`.
+///
+/// JEOD timing: a `scale_factor` reassigned by the read at sim time T takes
+/// effect on the update computed at sim time T+1 (the read fires before the
+/// next update job). We reproduce this exactly: before the `advance` that
+/// leaves sim time T, if T is a read time we call `set_scale_factor`, so
+/// `advance`'s leading `update_offset(simtime=T)` recomputes the offset from
+/// the current DYN seconds, then steps to T+1 — matching the CSV row-for-row.
+///
+/// Scale changes only affect the *dynamic* time scales (DYN, and TAI which is
+/// mirrored to DYN here), so TAI seconds equal DYN seconds (both elapsed from
+/// the epoch) and TAI TJT = epoch_tjt + DYN/86400. No new capability is needed:
+/// `SimulationTime::set_scale_factor` already wires JEOD's TimeDyn behavior,
+/// including full time reversal.
+#[test]
+fn tier3_time_v2_scale_factor() {
+    let csv = test_data_path("time_v2_scale_factor_time_v2.csv");
+    let rows = load_time_csv(&csv);
+    let init = &rows[0];
+    let init_tai_tjt = init
+        .tai_tjt
+        .expect("SIM_2 scale_factor CSV must log TAI TJT");
+    let init_tai_seconds = init
+        .tai_seconds
+        .expect("SIM_2 scale_factor CSV must log TAI seconds");
+
+    let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
+    let dt = if rows.len() > 1 {
+        rows[1].time - rows[0].time
+    } else {
+        1.0
+    };
+
+    // Scale-factor reassignments from the run's `input.py` `add_read` events,
+    // keyed by the sim time at which the read fires (effective on the next
+    // update). Values are JEOD source data, not logged output.
+    let scale_change = |sim_time: f64| -> Option<f64> {
+        // Exact float compares against integer-valued read times; the read
+        // times are exact integers (5, 10, 20) and `sim_time` is the prior
+        // row's exact integer-second `time` value.
+        #[allow(
+            clippy::float_cmp,
+            reason = "comparing exact integer-second read times from JEOD input.py"
+        )]
+        if sim_time == 5.0 {
+            Some(-1.0)
+        } else if sim_time == 10.0 {
+            Some(0.5)
+        } else if sim_time == 20.0 {
+            Some(-2.0)
+        } else {
+            None
+        }
+    };
+
+    let mut max_tai_s_err = 0.0_f64;
+    let mut max_tai_tjt_err = 0.0_f64;
+    let mut max_dyn_err = 0.0_f64;
+
+    for (i, rec) in rows.iter().enumerate() {
+        if i > 0 {
+            // Apply any scale change scheduled by the read at the sim time we
+            // are leaving, so `advance`'s `update_offset(simtime)` sees it.
+            if let Some(factor) = scale_change(rows[i - 1].time) {
+                mgr.set_scale_factor(factor);
+            }
+            mgr.advance(dt);
+        }
+        let tai_tjt = rec
+            .tai_tjt
+            .expect("SIM_2 scale_factor CSV must log TAI TJT");
+        let tai_seconds = rec
+            .tai_seconds
+            .expect("SIM_2 scale_factor CSV must log TAI seconds");
+        let dyn_seconds = rec
+            .dyn_seconds
+            .expect("SIM_2 scale_factor CSV must log DYN");
+        let elapsed = tai_seconds - init_tai_seconds;
+        max_tai_s_err = max_tai_s_err.max((mgr.tai_seconds - elapsed).abs());
+        max_tai_tjt_err = max_tai_tjt_err.max((mgr.tai_tjt - tai_tjt).abs() * SECONDS_PER_DAY);
+        max_dyn_err = max_dyn_err.max((mgr.get_seconds(TimeScaleId::DYN) - dyn_seconds).abs());
+    }
+
+    println!(
+        "  time_v2 scale_factor: {} points, TAI_s={max_tai_s_err:.2e}s, \
+         TAI_tjt={max_tai_tjt_err:.2e}s, DYN={max_dyn_err:.2e}s",
+        rows.len()
+    );
+
+    // DYN follows the scaled/reversed dynamic clock exactly and TAI mirrors DYN
+    // (the scaled values are exact half/whole integers, so TAI_s and DYN match
+    // to the bit); TAI TJT carries only rounding noise. Tolerances match the
+    // other SIM_2 runs. (The println! above reports the actual observed maxima.)
     assert!(
         max_tai_s_err < 1e-9,
         "TAI seconds error {max_tai_s_err:.4e} s"
@@ -479,9 +653,8 @@ fn tier3_time_v4_jeod1x() {
 
     // TAI is exact (smooth, same as RUN_JEOD2x). UTC/UT1 are constant offsets
     // from TAI in the JEOD 1.x convention, so their only residual is JEOD's
-    // calendar→TJT rounding noise at the epoch (sub-μs). Observed maxima:
-    // TAI_tjt 7.9e-7 s, UTC_tjt 6.3e-7 s, UT1_tjt 9.4e-7 s — tolerances at
-    // 1e-6 s (just above 1.05× observed and matching the RUN_JEOD2x bounds).
+    // calendar→TJT rounding noise at the epoch (sub-μs); tolerances at 1e-6 s
+    // match the RUN_JEOD2x bounds. (The println! above reports observed maxima.)
     assert!(
         max_tai_tjt_err < 1e-6,
         "TAI TJT error {max_tai_tjt_err:.4e} s"
