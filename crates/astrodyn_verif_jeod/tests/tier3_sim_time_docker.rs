@@ -290,9 +290,9 @@ fn tier3_time_v2_calendar() {
         rows.len()
     );
 
-    // Observed maxima: TAI_s 0, TAI_tjt ~9e-9 s (TJT rounding noise), DYN 0.
-    // Tolerances at 1.05× observed (TJT bounded by 1e-6 s like the other SIM_2
-    // runs; TAI seconds and DYN are exact integer-second tracks for dt=1).
+    // TAI seconds and DYN are exact integer-second tracks for dt=1; TAI TJT
+    // carries only calendar→TJT rounding noise, bounded by 1e-6 s like the
+    // other SIM_2 runs. (The println! above reports the actual observed maxima.)
     assert!(
         max_tai_s_err < 1e-9,
         "TAI seconds error {max_tai_s_err:.4e} s"
@@ -399,10 +399,10 @@ fn tier3_time_v2_scale_factor() {
         rows.len()
     );
 
-    // DYN follows the scaled/reversed dynamic clock exactly; TAI mirrors DYN.
-    // Observed maxima: TAI_s 0, DYN 0 (the scaled values are exact half/whole
-    // integers), TAI_tjt ~9e-9 s (TJT rounding noise). Tolerances match the
-    // other SIM_2 runs.
+    // DYN follows the scaled/reversed dynamic clock exactly and TAI mirrors DYN
+    // (the scaled values are exact half/whole integers, so TAI_s and DYN match
+    // to the bit); TAI TJT carries only rounding noise. Tolerances match the
+    // other SIM_2 runs. (The println! above reports the actual observed maxima.)
     assert!(
         max_tai_s_err < 1e-9,
         "TAI seconds error {max_tai_s_err:.4e} s"
@@ -653,9 +653,8 @@ fn tier3_time_v4_jeod1x() {
 
     // TAI is exact (smooth, same as RUN_JEOD2x). UTC/UT1 are constant offsets
     // from TAI in the JEOD 1.x convention, so their only residual is JEOD's
-    // calendar→TJT rounding noise at the epoch (sub-μs). Observed maxima:
-    // TAI_tjt 7.9e-7 s, UTC_tjt 6.3e-7 s, UT1_tjt 9.4e-7 s — tolerances at
-    // 1e-6 s (just above 1.05× observed and matching the RUN_JEOD2x bounds).
+    // calendar→TJT rounding noise at the epoch (sub-μs); tolerances at 1e-6 s
+    // match the RUN_JEOD2x bounds. (The println! above reports observed maxima.)
     assert!(
         max_tai_tjt_err < 1e-6,
         "TAI TJT error {max_tai_tjt_err:.4e} s"
