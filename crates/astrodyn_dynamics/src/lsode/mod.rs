@@ -20,17 +20,17 @@
 //! ## Families and correctors (#200, #122)
 //!
 //! - **Non-stiff implicit Adams** (orders 1–12) with the functional-iteration
-//!   corrector ([`lsode_translational_step`] via [`functional_corrector`]).
+//!   corrector ([`lsode_translational_step`] via `functional_corrector`).
 //! - **Stiff BDF** (orders 1–5) with a modified-Newton chord corrector
-//!   ([`chord_corrector`]) driven by an internally-generated forward-
-//!   difference Jacobian ([`build_dense_iteration_matrix`], ODEPACK MITER=2)
-//!   and a dense LU solve ([`linalg`]). The iteration matrix
+//!   (`chord_corrector`) driven by an internally-generated forward-
+//!   difference Jacobian (`build_dense_iteration_matrix`, ODEPACK MITER=2)
+//!   and a dense LU solve (`linalg`). The iteration matrix
 //!   `P = I − h·el0·J` is factored once and reused until it drifts stale
 //!   (`MAX_REL_CHANGE_WITHOUT_JACOBIAN` / `MAX_STEPS_PER_JACOBIAN`).
 //!
 //! The diagonal Jacobi-Newton approximation (ODEPACK MITER=3,
-//! `JacobiNewtonInternalJac`) is not yet ported — selecting it panics
-//! loudly in [`dstode_step`] rather than silently running a different
+//! `JacobiNewtonInternalJac`) is not yet ported — selecting it is rejected
+//! by [`LsodeConfig::check`] rather than silently running a different
 //! corrector.
 //!
 //! The flattened first-order system is `y = [position; velocity]` with
@@ -483,11 +483,12 @@ fn dstode_step(
             CorrectorMethod::NewtonIterInternalJac => {
                 chord_corrector(lsode, accel_fn, frac, el0, tesco1, conv_factor, &mut accum)
             }
-            CorrectorMethod::JacobiNewtonInternalJac => panic!(
+            // MITER=3 is rejected up front by `LsodeConfig::check` (called in
+            // `LsodeState::new`), so it can never reach the corrector dispatch.
+            // Kept as a fail-loud backstop in case that guard is ever weakened.
+            CorrectorMethod::JacobiNewtonInternalJac => unreachable!(
                 "LSODE corrector JacobiNewtonInternalJac (MITER=3, diagonal Jacobi-Newton) is \
-                 not yet ported. Use the dense finite-difference Newton corrector \
-                 (NewtonIterInternalJac) for the stiff BDF family, or the non-stiff Adams \
-                 family with functional iteration."
+                 not yet ported and must be rejected by LsodeConfig::check before stepping."
             ),
         };
 
@@ -1038,10 +1039,19 @@ mod tests {
         }
         // Bounded and decayed toward the slow-mode tail (no explicit blow-up).
         assert!(s.position.x.abs() < 1.0, "solution did not stay bounded");
-        // The stiff path actually exercised the Newton/Jacobian machinery.
+        // The stiff path actually exercised the Newton/Jacobian machinery:
+        // `jacobian_current` is set true only after a successful iteration-matrix
+        // build (the functional corrector never touches it), and
+        // `steps_at_last_jacobian` records the step at which it last rebuilt — so
+        // both failing would mean the dense-Newton chord corrector never ran.
         assert!(
-            lsode.num_steps_taken >= 40,
-            "expected internal sub-stepping for the stiff transient"
+            lsode.jacobian_current,
+            "stiff BDF run never built/used a finite-difference Jacobian — the dense Newton \
+             chord corrector was not exercised"
+        );
+        assert!(
+            lsode.steps_at_last_jacobian > 0,
+            "iteration matrix was never (re)built during the stiff transient"
         );
     }
 
