@@ -37,8 +37,14 @@ use crate::body_init_fixtures::{
 /// - `"s"` -> seconds (no conversion)
 #[derive(Debug, Clone)]
 pub struct OrbitalInitData {
-    /// Semi-major axis in metres (converted from km in the source).
-    pub semi_major_axis: f64,
+    /// Semi-major axis in metres (converted from km in the source), when the
+    /// JEOD set provides it (sets 01/02/10). `None` for set03, which carries
+    /// `semi_latus_rectum` instead.
+    pub semi_major_axis: Option<f64>,
+    /// Semi-latus rectum in metres (converted from km in the source), when the
+    /// JEOD set provides it (set03 `SlrEccIncAscnodeArgperTanom`). `None` for
+    /// sma-parameterized sets.
+    pub semi_latus_rectum: Option<f64>,
     /// Eccentricity (dimensionless).
     pub eccentricity: f64,
     /// Inclination in radians (converted from degrees in the source).
@@ -91,6 +97,7 @@ impl From<&OrbitalInitRecord> for OrbitalInitData {
     fn from(rec: &OrbitalInitRecord) -> Self {
         OrbitalInitData {
             semi_major_axis: rec.semi_major_axis,
+            semi_latus_rectum: rec.semi_latus_rectum,
             eccentricity: rec.eccentricity,
             inclination: rec.inclination,
             ascending_node: rec.ascending_node,
@@ -125,6 +132,7 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
     let frame_re = Regex::new(r#"\.orbit_frame_name\s*=\s*"([^"]+)""#).unwrap();
 
     let mut semi_major_axis: Option<f64> = None;
+    let mut semi_latus_rectum: Option<f64> = None;
     let mut eccentricity: Option<f64> = None;
     let mut inclination: Option<f64> = None;
     let mut ascending_node: Option<f64> = None;
@@ -148,6 +156,7 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
 
             match key {
                 "semi_major_axis" => semi_major_axis = Some(val),
+                "semi_latus_rectum" => semi_latus_rectum = Some(val),
                 "eccentricity" => eccentricity = Some(val),
                 "inclination" => inclination = Some(val),
                 "ascending_node" => ascending_node = Some(val),
@@ -169,6 +178,7 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
 
             match key {
                 "semi_major_axis" => semi_major_axis = Some(val * 1000.0), // assume km
+                "semi_latus_rectum" => semi_latus_rectum = Some(val * 1000.0), // assume km
                 "eccentricity" => eccentricity = Some(val),
                 "inclination" => inclination = Some(val.to_radians()), // assume degrees
                 "ascending_node" => ascending_node = Some(val.to_radians()),
@@ -193,11 +203,18 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
         }
     }
 
+    // JEOD sets 01/02/10 supply `semi_major_axis`; set03
+    // (`SlrEccIncAscnodeArgperTanom`) supplies `semi_latus_rectum`. Require
+    // exactly one shape — neither present is a malformed deck.
+    if semi_major_axis.is_none() && semi_latus_rectum.is_none() {
+        return Err(BodyInitFixtureError::malformed(
+            "missing both semi_major_axis and semi_latus_rectum (one is required)".to_string(),
+        ));
+    }
     Ok(OrbitalInitRecord {
         name: String::new(), // filled in by extract_body_init
-        semi_major_axis: semi_major_axis.ok_or_else(|| {
-            BodyInitFixtureError::malformed("missing semi_major_axis".to_string())
-        })?,
+        semi_major_axis,
+        semi_latus_rectum,
         eccentricity: eccentricity
             .ok_or_else(|| BodyInitFixtureError::malformed("missing eccentricity".to_string()))?,
         inclination: inclination
@@ -369,12 +386,36 @@ vehicle.set01.subject.planet_name    = "Earth"
 vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
 "#;
         let rec = parse_orbital_init_py(py).unwrap();
-        assert!((rec.semi_major_axis - 6_732_901.201_52).abs() < 1e-6);
+        assert!((rec.semi_major_axis.unwrap() - 6_732_901.201_52).abs() < 1e-6);
+        assert_eq!(rec.semi_latus_rectum, None);
         assert!((rec.eccentricity - 0.00129073350).abs() < 1e-12);
         assert!((rec.inclination - 51.670450765_f64.to_radians()).abs() < 1e-12);
         assert_eq!(rec.planet_name, "Earth");
         assert_eq!(rec.reference_frame, "Earth.inertial");
         assert!((rec.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_orbital_init_py_set03_slr_true_anomaly() {
+        // JEOD set03 (`SlrEccIncAscnodeArgperTanom`): semi_latus_rectum +
+        // true_anomaly, no semi_major_axis. Values are the ISS set03 deck.
+        let py = r#"
+  vehicle.orb_init.arg_periapsis  = trick.attach_units( "degree",100.582445989)
+  vehicle.orb_init.eccentricity            =    0.00129073350
+  vehicle.orb_init.inclination  = trick.attach_units( "degree",51.670450765)
+  vehicle.orb_init.ascending_node  = trick.attach_units( "degree",49.708417385)
+  vehicle.orb_init.semi_latus_rectum  = trick.attach_units( "km",6732.88998455)
+  vehicle.orb_init.true_anomaly  = trick.attach_units( "degree",299.884499026)
+  vehicle.orb_init.planet_name      = "Earth"
+  vehicle.orb_init.orbit_frame_name = "Earth.inertial"
+"#;
+        let rec = parse_orbital_init_py(py).unwrap();
+        assert_eq!(rec.semi_major_axis, None);
+        assert!((rec.semi_latus_rectum.unwrap() - 6_732_889.984_55).abs() < 1e-6);
+        assert!((rec.eccentricity - 0.00129073350).abs() < 1e-12);
+        assert!((rec.true_anomaly.unwrap() - 299.884499026_f64.to_radians()).abs() < 1e-12);
+        assert_eq!(rec.time_periapsis, None);
+        assert_eq!(rec.mean_anomaly, None);
     }
 
     #[test]

@@ -34,6 +34,8 @@
 //!
 //! Scenarios:
 //!   RUN_0001: ISS orbital elements in inertial frame (set01, time_periapsis)
+//!   RUN_0003: ISS orbital elements in inertial frame (set03, slr + true anomaly)
+//!   RUN_0103: STS-114 orbital elements in inertial frame (set03, slr + true anomaly)
 //!   RUN_0101: STS-114 orbital elements in inertial frame (set01, time_periapsis)
 //!   RUN_0201: ISS orbital elements in planet-fixed (pfix) frame (set01)
 //!   RUN_0301: STS-114 orbital elements in planet-fixed (pfix) frame (set01)
@@ -218,6 +220,37 @@ fn tier3_orbinit_docker_run0102_sts_inertial() {
         "RUN_0102 (STS-114 inertial set02, mean anomaly)",
         1.76e-9,
         2.45e-12,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0003 / RUN_0103: set03 (semi-latus rectum + true-anomaly), inertial
+// frame. Exercises `init_from_semi_latus_rectum_true_anomaly` directly —
+// JEOD's `SlrEccIncAscnodeArgperTanom` branch uses the deck's semi-latus
+// rectum as `semiparam` verbatim (no sma round-trip). Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0003_iss_inertial() {
+    // Observed: pos=5.21e-10 m, vel=2.27e-13 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0003(),
+        "orbinit_0003_orbinit.csv",
+        "RUN_0003 (ISS inertial set03, slr + true anomaly)",
+        5.47e-10,
+        2.39e-13,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0103_sts_inertial() {
+    // Observed: pos=1.40e-9 m, vel=9.37e-13 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0103(),
+        "orbinit_0103_orbinit.csv",
+        "RUN_0103 (STS-114 inertial set03, slr + true anomaly)",
+        1.47e-9,
+        9.84e-13,
     );
 }
 

@@ -27,6 +27,7 @@
 //!   `reference_inertial_trans_state.py`        — ECI reference state
 //!   `trans_Orbit_inertial_body_set01.py`       — orbit (sma/ecc/inc/raan/argp/t_peri)
 //!   `trans_Orbit_inertial_body_set02.py`       — orbit (mean anomaly)
+//!   `trans_Orbit_inertial_body_set03.py`       — orbit (semi-latus rectum + true anomaly)
 //!   `trans_Orbit_inertial_body_set10.py`       — orbit (true anomaly)
 //!   `trans_Orbit_pfix_body_set01.py`           — pfix orbit (set01 form)
 //!   `trans_TransState_inertial_body.py`        — direct Cartesian (STS_114 only)
@@ -63,6 +64,7 @@ const SCENARIOS: &[Scenario] = &[
         orbit_inits: &[
             "trans_Orbit_inertial_body_set01",
             "trans_Orbit_inertial_body_set02",
+            "trans_Orbit_inertial_body_set03",
             "trans_Orbit_inertial_body_set10",
             "trans_Orbit_pfix_body_set01",
         ],
@@ -74,6 +76,7 @@ const SCENARIOS: &[Scenario] = &[
         orbit_inits: &[
             "trans_Orbit_inertial_body_set01",
             "trans_Orbit_inertial_body_set02",
+            "trans_Orbit_inertial_body_set03",
             "trans_Orbit_pfix_body_set01",
         ],
         trans_states: &["trans_TransState_inertial_body"],
@@ -313,7 +316,13 @@ fn write_bundle(
         writeln!(
             out,
             "      \"semi_major_axis\": {},",
-            fmt(init.semi_major_axis)
+            fmt_opt(init.semi_major_axis)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "      \"semi_latus_rectum\": {},",
+            fmt_opt(init.semi_latus_rectum)
         )
         .unwrap();
         writeln!(out, "      \"eccentricity\": {},", fmt(init.eccentricity)).unwrap();

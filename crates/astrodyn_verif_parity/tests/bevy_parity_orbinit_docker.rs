@@ -39,6 +39,16 @@ fn bevy_parity_orbinit_docker_run_0102() {
 }
 
 #[test]
+fn bevy_parity_orbinit_docker_run_0003() {
+    sim_orbinit_docker::run_0003().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_0103() {
+    sim_orbinit_docker::run_0103().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
 fn bevy_parity_orbinit_docker_run_0201() {
     sim_orbinit_docker::run_0201().run_and_assert_parity::<astrodyn::Earth>();
 }

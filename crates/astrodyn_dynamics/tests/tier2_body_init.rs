@@ -95,7 +95,8 @@ fn iss_set01_time_periapsis() {
         .expect("ISS set01 must have time_periapsis");
 
     let computed = init_from_time_periapsis(
-        init.semi_major_axis,
+        init.semi_major_axis
+            .expect("ISS set01 must have semi_major_axis"),
         init.eccentricity,
         init.inclination,
         init.ascending_node,
@@ -144,7 +145,8 @@ fn iss_set02_mean_anomaly() {
     let mean_anomaly = init.mean_anomaly.expect("ISS set02 must have mean_anomaly");
 
     let computed = init_from_mean_anomaly(
-        init.semi_major_axis,
+        init.semi_major_axis
+            .expect("ISS set02 must have semi_major_axis"),
         init.eccentricity,
         init.inclination,
         init.ascending_node,
@@ -193,7 +195,8 @@ fn iss_set10_true_anomaly() {
     let true_anomaly = init.true_anomaly.expect("ISS set10 must have true_anomaly");
 
     let computed = init_from_orbital_elements(
-        init.semi_major_axis,
+        init.semi_major_axis
+            .expect("ISS set10 must have semi_major_axis"),
         init.eccentricity,
         init.inclination,
         init.ascending_node,
@@ -240,7 +243,9 @@ fn iss_element_sets_cross_consistent() {
         "trans_Orbit_inertial_body_set01",
     );
     let state01 = init_from_time_periapsis(
-        init01.semi_major_axis,
+        init01
+            .semi_major_axis
+            .expect("ISS set01 must have semi_major_axis"),
         init01.eccentricity,
         init01.inclination,
         init01.ascending_node,
@@ -255,7 +260,9 @@ fn iss_element_sets_cross_consistent() {
         "trans_Orbit_inertial_body_set02",
     );
     let state02 = init_from_mean_anomaly(
-        init02.semi_major_axis,
+        init02
+            .semi_major_axis
+            .expect("ISS set02 must have semi_major_axis"),
         init02.eccentricity,
         init02.inclination,
         init02.ascending_node,
@@ -270,7 +277,9 @@ fn iss_element_sets_cross_consistent() {
         "trans_Orbit_inertial_body_set10",
     );
     let state10 = init_from_orbital_elements(
-        init10.semi_major_axis,
+        init10
+            .semi_major_axis
+            .expect("ISS set10 must have semi_major_axis"),
         init10.eccentricity,
         init10.inclination,
         init10.ascending_node,

@@ -78,6 +78,75 @@ pub fn init_from_orbital_elements(
     TranslationalState { position, velocity }
 }
 
+/// Initialize translational state from Keplerian orbital elements using the
+/// semi-latus rectum (rather than semi-major axis) plus true anomaly.
+///
+/// Port of the `SlrEccIncAscnodeArgperTanom` branch of JEOD
+/// `DynBodyInitOrbit::apply()` from
+/// `models/dynamics/body_action/src/dyn_body_init_orbit.cc:196-200, 285-321`.
+///
+/// JEOD selects `shape = ShapeSemiLatusRectum`, which **skips** the
+/// `semi_latus_rectum = semi_major_axis * (1 - e²)` derivation (that block
+/// runs only for `ShapeSemiMajorAxis`). The deck-supplied semi-latus rectum
+/// is therefore used verbatim as `elem.semiparam`. To match JEOD bit-for-bit
+/// we set `semiparam = semi_latus_rectum` directly here — routing through
+/// `init_from_orbital_elements` (which recomputes `semiparam = a·(1-e²)` from
+/// `a = p/(1-e²)`) would introduce a round-trip that JEOD never performs.
+///
+/// # Arguments
+/// * `semi_latus_rectum` - Semi-latus rectum p (m)
+/// * `eccentricity` - Orbital eccentricity
+/// * `inclination` - Inclination (rad)
+/// * `raan` - Right ascension of ascending node (rad)
+/// * `arg_periapsis` - Argument of periapsis (rad)
+/// * `true_anomaly` - True anomaly (rad)
+/// * `mu` - Gravitational parameter of central body (m^3/s^2)
+pub fn init_from_semi_latus_rectum_true_anomaly(
+    semi_latus_rectum: f64,
+    eccentricity: f64,
+    inclination: f64,
+    raan: f64,
+    arg_periapsis: f64,
+    true_anomaly: f64,
+    mu: f64,
+) -> TranslationalState {
+    // JEOD_INV: BA.05 — orbit initializer requires a valid gravity source (mu > 0)
+    // JEOD dyn_body_init_orbit.cc:98-111: validate mu before use.
+    assert!(
+        mu > 0.0,
+        "init_from_semi_latus_rectum_true_anomaly: mu must be positive, got {mu}"
+    );
+    assert!(
+        semi_latus_rectum > 0.0 && semi_latus_rectum.is_finite(),
+        "init_from_semi_latus_rectum_true_anomaly: semi_latus_rectum must be positive and finite, \
+         got {semi_latus_rectum}"
+    );
+    assert!(
+        (0.0..1.0).contains(&eccentricity),
+        "init_from_semi_latus_rectum_true_anomaly: eccentricity must be in [0, 1), \
+         got {eccentricity}"
+    );
+
+    // JEOD dyn_body_init_orbit.cc: ShapeSemiLatusRectum leaves semiparam as
+    // the deck value, then sets the angles, true_anom, and calls
+    // nu_to_anomalies() followed by to_cartesian().
+    use astrodyn_quantities::frame::SelfPlanet;
+    let mut oe = OrbitalElements::<SelfPlanet>::default();
+    oe.semiparam = semi_latus_rectum;
+    oe.e_mag = eccentricity;
+    oe.inclination = inclination;
+    oe.long_asc_node = raan;
+    oe.arg_periapsis = arg_periapsis;
+    oe.true_anom = true_anomaly;
+    oe.nu_to_anomalies();
+
+    let (position, velocity) = oe
+        .to_cartesian(mu)
+        .expect("init_from_semi_latus_rectum_true_anomaly: to_cartesian failed");
+
+    TranslationalState { position, velocity }
+}
+
 /// Typed sibling of [`init_from_orbital_elements`].
 ///
 /// Returns a [`TranslationalStateTyped<RootInertial>`] — Phase 3 callers
@@ -569,7 +638,8 @@ mod tests {
             .time_periapsis
             .expect("ISS set01 should have time_periapsis");
         let state = init_from_time_periapsis(
-            init.semi_major_axis,
+            init.semi_major_axis
+                .expect("ISS set01 should have semi_major_axis"),
             init.eccentricity,
             init.inclination,
             init.ascending_node,
@@ -1322,6 +1392,63 @@ mod tests {
     // public entry point so a future refactor cannot neuter a single
     // assert and leave the others intact.
     // =======================================================================
+
+    #[test]
+    fn slr_true_anomaly_matches_orbital_elements_within_roundoff() {
+        // The slr+true-anomaly converter sets semiparam = p directly (JEOD's
+        // SlrEccIncAscnodeArgperTanom path), whereas init_from_orbital_elements
+        // takes sma and recomputes semiparam = a·(1-e²). Feeding the
+        // algebraically-equivalent sma = p/(1-e²) into the sma path must agree
+        // to within the round-trip roundoff (a few ULP × radius).
+        let p = 6_732_889.984_55;
+        let e = 0.00129073350;
+        let inc = 51.670450765_f64.to_radians();
+        let raan = 49.708417385_f64.to_radians();
+        let argp = 100.582445989_f64.to_radians();
+        let nu = 299.884499026_f64.to_radians();
+
+        let slr = init_from_semi_latus_rectum_true_anomaly(p, e, inc, raan, argp, nu, EARTH_MU);
+        let a = p / (1.0 - e * e);
+        let sma = init_from_orbital_elements(a, e, inc, raan, argp, nu, EARTH_MU);
+
+        let pos_err = (slr.position - sma.position).length();
+        let vel_err = (slr.velocity - sma.velocity).length();
+        // ~7e6 m radius × ~1e-15 relative ULP ≈ 1e-8 m; allow generous margin.
+        assert!(
+            pos_err < 1e-6,
+            "slr vs sma position roundoff too large: {pos_err} m"
+        );
+        assert!(
+            vel_err < 1e-9,
+            "slr vs sma velocity roundoff too large: {vel_err} m/s"
+        );
+    }
+
+    #[test]
+    fn slr_true_anomaly_position_magnitude_matches_conic() {
+        // r = p / (1 + e·cos ν) — verify the converter reproduces the conic
+        // radius for a non-trivial true anomaly.
+        let p = 6_700_000.0;
+        let e = 0.01;
+        let nu = 1.3_f64; // rad
+        let state = init_from_semi_latus_rectum_true_anomaly(p, e, 0.5, 0.3, 0.7, nu, EARTH_MU);
+        let r_expected = p / (1.0 + e * nu.cos());
+        let r_actual = state.position.length();
+        assert!(
+            (r_actual - r_expected).abs() < 1e-6,
+            "conic radius: expected {r_expected}, got {r_actual}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_05_panics_on_zero_mu_in_slr_true_anomaly_init() {
+        // JEOD_INV: BA.05 — `init_from_semi_latus_rectum_true_anomaly` shares
+        // the mu>0 guard so the set03 path can't slip a misconfigured gravity
+        // source past the others.
+        let _ =
+            init_from_semi_latus_rectum_true_anomaly(6_700_000.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0);
+    }
 
     #[test]
     #[should_panic(expected = "mu must be positive")]
