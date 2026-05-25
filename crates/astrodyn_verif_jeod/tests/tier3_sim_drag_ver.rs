@@ -25,19 +25,16 @@
 //! - `RUN_aero_drag_BC`: `DefaultAero::DRAG_OPT_BC` with `BC=0.005`, `mass=1`.
 //!   `drag = -dyn_p·mass/BC = -dyn_p·200` — numerically identical to
 //!   `DRAG_OPT_CD` with `Cd·A = 200`, so we configure the same ballistic model.
-//!
-//! Not covered (requires a port of `DefaultAero::DRAG_OPT_CONST`):
-//! - `RUN_aero_drag_const`: user-specified constant force magnitude along
-//!   the relative-velocity direction. Our `DragConfig` exposes only the CD
-//!   path today. Adding CONST/BC as discriminated options is tracked as a
-//!   follow-on task; the reference CSV (`drag_const_drag.csv`) is generated
-//!   and retained for that work.
+//! - `RUN_aero_drag_const`: `DefaultAero::DRAG_OPT_CONST` with a user-set
+//!   constant drag magnitude (`drag = 0.05`), applied verbatim along the
+//!   relative-velocity direction (density/area/Cd ignored), via
+//!   [`astrodyn::DragOption::Constant`].
 
 use astrodyn_verif_jeod::tier3_csv::{load_drag_csv, test_data_path};
 
 use astrodyn::AtmosphereState;
 use astrodyn::SelfPlanet;
-use astrodyn::{compute_ballistic_drag, DragConfig};
+use astrodyn::{compute_ballistic_drag, DragConfig, DragOption};
 use astrodyn_verif_jeod::crossval::CrossvalReport;
 use glam::{DMat3, DVec3};
 
@@ -149,6 +146,7 @@ fn tier3_sim_drag_ver_cd() {
         cd: 2.0,
         area: 100.0,
         constant_density: None,
+        ..Default::default()
     };
 
     let (force_err, torque_err, accel_err) =
@@ -157,6 +155,42 @@ fn tier3_sim_drag_ver_cd() {
     // Tolerances at 5% above observed max error. All values are tiny — this
     // is effectively a bit-exact match modulo floating-point noise between
     // JEOD's C++ (IEEE 754 double ops) and ours.
+    assert!(
+        force_err < 5.0e-17,
+        "force_err {force_err:.3e} N exceeds 5.0e-17 N"
+    );
+    assert!(
+        torque_err < 1.0e-20,
+        "torque_err {torque_err:.3e} N*m exceeds 1.0e-20 N*m"
+    );
+    assert!(
+        accel_err < 5.0e-17,
+        "accel_err {accel_err:.3e} m/s^2 exceeds 5.0e-17 m/s^2"
+    );
+}
+
+/// `RUN_aero_drag_const`: `DRAG_OPT_CONST` with a user-specified constant
+/// drag magnitude of `0.05 N` applied along the relative-velocity direction.
+///
+/// JEOD's `input.py` sets `ballistic_drag.option = DRAG_OPT_CONST` and
+/// `ballistic_drag.drag = 0.05` (positive — force *along* +v̂_rel, an
+/// option-exercise rather than realistic drag). Density / area / Cd are not
+/// consulted, so `|force| = 0.05 N` and `accel_mag = 0.05 m/s²` at every
+/// sample regardless of the velocity magnitude.
+// non-recipe: SIM_VER_DRAG bit-exact match — the constant-drag option is set
+// directly on `DragConfig`, no recipe preset matches the JEOD-injection setup.
+#[test]
+fn tier3_sim_drag_ver_const() {
+    let drag = DragConfig {
+        option: DragOption::Constant(0.05),
+        ..Default::default()
+    };
+
+    let (force_err, torque_err, accel_err) =
+        run_ballistic_case("tier3_sim_drag_ver_const", "drag_const_drag.csv", drag);
+
+    // Constant magnitude along v̂_rel; the only arithmetic is the unit-vector
+    // scale, so the match is bit-exact modulo IEEE-754 noise (1.05× observed).
     assert!(
         force_err < 5.0e-17,
         "force_err {force_err:.3e} N exceeds 5.0e-17 N"
@@ -188,6 +222,7 @@ fn tier3_sim_drag_ver_bc() {
         cd: 2.0,
         area: 100.0,
         constant_density: None,
+        ..Default::default()
     };
 
     let (force_err, torque_err, accel_err) =

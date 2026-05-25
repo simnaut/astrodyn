@@ -570,6 +570,7 @@ fn build_full_stack_sixdof(_init: &InitialConditions) -> SimulationBuilder {
         cd: 2.2,
         area: 1000.0,
         constant_density: None,
+        ..Default::default()
     };
     let plate = vec![(
         FlatPlate {

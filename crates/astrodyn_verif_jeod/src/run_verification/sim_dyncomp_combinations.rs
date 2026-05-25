@@ -444,6 +444,7 @@ fn build_drag_point_mass_monotonic_decay(_init: &InitialConditions) -> Simulatio
             cd: 2.2,
             area: 20.0,
             constant_density: Some(TEST3_DENSITY),
+            ..Default::default()
         }),
         ..Default::default()
     });

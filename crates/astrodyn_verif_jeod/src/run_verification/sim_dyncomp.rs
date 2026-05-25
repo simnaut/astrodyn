@@ -916,6 +916,7 @@ fn build_run7(
             cd: 0.02,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         })
     } else {
         None
@@ -1195,6 +1196,7 @@ fn build_run6a(init: &InitialConditions) -> SimulationBuilder {
             cd: 0.02,
             area: 1.0,
             constant_density: Some(1.4e-12),
+            ..Default::default()
         },
     )
 }
@@ -1207,6 +1209,7 @@ fn build_run6b(init: &InitialConditions) -> SimulationBuilder {
             cd: 0.02,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         },
     )
 }
@@ -1650,6 +1653,7 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
             cd: 0.02,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         }),
         t_struct_body,
         ..Default::default()

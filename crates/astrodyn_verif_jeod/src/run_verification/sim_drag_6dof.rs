@@ -168,6 +168,7 @@ fn build_drag_6dof(
             cd: CD,
             area: AREA_M2,
             constant_density: Some(DENSITY),
+            ..Default::default()
         }),
         ..Default::default()
     });

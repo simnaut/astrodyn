@@ -68,6 +68,7 @@ fn six_dof_rkf45_with_options() {
         cd: 2.2,
         area: 40.0,
         constant_density: None,
+        ..Default::default()
     };
     let cfg = VehicleBuilder::new()
         .with_translational(iss_trans())

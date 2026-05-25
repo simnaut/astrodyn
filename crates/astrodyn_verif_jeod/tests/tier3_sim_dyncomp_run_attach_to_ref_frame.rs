@@ -358,6 +358,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
             cd: 2.0,
             area: 1400.0,
             constant_density: None,
+            ..Default::default()
         }),
         compute_gravity_gradient: true,
         ..Default::default()
@@ -682,6 +683,7 @@ fn enable_atmosphere(sim: &mut Simulation, body_idx: usize) {
             cd: 2.0,
             area: 1400.0,
             constant_density: None,
+            ..Default::default()
         }),
     );
 }

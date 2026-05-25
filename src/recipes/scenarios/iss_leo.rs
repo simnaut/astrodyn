@@ -90,6 +90,7 @@ pub fn iss_leo_drag() -> SimulationBuilder {
             cd: 2.2,
             area: 1900.0,
             constant_density: None,
+            ..Default::default()
         })
         .build();
     sb.add_body(vehicle);

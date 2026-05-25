@@ -261,9 +261,9 @@ pub use astrodyn_interactions::{
     compute_cannonball_srp_typed, compute_earth_lighting, compute_earth_lighting_typed,
     compute_flat_plate_srp_thermal, compute_gravity_torque, compute_gravity_torque_typed,
     compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, ContactFacet,
-    ContactMaterial, DragConfig, DragConfigTyped, EarthLightingState, FlatPlate, FlatPlateParams,
-    FlatPlateSrpResult, FlatPlateThermal, GroundFacet, LightingBody, LightingParams, Phase,
-    RadiationForce, SphericalTerrain, Terrain, SOLAR_RADIUS,
+    ContactMaterial, DragConfig, DragConfigTyped, DragOption, EarthLightingState, FlatPlate,
+    FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, GroundFacet, LightingBody,
+    LightingParams, Phase, RadiationForce, SphericalTerrain, Terrain, SOLAR_RADIUS,
 };
 
 // astrodyn_frames: reference frame state and arena-based frame tree.

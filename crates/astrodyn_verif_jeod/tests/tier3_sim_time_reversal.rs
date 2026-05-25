@@ -603,6 +603,7 @@ fn tier3_sim_time_reversal_run6a() {
                     cd: 0.02,
                     area: 1.0,
                     constant_density: Some(1.4e-12),
+                    ..Default::default()
                 }),
             )
         },

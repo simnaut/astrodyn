@@ -625,6 +625,7 @@ mod tests {
                 cd: 2.2,
                 area: 1.0,
                 constant_density: None,
+                ..Default::default()
             })
             .lvlh()
             .solar_beta()

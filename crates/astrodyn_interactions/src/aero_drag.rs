@@ -23,20 +23,44 @@ use uom::si::f64::{Area, MassDensity, Ratio};
 // concrete `<P>` so the wind frame and the vehicle's planet-inertial
 // velocity must agree at the type level.
 
+/// Drag-magnitude option (JEOD `DefaultAero::DragOption`). Selects how the
+/// scalar drag magnitude applied along the relative-velocity direction is
+/// computed.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum DragOption {
+    /// Coefficient-of-drag model: `drag = −q·A·Cd` (JEOD `DRAG_OPT_CD`,
+    /// the default). Uses `cd`, `area`, and the atmospheric (or constant)
+    /// density.
+    #[default]
+    CoefficientOfDrag,
+    /// User-specified constant drag magnitude in newtons, applied directly
+    /// along the relative-velocity unit vector (JEOD `DRAG_OPT_CONST`). The
+    /// value is signed and used verbatim — `cd`, `area`, and density are
+    /// ignored. (JEOD's `RUN_aero_drag_const` uses a positive value, i.e.
+    /// force *along* the relative velocity, as an option-exercise.)
+    Constant(f64),
+}
+
 /// Vehicle drag configuration for the ballistic (default) model.
 ///
-/// Port of JEOD `DefaultAero` with `DRAG_OPT_CD` option.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Port of JEOD `DefaultAero`. The `option` field selects the
+/// coefficient-of-drag (default) or constant-magnitude model.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct DragConfig {
     /// Coefficient of drag (dimensionless). Typically 2.0-2.5 for LEO.
+    /// Used only by [`DragOption::CoefficientOfDrag`].
     pub cd: f64,
-    /// Cross-sectional area in m^2.
+    /// Cross-sectional area in m^2. Used only by
+    /// [`DragOption::CoefficientOfDrag`].
     pub area: f64,
     /// Override atmospheric density with a constant value (kg/m³).
     /// When `Some`, the atmosphere model's density is ignored and this
     /// value is used instead. Wind is still taken from the atmosphere.
     /// Port of JEOD `AerodynamicDrag::constant_density` + `density`.
     pub constant_density: Option<f64>,
+    /// Drag-magnitude model (CD vs constant). Defaults to
+    /// [`DragOption::CoefficientOfDrag`].
+    pub option: DragOption,
 }
 
 /// Aerodynamic force and torque on a vehicle.
@@ -77,12 +101,6 @@ pub fn compute_ballistic_drag(
     inertial_velocity: DVec3,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForce {
-    // JEOD aero_drag.cc line 128: if(constant_density == false) { density = atmos_ptr->density; }
-    let density = config.constant_density.unwrap_or(atmos.density);
-    if density <= 0.0 {
-        return AerodynamicForce::default();
-    }
-
     // Relative velocity = vehicle velocity - atmospheric wind (in inertial frame)
     // JEOD aero_drag.cc line 111: Vector3::diff(inertial_velocity, atmos_ptr->wind, relative_vel_cm)
     let relative_vel_cm = inertial_velocity - atmos.wind.raw_si();
@@ -98,13 +116,23 @@ pub fn compute_ballistic_drag(
 
     let rel_vel_struct_hat = rel_vel_cm_struct / rel_vel_mag;
 
-    // Dynamic pressure: 0.5 · ρ · v²
-    // JEOD aero_drag.cc line 132: param.dynamic_pressure = 0.5 * density * rel_vel_mag * rel_vel_mag
-    let dynamic_pressure = 0.5 * density * rel_vel_mag * rel_vel_mag;
-
-    // Drag force magnitude (negative = opposing motion)
-    // JEOD default_aero.cc line 70: drag = -dynamic_pressure * area * Cd
-    let drag = -dynamic_pressure * config.area * config.cd;
+    // Drag magnitude (JEOD default_aero.cc `aerodrag_force` switch on `option`).
+    let drag = match config.option {
+        // DRAG_OPT_CONST: the user-set magnitude is used verbatim; density,
+        // area, and Cd are not consulted (JEOD default_aero.cc case
+        // DRAG_OPT_CONST leaves `drag` at its preset value).
+        DragOption::Constant(mag) => mag,
+        // DRAG_OPT_CD: drag = -q·A·Cd, q = ½·ρ·v². Density ≤ 0 ⇒ no force.
+        // JEOD aero_drag.cc line 128 / default_aero.cc line 70.
+        DragOption::CoefficientOfDrag => {
+            let density = config.constant_density.unwrap_or(atmos.density);
+            if density <= 0.0 {
+                return AerodynamicForce::default();
+            }
+            let dynamic_pressure = 0.5 * density * rel_vel_mag * rel_vel_mag;
+            -dynamic_pressure * config.area * config.cd
+        }
+    };
 
     // Force in structural frame: drag along relative velocity direction
     // JEOD default_aero.cc line 106: Vector3::scale(rel_vel_hat, drag, force)
@@ -144,6 +172,10 @@ impl DragConfigTyped {
             cd: self.cd.value,
             area: self.area.value,
             constant_density: self.constant_density.map(|d| d.value),
+            // The typed sibling is the coefficient-of-drag path; the
+            // constant-magnitude option (`DRAG_OPT_CONST`) is set on the
+            // untyped `DragConfig` directly.
+            option: DragOption::CoefficientOfDrag,
         }
     }
 
@@ -275,6 +307,7 @@ mod typed_tests {
             cd: 2.2,
             area: 4.5,
             constant_density: Some(1e-12),
+            ..Default::default()
         };
         let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
@@ -289,6 +322,7 @@ mod typed_tests {
             cd: 2.0,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         };
         let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
         assert!(typed.constant_density.is_none());
@@ -319,6 +353,7 @@ mod typed_tests {
             cd: 2.2,
             area: 4.5,
             constant_density: None,
+            ..Default::default()
         };
         let atmos =
             AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::new(0.0, 50.0, 0.0));
@@ -381,6 +416,7 @@ mod tests {
             cd: 2.2,
             area: 10.0, // m^2
             constant_density: None,
+            ..Default::default()
         };
         let density = 1e-12; // kg/m^3 (typical at 400 km)
         let velocity = 7600.0; // m/s (LEO orbital speed)
@@ -416,6 +452,7 @@ mod tests {
             cd: 2.2,
             area: 10.0,
             constant_density: None,
+            ..Default::default()
         };
         let atmos = AtmosphereState::<SelfPlanet>::default(); // density = 0
         let vel = DVec3::new(7600.0, 0.0, 0.0);
@@ -431,6 +468,7 @@ mod tests {
             cd: 2.0,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         };
         let atmos = AtmosphereState::<SelfPlanet>::from_raw(
             1e-12,
@@ -468,6 +506,7 @@ mod tests {
             cd: 2.2,
             area: 10.0,
             constant_density: None,
+            ..Default::default()
         };
         let atmos = AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::ZERO);
         let vel = DVec3::new(7600.0, 0.0, 0.0);
@@ -483,6 +522,7 @@ mod tests {
             cd: 2.0,
             area: 1.0,
             constant_density: None,
+            ..Default::default()
         };
         let atmos = AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::ZERO);
 
@@ -521,6 +561,7 @@ mod tests {
             cd: 2.2,
             area: 1900.0, // m^2 (Cd*A/m ≈ 2.2*1900/420000 ≈ 0.01)
             constant_density: None,
+            ..Default::default()
         };
 
         // Typical density at 400 km during solar mean
@@ -576,6 +617,7 @@ mod tests {
                 cd,
                 area,
                 constant_density,
+                option: DragOption::CoefficientOfDrag,
             })
     }
 
