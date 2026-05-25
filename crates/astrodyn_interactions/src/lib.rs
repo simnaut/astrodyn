@@ -49,7 +49,7 @@
 //! use astrodyn_quantities::frame::SelfPlanet;
 //! use glam::{DMat3, DVec3};
 //!
-//! let cfg = DragConfig { cd: 2.2, area: 1.0, constant_density: None };
+//! let cfg = DragConfig { cd: 2.2, area: 1.0, constant_density: None, ..Default::default() };
 //! // 1e-12 kg/m^3 is roughly 400 km altitude.
 //! let atmos = AtmosphereState::<SelfPlanet>::from_raw(1.0e-12, 0.0, 0.0, DVec3::ZERO);
 //! // Velocity along +X at 7.5 km/s; identity rotation (inertial == body).
