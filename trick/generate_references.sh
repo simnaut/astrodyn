@@ -2035,6 +2035,8 @@ run_attach_mass_group() {
         "SET_test/RUN_05:attach_mass_05"
         "SET_test/RUN_06:attach_mass_06"
         "SET_test/RUN_07:attach_mass_07"
+        # Non-identity parent struct→body orientation (composite reported in body frame).
+        "SET_test/RUN_09:attach_mass_09"
         # Runtime detach (trick.add_read at t=1s, stop at t=2s).
         "SET_test/RUN_10:attach_mass_10"
         # Runtime reattach (trick.add_read at t=1s, stop at t=2s).
