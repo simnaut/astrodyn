@@ -125,6 +125,30 @@ impl MassTree {
         &mut self.nodes[id]
     }
 
+    /// Composite inertia of `id` expressed in its **body** frame — the
+    /// convention JEOD's `MassBody::print_tree` uses for the `C.M.P. Ib tensor`
+    /// line (`mass_print_body.cc`).
+    ///
+    /// [`recompute_composites`](Self::recompute_composites) accumulates every
+    /// composite in the **structural** frame: the core inertia plus struct-frame
+    /// parallel-axis terms (`calc_composite_inertia`), and the composite CoM is
+    /// likewise struct-frame. JEOD stores composites the same way but, when
+    /// printing, rotates the inertia into the body frame by the composite body
+    /// point's struct→body transform — the single rotation
+    /// `I_body = T · I_struct · Tᵀ`. For the common case of a body whose
+    /// structural and body frames coincide (`t_parent_this == IDENTITY`) this is
+    /// a bit-exact no-op and returns the struct-frame inertia unchanged; it only
+    /// does work for a body with a non-identity orientation (e.g. SIM_Apollo's
+    /// CM/LES/DM/Ascent modules, or `SIM_verif_attach_mass` RUN_09).
+    ///
+    /// Mass and CoM are unaffected — JEOD reports both in the struct frame
+    /// (`C.M.P. CM vector`); only the inertia carries the body-frame rotation.
+    pub fn composite_inertia_in_body(&self, id: MassBodyId) -> DMat3 {
+        let body = self.get(id);
+        let t = body.composite_properties.t_parent_this;
+        t * body.composite_properties.inertia * t.transpose()
+    }
+
     /// Parent of the given body, or `None` for a root.
     pub fn parent(&self, id: MassBodyId) -> Option<MassBodyId> {
         self.parent[id]
