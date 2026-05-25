@@ -36,7 +36,12 @@ fetch = ["dep:ureq", "dep:sha2"]
 
 [dependencies]
 astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0" }
-anise = "0.10"
+# `default-features = false` drops anise's `analysis`/`csv`/`rayon`/`metaload`
+# features — unused here (we only call core `Almanac::from_spk`/`translate`/
+# `rotate`) and the source of the `hyperdual → nalgebra` edge that lets an
+# unlocked resolve pull the incompatible nalgebra 0.35, breaking the
+# cargo-semver-checks fresh build.
+anise = { version = "0.10", default-features = false }
 glam = { workspace = true }
 thiserror = { workspace = true }
 ureq = { version = "3", optional = true }
