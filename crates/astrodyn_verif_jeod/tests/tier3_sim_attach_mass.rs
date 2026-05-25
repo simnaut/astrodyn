@@ -1,6 +1,6 @@
 //! Tier 3: SIM_verif_attach_mass — mass tree attach/detach cross-validation.
 //!
-//! Reproduces 18 representative runs from JEOD's `SIM_verif_attach_mass`
+//! Reproduces 17 representative runs from JEOD's `SIM_verif_attach_mass`
 //! (``models/dynamics/body_action/verif/SIM_verif_attach_mass/SET_test/``)
 //! and cross-validates our `MassTree` composite mass, center of mass, and
 //! inertia tensor against the `mass.out` files produced by JEOD's

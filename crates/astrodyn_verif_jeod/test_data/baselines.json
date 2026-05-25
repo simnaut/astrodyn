@@ -39,7 +39,7 @@
       "extras": []
     },
     "tier3_sim_attach_mass": {
-      "extras": [{"name":"composite_mass","value":0.00000000000000000e0,"unit":"kg"},{"name":"composite_com","value":4.08215599999999996e-17,"unit":"m"},{"name":"composite_inertia","value":3.99999999999999982e-7,"unit":"kg*m^2"}]
+      "extras": [{"name":"composite_mass","value":0.00000000000000000e0,"unit":"kg"},{"name":"composite_com","value":1.02053900000000002e-16,"unit":"m"},{"name":"composite_inertia","value":5.40186100000000009e-7,"unit":"kg*m^2"}]
     },
     "tier3_sim_drag_ver_bc": {
       "extras": [{"name":"aero_force_err","value":2.63797800000000009e-18,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.60208499999999982e-18,"unit":"m/s^2"}]
