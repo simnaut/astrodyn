@@ -124,8 +124,8 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
 use crate::components::{
-    Abm4StateC, DynamicsConfigC, GaussJacksonStateC, LsodeStateC, MassPropertiesC, RotationalStateC,
-    TranslationalStateC,
+    Abm4StateC, DynamicsConfigC, GaussJacksonStateC, LsodeStateC, MassPropertiesC,
+    RotationalStateC, TranslationalStateC,
 };
 
 /// Set of planet `TypeId`s for which a per-planet body-action pipeline

@@ -1,7 +1,7 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Bevy systems for [`AstrodynSet::Integration`](crate::AstrodynSet::Integration).
 //!
-//! State integration (RK4 / Gauss-Jackson / ABM4), mass-tree staging
+//! State integration (RK4 / Gauss-Jackson / ABM4 / LSODE), mass-tree staging
 //! (attach / detach), detached-subtree free-flight propagation, and
 //! distance-based frame switching.
 
@@ -248,8 +248,9 @@ pub fn frame_switch_system<P: Planet>(
 /// for proper multi-stage accuracy.
 ///
 /// The integration method is determined by the optional `IntegratorTypeC`
-/// component (RK4, RKF45, GaussJackson, Abm4). When absent, RK4 is used.
-/// GaussJackson requires `GaussJacksonStateC`; ABM4 requires `Abm4StateC`.
+/// component (RK4, RKF45, GaussJackson, Abm4, Lsode). When absent, RK4 is
+/// used. GaussJackson requires `GaussJacksonStateC`; ABM4 requires
+/// `Abm4StateC`; LSODE requires `LsodeStateC`.
 ///
 /// Per-body integration-frame origins (relative to root) are queried via
 /// the [`FrameOrigin`] SystemParam, which walks the ECS frame hierarchy
