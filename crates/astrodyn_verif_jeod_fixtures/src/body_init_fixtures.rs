@@ -28,7 +28,8 @@
 //!   "reference_inertial": {"position": [...], "velocity": [...]} | null,
 //!   "orbital_inits": [
 //!     {"name": "trans_Orbit_inertial_body_set01",
-//!      "semi_major_axis": ..., "eccentricity": ..., "inclination": ...,
+//!      "semi_major_axis": ... | null, "semi_latus_rectum": ... | null,
+//!      "eccentricity": ..., "inclination": ...,
 //!      "ascending_node": ..., "arg_periapsis": ...,
 //!      "time_periapsis": ... | null,
 //!      "mean_anomaly":  ... | null,
@@ -85,8 +86,14 @@ pub struct ReferenceStateRecord {
 pub struct OrbitalInitRecord {
     /// Vehicle name as recorded in the JEOD `Modified_data/*.py` source.
     pub name: String,
-    /// Semi-major axis in metres.
-    pub semi_major_axis: f64,
+    /// Semi-major axis in metres, when the JEOD source provides it
+    /// (sma-parameterized sets: 01/02/10). `None` for slr-parameterized
+    /// sets (set03), which carry `semi_latus_rectum` instead.
+    pub semi_major_axis: Option<f64>,
+    /// Semi-latus rectum in metres, when the JEOD source provides it
+    /// (set03 `SlrEccIncAscnodeArgperTanom`). `None` for sma-parameterized
+    /// sets.
+    pub semi_latus_rectum: Option<f64>,
     /// Orbital eccentricity (dimensionless).
     pub eccentricity: f64,
     /// Inclination in radians.
@@ -262,8 +269,31 @@ pub(crate) fn parse_bundle_json(s: &str) -> Result<BodyInitBundle, String> {
 fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
     let name = parse_str_field(entry, "name")
         .ok_or_else(|| format!("orbital_inits entry missing \"name\": {entry}"))?;
-    let semi_major_axis = parse_num_field(entry, "semi_major_axis")
-        .ok_or_else(|| format!("orbital_inits[{name}]: missing semi_major_axis"))?;
+    // Exactly one of `semi_major_axis` / `semi_latus_rectum` is present per
+    // JEOD set: sets 01/02/10 carry sma; set03 carries slr. Both are stored
+    // as nullable so the parser tolerates either shape; the converter that
+    // consumes the record asserts the field it needs is present. The two are
+    // mutually exclusive — reject both missing *and* both present.
+    let semi_major_axis = parse_opt_num_field(entry, "semi_major_axis");
+    let semi_latus_rectum = parse_opt_num_field(entry, "semi_latus_rectum");
+    match (semi_major_axis, semi_latus_rectum) {
+        (None, None) => {
+            return Err(format!(
+                "orbital_inits[{name}]: missing both semi_major_axis and semi_latus_rectum \
+                 (exactly one is required). Regenerate with: cargo run -p astrodyn_verif_jeod \
+                 --bin extract_body_init -- --jeod-home $JEOD_HOME"
+            ));
+        }
+        (Some(_), Some(_)) => {
+            return Err(format!(
+                "orbital_inits[{name}]: both semi_major_axis and semi_latus_rectum present \
+                 (exactly one is required; they are mutually exclusive per JEOD set). \
+                 Regenerate with: cargo run -p astrodyn_verif_jeod \
+                 --bin extract_body_init -- --jeod-home $JEOD_HOME"
+            ));
+        }
+        _ => {}
+    }
     let eccentricity = parse_num_field(entry, "eccentricity")
         .ok_or_else(|| format!("orbital_inits[{name}]: missing eccentricity"))?;
     let inclination = parse_num_field(entry, "inclination")
@@ -281,6 +311,7 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
     Ok(OrbitalInitRecord {
         name,
         semi_major_axis,
+        semi_latus_rectum,
         eccentricity,
         inclination,
         ascending_node,
@@ -516,6 +547,20 @@ mod tests {
       "true_anomaly": null,
       "planet_name": "Earth",
       "reference_frame": "Earth.inertial"
+    },
+    {
+      "name": "set_c",
+      "semi_major_axis": null,
+      "semi_latus_rectum": 6.73e6,
+      "eccentricity": 0.0013,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "arg_periapsis": 1.75,
+      "time_periapsis": null,
+      "mean_anomaly": null,
+      "true_anomaly": 5.23,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
     }
   ],
   "trans_states": [
@@ -537,15 +582,23 @@ mod tests {
         assert_eq!(r.position, [1.0, 2.0, 3.0]);
         assert_eq!(r.velocity, [4.0, 5.0, 6.0]);
 
-        assert_eq!(b.orbital_inits.len(), 2);
+        assert_eq!(b.orbital_inits.len(), 3);
         let a = &b.orbital_inits[0];
         assert_eq!(a.name, "set_a");
+        assert_eq!(a.semi_major_axis, Some(6.7e6));
+        assert_eq!(a.semi_latus_rectum, None);
         assert_eq!(a.time_periapsis, Some(4581.96));
         assert_eq!(a.mean_anomaly, None);
         let bb = &b.orbital_inits[1];
         assert_eq!(bb.name, "set_b");
         assert_eq!(bb.time_periapsis, None);
         assert_eq!(bb.mean_anomaly, Some(0.5));
+        // set03-style: slr-parameterized, sma absent, true anomaly present.
+        let cc = &b.orbital_inits[2];
+        assert_eq!(cc.name, "set_c");
+        assert_eq!(cc.semi_major_axis, None);
+        assert_eq!(cc.semi_latus_rectum, Some(6.73e6));
+        assert_eq!(cc.true_anomaly, Some(5.23));
 
         assert_eq!(b.trans_states.len(), 1);
         let t = &b.trans_states[0];
@@ -578,5 +631,36 @@ mod tests {
 "orbital_inits": [], "trans_states": []}"#;
         let err = parse_bundle_json(json).unwrap_err();
         assert!(err.contains("unsupported schema_version 999"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_orbital_init_with_both_sma_and_slr() {
+        // `semi_major_axis` and `semi_latus_rectum` are mutually exclusive per
+        // JEOD set; a fixture carrying both is malformed.
+        let json = r#"{
+  "schema_version": 1,
+  "vehicle": "TEST",
+  "reference_inertial": null,
+  "orbital_inits": [
+    {
+      "name": "set_bad",
+      "semi_major_axis": 6.7e6,
+      "semi_latus_rectum": 6.73e6,
+      "eccentricity": 0.001,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "arg_periapsis": 1.75,
+      "time_periapsis": null,
+      "mean_anomaly": null,
+      "true_anomaly": 5.23,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
+    }
+  ],
+  "trans_states": []
+}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(err.contains("both"), "got: {err}");
+        assert!(err.contains("mutually exclusive"), "got: {err}");
     }
 }

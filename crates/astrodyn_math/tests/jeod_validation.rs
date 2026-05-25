@@ -19,12 +19,14 @@ fn validate_iss_orbital_elements_to_cartesian() {
     // not `$JEOD_HOME` at runtime.
     let init = orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set01");
     let expected = reference_state::load_reference_state("ISS", "inertial");
+    let sma = init
+        .semi_major_axis
+        .expect("ISS set01 should have semi_major_axis");
 
     // Verify parsed values are sensible
     assert!(
-        init.semi_major_axis > 6_000_000.0 && init.semi_major_axis < 7_000_000.0,
-        "ISS semi-major axis should be ~6732 km, got {} m",
-        init.semi_major_axis
+        sma > 6_000_000.0 && sma < 7_000_000.0,
+        "ISS semi-major axis should be ~6732 km, got {sma} m",
     );
     assert!(
         init.eccentricity < 0.01,
@@ -45,7 +47,7 @@ fn validate_iss_orbital_elements_to_cartesian() {
     //   mean_anomaly = time_periapsis * sqrt(mu / a) / a
     // which is algebraically identical to M = n·t_peri with n = sqrt(mu/a^3)
     // but matches JEOD's arithmetic order for bit-parity with the port.
-    let a = init.semi_major_axis;
+    let a = sma;
     let t_peri = init
         .time_periapsis
         .expect("ISS set01 should have time_periapsis");
@@ -53,7 +55,7 @@ fn validate_iss_orbital_elements_to_cartesian() {
     let n = (MU_EARTH / (a * a * a)).sqrt();
 
     let mut oe = OrbitalElements::<astrodyn_quantities::frame::SelfPlanet>::default();
-    oe.semi_major_axis = init.semi_major_axis;
+    oe.semi_major_axis = a;
     oe.e_mag = init.eccentricity;
     oe.inclination = init.inclination;
     oe.long_asc_node = init.ascending_node;
@@ -368,10 +370,12 @@ fn validate_orbital_init_parser() {
     // Cross-check parsed values against known file contents
     let deg2rad = std::f64::consts::PI / 180.0;
 
+    let sma = init
+        .semi_major_axis
+        .expect("ISS set01 should have semi_major_axis");
     assert!(
-        (init.semi_major_axis - 6_732_901.201_52).abs() < 0.01,
-        "semi_major_axis: expected 6732901.20152 m, got {}",
-        init.semi_major_axis
+        (sma - 6_732_901.201_52).abs() < 0.01,
+        "semi_major_axis: expected 6732901.20152 m, got {sma}",
     );
     assert!(
         (init.eccentricity - 0.00129073350).abs() < 1e-12,
