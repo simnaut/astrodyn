@@ -2477,7 +2477,15 @@ run_time_v1_group() {
 throttled_bg run_time_v1_group
 PID_TIME_V1=$LAST_BG_PID
 
-# ── Snippet: SIM_2_dyn_plus_STD RUN_initialize_by_value (TAI + Dyn) ──
+# ── Snippet: SIM_2_dyn_plus_STD (TAI + Dyn) ──
+# Three RUNs share these columns (TAI TJT/seconds + Dyn seconds):
+#   RUN_initialize_by_value   — TAI init by value (TJT=10000), scale_factor=1.
+#   RUN_initialize_by_calendar — TAI init by calendar (2005-12-31 23:59:50),
+#                                scale_factor=1.
+#   RUN_scale_factor_changes  — TAI init by calendar, then dyn_time.scale_factor
+#                               is reassigned mid-run (t=5 → -1.0, t=10 → 0.5,
+#                               t=20 → -2.0), exercising JEOD TimeDyn rate/
+#                               direction changes incl. a full time reversal.
 TIME_V2_SNIPPET='
 dr = trick.sim_services.DRAscii("time_v2")
 dr.set_cycle(1)
@@ -2495,6 +2503,8 @@ run_time_v2_group() {
     local sim_dir="models/environment/time/verif/SIM_2_dyn_plus_STD"
     local -a RUNS=(
         "SET_test/RUN_initialize_by_value:time_v2_std:time_v2_std_time_v2.csv"
+        "SET_test/RUN_initialize_by_calendar:time_v2_calendar:time_v2_calendar_time_v2.csv"
+        "SET_test/RUN_scale_factor_changes:time_v2_scale_factor:time_v2_scale_factor_time_v2.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
