@@ -155,8 +155,9 @@ fn load_mu_earth_gemt1() -> f64 {
 /// The body is constructed with `rot` populated by JEOD's
 /// `LvlhDerivedState` initialisation: yaw=0, pitch=-11.6°, roll=0,
 /// `omega=0` — the same triple the tier3 test computes from
-/// `compute_body_lvlh_frame(init.position, init.velocity)` and
-/// `glam::DMat3::from_rotation_y(-11.6°)`.
+/// `compute_body_lvlh_frame(init.position, init.velocity)` composed with the
+/// passive LVLH→body transform `glam::DMat3::from_rotation_y(+11.6°)`
+/// (`R_y(−pitch)`).
 fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
     let mu_earth_gemt1 = load_mu_earth_gemt1();
     let leap_table = astrodyn::default_leap_second_table();
@@ -180,14 +181,16 @@ fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
     });
 
     // JEOD initialises attitude in LVLH: yaw=0, pitch=-11.6°, roll=0,
-    // omega=0. Compute the LVLH frame and apply the Euler rotation,
-    // then convert to JeodQuat (left-transformation convention). Same
-    // sequence as the runner-side `tier3_sim_time_reversal_run1`.
+    // omega=0. Build the JEOD left-transformation `T_inertial_body`
+    // (inertial → body) = `T_lvlh_body · T_inertial_lvlh`, where
+    // `lvlh.t_parent_this` is `T_inertial_lvlh` and the LVLH→body coordinate
+    // transform for a body pitched θ = −11.6° about Y is the passive
+    // `R_y(−θ) = R_y(+11.6°)`. Same sequence as the runner-side
+    // `tier3_sim_time_reversal`'s `lvlh_pitch_quat` (whose comment documents
+    // why the active form + transpose was a latent 54.8° attitude bug).
     let lvlh = astrodyn::compute_body_lvlh_frame(init.position, init.velocity);
-    let t_inertial_lvlh = lvlh.t_parent_this.transpose();
-    let pitch = -11.6_f64.to_radians();
-    let t_lvlh_body = glam::DMat3::from_rotation_y(pitch);
-    let t_inertial_body = t_inertial_lvlh * t_lvlh_body;
+    let t_lvlh_body = glam::DMat3::from_rotation_y(11.6_f64.to_radians());
+    let t_inertial_body = t_lvlh_body * lvlh.t_parent_this;
     let glam_quat = glam::DQuat::from_mat3(&t_inertial_body);
     let init_quat = JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
 

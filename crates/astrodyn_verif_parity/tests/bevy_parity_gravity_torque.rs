@@ -181,6 +181,7 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
             },
             total.force,
             total.torque + torque,
+            astrodyn::StructuralWrench::NONE,
             step_dt,
             1.0,
             astrodyn::IntegratorType::Rk4,

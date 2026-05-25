@@ -303,6 +303,10 @@ pub fn integration_system<P: Planet>(
                 Option<&mut GaussJacksonStateC>,
                 Option<&mut Abm4StateC>,
                 Option<&mut LsodeStateC>,
+                // Structural-frame external force, for the per-RK4-stage
+                // transform in the standard path (mirrors the runner's
+                // `StructuralWrench` plumbing; see JEOD_INV DB.28).
+                Option<&ExternalForceStructC>,
             ),
             Option<&mut FlatPlateConfigC>,
             Option<&StructuralTransformC>,
@@ -498,7 +502,7 @@ pub fn integration_system<P: Planet>(
         controls,
         mut total_force,
         integrator,
-        (mut gj_state, mut abm4_state, mut lsode_state),
+        (mut gj_state, mut abm4_state, mut lsode_state, ext_force_struct),
         mut flat_config,
         struct_xform,
         mut srp_force,
@@ -777,6 +781,33 @@ pub fn integration_system<P: Planet>(
         let mut state_untyped = trans_typed_to_raw(&state.0);
         let mut rot_state_untyped = rot_state.as_ref().map(|r| rot_typed_to_raw(&r.0));
         let mass_untyped = mass.map(|m| mass_typed_to_raw(&m.0));
+        // Hand the structural external *force* to the integrator so it is
+        // re-rotated to inertial per RK4 stage from the intermediate attitude
+        // (JEOD_INV DB.28). `force_collection_system` already folded the
+        // start-of-step value into `total_force` as the representative report;
+        // recompute and subtract it here so it is not double-counted. The
+        // structural *torque* is step-constant and stays in `total_force`. This
+        // mirrors the runner's `simulation/step/integrate.rs` standard path.
+        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
+        let ext_force_struct_raw = ext_force_struct.map_or(DVec3::ZERO, |c| c.0.raw_si());
+        let start_struct_force_inertial = if ext_force_struct_raw != DVec3::ZERO {
+            let t_inertial_body = rot_state.as_ref().map_or(glam::DMat3::IDENTITY, |r| {
+                r.0.q_inertial_body
+                    .as_witness()
+                    .left_quat_to_transformation()
+            });
+            let t_inertial_struct =
+                astrodyn::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
+            t_inertial_struct.transpose() * ext_force_struct_raw
+        } else {
+            DVec3::ZERO
+        };
+        let wrench = astrodyn::StructuralWrench {
+            force_struct: ext_force_struct_raw,
+            torque_struct: DVec3::ZERO,
+            t_struct_body,
+        };
+        let non_grav_force = total_force.force.raw_si() - start_struct_force_inertial;
         astrodyn::integrate_body(
             config,
             &mut state_untyped,
@@ -793,8 +824,9 @@ pub fn integration_system<P: Planet>(
                     time_frac,
                 )
             },
-            total_force.force.raw_si(),
+            non_grav_force,
             total_force.torque.raw_si(),
+            wrench,
             dt,
             sim_time.0.scale_factor(),
             integrator_type,

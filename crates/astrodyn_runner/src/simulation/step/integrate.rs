@@ -37,6 +37,15 @@ impl Simulation {
         body_integ_origins: &[IntegOrigin],
     ) -> Result<(), StepError> {
         // ── 7. Force collection ──
+        // Start-of-step inertial structural force per body. The standard
+        // (non-SRP, non-contact) integration path below subtracts this and
+        // re-applies the structural force *per RK4 stage* via `StructuralWrench`
+        // using each stage's intermediate attitude — matching JEOD, which
+        // recomputes `extern_forc_inrtl` in the per-stage derivative function
+        // (`dyn_body_collect.cc`). `total_force`/`frame_derivs` retain the
+        // start-of-step value as the representative report (as the SRP path
+        // does for its per-stage force; see JEOD_INV DB.28).
+        let mut start_struct_force_inertial: Vec<DVec3> = Vec::with_capacity(self.bodies.len());
         for body in &mut self.bodies {
             // allowed: typed↔raw kernel boundary — `collect_and_resolve_forces`
             // is the untyped force-collection kernel.
@@ -82,6 +91,7 @@ impl Simulation {
             // is negligible for the Tier 3 step sizes
             // `SIM_verif_attach_detach` exercises.
             // JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+            let mut force_inertial = DVec3::ZERO;
             if body.external_force_struct != DVec3::ZERO
                 || body.external_torque_struct != DVec3::ZERO
             {
@@ -90,7 +100,7 @@ impl Simulation {
                 });
                 let t_inertial_struct =
                     astrodyn::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
-                let force_inertial = t_inertial_struct.transpose() * body.external_force_struct;
+                force_inertial = t_inertial_struct.transpose() * body.external_force_struct;
                 let torque_body = body.t_struct_body * body.external_torque_struct;
                 body.total_force.force += force_inertial;
                 body.total_force.torque += torque_body;
@@ -103,6 +113,7 @@ impl Simulation {
                     }
                 }
             }
+            start_struct_force_inertial.push(force_inertial);
         }
 
         // ── 7b. Wrench aggregation ──
@@ -485,6 +496,22 @@ impl Simulation {
                     // allowed: typed↔raw kernel boundary
                     let mut rot_untyped = body.rot.as_ref().map(rot_typed_to_raw);
                     let mass_untyped = body.mass.as_ref().map(mass_typed_to_raw);
+                    // Hand the structural external *force* to the integrator so
+                    // it is re-rotated to inertial per RK4 stage from the
+                    // intermediate attitude (JEOD_INV DB.28). `total_force`
+                    // already folded in the start-of-step value (stage 7) as
+                    // the representative report, so subtract it from the
+                    // step-constant force passed here to avoid double-counting.
+                    // The structural *torque* is step-constant (T_struct_body is
+                    // fixed) and stays in `total_force.torque`; the wrench
+                    // carries force only.
+                    let wrench = astrodyn::StructuralWrench {
+                        force_struct: body.external_force_struct,
+                        torque_struct: DVec3::ZERO,
+                        t_struct_body: body.t_struct_body,
+                    };
+                    let non_grav_force =
+                        body.total_force.force - start_struct_force_inertial[body_idx];
                     // Typed integrator boundary: `body.trans` flows
                     // end-to-end as `TranslationalStateTyped<IntegrationFrame>`.
                     // Force/torque/dt are lifted once at the call site;
@@ -505,8 +532,9 @@ impl Simulation {
                                 time_frac,
                             ))
                         },
-                        Force::<IntegrationFrame>::from_raw_si(body.total_force.force), // allowed: typed-sibling call boundary — step-constant force lift
+                        Force::<IntegrationFrame>::from_raw_si(non_grav_force), // allowed: typed-sibling call boundary — step-constant force lift
                         Torque::<BodyFrame<SelfRef>>::from_raw_si(body.total_force.torque), // allowed: typed-sibling call boundary — step-constant torque lift
+                        wrench,
                         uom::si::f64::Time::new::<uom::si::time::second>(dt),
                         time_scale_factor,
                         body.integrator,
