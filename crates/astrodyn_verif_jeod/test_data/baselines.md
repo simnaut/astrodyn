@@ -3,7 +3,7 @@
 Per-test, per-component max absolute errors captured at the Phase 0 freeze point of
 GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy.
 
-97 tests recorded.
+99 tests recorded.
 
 ## `pre_step_smoke`
 
@@ -205,6 +205,14 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | aero_torque_err | 0.00000000000000000e0 |  |  | N*m |
 | accel_mag_err | 1.73472300000000004e-18 |  |  | m/s^2 |
 
+## `tier3_sim_drag_ver_const`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| aero_force_err | 1.55158400000000008e-17 |  |  | N |
+| aero_torque_err | 0.00000000000000000e0 |  |  | N*m |
+| accel_mag_err | 1.38777900000000005e-17 |  |  | m/s^2 |
+
 ## `tier3_sim_drag_ver_flatplate_calc_eps00`
 
 | Metric | X / value | Y | Z | Unit |
@@ -275,32 +283,32 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 |--------|-----------|---|---|------|
 | pre_attach_max_pos_err | 1.23980300000000010e-4 |  |  | m |
 | pre_attach_max_vel_err | 3.11494500000000010e-7 |  |  | m/s |
-| pre_attach_max_quat_angle | 2.54996700000000021e-3 |  |  | rad |
-| pre_attach_max_ang_vel | 6.13019700000000032e-6 |  |  | rad/s |
+| pre_attach_max_quat_angle_err | 2.54996700000000021e-3 |  |  | rad |
+| pre_attach_max_ang_vel_err | 6.13019700000000032e-6 |  |  | rad/s |
 | attached_first_max_pos_err | 1.77096700000000008e-4 |  |  | m |
 | attached_first_max_vel_err | 1.11863099999999996e-8 |  |  | m/s |
-| attached_first_max_quat_angle | 2.76604700000000021e-3 |  |  | rad |
-| attached_first_max_ang_vel | 1.28995600000000004e-7 |  |  | rad/s |
+| attached_first_max_quat_angle_err | 2.76604700000000021e-3 |  |  | rad |
+| attached_first_max_ang_vel_err | 1.28995600000000004e-7 |  |  | rad/s |
 | burn_free_flight_max_pos_err | 3.33038800000000021e-4 |  |  | m |
 | burn_free_flight_max_vel_err | 3.89488200000000011e-7 |  |  | m/s |
-| burn_free_flight_max_quat_angle | 3.81924399999999985e-3 |  |  | rad |
-| burn_free_flight_max_ang_vel | 3.36761400000000013e-6 |  |  | rad/s |
+| burn_free_flight_max_quat_angle_err | 3.81924399999999985e-3 |  |  | rad |
+| burn_free_flight_max_ang_vel_err | 3.36761400000000013e-6 |  |  | rad/s |
 | attached_second_and_burn_max_pos_err | 3.23269700000000020e-4 |  |  | m |
 | attached_second_and_burn_max_vel_err | 1.73910499999999988e-7 |  |  | m/s |
-| attached_second_and_burn_max_quat_angle | 3.33618500000000019e-3 |  |  | rad |
-| attached_second_and_burn_max_ang_vel | 3.95125200000000013e-6 |  |  | rad/s |
+| attached_second_and_burn_max_quat_angle_err | 3.33618500000000019e-3 |  |  | rad |
+| attached_second_and_burn_max_ang_vel_err | 3.95125200000000013e-6 |  |  | rad/s |
 | attached_surface_pt_max_pos_err | 9.61551599999999930e-3 |  |  | m |
 | attached_surface_pt_max_vel_err | 5.52895100000000047e-7 |  |  | m/s |
-| attached_surface_pt_max_quat_angle | 3.86987000000000008e-3 |  |  | rad |
-| attached_surface_pt_max_ang_vel | 1.80216099999999996e-7 |  |  | rad/s |
+| attached_surface_pt_max_quat_angle_err | 3.86987000000000008e-3 |  |  | rad |
+| attached_surface_pt_max_ang_vel_err | 1.80216099999999996e-7 |  |  | rad/s |
 | attached_surface_matrix_max_pos_err | 2.71994699999999978e-1 |  |  | m |
 | attached_surface_matrix_max_vel_err | 9.90311699999999994e-6 |  |  | m/s |
-| attached_surface_matrix_max_quat_angle | 6.34942099999999954e-2 |  |  | rad |
-| attached_surface_matrix_max_ang_vel | 1.07382599999999994e-7 |  |  | rad/s |
+| attached_surface_matrix_max_quat_angle_err | 6.34942099999999954e-2 |  |  | rad |
+| attached_surface_matrix_max_ang_vel_err | 1.07382599999999994e-7 |  |  | rad/s |
 | post_final_detach_max_pos_err | 1.73814099999999999e-1 |  |  | m |
 | post_final_detach_max_vel_err | 1.87273000000000008e-4 |  |  | m/s |
-| post_final_detach_max_quat_angle | 2.68609900000000013e-1 |  |  | rad |
-| post_final_detach_max_ang_vel | 2.12028300000000004e-4 |  |  | rad/s |
+| post_final_detach_max_quat_angle_err | 2.68609900000000013e-1 |  |  | rad |
+| post_final_detach_max_ang_vel_err | 2.12028300000000004e-4 |  |  | rad/s |
 
 ## `tier3_sim_kinematic_propagation_simple`
 
@@ -892,6 +900,14 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 |--------|-----------|---|---|------|
 | position | 6.49277300000000029e-3 | 9.85091100000000039e-3 | 6.71118999999999969e-3 | m |
 | velocity | 7.67914300000000001e-6 | 1.02111199999999992e-5 | 7.90014200000000070e-6 | m/s |
+| dc20 | 1.12445400000000003e-15 |  |  |  |
+
+## `tier3_simulation_tide_run02`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 6.49293100000000040e-3 | 9.85149999999999915e-3 | 6.71212800000000036e-3 | m |
+| velocity | 7.67965000000000024e-6 | 1.02122700000000001e-5 | 7.90070900000000005e-6 | m/s |
 | dc20 | 1.12445400000000003e-15 |  |  |  |
 
 ## `tier3_srp_1st_order_trajectory`
