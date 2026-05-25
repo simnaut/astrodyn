@@ -158,8 +158,19 @@ impl LsodeConfig {
             self.method == IntegrationMethod::ImplicitAdamsNonStiff
                 || self.corrector != CorrectorMethod::FunctionalIteration,
             "LsodeConfig: the stiff BDF family requires a Newton corrector (with a Jacobian), \
-             not FunctionalIteration. Choose NewtonIterInternalJac/JacobiNewtonInternalJac, \
+             not FunctionalIteration. Choose NewtonIterInternalJac, \
              or use the ImplicitAdamsNonStiff family for functional iteration."
+        );
+        // The diagonal Jacobi-Newton corrector (ODEPACK MITER=3) is not yet
+        // ported. Reject it here so the failure is deterministic at
+        // configuration time, rather than panicking mid-`dstode_step` after
+        // integration work has already been done. Fail-loudly per CLAUDE.md.
+        assert!(
+            self.corrector != CorrectorMethod::JacobiNewtonInternalJac,
+            "LsodeConfig: the diagonal Jacobi-Newton corrector (MITER=3, \
+             JacobiNewtonInternalJac) is not yet ported. Use NewtonIterInternalJac (dense \
+             finite-difference Newton) for the stiff BDF family, or the ImplicitAdamsNonStiff \
+             family with FunctionalIteration."
         );
         for (name, v) in [
             ("min_step_size", self.min_step_size),

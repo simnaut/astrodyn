@@ -246,6 +246,20 @@ impl LsodeConfig {
         Self(RawLsodeConfig::default())
     }
 
+    /// Stiff backward-differentiation (BDF) configuration: the BDF family
+    /// (orders 1–5) with a modified-Newton chord corrector driven by an
+    /// internally-generated finite-difference Jacobian (ODEPACK MITER=2).
+    /// Use for stiff systems where the non-stiff Adams family would be
+    /// forced to take tiny steps.
+    pub fn bdf_stiff() -> Self {
+        Self(RawLsodeConfig {
+            method: astrodyn_dynamics::IntegrationMethod::ImplicitBackDiffStiff,
+            corrector: astrodyn_dynamics::CorrectorMethod::NewtonIterInternalJac,
+            max_order: 5,
+            ..RawLsodeConfig::default()
+        })
+    }
+
     /// Set the relative and absolute error tolerances (RTOL, ATOL).
     pub fn with_tolerances(mut self, rel_tolerance: f64, abs_tolerance: f64) -> Self {
         self.0.rel_tolerance = rel_tolerance;

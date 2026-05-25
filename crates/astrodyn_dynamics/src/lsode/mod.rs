@@ -17,13 +17,21 @@
 //! the coefficients, error norms, and controller, none of which the
 //! F-delivery mechanism touches — but far less error-prone.
 //!
-//! ## Phase status (#200)
+//! ## Families and correctors (#200, #122)
 //!
-//! Phase 6A — non-stiff implicit Adams with functional-iteration corrector
-//! — is implemented here ([`lsode_translational_step`]). The stiff BDF
-//! family (Jacobian + chord corrector) is deferred (Phase 6C); selecting it
-//! panics in [`LsodeConfig::check`] unless paired with a Newton corrector,
-//! and the Newton path is not yet built.
+//! - **Non-stiff implicit Adams** (orders 1–12) with the functional-iteration
+//!   corrector ([`lsode_translational_step`] via `functional_corrector`).
+//! - **Stiff BDF** (orders 1–5) with a modified-Newton chord corrector
+//!   (`chord_corrector`) driven by an internally-generated forward-
+//!   difference Jacobian (`build_dense_iteration_matrix`, ODEPACK MITER=2)
+//!   and a dense LU solve (`linalg`). The iteration matrix
+//!   `P = I − h·el0·J` is factored once and reused until it drifts stale
+//!   (`MAX_REL_CHANGE_WITHOUT_JACOBIAN` / `MAX_STEPS_PER_JACOBIAN`).
+//!
+//! The diagonal Jacobi-Newton approximation (ODEPACK MITER=3,
+//! `JacobiNewtonInternalJac`) is not yet ported — selecting it is rejected
+//! by [`LsodeConfig::check`] rather than silently running a different
+//! corrector.
 //!
 //! The flattened first-order system is `y = [position; velocity]` with
 //! `y_dot = [velocity; acceleration]`; the closure supplies the
@@ -45,6 +53,7 @@
 pub mod coeffs;
 pub mod config;
 pub mod error_weights;
+pub(crate) mod linalg;
 pub mod nordsieck;
 
 pub use config::{CorrectorMethod, IntegrationMethod, LsodeConfig};
@@ -58,6 +67,15 @@ use nordsieck::Nordsieck;
 /// Number of flattened first-order ODEs for one translational body
 /// (`[position(3); velocity(3)]`).
 const N_ODES: usize = 6;
+
+/// Maximum relative change in `h·el0` tolerated before the stiff
+/// corrector's iteration matrix is rebuilt (ODEPACK `CCMAX`, JEOD
+/// `max_rel_change_without_jacobian`).
+const MAX_REL_CHANGE_WITHOUT_JACOBIAN: f64 = 0.3;
+
+/// Maximum number of steps between forced iteration-matrix rebuilds in the
+/// stiff corrector (ODEPACK `MSBP`, JEOD `max_num_steps_jacobian`).
+const MAX_STEPS_PER_JACOBIAN: usize = 20;
 
 /// Persistent LSODE integrator state for one body, carried across
 /// `integrate` calls (the Nordsieck history, current order/step, and the
@@ -113,6 +131,23 @@ pub struct LsodeState {
     error_weight: [f64; N_ODES],
     /// Multistep history invalidated by an attach/detach topology change.
     topology_dirty: bool,
+
+    // ── Stiff (chord/Newton) corrector state. Unused for functional
+    // iteration; carried here so the iteration matrix persists across the
+    // ~20 steps between rebuilds (ODEPACK reuses the factored matrix). ──
+    /// Iteration matrix `P = I − h·el0·J`, LU-factored in place by
+    /// [`linalg::lu_factor`]. Only meaningful when `jacobian_current`.
+    iter_matrix: [[f64; N_ODES]; N_ODES],
+    /// Row pivots from the `iter_matrix` LU factorization.
+    iter_pivots: [usize; N_ODES],
+    /// `h·el0` at the last iteration-matrix build (drift tracking against
+    /// `MAX_REL_CHANGE_WITHOUT_JACOBIAN`).
+    jac_hl0: f64,
+    /// Whether `iter_matrix` reflects the current `h·el0` and state.
+    jacobian_current: bool,
+    /// `num_steps_taken` at the last iteration-matrix build (forced-rebuild
+    /// cadence against `MAX_STEPS_PER_JACOBIAN`).
+    steps_at_last_jacobian: usize,
 }
 
 impl LsodeState {
@@ -146,6 +181,11 @@ impl LsodeState {
             prev_method_order: 1,
             error_weight: [0.0; N_ODES],
             topology_dirty: false,
+            iter_matrix: [[0.0; N_ODES]; N_ODES],
+            iter_pivots: [0; N_ODES],
+            jac_hl0: 0.0,
+            jacobian_current: false,
+            steps_at_last_jacobian: 0,
         }
     }
 
@@ -398,7 +438,6 @@ fn dstode_step(
 ) {
     let told = lsode.stage_target_time;
     let mut step_error: i32 = 0;
-    let mut save = [0.0_f64; N_ODES];
     let mut accum = [0.0_f64; N_ODES];
 
     // On the very first step, set order-1 coefficients.
@@ -422,55 +461,36 @@ fn dstode_step(
         let el0 = lsode.el[0];
         let tesco1 = lsode.test_coeffs[1][lsode.order - 1];
 
-        // ── Functional-iteration corrector. ──
-        // `history[i][0]` stays at the PREDICTED value throughout the
-        // corrector (JEOD never modifies it here); the working corrected
-        // state lives in `y_work = history[0] + el0·save`. The single
-        // post-acceptance update `history[jj] += el[jj]·accum` (including
-        // jj=0) then brings column 0 from predicted to corrected exactly
-        // once — modifying `history[0]` here too would double-apply the
-        // correction to the solution.
-        let pred0: [f64; N_ODES] = std::array::from_fn(|i| lsode.nordsieck.history[i][0]);
-        let mut y_work = pred0;
-        for i in 0..N_ODES {
-            accum[i] = 0.0;
-        }
-        let mut prev_iter_delta = 0.0_f64;
-        let mut converged = false;
-        let mut corrector_failed = false;
-        for iter in 0..lsode.config.max_correction_iters {
-            eval_derivative(&y_work, accel_fn, frac, &mut save);
-            // residual: save = h·f − h·y'_pred ; increment = save − accum.
-            let mut incr = [0.0_f64; N_ODES];
-            for i in 0..N_ODES {
-                save[i] = lsode.step_size * save[i] - lsode.nordsieck.history[i][1];
-                incr[i] = save[i] - accum[i];
+        // ── Corrector. ──
+        // The corrector solves the implicit step equation for `accum` (the
+        // accumulated correction). Functional (fixed-point) iteration is the
+        // non-stiff Adams path; the chord (modified-Newton) corrector with a
+        // finite-difference Jacobian is the stiff path — the BDF family, and
+        // Adams when a Newton corrector is selected. Both leave `accum`
+        // holding the accepted correction the error test and the history
+        // update below consume. `history[i][0]` stays at the PREDICTED value
+        // throughout (the single post-acceptance update
+        // `history[jj] += el[jj]·accum`, jj=0 included, brings column 0 from
+        // predicted to corrected exactly once).
+        let (_converged, corrector_failed) = match lsode.config.corrector {
+            CorrectorMethod::FunctionalIteration => {
+                functional_corrector(lsode, accel_fn, frac, el0, tesco1, conv_factor, &mut accum)
             }
-            let iter_delta = weighted_rms_norm(&incr, &lsode.error_weight);
-            for i in 0..N_ODES {
-                y_work[i] = pred0[i] + el0 * save[i];
-                accum[i] = save[i];
+            // Stiff family: a chord (modified-Newton) corrector driven by an
+            // internally-generated finite-difference Jacobian (MITER=2); the
+            // iteration matrix P = I − h·el0·J is LU factored and reused until
+            // it drifts stale.
+            CorrectorMethod::NewtonIterInternalJac => {
+                chord_corrector(lsode, accel_fn, frac, el0, tesco1, conv_factor, &mut accum)
             }
-            if iter != 0 {
-                lsode.convergence_rate =
-                    (0.2 * lsode.convergence_rate).max(iter_delta / prev_iter_delta);
-            }
-            let dcon =
-                iter_delta * (1.0_f64).min(1.5 * lsode.convergence_rate) / (tesco1 * conv_factor);
-            if dcon <= 1.0 {
-                converged = true;
-                break;
-            }
-            if iter >= 1 && iter_delta > 2.0 * prev_iter_delta {
-                corrector_failed = true;
-                break;
-            }
-            prev_iter_delta = iter_delta;
-        }
-
-        if !converged && !corrector_failed {
-            corrector_failed = true; // hit max_correction_iters
-        }
+            // MITER=3 is rejected up front by `LsodeConfig::check` (called in
+            // `LsodeState::new`), so it can never reach the corrector dispatch.
+            // Kept as a fail-loud backstop in case that guard is ever weakened.
+            CorrectorMethod::JacobiNewtonInternalJac => unreachable!(
+                "LSODE corrector JacobiNewtonInternalJac (MITER=3, diagonal Jacobi-Newton) is \
+                 not yet ported and must be rejected by LsodeConfig::check before stepping."
+            ),
+        };
 
         if corrector_failed {
             // Retract the prediction, reduce the step, retry.
@@ -544,6 +564,224 @@ fn dstode_step(
         lsode.prev_step_size = lsode.step_size;
         return;
     }
+}
+
+/// Functional (fixed-point) iteration corrector — the non-stiff Adams path
+/// (`integrator_corrector_iteration` functional branch). Iterates
+/// `y = history[0] + el0·(h·f(y) − h·y'_pred)` to a fixed point, leaving the
+/// accepted correction in `accum`. Returns `(converged, failed)`.
+fn functional_corrector(
+    lsode: &mut LsodeState,
+    accel_fn: &impl Fn(&TranslationalState, f64) -> DVec3,
+    frac: f64,
+    el0: f64,
+    tesco1: f64,
+    conv_factor: f64,
+    accum: &mut [f64; N_ODES],
+) -> (bool, bool) {
+    let pred0: [f64; N_ODES] = std::array::from_fn(|i| lsode.nordsieck.history[i][0]);
+    let mut y_work = pred0;
+    for a in accum.iter_mut() {
+        *a = 0.0;
+    }
+    let mut save = [0.0_f64; N_ODES];
+    let mut prev_iter_delta = 0.0_f64;
+    let mut converged = false;
+    let mut corrector_failed = false;
+    for iter in 0..lsode.config.max_correction_iters {
+        eval_derivative(&y_work, accel_fn, frac, &mut save);
+        // residual: save = h·f − h·y'_pred ; increment = save − accum.
+        let mut incr = [0.0_f64; N_ODES];
+        for i in 0..N_ODES {
+            save[i] = lsode.step_size * save[i] - lsode.nordsieck.history[i][1];
+            incr[i] = save[i] - accum[i];
+        }
+        let iter_delta = weighted_rms_norm(&incr, &lsode.error_weight);
+        for i in 0..N_ODES {
+            y_work[i] = pred0[i] + el0 * save[i];
+            accum[i] = save[i];
+        }
+        if iter != 0 {
+            lsode.convergence_rate =
+                (0.2 * lsode.convergence_rate).max(iter_delta / prev_iter_delta);
+        }
+        let dcon =
+            iter_delta * (1.0_f64).min(1.5 * lsode.convergence_rate) / (tesco1 * conv_factor);
+        if dcon <= 1.0 {
+            converged = true;
+            break;
+        }
+        if iter >= 1 && iter_delta > 2.0 * prev_iter_delta {
+            corrector_failed = true;
+            break;
+        }
+        prev_iter_delta = iter_delta;
+    }
+    if !converged && !corrector_failed {
+        corrector_failed = true; // hit max_correction_iters
+    }
+    (converged, corrector_failed)
+}
+
+/// Chord (modified-Newton) corrector — the stiff path
+/// (`integrator_corrector_iteration` chord branch + `linear_chord_iteration`).
+///
+/// Each iteration evaluates the residual `r = h·f(y) − (h·y'_pred + accum)`
+/// and solves `P·Δ = r` for the Newton step `Δ` against the factored
+/// iteration matrix `P = I − h·el0·J`, accumulating `accum += Δ` and
+/// `y = history[0] + el0·accum`. The Jacobian-backed `P` is built on demand
+/// and reused until it drifts stale (`MAX_REL_CHANGE_WITHOUT_JACOBIAN` /
+/// `MAX_STEPS_PER_JACOBIAN`); a convergence failure with a *stale* matrix
+/// triggers one rebuild-and-retry before giving up, mirroring JEOD's
+/// `integrator_corrector_failed_part1` (the chord iteration converges to the
+/// exact residual root regardless of Jacobian quality, so the matrix only
+/// governs convergence rate). Returns `(converged, failed)`; a `failed`
+/// return drives the caller's step-reduction recovery.
+fn chord_corrector(
+    lsode: &mut LsodeState,
+    accel_fn: &impl Fn(&TranslationalState, f64) -> DVec3,
+    frac: f64,
+    el0: f64,
+    tesco1: f64,
+    conv_factor: f64,
+    accum: &mut [f64; N_ODES],
+) -> (bool, bool) {
+    let pred0: [f64; N_ODES] = std::array::from_fn(|i| lsode.nordsieck.history[i][0]);
+    let hl0 = lsode.step_size * el0;
+    // Stale if never built, the step/order changed `h·el0` materially, or
+    // the forced-rebuild cadence elapsed.
+    let drift = if lsode.jac_hl0 == 0.0 {
+        f64::INFINITY
+    } else {
+        (hl0 / lsode.jac_hl0 - 1.0).abs()
+    };
+    let mut need_build = !lsode.jacobian_current
+        || drift > MAX_REL_CHANGE_WITHOUT_JACOBIAN
+        || lsode.num_steps_taken >= lsode.steps_at_last_jacobian + MAX_STEPS_PER_JACOBIAN;
+
+    loop {
+        let built_now = need_build;
+        if need_build {
+            // Base derivative at the predicted state for the finite-
+            // difference Jacobian, then build + factor P = I − h·el0·J.
+            let mut f_base = [0.0_f64; N_ODES];
+            eval_derivative(&pred0, accel_fn, frac, &mut f_base);
+            if build_dense_iteration_matrix(lsode, accel_fn, frac, &pred0, &f_base, hl0).is_err() {
+                // Singular iteration matrix — reduce the step and retry.
+                lsode.jacobian_current = false;
+                return (false, true);
+            }
+            lsode.jacobian_current = true;
+            lsode.jac_hl0 = hl0;
+            lsode.steps_at_last_jacobian = lsode.num_steps_taken;
+            lsode.convergence_rate = 0.7; // CRATE reset on a fresh matrix (ODEPACK)
+        }
+
+        let mut y_work = pred0;
+        for a in accum.iter_mut() {
+            *a = 0.0;
+        }
+        let mut save = [0.0_f64; N_ODES];
+        let mut prev_iter_delta = 0.0_f64;
+        let mut converged = false;
+        for iter in 0..lsode.config.max_correction_iters {
+            eval_derivative(&y_work, accel_fn, frac, &mut save);
+            // Newton residual r = h·f − (h·y'_pred + accum); solve P·Δ = r.
+            let mut delta = [0.0_f64; N_ODES];
+            for i in 0..N_ODES {
+                delta[i] = lsode.step_size * save[i] - (lsode.nordsieck.history[i][1] + accum[i]);
+            }
+            linalg::lu_solve(&lsode.iter_matrix, &lsode.iter_pivots, &mut delta);
+            let iter_delta = weighted_rms_norm(&delta, &lsode.error_weight);
+            for i in 0..N_ODES {
+                accum[i] += delta[i];
+                y_work[i] = pred0[i] + el0 * accum[i];
+            }
+            if iter != 0 {
+                lsode.convergence_rate =
+                    (0.2 * lsode.convergence_rate).max(iter_delta / prev_iter_delta);
+            }
+            let dcon =
+                iter_delta * (1.0_f64).min(1.5 * lsode.convergence_rate) / (tesco1 * conv_factor);
+            if dcon <= 1.0 {
+                converged = true;
+                break;
+            }
+            // Divergence (iterate growing) — abandon this matrix's iterations.
+            if iter >= 1 && iter_delta > 2.0 * prev_iter_delta {
+                break;
+            }
+            prev_iter_delta = iter_delta;
+        }
+        if converged {
+            return (true, false);
+        }
+        // Failed: a fresh matrix can't be improved → reduce the step. A
+        // stale matrix gets one rebuild-and-retry first.
+        lsode.jacobian_current = false;
+        if built_now {
+            return (false, true);
+        }
+        need_build = true;
+    }
+}
+
+/// Build and LU-factor the stiff corrector's iteration matrix
+/// `P = I − h·el0·J`, with `J` an internally-generated forward-difference
+/// Jacobian (ODEPACK `DPREPJ` MITER=2 / JEOD `jacobian_prep_*`
+/// `NewtonIterInternalJac`). `f_base` is `f(y_base)`; `hl0 = h·el0`.
+///
+/// Stores the mathematically-standard orientation `P[i][j]` (row = equation,
+/// column = perturbed variable). JEOD stores `lin_alg[j][i]` (transposed) —
+/// an apparent quirk that converges anyway because the chord iteration's
+/// fixed point is Jacobian-independent; we use the standard orientation,
+/// which is correct and converges at least as well. Returns `Err(col)` if
+/// the factorization finds a singular column.
+#[allow(
+    clippy::float_cmp,
+    reason = "exact r0==0 guard mirrors DPREPJ's fpclassify(r0)==FP_ZERO fallback to r0=1"
+)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "N_ODES = 6 is exactly representable in f64"
+)]
+fn build_dense_iteration_matrix(
+    lsode: &mut LsodeState,
+    accel_fn: &impl Fn(&TranslationalState, f64) -> DVec3,
+    frac: f64,
+    y_base: &[f64; N_ODES],
+    f_base: &[f64; N_ODES],
+    hl0: f64,
+) -> Result<(), usize> {
+    let eps = f64::EPSILON;
+    let srur = eps.sqrt(); // unit-roundoff scale (ODEPACK SRUR)
+    let fac0 = weighted_rms_norm(f_base, &lsode.error_weight);
+    let mut r0 = 1000.0 * eps * lsode.step_size.abs() * (N_ODES as f64) * fac0;
+    if r0 == 0.0 {
+        r0 = 1.0;
+    }
+    let mut y = *y_base;
+    let mut ftem = [0.0_f64; N_ODES];
+    for j in 0..N_ODES {
+        let yj = y_base[j];
+        // Perturbation: scaled to the variable magnitude, floored by the
+        // tolerance-weighted r0 (error_weight is 1/ewt, so r0/error_weight
+        // = r0·ewt — the literal JEOD expression).
+        let r = (srur * yj.abs()).max(r0 / lsode.error_weight[j]);
+        y[j] = yj + r;
+        eval_derivative(&y, accel_fn, frac, &mut ftem);
+        let fac = -hl0 / r;
+        for i in 0..N_ODES {
+            // (∂f_i/∂y_j) · (−hl0) = −hl0·J[i][j]
+            lsode.iter_matrix[i][j] = (ftem[i] - f_base[i]) * fac;
+        }
+        y[j] = yj; // restore
+    }
+    // P = I − hl0·J: add the identity.
+    for i in 0..N_ODES {
+        lsode.iter_matrix[i][i] += 1.0;
+    }
+    linalg::lu_factor(&mut lsode.iter_matrix, &mut lsode.iter_pivots)
 }
 
 /// Retract a prediction by reversing the Pascal-triangle shift (the `-=`
@@ -734,15 +972,173 @@ mod tests {
         }
     }
 
+    /// Linear damped-oscillator acceleration on the x-axis:
+    /// `a = (−k·x − c·v, 0, 0)`. For large `c` relative to `k` the system is
+    /// stiff (well-separated eigenvalues), exercising the BDF/Newton path.
+    fn damped_oscillator_accel(k: f64, c: f64) -> impl Fn(&TranslationalState, f64) -> DVec3 {
+        move |s: &TranslationalState, _frac: f64| {
+            DVec3::new(-k * s.position.x - c * s.velocity.x, 0.0, 0.0)
+        }
+    }
+
+    /// A stiff BDF configuration (orders 1–5, modified-Newton chord corrector
+    /// with an internal finite-difference Jacobian) at the given tolerances.
+    fn bdf_config(rel_tolerance: f64, abs_tolerance: f64) -> LsodeConfig {
+        LsodeConfig {
+            method: IntegrationMethod::ImplicitBackDiffStiff,
+            corrector: CorrectorMethod::NewtonIterInternalJac,
+            max_order: 5,
+            rel_tolerance,
+            abs_tolerance,
+            ..LsodeConfig::default()
+        }
+    }
+
+    /// BDF/Newton integrates a stiff overdamped oscillator to its analytic
+    /// solution at a step size where an explicit method would be unstable.
+    ///
+    /// `ẍ + c·ẋ + k·x = 0`, `x(0)=1`, `ẋ(0)=0` has eigenvalues
+    /// `λ = (−c ± √(c²−4k))/2`. With `c=200, k=1` the fast mode `λ₂ ≈ −200`
+    /// makes the system stiff (an explicit step is stable only for
+    /// `dt < 2/200 = 0.01`); we drive `dt = 0.05`, where only an
+    /// L-stable BDF stays bounded, and compare to
+    /// `x(t) = A·e^{λ₁t} + B·e^{λ₂t}`.
+    #[test]
+    fn bdf_stiff_overdamped_oscillator_matches_analytic() {
+        let (k, c) = (1.0_f64, 200.0_f64);
+        let disc = (c * c - 4.0 * k).sqrt();
+        let lam1 = (-c + disc) / 2.0; // slow mode ≈ −0.005
+        let lam2 = (-c - disc) / 2.0; // fast (stiff) mode ≈ −200
+                                      // x(0)=1, v(0)=0 ⇒ A = λ₂/(λ₂−λ₁), B = −λ₁/(λ₂−λ₁).
+        let a_coef = lam2 / (lam2 - lam1);
+        let b_coef = -lam1 / (lam2 - lam1);
+        let analytic = |t: f64| a_coef * (lam1 * t).exp() + b_coef * (lam2 * t).exp();
+
+        let start = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        // Unit-scale tolerances (tighter would just force the error test to
+        // demand sub-pico accuracy on an O(1) state and is unrelated to
+        // stiffness handling).
+        let mut lsode = LsodeState::new(bdf_config(1e-7, 1e-9));
+        let accel = damped_oscillator_accel(k, c);
+        let dt = 0.05; // 5× the explicit stability limit
+        let mut s = start;
+        let mut t = 0.0;
+        for _ in 0..40 {
+            s = lsode_translational_step(&s, &accel, dt, &mut lsode);
+            t += dt;
+            let want = analytic(t);
+            assert!(
+                (s.position.x - want).abs() < 1e-5,
+                "BDF stiff x(t={t:.2}) = {} vs analytic {want} (err {:e})",
+                s.position.x,
+                (s.position.x - want).abs()
+            );
+        }
+        // Bounded and decayed toward the slow-mode tail (no explicit blow-up).
+        assert!(s.position.x.abs() < 1.0, "solution did not stay bounded");
+        // The stiff path actually exercised the Newton/Jacobian machinery:
+        // `jacobian_current` is set true only after a successful iteration-matrix
+        // build (the functional corrector never touches it), and
+        // `steps_at_last_jacobian` records the step at which it last rebuilt — so
+        // both failing would mean the dense-Newton chord corrector never ran.
+        assert!(
+            lsode.jacobian_current,
+            "stiff BDF run never built/used a finite-difference Jacobian — the dense Newton \
+             chord corrector was not exercised"
+        );
+        assert!(
+            lsode.steps_at_last_jacobian > 0,
+            "iteration matrix was never (re)built during the stiff transient"
+        );
+    }
+
+    /// The chord (Newton) corrector reaches the same converged solution as
+    /// the proven functional corrector on a smooth (non-stiff) orbit. Both
+    /// solve the same implicit step equation; only the iteration scheme
+    /// differs, so the trajectories must agree to tolerance. This validates
+    /// the Newton corrector + finite-difference Jacobian against the
+    /// Phase-6A functional path.
+    #[test]
+    fn adams_newton_corrector_matches_functional_on_orbit() {
+        let mu = 3.986_004_418e14_f64;
+        let r0 = 7_000_000.0_f64;
+        let v0 = (mu / r0).sqrt();
+        let start = TranslationalState {
+            position: DVec3::new(r0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, v0, 0.0),
+        };
+        let accel = kepler_accel(mu);
+        let dt = 30.0;
+        let n = 200usize;
+
+        // Adams + functional iteration (the default 6A path).
+        let mut func = LsodeState::new(LsodeConfig {
+            rel_tolerance: 1e-11,
+            abs_tolerance: 1e-6,
+            ..LsodeConfig::default()
+        });
+        // Adams + modified-Newton chord corrector (6C corrector on the
+        // non-stiff family — same coefficients, different solve).
+        let mut newt = LsodeState::new(LsodeConfig {
+            corrector: CorrectorMethod::NewtonIterInternalJac,
+            rel_tolerance: 1e-11,
+            abs_tolerance: 1e-6,
+            ..LsodeConfig::default()
+        });
+
+        let mut sf = start;
+        let mut sn = start;
+        for _ in 0..n {
+            sf = lsode_translational_step(&sf, &accel, dt, &mut func);
+            sn = lsode_translational_step(&sn, &accel, dt, &mut newt);
+        }
+        let pos_diff = (sf.position - sn.position).length();
+        let vel_diff = (sf.velocity - sn.velocity).length();
+        // Two independent adaptive integrations of the same orbit with the
+        // same coefficients but different correctors agree to ~1e-8 relative
+        // (cm-scale over a 7000 km orbit) — far tighter than the method's own
+        // truncation error, confirming both solve the same step equation. The
+        // residual gap is independent order/step-controller rounding, not a
+        // corrector discrepancy.
+        assert!(
+            pos_diff < 1.0,
+            "Newton vs functional position diverged: {pos_diff:.3e} m (>1 m ⇒ different solution)"
+        );
+        assert!(
+            vel_diff < 1e-3,
+            "Newton vs functional velocity diverged: {vel_diff:.3e} m/s"
+        );
+    }
+
+    /// The unported diagonal Jacobi-Newton corrector (MITER=3) must fail
+    /// loudly rather than silently running a different corrector.
+    #[test]
+    #[should_panic(expected = "JacobiNewtonInternalJac")]
+    fn jacobi_newton_diagonal_panics_until_ported() {
+        let start = TranslationalState {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7_546.0, 0.0),
+        };
+        let mut lsode = LsodeState::new(LsodeConfig {
+            method: IntegrationMethod::ImplicitBackDiffStiff,
+            corrector: CorrectorMethod::JacobiNewtonInternalJac,
+            max_order: 5,
+            ..LsodeConfig::default()
+        });
+        let accel = kepler_accel(3.986_004_418e14);
+        lsode_translational_step(&start, &accel, 30.0, &mut lsode);
+    }
+
     /// Tight-tolerance (rtol=2.3e-16, atol=0) continuous integration over
     /// many dyn_dt cycles using JEOD's `RUN_lsode` initial conditions and
-    /// derived μ — the exact scenario the (currently `#[ignore]`d) Tier 3
-    /// `tier3_simulation_lsode_default` cross-validates. Confirms the
-    /// integrator core is stable and efficient in isolation (order climbs
-    /// to ~7, a few internal steps per ~15.5 s cycle, no step collapse);
-    /// the Tier 3 collapse is therefore in how the `Simulation` pipeline
-    /// feeds the derivative across LSODE's internal sub-steps, not in the
-    /// integrator (#200 Phase 6A follow-up).
+    /// derived μ — the same scenario the Tier 3
+    /// `tier3_simulation_lsode_default` cross-validates against JEOD. Confirms
+    /// the integrator core is stable and efficient in isolation: the order
+    /// climbs to ~7, a few internal steps per ~15.5 s cycle, no step
+    /// collapse, and energy is conserved.
     #[test]
     fn lsode_tight_tolerance_run_lsode_ics_is_stable() {
         // μ = sma³·ω² and the t=0 prop_integ_state from
