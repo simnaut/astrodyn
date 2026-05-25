@@ -1343,13 +1343,28 @@ for v in [
 trick.add_data_record_group(dr)
 '
 
-# Group 20: SIM_MET (3 atmosphere validation runs)
+# Group 20: SIM_MET (7 atmosphere validation runs)
+#
+# Every RUN in SIM_MET exercises the SAME jeod::METAtmosphere model — the
+# S_define instantiates only a METAtmosphere (there is no GRAM or Jacchia
+# model anywhere in JEOD; `models/environment/atmosphere/` contains only
+# MET + base_atmos). The `_GRAM_MET` / `_JAC_COMP` RUN names refer to the
+# altitude/latitude sample SCHEDULE used by external GRAM/Jacchia comparison
+# studies, not to a different model under test. All RUNs therefore log the
+# MET density/temperature via `vehicle.atmos_state` and are portable against
+# our MetAtmosphere. RUN_data_compare is omitted: it re-runs RUN_T01_MET_VER's
+# inputs purely to confirm JEOD's several MET implementations agree, adding no
+# new sample points.
 run_met_verif_group() {
     local sim_dir="models/environment/atmosphere/MET/verif/SIM_MET"
     local -a RUNS=(
         "SET_test/RUN_T01_MET_VER:met_t01:met_t01_met.csv"
         "SET_test/RUN_T02_MET_VER:met_t02:met_t02_met.csv"
         "SET_test/RUN_T03_GRAM_MET:met_t03_gram:met_t03_gram_met.csv"
+        "SET_test/RUN_T01_GRAM_MET:met_t01_gram:met_t01_gram_met.csv"
+        "SET_test/RUN_T02_GRAM_MET:met_t02_gram:met_t02_gram_met.csv"
+        "SET_test/RUN_T01_JAC_COMP:met_t01_jac:met_t01_jac_comp.csv"
+        "SET_test/RUN_T02_JAC_COMP:met_t02_jac:met_t02_jac_comp.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

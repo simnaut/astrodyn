@@ -21,7 +21,36 @@
 //! initialization step (sample 0 == sample 1). That is a quirk of the JEOD
 //! sim's `add_read` time-tagged reset pattern, not of our model. We detect
 //! this dynamically (rather than hard-coding a skip) so RUN T03 — whose row
-//! 0 differs from row 1 — is fully exercised.
+//! 0 differs from row 1 — is fully exercised. Some sweeps (the `GRAM_MET`
+//! runs whose first read changes a coordinate) instead carry a *trailing*
+//! duplicate where Trick replays the final read; that is harmless — it
+//! re-tests an already-asserted point — so we leave it in place.
+//!
+//! ## Why every `SIM_MET` RUN is a MET cross-check (`GRAM`/`JAC` naming)
+//!
+//! `SIM_MET` ships eight RUNs whose names suggest three atmosphere models —
+//! `*_MET_VER`, `*_GRAM_MET`, `*_JAC_COMP` — but its `S_define` instantiates
+//! exactly one model: `jeod::METAtmosphere`. There is no GRAM or Jacchia
+//! model anywhere in JEOD v5.4 (`models/environment/atmosphere/` contains only
+//! `MET` and `base_atmos`). The `GRAM_MET` / `JAC_COMP` suffixes name the
+//! altitude/latitude sample SCHEDULE used by external GRAM-MET and Jacchia
+//! comparison studies, not a distinct model under test. Every RUN logs the
+//! same `vehicle.atmos_state` density/temperature produced by the MET kernel,
+//! so all of them are portable cross-checks against our `MetAtmosphere`:
+//!
+//! * `RUN_T01_MET_VER`  — 120–140 km altitude sweep (this file).
+//! * `RUN_T02_MET_VER`  — 100–1000 km altitude sweep.
+//! * `RUN_T03_GRAM_MET` — longitude sweep at ~650 km.
+//! * `RUN_T01_GRAM_MET` — 100–1500 km altitude sweep (extends the ceiling past
+//!   T02's 1000 km into the deep-hydrogen branch).
+//! * `RUN_T02_GRAM_MET` — latitude sweep -90°..+90° at ~650 km.
+//! * `RUN_T01_JAC_COMP` — 100–1000 km altitude sweep (Jacchia-comparison grid).
+//! * `RUN_T02_JAC_COMP` — 100–500 km altitude sweep (denser low-altitude grid).
+//!
+//! `RUN_data_compare` is intentionally not ported: it re-runs `RUN_T01_MET_VER`'s
+//! inputs only to confirm that JEOD's several internal MET implementations
+//! (preferred vs. deprecated `AtmosphereState` / `METAtmosphereState`) agree
+//! with each other; it adds no new sample point for us to validate.
 
 use astrodyn_atmosphere::met::{GeoIndexType, MetAtmosphere};
 use astrodyn_verif_jeod_fixtures::{atmosphere_verif::load_met_run_csv, tier3_csv::test_data_path};
@@ -157,6 +186,75 @@ fn tier2_atmosphere_met_run_t03_longitude_sweep() {
     run_csv_test(
         "tier2_atmosphere_met_run_t03_longitude_sweep",
         "met_t03_gram_met.csv",
+        SIM_MET_DEFAULT_TJT,
+        1.0e-12,
+        1.0e-12,
+    );
+}
+
+/// `RUN_T01_GRAM_MET`: 100–1500 km altitude sweep at (lat, lon) = (55°, 45°).
+/// Despite the `GRAM` in the name, this exercises the MET model (see the
+/// module header). It extends the altitude ceiling 500 km past
+/// `RUN_T02_MET_VER`, deep into the hydrogen-dominated regime above 500 km,
+/// and uses `input_core.py`'s default epoch (no `set_date_and_time` override).
+#[test]
+fn tier2_atmosphere_met_run_t01_gram_high_altitude_sweep() {
+    run_csv_test(
+        "tier2_atmosphere_met_run_t01_gram_high_altitude_sweep",
+        "met_t01_gram_met.csv",
+        SIM_MET_DEFAULT_TJT,
+        1.0e-12,
+        1.0e-12,
+    );
+}
+
+/// `RUN_T02_GRAM_MET`: latitude sweep from -90° to +90° (5° steps) at
+/// ~650 km, lon=45°, default epoch. Stresses the latitude dependence of the
+/// MET diffusion/exospheric-temperature model at the helium-fairing height,
+/// including the geographic poles. Row 0 (lat 55°) differs from row 1
+/// (lat -90°), so the leading-duplicate detector keeps every sample; the
+/// trailing replay of the +90° read is harmless.
+#[test]
+fn tier2_atmosphere_met_run_t02_gram_latitude_sweep() {
+    // Temperature tolerance is 1.2e-12 K here (vs 1e-12 K elsewhere): this
+    // sweep reaches exospheric temperatures up to ~1440 K, where one f64 ULP
+    // (~2.3e-13 K) is larger than at the lower-temperature points the other
+    // RUNs exercise. The observed max abs error is 1.137e-12 K — pure
+    // arithmetic-ordering noise (~1e-15 relative) — so the floor is set to
+    // 1.05× observed, still far below any physical significance.
+    run_csv_test(
+        "tier2_atmosphere_met_run_t02_gram_latitude_sweep",
+        "met_t02_gram_met.csv",
+        SIM_MET_DEFAULT_TJT,
+        1.0e-12,
+        1.2e-12,
+    );
+}
+
+/// `RUN_T01_JAC_COMP`: 100–1000 km altitude sweep at (lat, lon) = (55°, 45°)
+/// on the Jacchia-comparison sample grid, default epoch. Mirrors the
+/// `RUN_T02_MET_VER` altitude span; included for breadth so the full SIM_MET
+/// RUN set is covered against our MET model.
+#[test]
+fn tier2_atmosphere_met_run_t01_jac_altitude_sweep() {
+    run_csv_test(
+        "tier2_atmosphere_met_run_t01_jac_altitude_sweep",
+        "met_t01_jac_met.csv",
+        SIM_MET_DEFAULT_TJT,
+        1.0e-12,
+        1.0e-12,
+    );
+}
+
+/// `RUN_T02_JAC_COMP`: 100–500 km altitude sweep (20 km steps) at
+/// (lat, lon) = (55°, 45°), default epoch. Denser low-altitude grid than the
+/// other sweeps — stresses the barometric (≤105 km) and diffusion (105–500 km)
+/// branch boundaries on the Jacchia-comparison grid.
+#[test]
+fn tier2_atmosphere_met_run_t02_jac_low_altitude_sweep() {
+    run_csv_test(
+        "tier2_atmosphere_met_run_t02_jac_low_altitude_sweep",
+        "met_t02_jac_met.csv",
         SIM_MET_DEFAULT_TJT,
         1.0e-12,
         1.0e-12,
