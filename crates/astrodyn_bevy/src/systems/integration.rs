@@ -305,7 +305,7 @@ pub fn integration_system<P: Planet>(
                 Option<&mut LsodeStateC>,
                 // Structural-frame external force, for the per-RK4-stage
                 // transform in the standard path (mirrors the runner's
-                // `StructuralWrench` plumbing). JEOD_INV: DB.28.
+                // `StructuralWrench` plumbing; see JEOD_INV DB.28).
                 Option<&ExternalForceStructC>,
             ),
             Option<&mut FlatPlateConfigC>,

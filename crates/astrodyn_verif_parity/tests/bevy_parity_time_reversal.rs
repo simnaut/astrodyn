@@ -155,8 +155,9 @@ fn load_mu_earth_gemt1() -> f64 {
 /// The body is constructed with `rot` populated by JEOD's
 /// `LvlhDerivedState` initialisation: yaw=0, pitch=-11.6°, roll=0,
 /// `omega=0` — the same triple the tier3 test computes from
-/// `compute_body_lvlh_frame(init.position, init.velocity)` and
-/// `glam::DMat3::from_rotation_y(-11.6°)`.
+/// `compute_body_lvlh_frame(init.position, init.velocity)` composed with the
+/// passive LVLH→body transform `glam::DMat3::from_rotation_y(+11.6°)`
+/// (`R_y(−pitch)`).
 fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
     let mu_earth_gemt1 = load_mu_earth_gemt1();
     let leap_table = astrodyn::default_leap_second_table();

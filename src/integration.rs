@@ -925,7 +925,12 @@ pub fn integrate_body(
             let unconverged_before = gj.bootstrap_unconverged_iterations();
             let mut completed = false;
             for _ in 0..max_stages {
-                let acc = gravity_fn(trans.position, trans.velocity, 0.0) + non_grav_accel;
+                // `struct_accel` (identity-attitude structural force, constant
+                // over the step) is included here for parity with the closure
+                // path above; the GJ kernel builds its own derivative rather
+                // than taking `accel`.
+                let acc =
+                    gravity_fn(trans.position, trans.velocity, 0.0) + non_grav_accel + struct_accel;
                 let result = gj.integrate(dt, time_scale_factor, acc, trans);
                 if result.time_scale > 0.0 {
                     if !result.passed {

@@ -44,7 +44,7 @@ impl Simulation {
         // recomputes `extern_forc_inrtl` in the per-stage derivative function
         // (`dyn_body_collect.cc`). `total_force`/`frame_derivs` retain the
         // start-of-step value as the representative report (as the SRP path
-        // does for its per-stage force). JEOD_INV: DB.28.
+        // does for its per-stage force; see JEOD_INV DB.28).
         let mut start_struct_force_inertial: Vec<DVec3> = Vec::with_capacity(self.bodies.len());
         for body in &mut self.bodies {
             // allowed: typed↔raw kernel boundary — `collect_and_resolve_forces`
