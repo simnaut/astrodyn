@@ -244,11 +244,102 @@ fn build_run_0401(_init: &InitialConditions) -> SimulationBuilder {
     build_orbinit_docker(mu, state)
 }
 
+/// Build an inertial-frame state from JEOD set02-style orbital elements
+/// (`DynBodyInitOrbit::SmaEccIncAscnodeArgperMeanAnomaly`). The mean-anomaly
+/// parameterization is exactly [`init_from_mean_anomaly`] — distinct from the
+/// set01 time-periapsis path (set01 derives `M = t_peri·√(μ/a³)` first). Angle
+/// arguments are in degrees (as the JEOD `Modified_data` decks specify them)
+/// and `sma_m` in metres; both are converted at the boundary.
+#[allow(clippy::too_many_arguments)]
+fn mean_anomaly_state(
+    sma_m: f64,
+    ecc: f64,
+    inc_deg: f64,
+    raan_deg: f64,
+    argp_deg: f64,
+    mean_anomaly_deg: f64,
+    mu: f64,
+) -> TranslationalState {
+    init_from_mean_anomaly(
+        sma_m,
+        ecc,
+        inc_deg.to_radians(),
+        raan_deg.to_radians(),
+        argp_deg.to_radians(),
+        mean_anomaly_deg.to_radians(),
+        mu,
+    )
+}
+
+// set02 orbital elements verbatim from JEOD `Modified_data/<vehicle>/
+// trans_Orbit_inertial_body_set02.py` (JEOD source data, not output).
+fn build_run_0002(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    // ISS, Earth.inertial, set02.
+    let state = mean_anomaly_state(
+        6_732_901.201_52,
+        0.001_290_733_50,
+        51.670_450_765,
+        49.708_417_385,
+        100.582_445_989,
+        300.012_677_353,
+        mu,
+    );
+    build_orbinit_docker(mu, state)
+}
+
+fn build_run_0102(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    // STS-114, Earth.inertial, set02.
+    let state = mean_anomaly_state(
+        6_732_163.597_64,
+        0.001_224_463_54,
+        51.670_830_586,
+        49.709_596_700,
+        103.206_379_978,
+        297.384_539_858,
+        mu,
+    );
+    build_orbinit_docker(mu, state)
+}
+
 /// RUN_0001: ISS orbital elements (set01) in `Earth.inertial`.
 pub fn run_0001() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0001",
         scenario: build_run_0001,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0002: ISS orbital elements (set02, mean-anomaly) in `Earth.inertial`.
+pub fn run_0002() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0002",
+        scenario: build_run_0002,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0102: STS-114 orbital elements (set02, mean-anomaly) in `Earth.inertial`.
+pub fn run_0102() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0102",
+        scenario: build_run_0102,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,
