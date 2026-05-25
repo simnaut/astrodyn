@@ -73,6 +73,7 @@ const SCENARIOS: &[Scenario] = &[
         reference_inertial: true,
         orbit_inits: &[
             "trans_Orbit_inertial_body_set01",
+            "trans_Orbit_inertial_body_set02",
             "trans_Orbit_pfix_body_set01",
         ],
         trans_states: &["trans_TransState_inertial_body"],
