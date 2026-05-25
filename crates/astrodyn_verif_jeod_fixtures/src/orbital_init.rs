@@ -204,12 +204,24 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
     }
 
     // JEOD sets 01/02/10 supply `semi_major_axis`; set03
-    // (`SlrEccIncAscnodeArgperTanom`) supplies `semi_latus_rectum`. Require
-    // exactly one shape — neither present is a malformed deck.
-    if semi_major_axis.is_none() && semi_latus_rectum.is_none() {
-        return Err(BodyInitFixtureError::malformed(
-            "missing both semi_major_axis and semi_latus_rectum (one is required)".to_string(),
-        ));
+    // (`SlrEccIncAscnodeArgperTanom`) supplies `semi_latus_rectum`. The two
+    // are mutually exclusive per JEOD set — require *exactly* one shape:
+    // neither present, or both present, is a malformed deck.
+    match (semi_major_axis, semi_latus_rectum) {
+        (None, None) => {
+            return Err(BodyInitFixtureError::malformed(
+                "missing both semi_major_axis and semi_latus_rectum (exactly one is required)"
+                    .to_string(),
+            ));
+        }
+        (Some(_), Some(_)) => {
+            return Err(BodyInitFixtureError::malformed(
+                "both semi_major_axis and semi_latus_rectum present (exactly one is required; \
+                 they are mutually exclusive per JEOD set)"
+                    .to_string(),
+            ));
+        }
+        _ => {}
     }
     Ok(OrbitalInitRecord {
         name: String::new(), // filled in by extract_body_init
@@ -416,6 +428,30 @@ vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
         assert!((rec.true_anomaly.unwrap() - 299.884499026_f64.to_radians()).abs() < 1e-12);
         assert_eq!(rec.time_periapsis, None);
         assert_eq!(rec.mean_anomaly, None);
+    }
+
+    #[test]
+    fn parse_orbital_init_py_rejects_both_sma_and_slr() {
+        // `semi_major_axis` and `semi_latus_rectum` are mutually exclusive per
+        // JEOD set; a deck carrying both is malformed.
+        let py = r#"
+  vehicle.orb_init.arg_periapsis  = trick.attach_units( "degree",100.582445989)
+  vehicle.orb_init.eccentricity            =    0.00129073350
+  vehicle.orb_init.inclination  = trick.attach_units( "degree",51.670450765)
+  vehicle.orb_init.ascending_node  = trick.attach_units( "degree",49.708417385)
+  vehicle.orb_init.semi_major_axis  = trick.attach_units( "km",6732.90120152)
+  vehicle.orb_init.semi_latus_rectum  = trick.attach_units( "km",6732.88998455)
+  vehicle.orb_init.true_anomaly  = trick.attach_units( "degree",299.884499026)
+  vehicle.orb_init.planet_name      = "Earth"
+  vehicle.orb_init.orbit_frame_name = "Earth.inertial"
+"#;
+        let err = parse_orbital_init_py(py).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("both"), "unexpected error: {msg}");
+        assert!(
+            msg.contains("mutually exclusive"),
+            "unexpected error: {msg}"
+        );
     }
 
     #[test]
