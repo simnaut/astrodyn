@@ -1001,8 +1001,8 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
     for (name, win) in &windows {
         report.add_extra(&format!("{name}_max_pos_err"), win.pos, "m");
         report.add_extra(&format!("{name}_max_vel_err"), win.vel, "m/s");
-        report.add_extra(&format!("{name}_max_quat_angle"), win.quat, "rad");
-        report.add_extra(&format!("{name}_max_ang_vel"), win.ang_vel, "rad/s");
+        report.add_extra(&format!("{name}_max_quat_angle_err"), win.quat, "rad");
+        report.add_extra(&format!("{name}_max_ang_vel_err"), win.ang_vel, "rad/s");
     }
     report.write();
 

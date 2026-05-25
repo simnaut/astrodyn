@@ -13,3 +13,4 @@
 # baseline check via the regular path.
 
 tier3_earth_moon_clem
+tier3_earth_moon_rosetta
