@@ -1476,6 +1476,63 @@ run_time_reversal_group() {
 throttled_bg run_time_reversal_group
 PID_TIME_REVERSAL=$LAST_BG_PID
 
+# ── Snippet: SIM_RNP_J2000_prop (RNP transform matrices, ASCII) ──
+# Logs the precession / nutation / GAST-rotation component matrices, the
+# composite inertial→pfix T_parent_this, the NP product, GAST angle, the
+# equation of equinoxes, and the transformed test vector. All are pure
+# functions of time (integrator-independent), so these validate our RNP
+# model directly. Object names match the SIM_RNP_J2000_prop S_define
+# (`earth.rnp.*`, `earth.logging.*`, `earth.planet.pfix.*`).
+RNP_VERIF_SNIPPET='
+dr = trick.sim_services.DRAscii("rnp_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+dr.add_variable("earth.rnp.RJ2000.theta_gast")
+dr.add_variable("earth.rnp.NJ2000.equa_of_equi")
+for ii in range(0,3):
+    dr.add_variable("earth.output_vector[" + str(ii) + "]")
+for grp in ["earth.logging.nut_trans", "earth.logging.prec_trans",
+            "earth.logging.rot_trans", "earth.planet.pfix.state.rot.T_parent_this",
+            "earth.rnp.NP_matrix"]:
+    for ii in range(0,3):
+        for jj in range(0,3):
+            dr.add_variable(grp + "[" + str(ii) + "][" + str(jj) + "]")
+trick.add_data_record_group(dr)
+'
+
+# Group 23: SIM_RNP_J2000_prop — RNP transform validation. Only the two RUNs
+# with explicit leap-second / UT1 overrides are regenerated here; their time
+# setup is exact and deterministic. The default-EOP RUNs (prop, prop_off,
+# Polar_off) need JEOD's EOP/UT1 table sourced to validate without feeding
+# JEOD output (computational independence) — tracked as the remainder of #99.
+run_rnp_verif_group() {
+    local sim_dir="models/environment/RNP/RNPJ2000/verif/SIM_RNP_J2000_prop"
+    local -a RUNS=(
+        "SET_test/RUN_J2000_RNP_Transform:rnp_transform:rnp_transform_rnp.csv"
+        "SET_test/RUN_J2000_RNP_init:rnp_init:rnp_init_rnp.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_RNP_J2000_prop group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$RNP_VERIF_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_rnp_verif_group
+PID_RNP_VERIF=$LAST_BG_PID
+
 # ── Snippet: SIM_Relative (relative state between two vehicles) ──
 # Override frame names to use composite_body (matches our logged states) instead
 # of the default RefPoint frames configured in input_common.py.
@@ -2647,6 +2704,7 @@ wait $PID_PLANETARY      || { echo "WARN: SIM_Planetary group had failures"; FAI
 wait $PID_MET_VERIF      || { echo "WARN: SIM_MET verif group had failures"; FAIL=1; }
 wait $PID_TIMESCALE      || { echo "WARN: SIM_5_all_inclusive group had failures"; FAIL=1; }
 wait $PID_TIME_REVERSAL  || { echo "WARN: SIM_7_time_reversal group had failures"; FAIL=1; }
+wait $PID_RNP_VERIF      || { echo "WARN: SIM_RNP_J2000_prop group had failures"; FAIL=1; }
 wait $PID_RELATIVE       || { echo "WARN: SIM_Relative group had failures"; FAIL=1; }
 wait $PID_LVLH_RELATIVE  || { echo "WARN: SIM_LvlhRelative group had failures"; FAIL=1; }
 wait $PID_LIGHTING       || { echo "WARN: SIM_LIGHT_CIR group had failures"; FAIL=1; }
