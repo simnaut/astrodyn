@@ -5,7 +5,14 @@
 //! 60,000 sim-seconds. Validates TAI time and trajectory position/velocity
 //! during both forward and reverse phases.
 //!
-//! RUN_1: spherical Earth gravity, RK4 at 0.03125 s.
+//! RUN_1 is the representative trajectory case (spherical Earth gravity, RK4
+//! at 0.03125 s): it validates the full position/velocity round-trip through
+//! the `Simulation` pipeline with the negative-`scale_factor` flip. The other
+//! seven RUNs (RUN_3A/3B, RUN_4, RUN_6A, RUN_8B, RUN_9D, RUN_10A) vary the
+//! time-scale configuration and are validated time-only via
+//! [`run_reversal_time_only`] — the TAI round-trip is the time-system
+//! capability under test; their trajectory physics is already covered by
+//! RUN_1 and the dyncomp suite.
 
 use astrodyn_verif_jeod::tier3_csv::test_data_path;
 
@@ -254,4 +261,34 @@ fn tier3_sim_time_reversal_run3a() {
 #[test]
 fn tier3_sim_time_reversal_run8b() {
     run_reversal_time_only("reversal_run8b", "reversal_run8b_reversal.csv");
+}
+
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
+#[test]
+fn tier3_sim_time_reversal_run3b() {
+    run_reversal_time_only("reversal_run3b", "reversal_run3b_reversal.csv");
+}
+
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
+#[test]
+fn tier3_sim_time_reversal_run4() {
+    run_reversal_time_only("reversal_run4", "reversal_run4_reversal.csv");
+}
+
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
+#[test]
+fn tier3_sim_time_reversal_run6a() {
+    run_reversal_time_only("reversal_run6a", "reversal_run6a_reversal.csv");
+}
+
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
+#[test]
+fn tier3_sim_time_reversal_run9d() {
+    run_reversal_time_only("reversal_run9d", "reversal_run9d_reversal.csv");
+}
+
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
+#[test]
+fn tier3_sim_time_reversal_run10a() {
+    run_reversal_time_only("reversal_run10a", "reversal_run10a_reversal.csv");
 }
