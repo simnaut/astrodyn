@@ -120,7 +120,7 @@ fn load_rnp_csv(name: &str) -> Vec<RnpRecord> {
 /// row-major JEOD array index `ii*3 + jj`.
 fn dmat_rowmajor(m: &DMat3) -> [f64; 9] {
     let c = m.to_cols_array(); // [m00,m10,m20, m01,m11,m21, m02,m12,m22] (col-major)
-    // row-major [ii*3+jj] = element(row ii, col jj) = c[jj*3 + ii]
+                               // row-major [ii*3+jj] = element(row ii, col jj) = c[jj*3 + ii]
     std::array::from_fn(|k| {
         let ii = k / 3;
         let jj = k % 3;
@@ -173,25 +173,34 @@ fn run_rnp_case(
         // transforms transposed relative to our matrices (the raw diffs are
         // exactly 2× the off-diagonal terms). The internal `NP_matrix` is
         // logged in our orientation. Compare each in its matching convention.
-        max_prec = f64::max(max_prec, max_abs_diff(&dmat_rowmajor(&prec.transpose()), &rec.prec));
+        max_prec = f64::max(
+            max_prec,
+            max_abs_diff(&dmat_rowmajor(&prec.transpose()), &rec.prec),
+        );
         max_nut = f64::max(
             max_nut,
             max_abs_diff(&dmat_rowmajor(&nut.rotation.transpose()), &rec.nut),
         );
-        max_rot = f64::max(max_rot, max_abs_diff(&dmat_rowmajor(&rot.transpose()), &rec.rot));
+        max_rot = f64::max(
+            max_rot,
+            max_abs_diff(&dmat_rowmajor(&rot.transpose()), &rec.rot),
+        );
         max_np = f64::max(max_np, max_abs_diff(&dmat_rowmajor(&np), &rec.np));
         max_eoe = max_eoe.max((nut.equa_of_equi - rec.equa_of_equi).abs());
 
         // GAST angle: our theta = (gmst + eoe)/240° normalized to [0, 2π).
-        let our_theta = {
-            let deg = (gmst_s + nut.equa_of_equi) / 240.0;
-            let mut t = (deg.to_radians()).rem_euclid(std::f64::consts::TAU);
-            if t < 0.0 {
-                t += std::f64::consts::TAU;
-            }
-            t
-        };
-        max_gast = max_gast.max((our_theta - rec.theta_gast).abs());
+        // `rem_euclid` already returns a non-negative result, so no further
+        // branch is needed.
+        let our_theta = ((gmst_s + nut.equa_of_equi) / 240.0)
+            .to_radians()
+            .rem_euclid(std::f64::consts::TAU);
+        // Signed angular delta wrapped to (−π, π] so a tiny difference straddling
+        // the 0/2π branch cut doesn't report a spurious ~2π error (matches
+        // `tier3_rnp_component_comparison` in astrodyn_frames).
+        let dtheta = (our_theta - rec.theta_gast + std::f64::consts::PI)
+            .rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI;
+        max_gast = max_gast.max(dtheta.abs());
     }
 
     println!(
@@ -200,12 +209,30 @@ fn run_rnp_case(
         records.len()
     );
 
-    assert!(max_prec < mat_tol, "{label}: precession Δ {max_prec:.3e} ≥ {mat_tol:.1e}");
-    assert!(max_nut < mat_tol, "{label}: nutation Δ {max_nut:.3e} ≥ {mat_tol:.1e}");
-    assert!(max_rot < mat_tol, "{label}: GAST rotation Δ {max_rot:.3e} ≥ {mat_tol:.1e}");
-    assert!(max_np < mat_tol, "{label}: NP Δ {max_np:.3e} ≥ {mat_tol:.1e}");
-    assert!(max_eoe < scalar_tol, "{label}: equa_of_equi Δ {max_eoe:.3e} ≥ {scalar_tol:.1e}");
-    assert!(max_gast < scalar_tol, "{label}: GAST angle Δ {max_gast:.3e} ≥ {scalar_tol:.1e}");
+    assert!(
+        max_prec < mat_tol,
+        "{label}: precession Δ {max_prec:.3e} ≥ {mat_tol:.1e}"
+    );
+    assert!(
+        max_nut < mat_tol,
+        "{label}: nutation Δ {max_nut:.3e} ≥ {mat_tol:.1e}"
+    );
+    assert!(
+        max_rot < mat_tol,
+        "{label}: GAST rotation Δ {max_rot:.3e} ≥ {mat_tol:.1e}"
+    );
+    assert!(
+        max_np < mat_tol,
+        "{label}: NP Δ {max_np:.3e} ≥ {mat_tol:.1e}"
+    );
+    assert!(
+        max_eoe < scalar_tol,
+        "{label}: equa_of_equi Δ {max_eoe:.3e} ≥ {scalar_tol:.1e}"
+    );
+    assert!(
+        max_gast < scalar_tol,
+        "{label}: GAST angle Δ {max_gast:.3e} ≥ {scalar_tol:.1e}"
+    );
 }
 
 // non-recipe: RNP transform is a pure function of time; the scenario is the
@@ -226,7 +253,9 @@ fn rnp_j2000_transform_crossval() {
     );
 }
 
-// non-recipe: see `tier3_sim_rnp_j2000_transform`.
+// non-recipe: same pure-function-of-time scenario as `rnp_j2000_transform_crossval`
+// above, at a second JEOD reference epoch (1999-03-04) with its own exact
+// leap/UT1 overrides. Tolerances are 1.05× observed max.
 #[test]
 fn rnp_j2000_init_crossval() {
     run_rnp_case(
