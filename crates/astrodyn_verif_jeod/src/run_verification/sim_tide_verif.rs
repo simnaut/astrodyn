@@ -79,11 +79,11 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 /// Shared SIM_tide_verif scenario builder.
 ///
 /// `split_gravity = false` (RUN_01): a single full spherical-harmonics Earth
-/// control (`new_nonspherical`, includes the central term).
+/// control (`new_nonspherical`, includes the point-mass (n=0,1) terms).
 ///
 /// `split_gravity = true` (RUN_02): Earth gravity is split into a spherical
 /// (point-mass) control plus a perturbing-only spherical-harmonics control
-/// (`perturbing_only`, excludes the n=0,1 central term). The sum is
+/// (`perturbing_only`, excludes the point-mass (n=0,1) terms). The sum is
 /// mathematically identical to RUN_01's combined evaluation — RUN_02 verifies
 /// that the spherical + perturbing-only split reproduces the full field
 /// (JEOD `earth_spherical_grav_ctrl` + `earth_grav_ctrl.perturbing_only`).
@@ -200,7 +200,12 @@ fn build_tide(init: &InitialConditions, split_gravity: bool) -> SimulationBuilde
                         GravityControl::new_spherical(earth, GravityGradient::Compute),
                         GravityControl {
                             perturbing_only: true,
-                            ..GravityControl::new_nonspherical(earth, 8, 8, GravityGradient::Compute)
+                            ..GravityControl::new_nonspherical(
+                                earth,
+                                8,
+                                8,
+                                GravityGradient::Compute,
+                            )
                         },
                     ]
                 } else {
