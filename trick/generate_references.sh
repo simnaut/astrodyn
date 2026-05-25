@@ -1363,8 +1363,8 @@ run_met_verif_group() {
         "SET_test/RUN_T03_GRAM_MET:met_t03_gram:met_t03_gram_met.csv"
         "SET_test/RUN_T01_GRAM_MET:met_t01_gram:met_t01_gram_met.csv"
         "SET_test/RUN_T02_GRAM_MET:met_t02_gram:met_t02_gram_met.csv"
-        "SET_test/RUN_T01_JAC_COMP:met_t01_jac:met_t01_jac_comp.csv"
-        "SET_test/RUN_T02_JAC_COMP:met_t02_jac:met_t02_jac_comp.csv"
+        "SET_test/RUN_T01_JAC_COMP:met_t01_jac:met_t01_jac_met.csv"
+        "SET_test/RUN_T02_JAC_COMP:met_t02_jac:met_t02_jac_met.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
