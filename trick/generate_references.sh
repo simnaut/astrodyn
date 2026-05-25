@@ -2475,8 +2475,8 @@ PID_TIME_V3=$LAST_BG_PID
 # Two RUNs, identical except for the UTC/UT1 convention:
 #   RUN_JEOD2x            — true_utc / true_ut1 (default): UTC/UT1 track the
 #                           leap-second table, so UTC TJT jumps at 1999-01-01.
-#   RUN_JEOD1x_compatible — true_utc=False / true_ut1=False: the TAI-UTC and
-#                           TAI-UT1 offsets are frozen at the epoch value, so
+#   RUN_JEOD1x_compatible — true_utc=False / true_ut1=False: the TAI−UTC and
+#                           UT1−TAI offsets are frozen at the epoch value, so
 #                           UTC/UT1 TJT do NOT jump across the boundary.
 # Log every 60 s to keep the CSV small; run spans 86460 s, crossing the
 # 1999-01-01 leap second boundary.

@@ -414,14 +414,18 @@ fn tier3_time_v4_jeod1x() {
 
     // Frozen TAI−UTC offset: our leap-second table evaluated once at the
     // epoch (= 31 s for 1998-12-31). JEOD's true_utc=false path holds this
-    // constant; we hold our table's epoch value constant the same way.
+    // constant. Note `SimulationTime` itself keeps tracking the leap-second
+    // table on every advance (recompute_derived calls tai_to_utc_tjt), so we
+    // reproduce the JEOD 1.x convention by applying this frozen offset to
+    // mgr.tai_tjt ourselves in the loop below rather than reading mgr's UTC.
     let mut mgr = SimulationTime::new(init_tai_tjt, default_leap_second_table());
     let frozen_tai_utc = mgr.leap_second_table.tai_utc_at_tai_tjt(init_tai_tjt);
 
     // Frozen UT1−TAI offset: our EOP table evaluated once at the epoch, then
     // held constant (no live table installed). This mirrors JEOD's
     // true_ut1=false freeze. We sanity-check the frozen value against the
-    // CSV's t=0 UT1−TJT (a one-time epoch check, not a per-step override).
+    // CSV's t=0 UT1−TAI offset, i.e. (UT1 TJT − TAI TJT) converted to seconds
+    // (a one-time epoch check, not a per-step override).
     let frozen_ut1_tai = default_eop_table().ut1_minus_tai_seconds(init_tai_tjt);
     mgr.set_ut1_tai_offset(frozen_ut1_tai);
     let csv_ut1_offset = (init_ut1_tjt - init_tai_tjt) * SECONDS_PER_DAY;
