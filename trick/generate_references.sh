@@ -2013,6 +2013,10 @@ run_attach_mass_group() {
         "SET_test/RUN_02:attach_mass_02"
         "SET_test/RUN_03:attach_mass_03"
         "SET_test/RUN_04:attach_mass_04"
+        # Single body / offset attach with Struct / Spec / SpecCG inertia specs.
+        "SET_test/RUN_05:attach_mass_05"
+        "SET_test/RUN_06:attach_mass_06"
+        "SET_test/RUN_07:attach_mass_07"
         # Runtime detach (trick.add_read at t=1s, stop at t=2s).
         "SET_test/RUN_10:attach_mass_10"
         # Runtime reattach (trick.add_read at t=1s, stop at t=2s).
@@ -2020,6 +2024,14 @@ run_attach_mass_group() {
         # Named-point attach (pt_attach → BodyAttachAligned).
         "SET_test/RUN_101:attach_mass_101"
         "SET_test/RUN_102:attach_mass_102"
+        # Named-point chains, Spec/SpecCG via named points.
+        "SET_test/RUN_103:attach_mass_103"
+        "SET_test/RUN_104:attach_mass_104"
+        "SET_test/RUN_106:attach_mass_106"
+        "SET_test/RUN_107:attach_mass_107"
+        # Named-point attach + runtime detach / reattach.
+        "SET_test/RUN_110:attach_mass_110"
+        "SET_test/RUN_111:attach_mass_111"
     )
 
     # Skip entire group if all .out files are already present.

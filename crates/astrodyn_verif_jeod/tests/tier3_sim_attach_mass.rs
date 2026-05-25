@@ -1,6 +1,6 @@
 //! Tier 3: SIM_verif_attach_mass — mass tree attach/detach cross-validation.
 //!
-//! Reproduces 8 representative runs from JEOD's `SIM_verif_attach_mass`
+//! Reproduces 17 representative runs from JEOD's `SIM_verif_attach_mass`
 //! (``models/dynamics/body_action/verif/SIM_verif_attach_mass/SET_test/``)
 //! and cross-validates our `MassTree` composite mass, center of mass, and
 //! inertia tensor against the `mass.out` files produced by JEOD's
@@ -17,10 +17,24 @@
 //! - RUN_02: parent + 2 children (both attached to parent)
 //! - RUN_03: parent + 2 children chained (child2 attached to child1)
 //! - RUN_04: same topology as RUN_03, different offset along -z
+//! - RUN_05: single parent, `Struct` inertia spec, non-zero CoM (no attach)
+//! - RUN_06: parent (`StructCG`) + child1 (`Spec`), offset attach [0,0,2]
+//! - RUN_07: parent (`StructCG`) + child1 (`SpecCG`), offset attach [-1,0,0]
 //! - RUN_10: runtime detach — parent gains 3 children then detaches child2
 //! - RUN_11: runtime reattach — child2 moves to new offset + rotation
 //! - RUN_101: `BodyAttachAligned` via named mass points (simple)
 //! - RUN_102: `BodyAttachAligned` chained across three bodies
+//! - RUN_103: three bodies chained via named points (inline Euler spec)
+//! - RUN_104: three bodies chained via named points (`InputMatrix` spec)
+//! - RUN_106: parent (`StructCG`) + child1 (`Spec`) via named points
+//! - RUN_107: parent (`StructCG`) + child1 (`SpecCG`) via named points
+//! - RUN_110: named-point attach of 3 children then runtime detach of child2
+//! - RUN_111: named-point + offset attach, runtime reattach of child2
+//!
+//! Note: RUN_08/RUN_108 (a child attached to two parents in different body
+//! actions) and RUN_09/RUN_109 (a non-identity structure→body transform on
+//! the root, which JEOD reports composites in body frame for) are not yet
+//! covered — see the PR description for the blockers.
 //!
 //! Supplements the analytical tests in
 //! `crates/astrodyn_dynamics/tests/tier3_mass_attach_detach.rs` with direct
@@ -116,6 +130,42 @@ fn mass_struct_cg_spec(mass: f64, position: DVec3, inertia_struct: DMat3) -> Mas
     MassProperties::with_inertia(mass, inertia_struct, position)
 }
 
+/// Build `MassProperties` using JEOD's `SpecCG` inertia spec: the inertia
+/// tensor is given in a *user-specified* frame (`inertia_orientation`) about
+/// the body CoM. Port of the `SpecCG` branch in
+/// `mass_properties_init.cc:125-135`: `I_body = T_io · I_user · T_ioᵀ`, where
+/// `T_io = inertia_orientation.trans` (struct→user transform) and
+/// `transform_matrix(T, A) = T · A · Tᵀ`.
+fn mass_spec_cg_spec(
+    mass: f64,
+    position: DVec3,
+    inertia_orientation: DMat3,
+    inertia_user: DMat3,
+) -> MassProperties {
+    let body_inertia = inertia_orientation * inertia_user * inertia_orientation.transpose();
+    MassProperties::with_inertia(mass, body_inertia, position)
+}
+
+/// Build `MassProperties` using JEOD's `Spec` inertia spec: the inertia tensor
+/// is given in a user-specified frame (`inertia_orientation`) about a
+/// user-specified origin (`inertia_offset`). Port of the `Spec` branch in
+/// `mass_properties_init.cc:141-158`: shift the tensor from the user origin to
+/// the CoM via the parallel-axis theorem (the offset point mass is computed in
+/// the *user* frame), then rotate to body: `I_body = T_io · (I_user −
+/// pmi(m, inertia_offset)) · T_ioᵀ`.
+fn mass_spec_spec(
+    mass: f64,
+    position: DVec3,
+    inertia_orientation: DMat3,
+    inertia_offset: DVec3,
+    inertia_user: DMat3,
+) -> MassProperties {
+    let offset_inertia = point_mass_inertia(mass, inertia_offset);
+    let shifted = inertia_user - offset_inertia;
+    let body_inertia = inertia_orientation * shifted * inertia_orientation.transpose();
+    MassProperties::with_inertia(mass, body_inertia, position)
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Baseline mass bodies (ported from JEOD Modified_data/*.py)
 // ════════════════════════════════════════════════════════════════════
@@ -153,6 +203,73 @@ fn child3_default() -> MassProperties {
         DVec3::new(0.0, 0.0, 0.0833333333),
     );
     mass_body_spec(1.0, DVec3::ZERO, inertia)
+}
+
+/// `parent_mass_inertia_optionB()` / `child*_mass_inertia_optionC()`: the
+/// canonical box inertia diag(0.3333, 0.4167, 0.0833) about the CoM, in body
+/// (= struct) axes. `optionB` declares it via the `StructCG` spec; `optionC`
+/// declares the identical tensor directly via the `Body` spec. With an
+/// identity struct→body transform both produce this same body-frame tensor.
+fn box_inertia_diag() -> DMat3 {
+    DMat3::from_cols(
+        DVec3::new(0.33333333, 0.0, 0.0),
+        DVec3::new(0.0, 0.41666667, 0.0),
+        DVec3::new(0.0, 0.0, 0.0833333333),
+    )
+}
+
+/// `child1_mass_inertia_optionA()` inputs (the `Spec` declaration). The inertia
+/// tensor, offset point, and orientation matrix are taken verbatim from
+/// `Modified_data/child1_mass.py`.
+fn child1_spec_option_a() -> (DMat3, DVec3, DMat3) {
+    let inertia_user = DMat3::from_cols(
+        DVec3::new(1.4166667, 0.144338, -0.433013),
+        DVec3::new(0.144338, 1.58333, 0.25),
+        DVec3::new(-0.433013, 0.25, 0.333333),
+    );
+    let inertia_offset = DVec3::new(0.433013, -0.25, 1.0);
+    // inertia_orientation.trans (row-major in JEOD) → DMat3 columns.
+    let inertia_orientation = DMat3::from_cols(
+        DVec3::new(0.8660254, 0.5, 0.0),
+        DVec3::new(-0.5, 0.8660254, 0.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    (inertia_user, inertia_offset, inertia_orientation)
+}
+
+/// `child1_mass_inertia_optionB()` inputs (the `SpecCG` declaration). The
+/// orientation is *not* reset by `optionB`, so a run that calls `optionA`
+/// then `optionB` (RUN_07, RUN_107) keeps the `optionA` orientation matrix.
+fn child1_spec_option_b_inertia() -> DMat3 {
+    DMat3::from_cols(
+        DVec3::new(0.35416666666667, 0.03608439182435, 0.0),
+        DVec3::new(0.03608439182435, 0.39583333333333, 0.0),
+        DVec3::new(0.0, 0.0, 0.08333333333333),
+    )
+}
+
+/// `child1` built per `child1_mass_inertia_optionA` (Spec spec).
+fn child1_spec_a() -> MassProperties {
+    let (inertia_user, inertia_offset, inertia_orientation) = child1_spec_option_a();
+    mass_spec_spec(
+        1.0,
+        DVec3::ZERO,
+        inertia_orientation,
+        inertia_offset,
+        inertia_user,
+    )
+}
+
+/// `child1` built per `child1_mass_inertia_optionA` then `optionB` (SpecCG
+/// spec, keeping the optionA orientation matrix).
+fn child1_spec_b() -> MassProperties {
+    let (_, _, inertia_orientation) = child1_spec_option_a();
+    mass_spec_cg_spec(
+        1.0,
+        DVec3::ZERO,
+        inertia_orientation,
+        child1_spec_option_b_inertia(),
+    )
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -327,6 +444,51 @@ fn build_run_04() -> (MassTree, [(String, MassBodyId); 3]) {
             ("Child2".into(), child2),
         ],
     )
+}
+
+/// RUN_05: single parent body, `Struct` inertia spec (option A) about the
+/// structural origin, CoM offset to [0.5, 0, 1]. No attachments — the
+/// composite equals the core. Exercises the parallel-axis shift in
+/// `mass_struct_spec` with a non-zero CoM position.
+fn build_run_05() -> (MassTree, [(String, MassBodyId); 1]) {
+    let mut tree = MassTree::new();
+    // parent_mass_inertia_optionA: Struct spec about structural origin.
+    let inertia_struct = DMat3::from_cols(
+        DVec3::new(1.33333333, 0.0, -0.5),
+        DVec3::new(0.0, 1.66666667, 0.0),
+        DVec3::new(-0.5, 0.0, 0.33333333),
+    );
+    let parent_mass = mass_struct_spec(1.0, DVec3::new(0.5, 0.0, 1.0), inertia_struct);
+    let parent = tree.add_root("Parent".into(), parent_mass);
+    (tree, [("Parent".into(), parent)])
+}
+
+/// RUN_06: parent (`StructCG` option B) + child1 (`Spec` option A) attached at
+/// offset [0, 0, 2] with identity orientation (the `attach1_default`
+/// quaternion is left at identity; only the offset is overridden).
+fn build_run_06() -> (MassTree, [(String, MassBodyId); 2]) {
+    let mut tree = MassTree::new();
+    let parent_mass = mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag());
+    let parent = tree.add_root("Parent".into(), parent_mass);
+    let child1 = tree.add_body("Child1".into(), child1_spec_a());
+
+    tree.attach(child1, parent, DVec3::new(0.0, 0.0, 2.0), DMat3::IDENTITY);
+
+    (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
+}
+
+/// RUN_07: parent (`StructCG` option B) + child1 (`SpecCG` option B, retaining
+/// the option-A orientation) attached at offset [-1, 0, 0], identity
+/// orientation.
+fn build_run_07() -> (MassTree, [(String, MassBodyId); 2]) {
+    let mut tree = MassTree::new();
+    let parent_mass = mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag());
+    let parent = tree.add_root("Parent".into(), parent_mass);
+    let child1 = tree.add_body("Child1".into(), child1_spec_b());
+
+    tree.attach(child1, parent, DVec3::new(-1.0, 0.0, 0.0), DMat3::IDENTITY);
+
+    (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
 }
 
 /// RUN_10: parent (StructCG spec option B), child1 (Body spec option C),
@@ -564,6 +726,330 @@ fn build_run_102() -> (MassTree, Vec<(String, MassBodyId)>) {
     )
 }
 
+/// Convert a JEOD row-major 3×3 orientation matrix (`trans[i][j]`) into a
+/// `DMat3`. JEOD's `trans` rows are listed `[[row0], [row1], [row2]]`; the
+/// `DMat3` columns are `column_j = [trans[0][j], trans[1][j], trans[2][j]]`
+/// (the same convention the existing RUN_101/102 builders apply by hand).
+fn jeod_trans(rows: [[f64; 3]; 3]) -> DMat3 {
+    DMat3::from_cols(
+        DVec3::new(rows[0][0], rows[1][0], rows[2][0]),
+        DVec3::new(rows[0][1], rows[1][1], rows[2][1]),
+        DVec3::new(rows[0][2], rows[1][2], rows[2][2]),
+    )
+}
+
+/// RUN_103: three bodies (all default `Body` inertia) chained via named mass
+/// points — child1 → parent and child2 → child1. Mass-point orientations are
+/// given inline in the input file via `Yaw_Pitch_Roll` Euler angles (= ZYX).
+fn build_run_103() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root("Parent".into(), parent_default());
+    let child1 = tree.add_body("Child1".into(), child1_default());
+    let child2 = tree.add_body("Child2".into(), child2_default());
+
+    let ypr_0 = compute_matrix_from_euler_angles([0.0, 0.0, 0.0], EulerSequence::ZYX);
+    let ypr_180 =
+        compute_matrix_from_euler_angles([180.0_f64.to_radians(), 0.0, 0.0], EulerSequence::ZYX);
+
+    // parent: "back_to_front" at [0.5, 0, 0], YPR [0,0,0].
+    tree.add_mass_point(parent, "back_to_front", DVec3::new(0.5, 0.0, 0.0), ypr_0);
+    // child1: "front_to_back" at [-0.5,0,0] YPR[180,0,0]; "back_to_front" at [0.5,0,0] YPR[0,0,0].
+    tree.add_mass_point(child1, "front_to_back", DVec3::new(-0.5, 0.0, 0.0), ypr_180);
+    tree.add_mass_point(child1, "back_to_front", DVec3::new(0.5, 0.0, 0.0), ypr_0);
+    // child2: "front_to_back" at [-0.5,0,0] YPR[180,0,0].
+    tree.add_mass_point(child2, "front_to_back", DVec3::new(-0.5, 0.0, 0.0), ypr_180);
+
+    tree.attach_aligned(child1, "front_to_back", parent, "back_to_front");
+    tree.attach_aligned(child2, "front_to_back", child1, "back_to_front");
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child2".to_string(), child2),
+        ],
+    )
+}
+
+/// RUN_104: three default-inertia bodies chained via named points using
+/// `InputMatrix` orientations — child1 → parent and child2 → child1.
+fn build_run_104() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root("Parent".into(), parent_default());
+    let child1 = tree.add_body("Child1".into(), child1_default());
+    let child2 = tree.add_body("Child2".into(), child2_default());
+
+    let t_left_right = jeod_trans([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]);
+    let t_right_left = jeod_trans([[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]]);
+
+    // parent: point0 renamed "left_to_right" at [0,0,-1].
+    tree.add_mass_point(
+        parent,
+        "left_to_right",
+        DVec3::new(0.0, 0.0, -1.0),
+        t_left_right,
+    );
+    // child1_mass_points_2: "right_to_left" at [0,0,1]; "left_to_right" at [0,0,-1].
+    tree.add_mass_point(
+        child1,
+        "right_to_left",
+        DVec3::new(0.0, 0.0, 1.0),
+        t_right_left,
+    );
+    tree.add_mass_point(
+        child1,
+        "left_to_right",
+        DVec3::new(0.0, 0.0, -1.0),
+        t_left_right,
+    );
+    // child2_mass_points_1A: "right_to_left" at [0,0,1].
+    tree.add_mass_point(
+        child2,
+        "right_to_left",
+        DVec3::new(0.0, 0.0, 1.0),
+        t_right_left,
+    );
+
+    tree.attach_aligned(child1, "right_to_left", parent, "left_to_right");
+    tree.attach_aligned(child2, "right_to_left", child1, "left_to_right");
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child2".to_string(), child2),
+        ],
+    )
+}
+
+/// RUN_106: parent (`StructCG` option B) + child1 (`Spec` option A) attached
+/// via named points using `InputMatrix` orientations.
+fn build_run_106() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body("Child1".into(), child1_spec_a());
+
+    // parent: point0 renamed "right_to_left" at [0,0,1].
+    let t_right_left = jeod_trans([[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]]);
+    tree.add_mass_point(
+        parent,
+        "right_to_left",
+        DVec3::new(0.0, 0.0, 1.0),
+        t_right_left,
+    );
+    // child1: point0 renamed "left_to_right" at [0,0,-1].
+    let t_left_right = jeod_trans([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]);
+    tree.add_mass_point(
+        child1,
+        "left_to_right",
+        DVec3::new(0.0, 0.0, -1.0),
+        t_left_right,
+    );
+
+    tree.attach_aligned(child1, "left_to_right", parent, "right_to_left");
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+        ],
+    )
+}
+
+/// RUN_107: parent (`StructCG` option B) + child1 (`SpecCG` option B, keeping
+/// the option-A orientation) attached via named points.
+fn build_run_107() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body("Child1".into(), child1_spec_b());
+
+    // parent: point0 renamed "front_to_back" at [-0.5,0,0].
+    let t_front_back = jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]);
+    tree.add_mass_point(
+        parent,
+        "front_to_back",
+        DVec3::new(-0.5, 0.0, 0.0),
+        t_front_back,
+    );
+    // child1: point0 renamed "back_to_front" at [0.5,0,0], identity orientation.
+    let t_back_front = jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    tree.add_mass_point(
+        child1,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        t_back_front,
+    );
+
+    tree.attach_aligned(child1, "back_to_front", parent, "front_to_back");
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+        ],
+    )
+}
+
+/// RUN_110: parent (`StructCG`) with three named points, child1 (`Body` option
+/// C), child2 (`Struct` option B, CoM at [0.5,0,1]) and child3 (default) each
+/// attached to the parent via named points; then child2 is runtime-detached at
+/// t=1s. Print at shutdown (t=2s) → parent + child1 + child3.
+fn build_run_110() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+
+    // child2: Struct spec about structural origin, CoM at [0.5, 0, 1].
+    let child2_inertia_struct = DMat3::from_cols(
+        DVec3::new(1.33333333, 0.0, -0.5),
+        DVec3::new(0.0, 1.66666667, 0.0),
+        DVec3::new(-0.5, 0.0, 0.33333333),
+    );
+    let child2 = tree.add_body(
+        "Child2".into(),
+        mass_struct_spec(1.0, DVec3::new(0.5, 0.0, 1.0), child2_inertia_struct),
+    );
+    let child3 = tree.add_body("Child3".into(), child3_default());
+
+    // parent_mass_points_3:
+    //   "front_to_back" at [-0.5,0,0] T=[[-1,0,0],[0,-1,0],[0,0,1]]
+    //   "back_to_front" at [ 0.5,0,0] T=identity
+    //   "parent_to_child2" at [2.5,0,1] T=[[1,0,0],[0,0,-1],[0,1,0]]
+    tree.add_mass_point(
+        parent,
+        "front_to_back",
+        DVec3::new(-0.5, 0.0, 0.0),
+        jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+    tree.add_mass_point(
+        parent,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+    tree.add_mass_point(
+        parent,
+        "parent_to_child2",
+        DVec3::new(2.5, 0.0, 1.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]),
+    );
+
+    // child1: point0 "back_to_front" at [0.5,0,0] identity.
+    tree.add_mass_point(
+        child1,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+    // child2: point0 "child2_to_parent" at [0,0,0] T=[[1,0,0],[0,0,-1],[0,1,0]].
+    tree.add_mass_point(
+        child2,
+        "child2_to_parent",
+        DVec3::ZERO,
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]),
+    );
+    // child3_mass_points_1: "front_to_back" at [-0.5,0,0] T=[[-1,0,0],[0,-1,0],[0,0,1]].
+    tree.add_mass_point(
+        child3,
+        "front_to_back",
+        DVec3::new(-0.5, 0.0, 0.0),
+        jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+
+    tree.attach_aligned(child1, "back_to_front", parent, "front_to_back");
+    tree.attach_aligned(child2, "child2_to_parent", parent, "parent_to_child2");
+    tree.attach_aligned(child3, "front_to_back", parent, "back_to_front");
+
+    // Runtime detach child2 at t=1s; tree printed at shutdown.
+    tree.detach(child2);
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child3".to_string(), child3),
+        ],
+    )
+}
+
+/// RUN_111: parent (`StructCG`) + child1 (`Body` option C) attached via named
+/// points; child2 (`Struct` option B, CoM at [0.5,0,1]) offset-attached to the
+/// parent at [1.5,0,-1] (identity), then runtime-reattached at t=1s to a new
+/// offset [1.5,0,-2] with `Yaw_Pitch_Roll` [0,-90°,0].
+fn build_run_111() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+
+    let child2_inertia_struct = DMat3::from_cols(
+        DVec3::new(1.33333333, 0.0, -0.5),
+        DVec3::new(0.0, 1.66666667, 0.0),
+        DVec3::new(-0.5, 0.0, 0.33333333),
+    );
+    let child2 = tree.add_body(
+        "Child2".into(),
+        mass_struct_spec(1.0, DVec3::new(0.5, 0.0, 1.0), child2_inertia_struct),
+    );
+
+    // parent: point0 "back_to_front" at [0.5,0,0], identity.
+    tree.add_mass_point(
+        parent,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+    // child1: point0 "front_to_back" at [-0.5,0,0] T=[[-1,0,0],[0,-1,0],[0,0,1]].
+    tree.add_mass_point(
+        child1,
+        "front_to_back",
+        DVec3::new(-0.5, 0.0, 0.0),
+        jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+
+    // pt_attach1: child1.front_to_back → parent.back_to_front.
+    tree.attach_aligned(child1, "front_to_back", parent, "back_to_front");
+    // attach2: child2 → parent at offset [1.5,0,-1] identity.
+    tree.attach(child2, parent, DVec3::new(1.5, 0.0, -1.0), DMat3::IDENTITY);
+
+    // Reattach child2 at t=1s: offset [1.5,0,-2], YPR [0,-90°,0].
+    tree.detach(child2);
+    let t_reattach =
+        compute_matrix_from_euler_angles([0.0, (-90.0_f64).to_radians(), 0.0], EulerSequence::ZYX);
+    tree.attach(child2, parent, DVec3::new(1.5, 0.0, -2.0), t_reattach);
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child2".to_string(), child2),
+        ],
+    )
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Shared validation driver
 // ════════════════════════════════════════════════════════════════════
@@ -640,6 +1126,21 @@ fn tier3_sim_attach_mass() {
         validate_run("RUN_04", &tree, &ids, &reference, &mut errors);
     }
     {
+        let (tree, ids) = build_run_05();
+        let reference = load_reference("attach_mass_05_mass.out");
+        validate_run("RUN_05", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_06();
+        let reference = load_reference("attach_mass_06_mass.out");
+        validate_run("RUN_06", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_07();
+        let reference = load_reference("attach_mass_07_mass.out");
+        validate_run("RUN_07", &tree, &ids, &reference, &mut errors);
+    }
+    {
         let (tree, ids) = build_run_10();
         let reference = load_reference("attach_mass_10_mass.out");
         validate_run("RUN_10", &tree, &ids, &reference, &mut errors);
@@ -658,6 +1159,36 @@ fn tier3_sim_attach_mass() {
         let (tree, ids) = build_run_102();
         let reference = load_reference("attach_mass_102_mass.out");
         validate_run("RUN_102", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_103();
+        let reference = load_reference("attach_mass_103_mass.out");
+        validate_run("RUN_103", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_104();
+        let reference = load_reference("attach_mass_104_mass.out");
+        validate_run("RUN_104", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_106();
+        let reference = load_reference("attach_mass_106_mass.out");
+        validate_run("RUN_106", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_107();
+        let reference = load_reference("attach_mass_107_mass.out");
+        validate_run("RUN_107", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_110();
+        let reference = load_reference("attach_mass_110_mass.out");
+        validate_run("RUN_110", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        let (tree, ids) = build_run_111();
+        let reference = load_reference("attach_mass_111_mass.out");
+        validate_run("RUN_111", &tree, &ids, &reference, &mut errors);
     }
 
     let mut report = CrossvalReport::compute("tier3_sim_attach_mass", &[], &[]);
