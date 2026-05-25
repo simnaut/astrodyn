@@ -96,6 +96,7 @@ fn make_drag_sim(
         cd,
         area,
         constant_density: Some(density),
+        ..Default::default()
     };
 
     sim.add_body(VehicleConfig {
@@ -554,6 +555,7 @@ fn make_drag_sim_with_wind(
         cd,
         area,
         constant_density: Some(density),
+        ..Default::default()
     };
 
     sim.add_body(VehicleConfig {

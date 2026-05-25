@@ -28,6 +28,7 @@ fn bevy_parity_drag_atmosphere_sixdof() {
         cd: 2.2,
         area: 1000.0,
         constant_density: None,
+        ..Default::default()
     };
     let exp_atmos = ExponentialAtmosphere::default();
 
@@ -140,6 +141,7 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
         cd: 2.2,
         area: 1000.0,
         constant_density: Some(1.4e-12),
+        ..Default::default()
     };
     let exp_atmos = ExponentialAtmosphere::default();
 
@@ -245,6 +247,7 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
         cd: 2.2,
         area: 1000.0,
         constant_density: None,
+        ..Default::default()
     };
     let met = MetAtmosphere {
         f10: 128.8,
@@ -400,6 +403,7 @@ fn bevy_parity_drag_met_run5a() {
                 cd: 2.2,
                 area: 1000.0,
                 constant_density: None,
+                ..Default::default()
             }),
         ))
         .id();
@@ -438,6 +442,7 @@ fn bevy_parity_drag_met_run5a() {
         cd: 2.2,
         area: 1000.0,
         constant_density: None,
+        ..Default::default()
     });
     sim.add_body(body);
     sim.validate().unwrap();
@@ -466,6 +471,7 @@ fn bevy_parity_drag_run6b() {
         cd: 0.02,
         area: 1.0,
         constant_density: None,
+        ..Default::default()
     };
 
     // ── Bevy ──
