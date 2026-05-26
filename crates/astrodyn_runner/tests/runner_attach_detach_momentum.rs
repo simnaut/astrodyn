@@ -1193,3 +1193,143 @@ fn from_builder_preserves_attached_bodies_initial_state() {
          got {parent_composite_mass}, expected {total_core_mass}"
     );
 }
+
+/// Inertia of a point mass `m` at offset `r` (parallel-axis term),
+/// computed independently of the kernel's `point_mass_inertia`.
+fn point_mass(m: f64, r: DVec3) -> DMat3 {
+    let outer = DMat3::from_cols(r * r.x, r * r.y, r * r.z);
+    DMat3::from_diagonal(DVec3::splat(r.length_squared())) * m - outer * m
+}
+
+/// Max per-column L2 distance between two matrices.
+fn mat3_max_col_diff(a: DMat3, b: DMat3) -> f64 {
+    let d = a - b;
+    [d.x_axis, d.y_axis, d.z_axis]
+        .into_iter()
+        .map(|c| c.length())
+        .fold(0.0_f64, f64::max)
+}
+
+/// A composite whose **parent has a non-identity, non-180° struct→body
+/// orientation** must carry its inertia in the body frame end-to-end:
+/// `recompute_composites` builds the composite in the parent body frame and
+/// `sync_body_mass_from_tree` hands it to the integrated body unchanged, so the
+/// rotational integrator (Euler's equation, body-frame `inertia · ω`) consumes
+/// a body-frame tensor.
+///
+/// `tier3_sim_attach_mass::RUN_09` cross-validates the body-frame composite
+/// *value* against JEOD's `mass.out`. This test guards the full Simulation
+/// `attach → sync_body_mass_from_tree → body.mass → integrate` pipeline for a
+/// **general** orientation — the case every existing trajectory scenario is
+/// blind to, because the only non-identity orientations in the suite are
+/// Apollo's `yaw_180`, which is inertia-invariant on its diagonal tensors.
+///
+/// The reference is derived independently via the frame-invariance identity:
+/// the same composite built in the **struct** frame (core rotated body→struct
+/// by `Sᵀ·I·S`, struct-frame parallel-axis offsets) and conjugated by `S`
+/// equals the body-frame composite. A sensitivity guard asserts the pipeline
+/// result is *not* the unrotated struct composite, so a regression that dropped
+/// the body-frame rotation fails loudly rather than silently.
+#[test]
+fn runner_attach_composite_inertia_is_body_frame() {
+    // General struct→body rotation (0.5 rad about a tilted axis): a yaw_180 or
+    // identity would hide the struct/body distinction this test exists to pin.
+    let s = DMat3::from_axis_angle(DVec3::new(1.0, 2.0, 3.0).normalize(), 0.5);
+
+    // Parent: asymmetric inertia in the BODY frame (a StructCG init would have
+    // already rotated it to body), with the non-identity struct→body transform.
+    let parent_body_inertia = DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0));
+    let parent_mass = SimMassProperties::with_inertia(2.0, parent_body_inertia, DVec3::ZERO)
+        .with_t_parent_this(s);
+    // Child: identity orientation, body-frame inertia, attached at an off-axis
+    // struct offset so the composite is genuinely asymmetric (off-diagonal).
+    let child_body_inertia = DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0));
+    let child_mass = SimMassProperties::with_inertia(1.0, child_body_inertia, DVec3::ZERO);
+    let offset = DVec3::new(2.0, 1.0, -0.5);
+
+    let omega0 = DVec3::new(0.05, 0.02, -0.01);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let parent_rot = Some(RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: omega0,
+    });
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0) + offset,
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_rot = Some(RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: omega0,
+    });
+
+    let (mut sim, parent_idx, child_idx, _pid, _cid) = build_pair(
+        0.5,
+        parent_mass,
+        parent_trans,
+        parent_rot,
+        child_mass,
+        child_trans,
+        child_rot,
+    );
+    sim.attach(child_idx, parent_idx, offset, DMat3::IDENTITY);
+
+    // Pipeline result: the integrated parent's composite inertia, body-frame.
+    let pipeline_body = sim
+        .body_mass(parent_idx)
+        .expect("parent mass after attach")
+        .inertia
+        .as_dmat3();
+
+    // Independent reference: build the composite in the struct frame and
+    // conjugate by S. Composite CoM (struct) = m_c/(m_p+m_c) along the offset.
+    let cm_struct = offset * (child_mass.mass / (parent_mass.mass + child_mass.mass));
+    let parent_core_struct = s.transpose() * parent_body_inertia * s;
+    let struct_composite = parent_core_struct
+        + point_mass(parent_mass.mass, -cm_struct)
+        + child_body_inertia
+        + point_mass(child_mass.mass, offset - cm_struct);
+    let expected_body = s * struct_composite * s.transpose();
+
+    assert!(
+        mat3_max_col_diff(pipeline_body, expected_body) < 1e-9,
+        "pipeline composite inertia must be the body-frame composite \
+         (S·I_struct·Sᵀ); got {pipeline_body:?}, expected {expected_body:?}"
+    );
+    // Sensitivity: for this general S the body-frame composite differs
+    // substantially from the unrotated struct composite — proves the
+    // struct→body rotation actually happened along the full pipeline.
+    assert!(
+        mat3_max_col_diff(pipeline_body, struct_composite) > 1.0,
+        "body-frame composite must differ from the struct-frame composite for a \
+         general orientation (else the body-frame rotation was dropped)"
+    );
+
+    // Smoke: the integrator propagates torque-free (mu = 0, no external torque)
+    // with the body-frame inertia. Body-frame angular momentum magnitude
+    // |I·ω| is conserved for a torque-free rigid body.
+    let omega_after_attach = sim
+        .body(parent_idx)
+        .rot
+        .expect("parent rot after attach")
+        .ang_vel_body
+        .raw_si();
+    let h0 = (pipeline_body * omega_after_attach).length();
+    for _ in 0..200 {
+        sim.step().expect("torque-free step");
+    }
+    let omega_final = sim
+        .body(parent_idx)
+        .rot
+        .expect("parent rot after stepping")
+        .ang_vel_body
+        .raw_si();
+    let hf = (pipeline_body * omega_final).length();
+    assert!(
+        omega_final.is_finite() && (hf - h0).abs() <= 1e-6 * h0.max(1.0),
+        "torque-free body-frame angular momentum |I·ω| must be conserved: \
+         |H0|={h0}, |Hf|={hf}"
+    );
+}

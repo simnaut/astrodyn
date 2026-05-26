@@ -32,8 +32,9 @@
 //! - RUN_111: named-point + offset attach, runtime reattach of child2
 //! - RUN_09: non-identity parent struct→body orientation. JEOD reports the
 //!   composite inertia (`C.M.P. Ib`) in the parent **body** frame while the
-//!   composite CoM stays in the struct frame; the test rotates our struct-frame
-//!   composite inertia by `T_parent_this` (`I_body = T·I·Tᵀ`) for the comparison.
+//!   composite CoM stays in the struct frame; `recompute_composites` produces
+//!   the composite in the body frame (the parent's `StructCG` inertia is rotated
+//!   struct→body at init), so both compare directly against `mass.out`.
 //!
 //! Note: RUN_08/RUN_108 (a child attached to two parents in different body
 //! actions) and RUN_109 (named-point attach combined with the non-identity
@@ -291,17 +292,15 @@ fn child1_spec_b() -> MassProperties {
 ///   drifting — it is *not* a strict per-element max delta.
 fn composite_errors(tree: &MassTree, id: MassBodyId, reference: &PrintedBody) -> (f64, f64, f64) {
     let comp = &tree.get(id).composite_properties;
-    // JEOD's print_tree reports the composite inertia in the body frame while
-    // keeping mass/CoM in the struct frame; `composite_inertia_in_body` applies
-    // the body's struct→body rotation (a bit-exact no-op for the identity-
-    // orientation runs, the real rotation for RUN_09's oriented parent).
-    let inertia_body = tree.composite_inertia_in_body(id);
+    // `recompute_composites` stores the composite inertia in the body frame
+    // (JEOD's `C.M.P. Ib tensor` convention) and the CoM in the struct frame
+    // (`C.M.P. CM vector`), so both compare directly against `mass.out`.
     let mass_err = (comp.mass - reference.composite_mass).abs();
     let com_err = (comp.position - reference.composite_cm).length();
     let inertia_err = [
-        (inertia_body.x_axis - reference.composite_inertia.x_axis).length(),
-        (inertia_body.y_axis - reference.composite_inertia.y_axis).length(),
-        (inertia_body.z_axis - reference.composite_inertia.z_axis).length(),
+        (comp.inertia.x_axis - reference.composite_inertia.x_axis).length(),
+        (comp.inertia.y_axis - reference.composite_inertia.y_axis).length(),
+        (comp.inertia.z_axis - reference.composite_inertia.z_axis).length(),
     ]
     .iter()
     .copied()
@@ -500,9 +499,9 @@ fn build_run_07() -> (MassTree, [(String, MassBodyId); 2]) {
 
 /// Parent struct→body orientation from `parent_mass_orientation_optionA`
 /// (`Modified_data/parent_mass.py`), JEOD `T_parent_this` (row-major in the
-/// `.py`, transposed into glam column-major here). Used by RUN_09 as the
-/// parent's [`MassProperties::t_parent_this`]; JEOD reports the root's
-/// composite in this body frame.
+/// `.py`, transposed into glam column-major here). Used by RUN_09 both as the
+/// parent's [`MassProperties::t_parent_this`] and to rotate its `StructCG`
+/// inertia struct→body; JEOD reports the root's composite in this body frame.
 #[allow(
     clippy::approx_constant,
     reason = "0.70710678118655 is the verbatim optionA matrix value from JEOD's \
@@ -521,25 +520,25 @@ fn parent_option_a() -> DMat3 {
 /// RUN_09: parent (`StructCG` option B inertia + **non-identity struct→body
 /// orientation** `optionA`) + child1 (`Body` option C) attached at offset
 /// [-1, 0, 0], identity attach. First run where the **root body's own**
-/// struct→body transform is non-identity.
+/// struct→body transform is non-identity, so it is the case that distinguishes
+/// the struct and body frames in `recompute_composites`.
 ///
-/// `recompute_composites` accumulates the composite in the struct frame and
-/// does not fold in the root's own orientation, so the struct-frame composite
-/// is identical whether or not `t_parent_this` is set. We set it anyway — it
-/// is the faithful scenario, and it exercises that the kernel correctly leaves
-/// the struct-frame composite untouched by the root orientation. JEOD reports
-/// the composite inertia in the parent body frame; `MassTree::composite_inertia_in_body`
-/// applies that struct→body rotation in the comparison (see `composite_errors`).
-///
-/// Note the `StructCG` spec defines the inertia in struct axes, so the core
-/// inertia stays struct-frame here — exactly what the struct-frame composite
-/// accumulation consumes; the body-frame view is reconstructed on read.
+/// The `StructCG` spec gives the inertia in struct axes; JEOD's init
+/// (`mass_properties_init.cc:103`) rotates it struct→body via `T_parent_this`,
+/// so the stored **core** inertia is `T · box_diag · Tᵀ` (= JEOD's `M.P. Ib`
+/// for the oriented parent). `recompute_composites` then accumulates the
+/// composite in the parent body frame, so `composite_properties.inertia`
+/// matches JEOD's `C.M.P. Ib tensor` directly (the CoM stays struct-frame,
+/// matching `C.M.P. CM vector`).
 fn build_run_09() -> (MassTree, [(String, MassBodyId); 2]) {
     let mut tree = MassTree::new();
+    // StructCG init: rotate the struct-axes option-B inertia into the body
+    // frame via the parent's struct→body transform (JEOD mass_properties_init.cc).
+    let t = parent_option_a();
+    let parent_core_body = t * box_inertia_diag() * t.transpose();
     let parent = tree.add_root(
         "Parent".into(),
-        mass_struct_cg_spec(1.0, DVec3::ZERO, box_inertia_diag())
-            .with_t_parent_this(parent_option_a()),
+        MassProperties::with_inertia(1.0, parent_core_body, DVec3::ZERO).with_t_parent_this(t),
     );
     let child1 = tree.add_body(
         "Child1".into(),
@@ -1200,9 +1199,9 @@ fn tier3_sim_attach_mass() {
     }
     {
         // RUN_09: the root parent has a non-identity struct→body orientation
-        // (optionA), so JEOD reports its composite inertia in the parent body
-        // frame. `check_body` (via `composite_inertia_in_body`) applies that
-        // struct→body rotation; Child1 is identity-oriented (no-op rotation).
+        // (optionA), so `recompute_composites` produces the composite inertia
+        // in the parent body frame (JEOD's `C.M.P. Ib` convention) — compared
+        // directly. Child1 is identity-oriented.
         let (tree, ids) = build_run_09();
         let reference = load_reference("attach_mass_09_mass.out");
         validate_run("RUN_09", &tree, &ids, &reference, &mut errors);

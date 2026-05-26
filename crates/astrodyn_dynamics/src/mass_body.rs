@@ -125,30 +125,6 @@ impl MassTree {
         &mut self.nodes[id]
     }
 
-    /// Composite inertia of `id` expressed in its **body** frame — the
-    /// convention JEOD's `MassBody::print_tree` uses for the `C.M.P. Ib tensor`
-    /// line (`mass_print_body.cc`).
-    ///
-    /// [`recompute_composites`](Self::recompute_composites) accumulates every
-    /// composite in the **structural** frame: the core inertia plus struct-frame
-    /// parallel-axis terms (`calc_composite_inertia`), and the composite CoM is
-    /// likewise struct-frame. JEOD stores composites the same way but, when
-    /// printing, rotates the inertia into the body frame by the composite body
-    /// point's struct→body transform — the single rotation
-    /// `I_body = T · I_struct · Tᵀ`. For the common case of a body whose
-    /// structural and body frames coincide (`t_parent_this == IDENTITY`) this is
-    /// a bit-exact no-op and returns the struct-frame inertia unchanged; it only
-    /// does work for a body with a non-identity orientation (e.g. SIM_Apollo's
-    /// CM/LES/DM/Ascent modules, or `SIM_verif_attach_mass` RUN_09).
-    ///
-    /// Mass and CoM are unaffected — JEOD reports both in the struct frame
-    /// (`C.M.P. CM vector`); only the inertia carries the body-frame rotation.
-    pub fn composite_inertia_in_body(&self, id: MassBodyId) -> DMat3 {
-        let body = self.get(id);
-        let t = body.composite_properties.t_parent_this;
-        t * body.composite_properties.inertia * t.transpose()
-    }
-
     /// Parent of the given body, or `None` for a root.
     pub fn parent(&self, id: MassBodyId) -> Option<MassBodyId> {
         self.parent[id]
@@ -986,34 +962,60 @@ impl MassTree {
         }
     }
 
-    /// Composite inertia — port of JEOD `mass_calc_composite_inertia.cc`.
+    /// Composite inertia — port of JEOD `mass_calc_composite_inertia.cc`
+    /// (with the body-frame offset transforms of `mass_update.cc:99-107`).
     ///
-    /// Starts with the core body's inertia shifted to the composite CoM via
-    /// the parallel axis theorem, then adds each child's composite inertia
-    /// (rotated to this body's structural frame) plus the child's parallel
-    /// axis contribution.
+    /// Computed in **this body's body frame**: JEOD's comment is "the core and
+    /// composite masses share a common body frame," and
+    /// `composite_properties.T_parent_this == core_properties.T_parent_this`
+    /// (`mass.cc:203`). The core inertia is already body-frame (the
+    /// `StructCG`/`Struct` init specs are rotated struct→body in
+    /// `mass_properties_init.cc:103/119`), so it enters unrotated; the
+    /// parallel-axis offsets are differences of struct-frame CoMs rotated into
+    /// the body frame by `T = t_parent_this` (`mass_update.cc:101/107`). Each
+    /// child's composite inertia, expressed in the *child's* body frame, is
+    /// rotated into this body frame by `composite_wrt_pbdy.T_parent_this`
+    /// (`mass_attach.cc:519`); for a direct child the body→body rotation is
+    /// `r = T · Sᵀ · T_childᵀ` (`S = structure_point.t_parent_this`,
+    /// parent-struct→child-struct; `T_child = child composite t_parent_this`),
+    /// and the rotated tensor is `r · I · rᵀ`.
+    ///
+    /// Reduces to the pure struct-frame computation (`Sᵀ · I · S`, struct
+    /// offsets) when every `t_parent_this` is identity — the common case and
+    /// every attach-mass RUN except RUN_09. For `yaw_180` + diagonal inertia
+    /// (Apollo) the body-frame result is bit-identical to the struct-frame one.
     fn calc_composite_inertia(&mut self, id: MassBodyId) {
         let cm = self.nodes[id].composite_properties.position;
+        // JEOD_INV: MA.25 — composite inertia in the body frame: body-frame core
+        // unrotated, offsets rotated struct→body by `t_parent_this`, children
+        // rotated child-body→parent-body.
+        // Struct→body for this composite body (shares the core's body frame).
+        let t_parent = self.nodes[id].composite_properties.t_parent_this;
 
-        // Core contribution: inertia + point-mass shift from core CoM to
-        // composite CoM (JEOD mass_calc_composite_inertia.cc lines 61-64).
+        // Core contribution: body-frame inertia (unrotated) plus the point-mass
+        // shift from the core CoM to the composite CoM, the offset rotated
+        // struct→body (JEOD mass_update.cc:107 + mass_calc_composite_inertia.cc:61-64).
         let core = &self.nodes[id].core_properties;
-        let core_offset = core.position - cm;
-        let mut composite_inertia = core.inertia + point_mass_inertia(core.mass, core_offset);
+        let core_offset_body = t_parent * (core.position - cm);
+        let mut composite_inertia = core.inertia + point_mass_inertia(core.mass, core_offset_body);
 
-        // Child contributions (lines 67-84).
+        // Child contributions (JEOD mass_calc_composite_inertia.cc:67-84).
         for &cid in &self.children[id] {
             let child = &self.nodes[cid];
-            let child_offset = child.composite_wrt_pstr.position - cm;
+            // Offset in this body's body frame (JEOD mass_update.cc:101).
+            let child_offset_body = t_parent * (child.composite_wrt_pstr.position - cm);
 
-            // Rotate child's composite inertia from child struct frame to
-            // parent struct frame: T^T * I_child * T
-            // This is JEOD's transpose_transform_matrix.
-            let t = child.structure_point.t_parent_this;
-            let rotated_inertia = t.transpose() * child.composite_properties.inertia * t;
+            // Rotate the child's composite inertia from the child's body frame
+            // into this body's body frame: `r = child_body → parent_body
+            // = T · Sᵀ · T_childᵀ`, rotated tensor `r · I · rᵀ` (JEOD's
+            // `transpose_transform_matrix(composite_wrt_pbdy.T_parent_this, …)`).
+            let s = child.structure_point.t_parent_this;
+            let t_child = child.composite_properties.t_parent_this;
+            let r = t_parent * s.transpose() * t_child.transpose();
+            let rotated_inertia = r * child.composite_properties.inertia * r.transpose();
 
-            composite_inertia +=
-                rotated_inertia + point_mass_inertia(child.composite_properties.mass, child_offset);
+            composite_inertia += rotated_inertia
+                + point_mass_inertia(child.composite_properties.mass, child_offset_body);
         }
 
         self.nodes[id].composite_properties.inertia = composite_inertia;
