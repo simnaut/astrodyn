@@ -305,6 +305,130 @@ pub fn init_from_time_periapsis(
     )
 }
 
+/// Derive semi-major axis and eccentricity from apoapsis/periapsis altitudes,
+/// following JEOD's `ShapeAltitudes` branch of `DynBodyInitOrbit::apply()`
+/// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:277-283`):
+///
+/// ```cpp
+/// if (shape == ShapeAltitudes) {
+///     semi_major_axis = planet->r_eq + 0.5 * (alt_apoapsis + alt_periapsis);
+///     eccentricity = (alt_apoapsis - alt_periapsis) / (2.0 * semi_major_axis);
+/// }
+/// ```
+///
+/// `r_eq` is the planet's **equatorial** radius (`Planet::r_eq`), to which both
+/// altitudes are referenced. The arithmetic order is preserved verbatim so the
+/// f64 bit-pattern matches JEOD's for parity tests.
+///
+/// # Arguments
+/// * `r_eq` - Planet equatorial radius (m). For Earth this is JEOD's
+///   `1000 * 6378.137 = 6_378_137.0` m (`environment/planet/data/src/earth.cc`).
+/// * `alt_apoapsis` - Apoapsis altitude above `r_eq` (m).
+/// * `alt_periapsis` - Periapsis altitude above `r_eq` (m).
+fn sma_ecc_from_altitudes(r_eq: f64, alt_apoapsis: f64, alt_periapsis: f64) -> (f64, f64) {
+    // JEOD_INV: BA.13 — altitude shape: a = r_eq + ½(alt_apo + alt_peri),
+    // e = (alt_apo − alt_peri) / (2a), with `r_eq` the planet equatorial radius.
+    let semi_major_axis = r_eq + 0.5 * (alt_apoapsis + alt_periapsis);
+    let eccentricity = (alt_apoapsis - alt_periapsis) / (2.0 * semi_major_axis);
+    (semi_major_axis, eccentricity)
+}
+
+/// Initialize translational state from the JEOD
+/// `IncAscnodeAltperAltapoArgperTanom` element set (set #04): inclination,
+/// ascending node, peri/apo **altitudes**, argument of periapsis, and **true
+/// anomaly**.
+///
+/// Port of the `ShapeAltitudes` + `LocationTrueAnom` path of JEOD
+/// `DynBodyInitOrbit::apply()`
+/// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:205-208, 277-318`):
+/// the altitudes are converted to semi-major axis + eccentricity via
+/// [`sma_ecc_from_altitudes`], then JEOD sets `shape = ShapeSemiMajorAxis`
+/// (so `semiparam = a·(1-e²)`) and resolves the true anomaly directly. This is
+/// therefore exactly [`init_from_orbital_elements`] with the derived a/e.
+///
+/// # Arguments
+/// * `r_eq` - Planet equatorial radius (m).
+/// * `alt_apoapsis` - Apoapsis altitude above `r_eq` (m).
+/// * `alt_periapsis` - Periapsis altitude above `r_eq` (m).
+/// * `inclination` - Inclination (rad)
+/// * `raan` - Right ascension of ascending node (rad)
+/// * `arg_periapsis` - Argument of periapsis (rad)
+/// * `true_anomaly` - True anomaly (rad)
+/// * `mu` - Gravitational parameter of central body (m^3/s^2)
+#[expect(
+    clippy::too_many_arguments,
+    reason = "JEOD orbital-element set is six elements plus r_eq and mu"
+)]
+pub fn init_from_altitudes_true_anomaly(
+    r_eq: f64,
+    alt_apoapsis: f64,
+    alt_periapsis: f64,
+    inclination: f64,
+    raan: f64,
+    arg_periapsis: f64,
+    true_anomaly: f64,
+    mu: f64,
+) -> TranslationalState {
+    let (semi_major_axis, eccentricity) = sma_ecc_from_altitudes(r_eq, alt_apoapsis, alt_periapsis);
+    init_from_orbital_elements(
+        semi_major_axis,
+        eccentricity,
+        inclination,
+        raan,
+        arg_periapsis,
+        true_anomaly,
+        mu,
+    )
+}
+
+/// Initialize translational state from the JEOD
+/// `IncAscnodeAltperAltapoArgperTimeperi` element set (set #05): inclination,
+/// ascending node, peri/apo **altitudes**, argument of periapsis, and **time
+/// since periapsis passage**.
+///
+/// Port of the `ShapeAltitudes` + `LocationTimePeri` path of JEOD
+/// `DynBodyInitOrbit::apply()`
+/// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:213-216, 277-318`):
+/// the altitudes are converted to semi-major axis + eccentricity via
+/// [`sma_ecc_from_altitudes`], then the time-since-periapsis is mapped to mean
+/// anomaly (`M = t_peri·√(μ/a)/a`) exactly as in [`init_from_time_periapsis`],
+/// which this function delegates to with the derived a/e.
+///
+/// # Arguments
+/// * `r_eq` - Planet equatorial radius (m).
+/// * `alt_apoapsis` - Apoapsis altitude above `r_eq` (m).
+/// * `alt_periapsis` - Periapsis altitude above `r_eq` (m).
+/// * `inclination` - Inclination (rad)
+/// * `raan` - Right ascension of ascending node (rad)
+/// * `arg_periapsis` - Argument of periapsis (rad)
+/// * `time_periapsis` - Time elapsed since periapsis passage (s)
+/// * `mu` - Gravitational parameter of central body (m^3/s^2)
+#[expect(
+    clippy::too_many_arguments,
+    reason = "JEOD orbital-element set is six elements plus r_eq and mu"
+)]
+pub fn init_from_altitudes_time_periapsis(
+    r_eq: f64,
+    alt_apoapsis: f64,
+    alt_periapsis: f64,
+    inclination: f64,
+    raan: f64,
+    arg_periapsis: f64,
+    time_periapsis: f64,
+    mu: f64,
+) -> TranslationalState {
+    let (semi_major_axis, eccentricity) = sma_ecc_from_altitudes(r_eq, alt_apoapsis, alt_periapsis);
+    init_from_time_periapsis(
+        semi_major_axis,
+        eccentricity,
+        inclination,
+        raan,
+        arg_periapsis,
+        time_periapsis,
+        mu,
+    )
+}
+
 /// Initialize translational state from LVLH-relative position and velocity.
 ///
 /// Computes the LVLH frame from a reference orbit state, then transforms the
@@ -640,7 +764,8 @@ mod tests {
         let state = init_from_time_periapsis(
             init.semi_major_axis
                 .expect("ISS set01 should have semi_major_axis"),
-            init.eccentricity,
+            init.eccentricity
+                .expect("ISS set01 should have eccentricity"),
             init.inclination,
             init.ascending_node,
             init.arg_periapsis,
@@ -1483,5 +1608,46 @@ mod tests {
         // mean-anomaly path but checks `mu > 0` itself first so the
         // diagnostic names the entry point the caller invoked.
         let _ = init_from_time_periapsis(EARTH_R_EQ + 400_000.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0);
+    }
+
+    #[test]
+    fn ba_13_altitudes_true_anomaly_matches_sma_ecc_derivation() {
+        // JEOD_INV: BA.13 — the altitude shape derives a/e from the apo/peri
+        // altitudes (a = r_eq + ½(alt_apo+alt_peri), e = (alt_apo-alt_peri)/2a)
+        // and then resolves the true anomaly. Feeding the same a/e directly to
+        // `init_from_orbital_elements` must reproduce the state bit-for-bit.
+        let alt_apo = 363_454.582_64;
+        let alt_peri = 346_073.820_40;
+        let a = EARTH_R_EQ + 0.5 * (alt_apo + alt_peri);
+        let e = (alt_apo - alt_peri) / (2.0 * a);
+        let via_alt = init_from_altitudes_true_anomaly(
+            EARTH_R_EQ, alt_apo, alt_peri, 0.9, 0.86, 1.75, 5.23, EARTH_MU,
+        );
+        let via_sma = init_from_orbital_elements(a, e, 0.9, 0.86, 1.75, 5.23, EARTH_MU);
+        assert_eq!(via_alt.position, via_sma.position);
+        assert_eq!(via_alt.velocity, via_sma.velocity);
+    }
+
+    #[test]
+    #[should_panic(expected = "eccentricity must be in [0, 1)")]
+    fn ba_13_panics_on_swapped_altitudes() {
+        // JEOD_INV: BA.13 — apo below peri yields a negative derived
+        // eccentricity, which `init_from_orbital_elements` rejects rather than
+        // silently producing a retrograde-sense orbit. (A swapped-altitude deck
+        // is the obvious way to mis-specify the altitude shape.)
+        let _ = init_from_altitudes_true_anomaly(
+            EARTH_R_EQ, 346_073.0, 363_454.0, 0.9, 0.86, 1.75, 5.23, EARTH_MU,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_13_panics_on_zero_mu_in_altitudes_time_periapsis_init() {
+        // JEOD_INV: BA.13 — the set05 altitude path defers to the
+        // time-periapsis converter, which keeps the mu>0 guard so a
+        // misconfigured gravity source can't slip through the altitude shape.
+        let _ = init_from_altitudes_time_periapsis(
+            EARTH_R_EQ, 363_454.0, 346_073.0, 0.9, 0.86, 1.75, 4581.96, 0.0,
+        );
     }
 }

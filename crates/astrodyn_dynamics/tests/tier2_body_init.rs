@@ -97,7 +97,7 @@ fn iss_set01_time_periapsis() {
     let computed = init_from_time_periapsis(
         init.semi_major_axis
             .expect("ISS set01 must have semi_major_axis"),
-        init.eccentricity,
+        init.eccentricity.expect("ISS set01 must have eccentricity"),
         init.inclination,
         init.ascending_node,
         init.arg_periapsis,
@@ -147,7 +147,7 @@ fn iss_set02_mean_anomaly() {
     let computed = init_from_mean_anomaly(
         init.semi_major_axis
             .expect("ISS set02 must have semi_major_axis"),
-        init.eccentricity,
+        init.eccentricity.expect("ISS set02 must have eccentricity"),
         init.inclination,
         init.ascending_node,
         init.arg_periapsis,
@@ -197,7 +197,7 @@ fn iss_set10_true_anomaly() {
     let computed = init_from_orbital_elements(
         init.semi_major_axis
             .expect("ISS set10 must have semi_major_axis"),
-        init.eccentricity,
+        init.eccentricity.expect("ISS set10 must have eccentricity"),
         init.inclination,
         init.ascending_node,
         init.arg_periapsis,
@@ -246,7 +246,9 @@ fn iss_element_sets_cross_consistent() {
         init01
             .semi_major_axis
             .expect("ISS set01 must have semi_major_axis"),
-        init01.eccentricity,
+        init01
+            .eccentricity
+            .expect("ISS set01 must have eccentricity"),
         init01.inclination,
         init01.ascending_node,
         init01.arg_periapsis,
@@ -263,7 +265,9 @@ fn iss_element_sets_cross_consistent() {
         init02
             .semi_major_axis
             .expect("ISS set02 must have semi_major_axis"),
-        init02.eccentricity,
+        init02
+            .eccentricity
+            .expect("ISS set02 must have eccentricity"),
         init02.inclination,
         init02.ascending_node,
         init02.arg_periapsis,
@@ -280,7 +284,9 @@ fn iss_element_sets_cross_consistent() {
         init10
             .semi_major_axis
             .expect("ISS set10 must have semi_major_axis"),
-        init10.eccentricity,
+        init10
+            .eccentricity
+            .expect("ISS set10 must have eccentricity"),
         init10.inclination,
         init10.ascending_node,
         init10.arg_periapsis,

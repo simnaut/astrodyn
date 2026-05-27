@@ -22,6 +22,9 @@ fn validate_iss_orbital_elements_to_cartesian() {
     let sma = init
         .semi_major_axis
         .expect("ISS set01 should have semi_major_axis");
+    let ecc = init
+        .eccentricity
+        .expect("ISS set01 should have eccentricity");
 
     // Verify parsed values are sensible
     assert!(
@@ -29,9 +32,8 @@ fn validate_iss_orbital_elements_to_cartesian() {
         "ISS semi-major axis should be ~6732 km, got {sma} m",
     );
     assert!(
-        init.eccentricity < 0.01,
-        "ISS eccentricity should be near zero, got {}",
-        init.eccentricity
+        ecc < 0.01,
+        "ISS eccentricity should be near zero, got {ecc}",
     );
     assert!(
         init.inclination > 0.8 && init.inclination < 1.0,
@@ -56,11 +58,11 @@ fn validate_iss_orbital_elements_to_cartesian() {
 
     let mut oe = OrbitalElements::<astrodyn_quantities::frame::SelfPlanet>::default();
     oe.semi_major_axis = a;
-    oe.e_mag = init.eccentricity;
+    oe.e_mag = ecc;
     oe.inclination = init.inclination;
     oe.long_asc_node = init.ascending_node;
     oe.arg_periapsis = init.arg_periapsis;
-    oe.semiparam = a * (1.0 - init.eccentricity * init.eccentricity);
+    oe.semiparam = a * (1.0 - ecc * ecc);
     oe.mean_anom = mean_anomaly;
     oe.mean_motion = n;
     oe.mean_anom_to_nu().unwrap();
@@ -377,10 +379,12 @@ fn validate_orbital_init_parser() {
         (sma - 6_732_901.201_52).abs() < 0.01,
         "semi_major_axis: expected 6732901.20152 m, got {sma}",
     );
+    let ecc = init
+        .eccentricity
+        .expect("ISS set01 should have eccentricity");
     assert!(
-        (init.eccentricity - 0.00129073350).abs() < 1e-12,
-        "eccentricity: expected 0.00129073350, got {}",
-        init.eccentricity
+        (ecc - 0.00129073350).abs() < 1e-12,
+        "eccentricity: expected 0.00129073350, got {ecc}",
     );
     assert!(
         (init.inclination - 51.670450765 * deg2rad).abs() < 1e-12,
