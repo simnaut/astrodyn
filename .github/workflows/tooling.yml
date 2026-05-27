@@ -91,7 +91,13 @@ jobs:
           # incompatible nalgebra majors via its hyperdual edge. A published
           # manifest can't be patched; `main` can, so the git baseline stays
           # buildable. (Also a better regression fence for a pre-1.0 crate.)
-          baseline-rev: main
+          #
+          # Use the remote-tracking ref, not the bare branch name: on
+          # `pull_request` runs `actions/checkout` lands in detached HEAD and
+          # creates no local `main` ref, so `--baseline-rev main` fails with
+          # "couldn't parse revision: main^{tree}". `origin/main` exists after
+          # `fetch-depth: 0` on both push and pull_request events.
+          baseline-rev: origin/main
 
   cargo-hack:
     # Feature-matrix fence on `astrodyn_ephemeris`. `README.md` documents
