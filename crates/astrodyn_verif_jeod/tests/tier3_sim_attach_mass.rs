@@ -1,6 +1,6 @@
 //! Tier 3: SIM_verif_attach_mass — mass tree attach/detach cross-validation.
 //!
-//! Reproduces 17 representative runs from JEOD's `SIM_verif_attach_mass`
+//! Reproduces representative runs from JEOD's `SIM_verif_attach_mass`
 //! (``models/dynamics/body_action/verif/SIM_verif_attach_mass/SET_test/``)
 //! and cross-validates our `MassTree` composite mass, center of mass, and
 //! inertia tensor against the `mass.out` files produced by JEOD's
@@ -30,11 +30,15 @@
 //! - RUN_107: parent (`StructCG`) + child1 (`SpecCG`) via named points
 //! - RUN_110: named-point attach of 3 children then runtime detach of child2
 //! - RUN_111: named-point + offset attach, runtime reattach of child2
+//! - RUN_09: non-identity parent struct→body orientation. JEOD reports the
+//!   composite inertia (`C.M.P. Ib`) in the parent **body** frame while the
+//!   composite CoM stays in the struct frame; `recompute_composites` produces
+//!   the composite in the body frame (the parent's `StructCG` inertia is rotated
+//!   struct→body at init), so both compare directly against `mass.out`.
 //!
 //! Note: RUN_08/RUN_108 (a child attached to two parents in different body
-//! actions) and RUN_09/RUN_109 (a non-identity structure→body transform on
-//! the root, which JEOD reports composites in body frame for) are not yet
-//! covered — see the PR description for the blockers.
+//! actions) and RUN_109 (named-point attach combined with the non-identity
+//! root orientation) are not yet covered — see #99 / the PR description.
 //!
 //! Supplements the analytical tests in
 //! `crates/astrodyn_dynamics/tests/tier3_mass_attach_detach.rs` with direct
@@ -287,8 +291,10 @@ fn child1_spec_b() -> MassProperties {
 ///   error into a single scalar while staying sensitive to any one column
 ///   drifting — it is *not* a strict per-element max delta.
 fn composite_errors(tree: &MassTree, id: MassBodyId, reference: &PrintedBody) -> (f64, f64, f64) {
-    let body = tree.get(id);
-    let comp = &body.composite_properties;
+    let comp = &tree.get(id).composite_properties;
+    // `recompute_composites` stores the composite inertia in the body frame
+    // (JEOD's `C.M.P. Ib tensor` convention) and the CoM in the struct frame
+    // (`C.M.P. CM vector`), so both compare directly against `mass.out`.
     let mass_err = (comp.mass - reference.composite_mass).abs();
     let com_err = (comp.position - reference.composite_cm).length();
     let inertia_err = [
@@ -488,6 +494,57 @@ fn build_run_07() -> (MassTree, [(String, MassBodyId); 2]) {
 
     tree.attach(child1, parent, DVec3::new(-1.0, 0.0, 0.0), DMat3::IDENTITY);
 
+    (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
+}
+
+/// Parent struct→body orientation from `parent_mass_orientation_optionA`
+/// (`Modified_data/parent_mass.py`), JEOD `T_parent_this` (row-major in the
+/// `.py`, transposed into glam column-major here). Used by RUN_09 both as the
+/// parent's [`MassProperties::t_parent_this`] and to rotate its `StructCG`
+/// inertia struct→body; JEOD reports the root's composite in this body frame.
+#[allow(
+    clippy::approx_constant,
+    reason = "0.70710678118655 is the verbatim optionA matrix value from JEOD's \
+              Modified_data/parent_mass.py; substituting FRAC_1_SQRT_2 would diverge \
+              from the transcribed JEOD source matrix"
+)]
+fn parent_option_a() -> DMat3 {
+    // Row-major JEOD matrix → DMat3::from_cols takes columns.
+    DMat3::from_cols(
+        DVec3::new(0.8660254, 0.35355339059327, -0.35355339059327),
+        DVec3::new(-0.5, 0.61237243569579, -0.61237243569579),
+        DVec3::new(0.0, 0.70710678118655, 0.70710678118655),
+    )
+}
+
+/// RUN_09: parent (`StructCG` option B inertia + **non-identity struct→body
+/// orientation** `optionA`) + child1 (`Body` option C) attached at offset
+/// [-1, 0, 0], identity attach. First run where the **root body's own**
+/// struct→body transform is non-identity, so it is the case that distinguishes
+/// the struct and body frames in `recompute_composites`.
+///
+/// The `StructCG` spec gives the inertia in struct axes; JEOD's init
+/// (`mass_properties_init.cc:103`) rotates it struct→body via `T_parent_this`,
+/// so the stored **core** inertia is `T · box_diag · Tᵀ` (= JEOD's `M.P. Ib`
+/// for the oriented parent). `recompute_composites` then accumulates the
+/// composite in the parent body frame, so `composite_properties.inertia`
+/// matches JEOD's `C.M.P. Ib tensor` directly (the CoM stays struct-frame,
+/// matching `C.M.P. CM vector`).
+fn build_run_09() -> (MassTree, [(String, MassBodyId); 2]) {
+    let mut tree = MassTree::new();
+    // StructCG init: rotate the struct-axes option-B inertia into the body
+    // frame via the parent's struct→body transform (JEOD mass_properties_init.cc).
+    let t = parent_option_a();
+    let parent_core_body = t * box_inertia_diag() * t.transpose();
+    let parent = tree.add_root(
+        "Parent".into(),
+        MassProperties::with_inertia(1.0, parent_core_body, DVec3::ZERO).with_t_parent_this(t),
+    );
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    tree.attach(child1, parent, DVec3::new(-1.0, 0.0, 0.0), DMat3::IDENTITY);
     (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
 }
 
@@ -1139,6 +1196,15 @@ fn tier3_sim_attach_mass() {
         let (tree, ids) = build_run_07();
         let reference = load_reference("attach_mass_07_mass.out");
         validate_run("RUN_07", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        // RUN_09: the root parent has a non-identity struct→body orientation
+        // (optionA), so `recompute_composites` produces the composite inertia
+        // in the parent body frame (JEOD's `C.M.P. Ib` convention) — compared
+        // directly. Child1 is identity-oriented.
+        let (tree, ids) = build_run_09();
+        let reference = load_reference("attach_mass_09_mass.out");
+        validate_run("RUN_09", &tree, &ids, &reference, &mut errors);
     }
     {
         let (tree, ids) = build_run_10();
