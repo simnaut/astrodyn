@@ -35,10 +35,21 @@
 //!   composite CoM stays in the struct frame; `recompute_composites` produces
 //!   the composite in the body frame (the parent's `StructCG` inertia is rotated
 //!   struct→body at init), so both compare directly against `mass.out`.
-//!
-//! Note: RUN_08/RUN_108 (a child attached to two parents in different body
-//! actions) and RUN_109 (named-point attach combined with the non-identity
-//! root orientation) are not yet covered — see #99 / the PR description.
+//! - RUN_109: named-point attach (RUN_107 layout) combined with the RUN_09
+//!   non-identity parent struct→body orientation; child1 uses the `Body`
+//!   option-C inertia. The named-point geometry resolves to the same
+//!   parent←child1 edge as RUN_09 (struct origin at [-1,0,0], identity
+//!   struct→struct), so the composite matches RUN_09's `mass.out`.
+//! - RUN_08: a child (child3) is attached to child2, then a later body action
+//!   attaches child3 to the parent. Because child3 is no longer a root, JEOD's
+//!   `MassBody::attach_to` (`mass_attach.cc:181-223`) re-roots child3's existing
+//!   tree: it finds child3's root (child1), recasts the requested child3→parent
+//!   offset/rotation into the child1→parent frame, and attaches child1. The
+//!   final topology is the chain parent←child1←child2←child3. Modeled with
+//!   [`MassTree::attach_with_reroot`].
+//! - RUN_108: the same final chain as RUN_08, but every attach is via named
+//!   mass points. The re-root path is exercised through the named-point
+//!   geometry (computed inline) fed into `attach_with_reroot`.
 //!
 //! Supplements the analytical tests in
 //! `crates/astrodyn_dynamics/tests/tier3_mass_attach_detach.rs` with direct
@@ -545,6 +556,53 @@ fn build_run_09() -> (MassTree, [(String, MassBodyId); 2]) {
         mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
     );
     tree.attach(child1, parent, DVec3::new(-1.0, 0.0, 0.0), DMat3::IDENTITY);
+    (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
+}
+
+/// RUN_109: named-point attach combined with the RUN_09 non-identity parent
+/// struct→body orientation. Same named-point layout as RUN_107 (parent
+/// "front_to_back" at [-0.5,0,0], child1 "back_to_front" at [0.5,0,0]), but the
+/// parent carries `parent_mass_orientation_optionA` (non-identity struct→body)
+/// on top of its `StructCG` option-B inertia, and child1 uses the `Body`
+/// option-C inertia. The docking-aligned named-point attach resolves to the
+/// same parent←child1 edge as RUN_09 (child1 struct origin at parent-struct
+/// [-1,0,0], identity struct→struct), so the composite matches RUN_09's
+/// `mass.out` exactly. Distinguishes the named-point path from the non-identity
+/// root-orientation handling.
+fn build_run_109() -> (MassTree, [(String, MassBodyId); 2]) {
+    let mut tree = MassTree::new();
+    // Parent: StructCG option-B inertia rotated struct→body via optionA, plus
+    // the optionA struct→body transform itself (identical to RUN_09's parent).
+    let t = parent_option_a();
+    let parent_core_body = t * box_inertia_diag() * t.transpose();
+    let parent = tree.add_root(
+        "Parent".into(),
+        MassProperties::with_inertia(1.0, parent_core_body, DVec3::ZERO).with_t_parent_this(t),
+    );
+    // Child1: Body option-C inertia, identity struct→body.
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+
+    // parent_mass_points_1 renamed in input.py to "front_to_back" at [-0.5,0,0]
+    // with T=[[-1,0,0],[0,-1,0],[0,0,1]].
+    tree.add_mass_point(
+        parent,
+        "front_to_back",
+        DVec3::new(-0.5, 0.0, 0.0),
+        jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+    // child1_mass_points_1A renamed to "back_to_front" at [0.5,0,0], identity.
+    tree.add_mass_point(
+        child1,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+
+    tree.attach_aligned(child1, "back_to_front", parent, "front_to_back");
+
     (tree, [("Parent".into(), parent), ("Child1".into(), child1)])
 }
 
@@ -1107,6 +1165,212 @@ fn build_run_111() -> (MassTree, Vec<(String, MassBodyId)>) {
     )
 }
 
+/// RUN_08: chained attaches where the third action targets an already-attached
+/// (non-root) child, exercising JEOD's re-root path
+/// (`mass_attach.cc:181-223`).
+///
+/// All four bodies use the `Body` option-C box inertia diag(0.3333, 0.4167,
+/// 0.0833) about the CoM (child2's `optionA` == optionC values).
+///
+/// Body actions, in order:
+/// 1. `attach1_optionB`: child2 → child1 at offset [0.5, 0, 2.5] with
+///    `Pitch_Yaw_Roll` (= YZX) Euler [-90°, 0, 0].
+/// 2. `attach2_optionA`: child3 → child2 at offset [-1, 0, 0], identity.
+/// 3. `attach3_optionA`: child3 → parent at offset [-0.5, 0, 1.5] with
+///    `Pitch_Yaw_Roll` [-90°, 0, 0]. child3 is non-root by now (root = child1),
+///    so JEOD re-roots: it recasts the child3→parent offset/rotation into the
+///    child1→parent frame and attaches child1. The net child1→parent edge is
+///    offset [-1, 0, 0], identity struct→struct (verified against `mass.out`).
+///
+/// Final topology: parent ← child1 ← child2 ← child3. Modeled with
+/// [`MassTree::attach_with_reroot`] for the third action, which performs the
+/// same root-frame recast as JEOD.
+fn build_run_08() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child2 = tree.add_body(
+        "Child2".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child3 = tree.add_body(
+        "Child3".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+
+    // attach1_optionB: child2 → child1, Pitch_Yaw_Roll (YZX) [-90°, 0, 0].
+    let t_attach1 =
+        compute_matrix_from_euler_angles([(-90.0_f64).to_radians(), 0.0, 0.0], EulerSequence::YZX);
+    tree.attach(child2, child1, DVec3::new(0.5, 0.0, 2.5), t_attach1);
+
+    // attach2_optionA: child3 → child2 at [-1, 0, 0], identity.
+    tree.attach(child3, child2, DVec3::new(-1.0, 0.0, 0.0), DMat3::IDENTITY);
+
+    // attach3_optionA: requested child3 → parent at [-0.5, 0, 1.5],
+    // Pitch_Yaw_Roll [-90°, 0, 0]. child3 is non-root → re-root child1.
+    let t_attach3 =
+        compute_matrix_from_euler_angles([(-90.0_f64).to_radians(), 0.0, 0.0], EulerSequence::YZX);
+    tree.attach_with_reroot(child3, parent, DVec3::new(-0.5, 0.0, 1.5), t_attach3);
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child2".to_string(), child2),
+            ("Child3".to_string(), child3),
+        ],
+    )
+}
+
+/// RUN_108: the same final chain as RUN_08 (parent ← child1 ← child2 ← child3),
+/// but every attach is via named mass points, and the third action again
+/// targets the already-attached child3 → re-root child1 under the parent.
+///
+/// All four bodies use the `Body` option-C box inertia.
+///
+/// Named points (from `Modified_data` + the RUN_108 input.py renames):
+/// - parent point "front_center_right" at [-0.5, 0, 1],
+///   T=[[0,0,1],[0,1,0],[-1,0,0]].
+/// - child1 point "back_center_right" at [0.5, 0, 1],
+///   T=[[0,0,1],[0,1,0],[-1,0,0]].
+/// - child2 `mass_points_2`: "front_to_back" at [-0.5,0,0]
+///   T=[[-1,0,0],[0,-1,0],[0,0,1]]; "ghost_front_to_back" at [-1.5,0,0] same T.
+/// - child3 `mass_points_2`: "front_to_back" at [-0.5,0,0]
+///   T=[[-1,0,0],[0,-1,0],[0,0,1]]; "back_to_front" at [0.5,0,0] identity.
+///
+/// Body actions, in order:
+/// 1. pt_attach1: child2.ghost_front_to_back → child1.back_center_right.
+/// 2. pt_attach2: child3.back_to_front → child2.front_to_back.
+/// 3. pt_attach3: child3.front_to_back → parent.front_center_right. child3 is
+///    non-root → re-root child1 under parent. The named-point attach geometry
+///    (docking-aligned) is computed inline via [`attach_aligned_offset`] and
+///    fed to [`MassTree::attach_with_reroot`].
+fn build_run_108() -> (MassTree, Vec<(String, MassBodyId)>) {
+    let mut tree = MassTree::new();
+    let parent = tree.add_root(
+        "Parent".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child1 = tree.add_body(
+        "Child1".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child2 = tree.add_body(
+        "Child2".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+    let child3 = tree.add_body(
+        "Child3".into(),
+        mass_body_spec(1.0, DVec3::ZERO, box_inertia_diag()),
+    );
+
+    // parent point "front_center_right" at [-0.5,0,1], T=[[0,0,1],[0,1,0],[-1,0,0]].
+    let t_fcr = jeod_trans([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]);
+    tree.add_mass_point(
+        parent,
+        "front_center_right",
+        DVec3::new(-0.5, 0.0, 1.0),
+        t_fcr,
+    );
+
+    // child1 point "back_center_right" at [0.5,0,1], same T as parent point.
+    tree.add_mass_point(
+        child1,
+        "back_center_right",
+        DVec3::new(0.5, 0.0, 1.0),
+        t_fcr,
+    );
+
+    // child2 mass_points_2.
+    let t_ftb = jeod_trans([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]);
+    tree.add_mass_point(child2, "front_to_back", DVec3::new(-0.5, 0.0, 0.0), t_ftb);
+    tree.add_mass_point(
+        child2,
+        "ghost_front_to_back",
+        DVec3::new(-1.5, 0.0, 0.0),
+        t_ftb,
+    );
+
+    // child3 mass_points_2.
+    tree.add_mass_point(child3, "front_to_back", DVec3::new(-0.5, 0.0, 0.0), t_ftb);
+    tree.add_mass_point(
+        child3,
+        "back_to_front",
+        DVec3::new(0.5, 0.0, 0.0),
+        jeod_trans([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    );
+
+    // pt_attach1: child2.ghost_front_to_back → child1.back_center_right.
+    tree.attach_aligned(child2, "ghost_front_to_back", child1, "back_center_right");
+    // pt_attach2: child3.back_to_front → child2.front_to_back.
+    tree.attach_aligned(child3, "back_to_front", child2, "front_to_back");
+
+    // pt_attach3: child3.front_to_back → parent.front_center_right. child3 is
+    // non-root now → compute the docking-aligned (offset, T) the named points
+    // resolve to, then re-root child1 under parent with that geometry.
+    let (offset3, t3) =
+        attach_aligned_offset(&tree, child3, "front_to_back", parent, "front_center_right");
+    tree.attach_with_reroot(child3, parent, offset3, t3);
+
+    (
+        tree,
+        vec![
+            ("Parent".to_string(), parent),
+            ("Child1".to_string(), child1),
+            ("Child2".to_string(), child2),
+            ("Child3".to_string(), child3),
+        ],
+    )
+}
+
+/// Compute the docking-aligned `(offset, T_parent_child)` that JEOD's
+/// named-point attach (`mass_attach.cc:66-136`) resolves to for
+/// `child.child_point → parent.parent_point`, expressed as the child
+/// structural origin in the parent structural frame and the parent→child
+/// structural rotation. This mirrors the geometry inside
+/// [`MassTree::attach_aligned`] (the 180° docking yaw `diag(-1,-1,1)`),
+/// extracted so the caller can route the result through
+/// [`MassTree::attach_with_reroot`] for the non-root-subject case.
+fn attach_aligned_offset(
+    tree: &MassTree,
+    child_id: MassBodyId,
+    child_point_name: &str,
+    parent_id: MassBodyId,
+    parent_point_name: &str,
+) -> (DVec3, DMat3) {
+    let child_point = tree
+        .find_mass_point(child_id, child_point_name)
+        .expect("child mass point: must exist for RUN_108 named-point reroot");
+    let child_pt_pos = child_point.position;
+    let child_pt_t = child_point.t_parent_this;
+    let parent_point = tree
+        .find_mass_point(parent_id, parent_point_name)
+        .expect("parent mass point: must exist for RUN_108 named-point reroot");
+    let parent_pt_pos = parent_point.position;
+    let parent_pt_t = parent_point.t_parent_this;
+
+    // Invert child point: child_struct in child_point frame.
+    let inv_pos = -(child_pt_t * child_pt_pos);
+    let inv_t = child_pt_t.transpose();
+    // 180° docking yaw (JEOD mass_attach.cc:112-115).
+    let t_yaw = DMat3::from_cols(
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(0.0, -1.0, 0.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    let pos_after_yaw = t_yaw * inv_pos;
+    let offset = parent_pt_t.transpose() * pos_after_yaw + parent_pt_pos;
+    let t_parent_child = inv_t * t_yaw * parent_pt_t;
+    (offset, t_parent_child)
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Shared validation driver
 // ════════════════════════════════════════════════════════════════════
@@ -1205,6 +1469,28 @@ fn tier3_sim_attach_mass() {
         let (tree, ids) = build_run_09();
         let reference = load_reference("attach_mass_09_mass.out");
         validate_run("RUN_09", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        // RUN_109: named-point attach + the RUN_09 non-identity parent
+        // struct→body orientation. The docking-aligned named-point geometry
+        // resolves to RUN_09's parent←child1 edge, so the composite matches.
+        let (tree, ids) = build_run_109();
+        let reference = load_reference("attach_mass_109_mass.out");
+        validate_run("RUN_109", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        // RUN_08: third action attaches an already-attached child → JEOD
+        // re-roots the subject's tree under the new parent.
+        let (tree, ids) = build_run_08();
+        let reference = load_reference("attach_mass_08_mass.out");
+        validate_run("RUN_08", &tree, &ids, &reference, &mut errors);
+    }
+    {
+        // RUN_108: named-point variant of RUN_08; same re-root path via the
+        // named-point geometry.
+        let (tree, ids) = build_run_108();
+        let reference = load_reference("attach_mass_108_mass.out");
+        validate_run("RUN_108", &tree, &ids, &reference, &mut errors);
     }
     {
         let (tree, ids) = build_run_10();

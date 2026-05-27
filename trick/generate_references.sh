@@ -2052,6 +2052,13 @@ run_attach_mass_group() {
         # Named-point attach + runtime detach / reattach.
         "SET_test/RUN_110:attach_mass_110"
         "SET_test/RUN_111:attach_mass_111"
+        # Named-point attach combined with non-identity parent struct→body
+        # orientation (RUN_09 orientation handling + RUN_107 named-point path).
+        "SET_test/RUN_109:attach_mass_109"
+        # Child re-attached to a second parent in a later body action: the
+        # second attach overrides the first (final topology = last parent).
+        "SET_test/RUN_08:attach_mass_08"
+        "SET_test/RUN_108:attach_mass_108"
     )
 
     # Skip entire group if all .out files are already present.
