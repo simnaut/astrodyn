@@ -100,7 +100,7 @@ fn iss_set01_time_periapsis() {
         init.eccentricity.expect("ISS set01 must have eccentricity"),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        init.arg_periapsis.expect("set must have arg_periapsis"),
         t_peri,
         EARTH_MU,
     );
@@ -150,7 +150,7 @@ fn iss_set02_mean_anomaly() {
         init.eccentricity.expect("ISS set02 must have eccentricity"),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        init.arg_periapsis.expect("set must have arg_periapsis"),
         mean_anomaly,
         EARTH_MU,
     );
@@ -200,7 +200,7 @@ fn iss_set10_true_anomaly() {
         init.eccentricity.expect("ISS set10 must have eccentricity"),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        init.arg_periapsis.expect("set must have arg_periapsis"),
         true_anomaly,
         EARTH_MU,
     );
@@ -251,7 +251,9 @@ fn iss_element_sets_cross_consistent() {
             .expect("ISS set01 must have eccentricity"),
         init01.inclination,
         init01.ascending_node,
-        init01.arg_periapsis,
+        init01
+            .arg_periapsis
+            .expect("ISS set01 must have arg_periapsis"),
         init01.time_periapsis.unwrap(),
         EARTH_MU,
     );
@@ -270,7 +272,9 @@ fn iss_element_sets_cross_consistent() {
             .expect("ISS set02 must have eccentricity"),
         init02.inclination,
         init02.ascending_node,
-        init02.arg_periapsis,
+        init02
+            .arg_periapsis
+            .expect("ISS set02 must have arg_periapsis"),
         init02.mean_anomaly.unwrap(),
         EARTH_MU,
     );
@@ -289,7 +293,9 @@ fn iss_element_sets_cross_consistent() {
             .expect("ISS set10 must have eccentricity"),
         init10.inclination,
         init10.ascending_node,
-        init10.arg_periapsis,
+        init10
+            .arg_periapsis
+            .expect("ISS set10 must have arg_periapsis"),
         init10.true_anomaly.unwrap(),
         EARTH_MU,
     );

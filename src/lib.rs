@@ -221,7 +221,8 @@ pub use astrodyn_dynamics::{
 // orbital-element / LVLH initialization paths used by mission init code
 // and JEOD parity tests.
 pub use astrodyn_dynamics::body_init::{
-    init_from_altitudes_time_periapsis, init_from_altitudes_true_anomaly, init_from_mean_anomaly,
+    init_from_altitudes_time_periapsis, init_from_altitudes_true_anomaly,
+    init_from_arg_latitude_radial_vel, init_from_mean_anomaly, init_from_orbital_elements,
     init_from_orbital_elements_typed, init_from_semi_latus_rectum_true_anomaly, init_rot_from_lvlh,
 };
 
