@@ -329,6 +329,17 @@ fn sma_ecc_from_altitudes(r_eq: f64, alt_apoapsis: f64, alt_periapsis: f64) -> (
     // JEOD_INV: BA.13 — altitude shape: a = r_eq + ½(alt_apo + alt_peri),
     // e = (alt_apo − alt_peri) / (2a), with `r_eq` the planet equatorial radius.
     let semi_major_axis = r_eq + 0.5 * (alt_apoapsis + alt_periapsis);
+    // Guard the altitude-derived semi-major axis locally so a mis-specified deck
+    // (e.g. altitudes that drive `a` non-positive) fails with an altitude-aware
+    // diagnostic here, rather than reaching `to_cartesian` via a delegating
+    // converter that only checks `is_finite`. The eccentricity range is validated
+    // downstream by the converter we delegate to.
+    assert!(
+        semi_major_axis > 0.0 && semi_major_axis.is_finite(),
+        "sma_ecc_from_altitudes: derived semi_major_axis must be positive and finite, \
+         got {semi_major_axis} from r_eq={r_eq}, alt_apoapsis={alt_apoapsis}, \
+         alt_periapsis={alt_periapsis}; check the apo/peri altitudes in the deck"
+    );
     let eccentricity = (alt_apoapsis - alt_periapsis) / (2.0 * semi_major_axis);
     (semi_major_axis, eccentricity)
 }
@@ -342,7 +353,7 @@ fn sma_ecc_from_altitudes(r_eq: f64, alt_apoapsis: f64, alt_periapsis: f64) -> (
 /// `DynBodyInitOrbit::apply()`
 /// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:205-208, 277-318`):
 /// the altitudes are converted to semi-major axis + eccentricity via
-/// [`sma_ecc_from_altitudes`], then JEOD sets `shape = ShapeSemiMajorAxis`
+/// `sma_ecc_from_altitudes`, then JEOD sets `shape = ShapeSemiMajorAxis`
 /// (so `semiparam = a·(1-e²)`) and resolves the true anomaly directly. This is
 /// therefore exactly [`init_from_orbital_elements`] with the derived a/e.
 ///
@@ -390,7 +401,7 @@ pub fn init_from_altitudes_true_anomaly(
 /// `DynBodyInitOrbit::apply()`
 /// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:213-216, 277-318`):
 /// the altitudes are converted to semi-major axis + eccentricity via
-/// [`sma_ecc_from_altitudes`], then the time-since-periapsis is mapped to mean
+/// `sma_ecc_from_altitudes`, then the time-since-periapsis is mapped to mean
 /// anomaly (`M = t_peri·√(μ/a)/a`) exactly as in [`init_from_time_periapsis`],
 /// which this function delegates to with the derived a/e.
 ///
@@ -1631,10 +1642,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "eccentricity must be in [0, 1)")]
     fn ba_13_panics_on_swapped_altitudes() {
-        // JEOD_INV: BA.13 — apo below peri yields a negative derived
+        // JEOD_INV: BA.13 — apo below peri yields an invalid negative derived
         // eccentricity, which `init_from_orbital_elements` rejects rather than
-        // silently producing a retrograde-sense orbit. (A swapped-altitude deck
-        // is the obvious way to mis-specify the altitude shape.)
+        // silently accepting a non-physical orbit. (A swapped-altitude deck is
+        // the obvious way to mis-specify the altitude shape.)
         let _ = init_from_altitudes_true_anomaly(
             EARTH_R_EQ, 346_073.0, 363_454.0, 0.9, 0.86, 1.75, 5.23, EARTH_MU,
         );

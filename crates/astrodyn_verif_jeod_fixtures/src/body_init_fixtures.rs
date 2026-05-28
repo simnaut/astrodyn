@@ -317,6 +317,17 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
             "orbital_inits[{name}]: missing eccentricity (required for the sma/slr shapes)"
         ));
     }
+    // The altitude shape derives eccentricity (stored as `null` in the JSON); an
+    // eccentricity present alongside the altitude pair is ambiguous and signals a
+    // malformed or stale deck, so reject it to keep the schema unambiguous.
+    if eccentricity.is_some() && alt_apoapsis.is_some() {
+        return Err(format!(
+            "orbital_inits[{name}]: eccentricity must not be set alongside the altitude shape \
+             (alt_apoapsis/alt_periapsis); the altitude shape derives eccentricity. Regenerate \
+             with: cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home \
+             $JEOD_HOME"
+        ));
+    }
     let inclination = parse_num_field(entry, "inclination")
         .ok_or_else(|| format!("orbital_inits[{name}]: missing inclination"))?;
     let ascending_node = parse_num_field(entry, "ascending_node")
@@ -747,5 +758,36 @@ mod tests {
 }"#;
         let err = parse_bundle_json(json).unwrap_err();
         assert!(err.contains("alt_apoapsis and alt_periapsis"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_eccentricity_alongside_altitude_shape() {
+        // The altitude shape derives eccentricity; supplying it directly is
+        // ambiguous and signals a malformed/stale deck.
+        let json = r#"{
+  "schema_version": 1,
+  "vehicle": "TEST",
+  "reference_inertial": null,
+  "orbital_inits": [
+    {
+      "name": "set_bad",
+      "alt_apoapsis": 363454.0,
+      "alt_periapsis": 346073.0,
+      "eccentricity": 0.001,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "arg_periapsis": 1.75,
+      "true_anomaly": 5.23,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
+    }
+  ],
+  "trans_states": []
+}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(
+            err.contains("must not be set alongside the altitude shape"),
+            "got: {err}"
+        );
     }
 }

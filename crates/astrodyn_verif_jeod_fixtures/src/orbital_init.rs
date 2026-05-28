@@ -248,6 +248,16 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
             "missing eccentricity (required for the sma/slr shapes)".to_string(),
         ));
     }
+    // The altitude shape *derives* eccentricity; an eccentricity supplied
+    // alongside the altitude pair is ambiguous (and would mask a malformed or
+    // stale deck), so reject it to keep the schema canonical.
+    if eccentricity.is_some() && alt_apoapsis.is_some() {
+        return Err(BodyInitFixtureError::malformed(
+            "eccentricity must not be set alongside the altitude shape (alt_apoapsis/\
+             alt_periapsis); the altitude shape derives eccentricity"
+                .to_string(),
+        ));
+    }
     Ok(OrbitalInitRecord {
         name: String::new(), // filled in by extract_body_init
         semi_major_axis,
@@ -528,6 +538,29 @@ vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
         assert!((rec.alt_periapsis.unwrap() - 346_073.820_40).abs() < 1e-6);
         assert!((rec.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-9);
         assert_eq!(rec.true_anomaly, None);
+    }
+
+    #[test]
+    fn parse_orbital_init_py_rejects_eccentricity_with_altitude_shape() {
+        // The altitude shape derives eccentricity; a deck that also supplies it
+        // directly is ambiguous and must be rejected.
+        let py = r#"
+  vehicle.orb_init.set              = 4
+  vehicle.orb_init.alt_apoapsis  = trick.attach_units( "km",363.45458264)
+  vehicle.orb_init.alt_periapsis  = trick.attach_units( "km",346.07382040)
+  vehicle.orb_init.eccentricity  = 0.001
+  vehicle.orb_init.arg_periapsis  = trick.attach_units( "degree",100.582445989)
+  vehicle.orb_init.inclination  = trick.attach_units( "degree",51.670450765)
+  vehicle.orb_init.ascending_node  = trick.attach_units( "degree",49.708417385)
+  vehicle.orb_init.true_anomaly  = trick.attach_units( "degree",299.884499026)
+  vehicle.orb_init.planet_name      = "Earth"
+  vehicle.orb_init.orbit_frame_name = "Earth.inertial"
+"#;
+        let err = parse_orbital_init_py(py).unwrap_err();
+        assert!(
+            format!("{err}").contains("must not be set alongside the altitude shape"),
+            "got: {err}"
+        );
     }
 
     #[test]
