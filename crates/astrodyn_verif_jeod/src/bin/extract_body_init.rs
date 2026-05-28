@@ -65,6 +65,8 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_inertial_body_set01",
             "trans_Orbit_inertial_body_set02",
             "trans_Orbit_inertial_body_set03",
+            "trans_Orbit_inertial_body_set04",
+            "trans_Orbit_inertial_body_set05",
             "trans_Orbit_inertial_body_set10",
             "trans_Orbit_pfix_body_set01",
         ],
@@ -77,6 +79,8 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_inertial_body_set01",
             "trans_Orbit_inertial_body_set02",
             "trans_Orbit_inertial_body_set03",
+            "trans_Orbit_inertial_body_set04",
+            "trans_Orbit_inertial_body_set05",
             "trans_Orbit_pfix_body_set01",
         ],
         trans_states: &["trans_TransState_inertial_body"],
@@ -325,7 +329,24 @@ fn write_bundle(
             fmt_opt(init.semi_latus_rectum)
         )
         .unwrap();
-        writeln!(out, "      \"eccentricity\": {},", fmt(init.eccentricity)).unwrap();
+        writeln!(
+            out,
+            "      \"alt_apoapsis\": {},",
+            fmt_opt(init.alt_apoapsis)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "      \"alt_periapsis\": {},",
+            fmt_opt(init.alt_periapsis)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "      \"eccentricity\": {},",
+            fmt_opt(init.eccentricity)
+        )
+        .unwrap();
         writeln!(out, "      \"inclination\": {},", fmt(init.inclination)).unwrap();
         writeln!(
             out,

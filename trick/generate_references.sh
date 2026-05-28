@@ -702,6 +702,12 @@ run_orbinit_group() {
         # set03 semi-latus-rectum + true-anomaly parameterization (ISS + STS, inertial)
         "SET_test/RUN_0003:orbinit_0003:orbinit_0003_orbinit.csv"
         "SET_test/RUN_0103:orbinit_0103:orbinit_0103_orbinit.csv"
+        # set04 apo/peri-altitude + true-anomaly parameterization (ISS + STS, inertial)
+        "SET_test/RUN_0004:orbinit_0004:orbinit_0004_orbinit.csv"
+        "SET_test/RUN_0104:orbinit_0104:orbinit_0104_orbinit.csv"
+        # set05 apo/peri-altitude + time-periapsis parameterization (ISS + STS, inertial)
+        "SET_test/RUN_0005:orbinit_0005:orbinit_0005_orbinit.csv"
+        "SET_test/RUN_0105:orbinit_0105:orbinit_0105_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

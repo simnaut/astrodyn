@@ -36,6 +36,10 @@
 //!   RUN_0001: ISS orbital elements in inertial frame (set01, time_periapsis)
 //!   RUN_0003: ISS orbital elements in inertial frame (set03, slr + true anomaly)
 //!   RUN_0103: STS-114 orbital elements in inertial frame (set03, slr + true anomaly)
+//!   RUN_0004: ISS orbital elements in inertial frame (set04, altitudes + true anomaly)
+//!   RUN_0104: STS-114 orbital elements in inertial frame (set04, altitudes + true anomaly)
+//!   RUN_0005: ISS orbital elements in inertial frame (set05, altitudes + time_periapsis)
+//!   RUN_0105: STS-114 orbital elements in inertial frame (set05, altitudes + time_periapsis)
 //!   RUN_0101: STS-114 orbital elements in inertial frame (set01, time_periapsis)
 //!   RUN_0201: ISS orbital elements in planet-fixed (pfix) frame (set01)
 //!   RUN_0301: STS-114 orbital elements in planet-fixed (pfix) frame (set01)
@@ -251,6 +255,70 @@ fn tier3_orbinit_docker_run0103_sts_inertial() {
         "RUN_0103 (STS-114 inertial set03, slr + true anomaly)",
         1.47e-9,
         9.84e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0004 / RUN_0104: set04 (apo/peri altitudes + true-anomaly), inertial
+// frame. Exercises `init_from_altitudes_true_anomaly`: JEOD's `ShapeAltitudes`
+// branch derives sma/ecc from the altitudes (referenced to Earth's equatorial
+// radius `r_eq = 6_378_137 m`) before resolving the true anomaly. Tolerances
+// are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0004_iss_inertial() {
+    // Observed: pos=4.66e-10 m, vel=0 m/s (5% above → listed; vel floored at
+    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0004(),
+        "orbinit_0004_orbinit.csv",
+        "RUN_0004 (ISS inertial set04, altitudes + true anomaly)",
+        4.89e-10,
+        1.0e-13,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0104_sts_inertial() {
+    // Observed: pos=2.13e-9 m, vel=2.27e-13 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0104(),
+        "orbinit_0104_orbinit.csv",
+        "RUN_0104 (STS-114 inertial set04, altitudes + true anomaly)",
+        2.24e-9,
+        2.39e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0005 / RUN_0105: set05 (apo/peri altitudes + time-periapsis), inertial
+// frame. Exercises `init_from_altitudes_time_periapsis`: sma/ecc from the
+// altitudes as in set04, then `time_periapsis → mean anomaly` exactly as
+// set01's derivation. Tolerances are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0005_iss_inertial() {
+    // Observed: pos=5.35e-9 m, vel=5.57e-12 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0005(),
+        "orbinit_0005_orbinit.csv",
+        "RUN_0005 (ISS inertial set05, altitudes + time periapsis)",
+        5.62e-9,
+        5.85e-12,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0105_sts_inertial() {
+    // Observed: pos=4.01e-9 m, vel=4.51e-12 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0105(),
+        "orbinit_0105_orbinit.csv",
+        "RUN_0105 (STS-114 inertial set05, altitudes + time periapsis)",
+        4.21e-9,
+        4.73e-12,
     );
 }
 
