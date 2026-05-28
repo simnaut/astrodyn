@@ -440,6 +440,106 @@ pub fn init_from_altitudes_time_periapsis(
     )
 }
 
+/// Initialize translational state from the JEOD `SmaIncAscnodeArglatRadRadvel`
+/// element set (set #06): semi-major axis, inclination, ascending node,
+/// **argument of latitude**, **orbital radius**, and **radial velocity**.
+///
+/// Port of the `SmaIncAscnodeArglatRadRadvel` branch of JEOD
+/// `DynBodyInitOrbit::apply()`
+/// (`models/dynamics/body_action/src/dyn_body_init_orbit.cc:221-261, 286-321`).
+/// JEOD recovers the eccentricity, true anomaly, and argument of periapsis from
+/// the radius / radial-velocity pair via the eccentric-anomaly identities:
+///
+/// ```cpp
+/// ecosE = (semi_major_axis - orb_radius) / semi_major_axis;
+/// esinE = (radial_vel * orb_radius) / sqrt(mu * semi_major_axis);
+/// ecc_sq = ecosE*ecosE + esinE*esinE;
+/// eccentricity = sqrt(ecc_sq);
+/// if (eccentricity >= 1.0e-14) {
+///     kcost = ecosE - ecc_sq;
+///     ksint = sqrt(1.0 - ecc_sq) * esinE;
+///     true_anomaly = atan2(ksint, kcost);
+/// } else {
+///     true_anomaly = 0.0;
+/// }
+/// arg_periapsis = arg_latitude - true_anomaly;
+/// ```
+///
+/// JEOD then selects `shape = ShapeSemiMajorAxis` and `location =
+/// LocationTrueAnom`, so the orbit resolves exactly as
+/// [`init_from_orbital_elements`] with the derived `(e, ω, ν)`. The arithmetic
+/// order above is preserved verbatim so the f64 bit-pattern matches JEOD's for
+/// parity tests.
+///
+/// # Arguments
+/// * `semi_major_axis` - Semi-major axis (m)
+/// * `inclination` - Inclination (rad)
+/// * `raan` - Right ascension of ascending node (rad)
+/// * `arg_latitude` - Argument of latitude `ω + ν` (rad)
+/// * `orb_radius` - Orbital radius, distance from planet centre (m)
+/// * `radial_vel` - Radial component of velocity `dr/dt` (m/s)
+/// * `mu` - Gravitational parameter of central body (m^3/s^2)
+pub fn init_from_arg_latitude_radial_vel(
+    semi_major_axis: f64,
+    inclination: f64,
+    raan: f64,
+    arg_latitude: f64,
+    orb_radius: f64,
+    radial_vel: f64,
+    mu: f64,
+) -> TranslationalState {
+    // JEOD_INV: BA.05 — orbit initializer requires a valid gravity source (mu > 0)
+    // JEOD dyn_body_init_orbit.cc:98-111: validate mu before use.
+    assert!(
+        mu > 0.0,
+        "init_from_arg_latitude_radial_vel: mu must be positive, got {mu}"
+    );
+    assert!(
+        semi_major_axis > 0.0 && semi_major_axis.is_finite(),
+        "init_from_arg_latitude_radial_vel: semi_major_axis must be positive and finite, \
+         got {semi_major_axis}"
+    );
+    assert!(
+        orb_radius > 0.0 && orb_radius.is_finite(),
+        "init_from_arg_latitude_radial_vel: orb_radius must be positive and finite, \
+         got {orb_radius}"
+    );
+    assert!(
+        radial_vel.is_finite(),
+        "init_from_arg_latitude_radial_vel: radial_vel must be finite, got {radial_vel}"
+    );
+
+    // JEOD_INV: BA.14 — set06 (SmaIncAscnodeArglatRadRadvel) derives (e, ν, ω)
+    // from the radius / radial-velocity pair via the eccentric-anomaly
+    // identities, then resolves the orbit as the sma + true-anomaly shape.
+    // Arithmetic order matches dyn_body_init_orbit.cc:227-249 verbatim.
+    let ecos_e = (semi_major_axis - orb_radius) / semi_major_axis;
+    let esin_e = (radial_vel * orb_radius) / (mu * semi_major_axis).sqrt();
+    let ecc_sq = ecos_e * ecos_e + esin_e * esin_e;
+    let eccentricity = ecc_sq.sqrt();
+
+    let true_anomaly = if eccentricity >= 1.0e-14 {
+        let kcost = ecos_e - ecc_sq;
+        let ksint = (1.0 - ecc_sq).sqrt() * esin_e;
+        ksint.atan2(kcost)
+    } else {
+        // Circular orbit: JEOD sets the true anomaly to zero.
+        0.0
+    };
+
+    let arg_periapsis = arg_latitude - true_anomaly;
+
+    init_from_orbital_elements(
+        semi_major_axis,
+        eccentricity,
+        inclination,
+        raan,
+        arg_periapsis,
+        true_anomaly,
+        mu,
+    )
+}
+
 /// Initialize translational state from LVLH-relative position and velocity.
 ///
 /// Computes the LVLH frame from a reference orbit state, then transforms the
@@ -779,7 +879,8 @@ mod tests {
                 .expect("ISS set01 should have eccentricity"),
             init.inclination,
             init.ascending_node,
-            init.arg_periapsis,
+            init.arg_periapsis
+                .expect("ISS set01 should have arg_periapsis"),
             t_peri,
             EARTH_MU,
         );
@@ -1659,6 +1760,85 @@ mod tests {
         // misconfigured gravity source can't slip through the altitude shape.
         let _ = init_from_altitudes_time_periapsis(
             EARTH_R_EQ, 363_454.0, 346_073.0, 0.9, 0.86, 1.75, 4581.96, 0.0,
+        );
+    }
+
+    // =======================================================================
+    // BA.14 — set06 (SmaIncAscnodeArglatRadRadvel) derives (e, ν, ω) from the
+    // orbital radius / radial-velocity pair, then resolves the sma + true-
+    // anomaly shape.
+    // =======================================================================
+
+    #[test]
+    fn ba_14_arg_latitude_radial_vel_matches_iss_set06_deck() {
+        // JEOD_INV: BA.14 — recover (e, ν, ω) from the radius/radial-velocity
+        // pair and confirm the derived state matches `init_from_orbital_elements`
+        // fed the JEOD-derived elements. The inputs are the ISS set06 deck
+        // (`Modified_data/ISS/trans_Orbit_inertial_body_set06.py`).
+        let a = 6_732_901.201_52; // km → m
+        let i = 51.670450765_f64.to_radians();
+        let raan = 49.708417385_f64.to_radians();
+        let arg_lat = 400.466945015_f64.to_radians();
+        let r = 6_728_562.764_55; // km → m
+        let rdot = -8.61072308;
+
+        // Reproduce JEOD's derivation independently (same arithmetic order).
+        let ecos_e = (a - r) / a;
+        let esin_e = (rdot * r) / (EARTH_MU * a).sqrt();
+        let ecc_sq = ecos_e * ecos_e + esin_e * esin_e;
+        let e = ecc_sq.sqrt();
+        let kcost = ecos_e - ecc_sq;
+        let ksint = (1.0 - ecc_sq).sqrt() * esin_e;
+        let nu = ksint.atan2(kcost);
+        let argp = arg_lat - nu;
+
+        let via_set06 = init_from_arg_latitude_radial_vel(a, i, raan, arg_lat, r, rdot, EARTH_MU);
+        let via_elem = init_from_orbital_elements(a, e, i, raan, argp, nu, EARTH_MU);
+
+        assert_eq!(via_set06.position, via_elem.position);
+        assert_eq!(via_set06.velocity, via_elem.velocity);
+
+        // The recovered orbital radius must reproduce the deck's orb_radius
+        // (the radius is what set06 is parameterized on); a stray sign or a
+        // swapped ecosE/esinE would shift it kilometres.
+        let r_actual = via_set06.position.length();
+        assert!(
+            (r_actual - r).abs() < 1e-6,
+            "set06 recovered radius: expected {r} m, got {r_actual} m"
+        );
+    }
+
+    #[test]
+    fn ba_14_arg_latitude_radial_vel_circular_sets_nu_zero() {
+        // JEOD_INV: BA.14 — for a circular orbit (r = a, rdot = 0) the derived
+        // eccentricity is below the 1e-14 cutoff, so JEOD pins ν = 0 and
+        // ω = arg_latitude. The state must then equal the circular orbit at
+        // true anomaly 0 with arg_periapsis = arg_latitude.
+        let a = EARTH_R_EQ + 400_000.0;
+        let i = 0.5;
+        let raan = 0.3;
+        let arg_lat = 1.1;
+
+        let via_set06 = init_from_arg_latitude_radial_vel(a, i, raan, arg_lat, a, 0.0, EARTH_MU);
+        let via_elem = init_from_orbital_elements(a, 0.0, i, raan, arg_lat, 0.0, EARTH_MU);
+
+        assert_eq!(via_set06.position, via_elem.position);
+        assert_eq!(via_set06.velocity, via_elem.velocity);
+    }
+
+    #[test]
+    #[should_panic(expected = "mu must be positive")]
+    fn ba_14_panics_on_zero_mu_in_arg_latitude_radial_vel_init() {
+        // JEOD_INV: BA.14 — set06 shares the mu>0 guard so a misconfigured
+        // gravity source can't slip through the arg-latitude/radial-vel shape.
+        let _ = init_from_arg_latitude_radial_vel(
+            EARTH_R_EQ + 400_000.0,
+            0.5,
+            0.3,
+            1.1,
+            EARTH_R_EQ + 400_000.0,
+            0.0,
+            0.0,
         );
     }
 }

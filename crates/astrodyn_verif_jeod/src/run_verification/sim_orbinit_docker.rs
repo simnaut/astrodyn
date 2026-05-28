@@ -19,6 +19,12 @@
 //!   * RUN_0003 — ISS orbital elements (set03, semi-latus rectum + true anomaly) in `Earth.inertial`;
 //!   * RUN_0004 — ISS orbital elements (set04, apo/peri altitudes + true anomaly) in `Earth.inertial`;
 //!   * RUN_0005 — ISS orbital elements (set05, apo/peri altitudes + time periapsis) in `Earth.inertial`;
+//!   * RUN_0006 — ISS orbital elements (set06, arg-latitude + radial-vel) in `Earth.inertial`;
+//!   * RUN_0010 — ISS orbital elements (set10, sma/ecc + true anomaly) in `Earth.inertial`;
+//!   * RUN_0011 — ISS orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.inertial`;
+//!   * RUN_0106 — STS-114 orbital elements (set06, arg-latitude + radial-vel) in `Earth.inertial`;
+//!   * RUN_0110 — STS-114 orbital elements (set10, sma/ecc + true anomaly) in `Earth.inertial`;
+//!   * RUN_0111 — STS-114 orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.inertial`;
 //!   * RUN_0101 — STS-114 orbital elements (set01) in `Earth.inertial`;
 //!   * RUN_0102 — STS-114 orbital elements (set02, mean anomaly) in `Earth.inertial`;
 //!   * RUN_0103 — STS-114 orbital elements (set03, semi-latus rectum + true anomaly) in `Earth.inertial`;
@@ -56,7 +62,8 @@ use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
     calendar_to_tjt, compute_t_parent_this_from_tjt, default_leap_second_table,
-    init_from_altitudes_time_periapsis, init_from_altitudes_true_anomaly, init_from_mean_anomaly,
+    init_from_altitudes_time_periapsis, init_from_altitudes_true_anomaly,
+    init_from_arg_latitude_radial_vel, init_from_mean_anomaly, init_from_orbital_elements,
     init_from_semi_latus_rectum_true_anomaly, ut1_to_gmst_seconds, CalendarDate, GravityControl,
     GravityControls, GravityGradient, GravityModel, GravitySource, GravitySourceEntry,
     RotationModel, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
@@ -153,7 +160,7 @@ fn orbital_element_state(vehicle: &str, init_name: &str, mu_earth: f64) -> Trans
         require_eccentricity(vehicle, init_name, &init),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        require_arg_periapsis(vehicle, init_name, &init),
         mean_anomaly,
         mu_earth,
     );
@@ -198,7 +205,7 @@ fn mean_anomaly_element_state(vehicle: &str, init_name: &str, mu_earth: f64) -> 
         require_eccentricity(vehicle, init_name, &init),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        require_arg_periapsis(vehicle, init_name, &init),
         mean_anomaly,
         mu_earth,
     )
@@ -232,14 +239,14 @@ fn true_anomaly_element_state(vehicle: &str, init_name: &str, mu_earth: f64) -> 
         require_eccentricity(vehicle, init_name, &init),
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        require_arg_periapsis(vehicle, init_name, &init),
         true_anomaly,
         mu_earth,
     )
 }
 
 /// Unwrap the fixture's directly-supplied eccentricity (sma/slr sets carry it;
-/// the altitude sets 04/05 derive it instead and must not call this).
+/// the altitude sets 04/05/11 and set06 derive it instead and must not call this).
 fn require_eccentricity(
     vehicle: &str,
     init_name: &str,
@@ -248,6 +255,18 @@ fn require_eccentricity(
     init.eccentricity.unwrap_or_else(|| {
         panic!("{vehicle}/{init_name}: expected eccentricity in the fixture (sma/slr set)")
     })
+}
+
+/// Unwrap the fixture's directly-supplied argument of periapsis (every set
+/// except set06 carries it; set06 derives it from `arg_latitude − true_anomaly`
+/// inside [`arg_latitude_radial_vel_state`] and must not call this).
+fn require_arg_periapsis(
+    vehicle: &str,
+    init_name: &str,
+    init: &astrodyn_verif_jeod_fixtures::orbital_init::OrbitalInitData,
+) -> f64 {
+    init.arg_periapsis
+        .unwrap_or_else(|| panic!("{vehicle}/{init_name}: expected arg_periapsis in the fixture"))
 }
 
 /// Materialize a JEOD set04 (`IncAscnodeAltperAltapoArgperTanom`) fixture into
@@ -287,7 +306,7 @@ fn altitudes_true_anomaly_state(
         alt_peri,
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        require_arg_periapsis(vehicle, init_name, &init),
         true_anomaly,
         mu_earth,
     )
@@ -327,8 +346,85 @@ fn altitudes_time_periapsis_state(
         alt_peri,
         init.inclination,
         init.ascending_node,
-        init.arg_periapsis,
+        require_arg_periapsis(vehicle, init_name, &init),
         t_peri,
+        mu_earth,
+    )
+}
+
+/// Materialize a JEOD set06 (`SmaIncAscnodeArglatRadRadvel`) fixture into an
+/// inertial-frame translational state. set06 parameterizes the orbit by
+/// **semi-major axis**, inclination, ascending node, **argument of latitude**,
+/// **orbital radius**, and **radial velocity**. JEOD recovers `(e, ν, ω)` from
+/// the radius / radial-velocity pair via the eccentric-anomaly identities and
+/// then resolves the sma + true-anomaly shape
+/// (`dyn_body_init_orbit.cc:221-261`). The set06 decks are `Earth.inertial`
+/// only.
+fn arg_latitude_radial_vel_state(
+    vehicle: &str,
+    init_name: &str,
+    mu_earth: f64,
+) -> TranslationalState {
+    let init = load_orbital_init(vehicle, init_name);
+    let a = init.semi_major_axis.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set06 expected semi_major_axis in the fixture")
+    });
+    let arg_latitude = init.arg_latitude.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set06 expected arg_latitude in the fixture")
+    });
+    let orb_radius = init.orb_radius.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set06 expected orb_radius in the fixture")
+    });
+    let radial_vel = init.radial_vel.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set06 expected radial_vel in the fixture")
+    });
+    assert_eq!(
+        init.reference_frame.as_str(),
+        "Earth.inertial",
+        "{vehicle}/{init_name}: set06 recipe only supports Earth.inertial frames, got '{}' — \
+         add frame handling if a pfix set06 RUN is introduced",
+        init.reference_frame,
+    );
+    init_from_arg_latitude_radial_vel(
+        a,
+        init.inclination,
+        init.ascending_node,
+        arg_latitude,
+        orb_radius,
+        radial_vel,
+        mu_earth,
+    )
+}
+
+/// Materialize a JEOD set10 (`SmaEccIncAscnodeArgperTanom`) fixture into an
+/// inertial-frame translational state. set10 parameterizes the orbit by
+/// **semi-major axis** + **eccentricity** + **true anomaly** — JEOD's
+/// `ShapeSemiMajorAxis` + `LocationTrueAnom` path
+/// (`dyn_body_init_orbit.cc:256-261`), which derives `semiparam = a·(1−e²)` and
+/// resolves the true anomaly directly. This is exactly
+/// [`init_from_orbital_elements`]. The set10 decks are `Earth.inertial` only.
+fn true_anomaly_sma_state(vehicle: &str, init_name: &str, mu_earth: f64) -> TranslationalState {
+    let init = load_orbital_init(vehicle, init_name);
+    let a = init.semi_major_axis.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set10 expected semi_major_axis in the fixture")
+    });
+    let true_anomaly = init.true_anomaly.unwrap_or_else(|| {
+        panic!("{vehicle}/{init_name}: set10 expected true_anomaly in the fixture")
+    });
+    assert_eq!(
+        init.reference_frame.as_str(),
+        "Earth.inertial",
+        "{vehicle}/{init_name}: set10 recipe only supports Earth.inertial frames, got '{}' — \
+         add frame handling if a pfix set10 RUN is introduced",
+        init.reference_frame,
+    );
+    init_from_orbital_elements(
+        a,
+        require_eccentricity(vehicle, init_name, &init),
+        init.inclination,
+        init.ascending_node,
+        require_arg_periapsis(vehicle, init_name, &init),
+        true_anomaly,
         mu_earth,
     )
 }
@@ -493,6 +589,58 @@ fn build_run_0105(_init: &InitialConditions) -> SimulationBuilder {
     build_orbinit_docker(mu, state)
 }
 
+/// RUN_0006: ISS set06 (arg-latitude + radial-vel) elements from the committed
+/// `iss.json` fixture (`trans_Orbit_inertial_body_set06`), in `Earth.inertial`.
+fn build_run_0006(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = arg_latitude_radial_vel_state("ISS", "trans_Orbit_inertial_body_set06", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0106: STS-114 set06 (arg-latitude + radial-vel) elements from the
+/// committed `sts_114.json` fixture (`trans_Orbit_inertial_body_set06`), in
+/// `Earth.inertial`.
+fn build_run_0106(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = arg_latitude_radial_vel_state("STS_114", "trans_Orbit_inertial_body_set06", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0010: ISS set10 (sma/ecc + true-anomaly) elements from the committed
+/// `iss.json` fixture (`trans_Orbit_inertial_body_set10`), in `Earth.inertial`.
+fn build_run_0010(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = true_anomaly_sma_state("ISS", "trans_Orbit_inertial_body_set10", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0110: STS-114 set10 (sma/ecc + true-anomaly) elements from the committed
+/// `sts_114.json` fixture (`trans_Orbit_inertial_body_set10`), in `Earth.inertial`.
+fn build_run_0110(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = true_anomaly_sma_state("STS_114", "trans_Orbit_inertial_body_set10", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0011: ISS set11 (altitudes + true-anomaly) elements from the committed
+/// `iss.json` fixture (`trans_Orbit_inertial_body_set11`), in `Earth.inertial`.
+/// JEOD's `CaseEleven` is the same option as set04 (`IncAscnodeAltperAltapoArgperTanom`),
+/// so this reuses the set04 converter.
+fn build_run_0011(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = altitudes_true_anomaly_state("ISS", "trans_Orbit_inertial_body_set11", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0111: STS-114 set11 (altitudes + true-anomaly) elements from the
+/// committed `sts_114.json` fixture (`trans_Orbit_inertial_body_set11`), in
+/// `Earth.inertial`. Same JEOD option as set04 (`CaseEleven`).
+fn build_run_0111(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = altitudes_true_anomaly_state("STS_114", "trans_Orbit_inertial_body_set11", mu);
+    build_orbinit_docker(mu, state)
+}
+
 /// RUN_0001: ISS orbital elements (set01) in `Earth.inertial`.
 pub fn run_0001() -> VerificationCase {
     VerificationCase {
@@ -632,6 +780,108 @@ pub fn run_0105() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0105",
         scenario: build_run_0105,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0006: ISS orbital elements (set06, arg-latitude + radial-vel) in
+/// `Earth.inertial`.
+pub fn run_0006() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0006",
+        scenario: build_run_0006,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0106: STS-114 orbital elements (set06, arg-latitude + radial-vel) in
+/// `Earth.inertial`.
+pub fn run_0106() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0106",
+        scenario: build_run_0106,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0010: ISS orbital elements (set10, sma/ecc + true anomaly) in
+/// `Earth.inertial`.
+pub fn run_0010() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0010",
+        scenario: build_run_0010,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0110: STS-114 orbital elements (set10, sma/ecc + true anomaly) in
+/// `Earth.inertial`.
+pub fn run_0110() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0110",
+        scenario: build_run_0110,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0011: ISS orbital elements (set11, altitudes + true anomaly) in
+/// `Earth.inertial`. Same JEOD option as set04 (`CaseEleven`).
+pub fn run_0011() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0011",
+        scenario: build_run_0011,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0111: STS-114 orbital elements (set11, altitudes + true anomaly) in
+/// `Earth.inertial`. Same JEOD option as set04 (`CaseEleven`).
+pub fn run_0111() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0111",
+        scenario: build_run_0111,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,

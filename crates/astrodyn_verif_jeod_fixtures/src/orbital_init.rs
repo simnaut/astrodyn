@@ -47,23 +47,35 @@ pub struct OrbitalInitData {
     pub semi_latus_rectum: Option<f64>,
     /// Apoapsis altitude in metres above the planet equatorial radius
     /// (converted from km in the source), when the JEOD set uses the altitude
-    /// shape (sets 04/05). `None` otherwise.
+    /// shape (sets 04/05/11). `None` otherwise.
     pub alt_apoapsis: Option<f64>,
     /// Periapsis altitude in metres above the planet equatorial radius
     /// (converted from km in the source), when the JEOD set uses the altitude
-    /// shape (sets 04/05). `None` otherwise.
+    /// shape (sets 04/05/11). `None` otherwise.
     pub alt_periapsis: Option<f64>,
+    /// Orbital radius (distance from planet centre) in metres (converted from
+    /// km in the source), when the JEOD set uses the arg-latitude / radial-vel
+    /// shape (set06 `SmaIncAscnodeArglatRadRadvel`). `None` otherwise.
+    pub orb_radius: Option<f64>,
+    /// Radial velocity (time derivative of the orbital radius) in m/s, when the
+    /// JEOD set uses the arg-latitude / radial-vel shape (set06). `None`
+    /// otherwise.
+    pub radial_vel: Option<f64>,
     /// Eccentricity (dimensionless), when the JEOD set provides it directly
-    /// (sma/slr sets). `None` for the altitude shape (sets 04/05), where it is
-    /// derived from the apo/peri altitudes by the `init_from_altitudes_*`
-    /// converters.
+    /// (sma/slr sets 01/02/03/10). `None` for the altitude shape (sets 04/05/11)
+    /// and the set06 shape, where it is derived by the `init_from_*` converters.
     pub eccentricity: Option<f64>,
     /// Inclination in radians (converted from degrees in the source).
     pub inclination: f64,
     /// Right Ascension of the Ascending Node in radians.
     pub ascending_node: f64,
-    /// Argument of periapsis in radians.
-    pub arg_periapsis: f64,
+    /// Argument of periapsis in radians. Supplied directly by sets
+    /// 01/02/03/04/05/10/11; for set06 it is `None` (JEOD derives it from
+    /// `arg_latitude − true_anomaly`).
+    pub arg_periapsis: Option<f64>,
+    /// Argument of latitude (true anomaly + argument of periapsis) in radians,
+    /// when the JEOD set uses the set06 shape. `None` otherwise.
+    pub arg_latitude: Option<f64>,
     /// Time-since-periapsis in seconds, when used.
     pub time_periapsis: Option<f64>,
     /// Mean anomaly in radians, when used.
@@ -111,10 +123,13 @@ impl From<&OrbitalInitRecord> for OrbitalInitData {
             semi_latus_rectum: rec.semi_latus_rectum,
             alt_apoapsis: rec.alt_apoapsis,
             alt_periapsis: rec.alt_periapsis,
+            orb_radius: rec.orb_radius,
+            radial_vel: rec.radial_vel,
             eccentricity: rec.eccentricity,
             inclination: rec.inclination,
             ascending_node: rec.ascending_node,
             arg_periapsis: rec.arg_periapsis,
+            arg_latitude: rec.arg_latitude,
             time_periapsis: rec.time_periapsis,
             mean_anomaly: rec.mean_anomaly,
             true_anomaly: rec.true_anomaly,
@@ -131,8 +146,9 @@ impl From<&OrbitalInitRecord> for OrbitalInitData {
 /// fixture and never invokes this parser.
 pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyInitFixtureError> {
     // Match: key = trick.attach_units( "unit", value)
+    // The unit may contain a slash (e.g. "m/s"), so match any non-quote run.
     let units_re =
-        Regex::new(r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"(\w+)"\s*,\s*([-\d.eE+]+)\s*\)"#)
+        Regex::new(r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"([^"]+)"\s*,\s*([-\d.eE+]+)\s*\)"#)
             .unwrap();
 
     // Match: key = bare_value (no trick.attach_units)
@@ -148,10 +164,13 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
     let mut semi_latus_rectum: Option<f64> = None;
     let mut alt_apoapsis: Option<f64> = None;
     let mut alt_periapsis: Option<f64> = None;
+    let mut orb_radius: Option<f64> = None;
+    let mut radial_vel: Option<f64> = None;
     let mut eccentricity: Option<f64> = None;
     let mut inclination: Option<f64> = None;
     let mut ascending_node: Option<f64> = None;
     let mut arg_periapsis: Option<f64> = None;
+    let mut arg_latitude: Option<f64> = None;
     let mut time_periapsis: Option<f64> = None;
     let mut mean_anomaly: Option<f64> = None;
     let mut true_anomaly: Option<f64> = None;
@@ -174,10 +193,13 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
                 "semi_latus_rectum" => semi_latus_rectum = Some(val),
                 "alt_apoapsis" => alt_apoapsis = Some(val),
                 "alt_periapsis" => alt_periapsis = Some(val),
+                "orb_radius" => orb_radius = Some(val),
+                "radial_vel" => radial_vel = Some(val),
                 "eccentricity" => eccentricity = Some(val),
                 "inclination" => inclination = Some(val),
                 "ascending_node" => ascending_node = Some(val),
                 "arg_periapsis" => arg_periapsis = Some(val),
+                "arg_latitude" => arg_latitude = Some(val),
                 "time_periapsis" => time_periapsis = Some(val),
                 "mean_anomaly" => mean_anomaly = Some(val),
                 "true_anomaly" => true_anomaly = Some(val),
@@ -198,10 +220,13 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
                 "semi_latus_rectum" => semi_latus_rectum = Some(val * 1000.0), // assume km
                 "alt_apoapsis" => alt_apoapsis = Some(val * 1000.0),       // assume km
                 "alt_periapsis" => alt_periapsis = Some(val * 1000.0),     // assume km
+                "orb_radius" => orb_radius = Some(val * 1000.0),           // assume km
+                "radial_vel" => radial_vel = Some(val),                    // assume m/s
                 "eccentricity" => eccentricity = Some(val),
                 "inclination" => inclination = Some(val.to_radians()), // assume degrees
                 "ascending_node" => ascending_node = Some(val.to_radians()),
                 "arg_periapsis" => arg_periapsis = Some(val.to_radians()),
+                "arg_latitude" => arg_latitude = Some(val.to_radians()),
                 "time_periapsis" => time_periapsis = Some(val),
                 "mean_anomaly" => mean_anomaly = Some(val.to_radians()),
                 "true_anomaly" => true_anomaly = Some(val.to_radians()),
@@ -223,38 +248,74 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
     }
 
     // JEOD sets 01/02/10 supply `semi_major_axis`; set03
-    // (`SlrEccIncAscnodeArgperTanom`) supplies `semi_latus_rectum`; sets 04/05
-    // (`IncAscnodeAltperAltapo…`) supply an apo/peri altitude pair. The shape
-    // sources are mutually exclusive per JEOD set — require *exactly* one.
+    // (`SlrEccIncAscnodeArgperTanom`) supplies `semi_latus_rectum`; sets 04/05/11
+    // (`IncAscnodeAltperAltapo…`) supply an apo/peri altitude pair; set06
+    // (`SmaIncAscnodeArglatRadRadvel`) supplies sma plus the arg-latitude /
+    // radial-vel triple. The orbit-*size* sources are mutually exclusive per
+    // JEOD set — require *exactly* one.
     if alt_apoapsis.is_some() != alt_periapsis.is_some() {
         return Err(BodyInitFixtureError::malformed(
             "the altitude shape requires both alt_apoapsis and alt_periapsis, got only one"
                 .to_string(),
         ));
     }
+    // set06 carries the arg-latitude / radial-vel triple together; reject a
+    // partial set06 deck so a stale/malformed file can't slip through.
+    let n_set06 = u8::from(orb_radius.is_some())
+        + u8::from(radial_vel.is_some())
+        + u8::from(arg_latitude.is_some());
+    let is_set06 = n_set06 > 0;
+    if is_set06 && n_set06 != 3 {
+        return Err(BodyInitFixtureError::malformed(format!(
+            "the set06 (arg-latitude/radial-vel) shape requires all of orb_radius, radial_vel, \
+             and arg_latitude together, got {n_set06}/3"
+        )));
+    }
     let n_shapes = u8::from(semi_major_axis.is_some())
         + u8::from(semi_latus_rectum.is_some())
         + u8::from(alt_apoapsis.is_some());
     if n_shapes != 1 {
         return Err(BodyInitFixtureError::malformed(format!(
-            "expected exactly one orbit-shape source (semi_major_axis, semi_latus_rectum, or \
+            "expected exactly one orbit-size source (semi_major_axis, semi_latus_rectum, or \
              alt_apoapsis+alt_periapsis), found {n_shapes}; they are mutually exclusive per JEOD set"
         )));
     }
-    // Eccentricity is supplied directly by sma/slr sets; the altitude shape
-    // derives it from the apo/peri altitudes, so require it iff no altitudes.
-    if eccentricity.is_none() && alt_apoapsis.is_none() {
+    // Eccentricity is supplied directly by sma/slr sets 01/02/03/10; the
+    // altitude shape (04/05/11) and set06 derive it, so require it iff neither
+    // is present.
+    if eccentricity.is_none() && alt_apoapsis.is_none() && !is_set06 {
         return Err(BodyInitFixtureError::malformed(
             "missing eccentricity (required for the sma/slr shapes)".to_string(),
         ));
     }
-    // The altitude shape *derives* eccentricity; an eccentricity supplied
-    // alongside the altitude pair is ambiguous (and would mask a malformed or
+    // The altitude shape and set06 *derive* eccentricity; an eccentricity
+    // supplied alongside either is ambiguous (and would mask a malformed or
     // stale deck), so reject it to keep the schema canonical.
     if eccentricity.is_some() && alt_apoapsis.is_some() {
         return Err(BodyInitFixtureError::malformed(
             "eccentricity must not be set alongside the altitude shape (alt_apoapsis/\
              alt_periapsis); the altitude shape derives eccentricity"
+                .to_string(),
+        ));
+    }
+    if eccentricity.is_some() && is_set06 {
+        return Err(BodyInitFixtureError::malformed(
+            "eccentricity must not be set alongside the set06 (arg-latitude/radial-vel) shape; \
+             set06 derives eccentricity"
+                .to_string(),
+        ));
+    }
+    // arg_periapsis is supplied by every set except set06, where JEOD derives it
+    // from `arg_latitude − true_anomaly`.
+    if arg_periapsis.is_none() && !is_set06 {
+        return Err(BodyInitFixtureError::malformed(
+            "missing arg_periapsis (required for every set except set06)".to_string(),
+        ));
+    }
+    if arg_periapsis.is_some() && is_set06 {
+        return Err(BodyInitFixtureError::malformed(
+            "arg_periapsis must not be set alongside the set06 (arg-latitude/radial-vel) shape; \
+             set06 derives it from arg_latitude − true_anomaly"
                 .to_string(),
         ));
     }
@@ -264,13 +325,15 @@ pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyIni
         semi_latus_rectum,
         alt_apoapsis,
         alt_periapsis,
+        orb_radius,
+        radial_vel,
         eccentricity,
         inclination: inclination
             .ok_or_else(|| BodyInitFixtureError::malformed("missing inclination".to_string()))?,
         ascending_node: ascending_node
             .ok_or_else(|| BodyInitFixtureError::malformed("missing ascending_node".to_string()))?,
-        arg_periapsis: arg_periapsis
-            .ok_or_else(|| BodyInitFixtureError::malformed("missing arg_periapsis".to_string()))?,
+        arg_periapsis,
+        arg_latitude,
         time_periapsis,
         mean_anomaly,
         true_anomaly,
@@ -286,6 +349,7 @@ fn convert_units(val: f64, unit: &str) -> Result<f64, BodyInitFixtureError> {
         "km" => Ok(val * 1000.0),
         "s" => Ok(val),
         "m" => Ok(val),
+        "m/s" => Ok(val),
         "rad" => Ok(val),
         other => Err(BodyInitFixtureError::malformed(format!(
             "unknown unit: {other:?}"
@@ -484,7 +548,7 @@ vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
         let err = parse_orbital_init_py(py).unwrap_err();
         let msg = format!("{err}");
         assert!(
-            msg.contains("exactly one orbit-shape source"),
+            msg.contains("exactly one orbit-size source"),
             "unexpected error: {msg}"
         );
         assert!(
@@ -538,6 +602,54 @@ vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
         assert!((rec.alt_periapsis.unwrap() - 346_073.820_40).abs() < 1e-6);
         assert!((rec.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-9);
         assert_eq!(rec.true_anomaly, None);
+    }
+
+    #[test]
+    fn parse_orbital_init_py_set06_arg_latitude_radial_vel() {
+        // JEOD set06 (`SmaIncAscnodeArglatRadRadvel`): sma + inc + raan +
+        // arg_latitude + orb_radius + radial_vel, no eccentricity, no
+        // arg_periapsis, no anomaly. Values are the ISS set06 deck (incl. the
+        // "m/s" unit on radial_vel, which the parser must accept).
+        let py = r#"
+  vehicle.orb_init.set              = 6
+  vehicle.orb_init.arg_latitude  = trick.attach_units( "degree",400.466945015)
+  vehicle.orb_init.inclination  = trick.attach_units( "degree",51.670450765)
+  vehicle.orb_init.ascending_node  = trick.attach_units( "degree",49.708417385)
+  vehicle.orb_init.radial_vel  = trick.attach_units( "m/s",-8.61072308)
+  vehicle.orb_init.orb_radius  = trick.attach_units( "km",6728.56276455)
+  vehicle.orb_init.semi_major_axis  = trick.attach_units( "km",6732.90120152)
+  vehicle.orb_init.planet_name      = "Earth"
+  vehicle.orb_init.orbit_frame_name = "Earth.inertial"
+"#;
+        let rec = parse_orbital_init_py(py).unwrap();
+        assert!((rec.semi_major_axis.unwrap() - 6_732_901.201_52).abs() < 1e-6);
+        assert_eq!(rec.semi_latus_rectum, None);
+        assert_eq!(rec.eccentricity, None);
+        assert_eq!(rec.arg_periapsis, None);
+        assert!((rec.arg_latitude.unwrap() - 400.466945015_f64.to_radians()).abs() < 1e-12);
+        assert!((rec.orb_radius.unwrap() - 6_728_562.764_55).abs() < 1e-6);
+        assert!((rec.radial_vel.unwrap() - (-8.61072308)).abs() < 1e-12);
+        assert_eq!(rec.true_anomaly, None);
+    }
+
+    #[test]
+    fn parse_orbital_init_py_rejects_partial_set06() {
+        // The set06 triple (orb_radius + radial_vel + arg_latitude) must all
+        // appear together; a deck with only some of them is malformed.
+        let py = r#"
+  vehicle.orb_init.set              = 6
+  vehicle.orb_init.arg_latitude  = trick.attach_units( "degree",400.466945015)
+  vehicle.orb_init.inclination  = trick.attach_units( "degree",51.670450765)
+  vehicle.orb_init.ascending_node  = trick.attach_units( "degree",49.708417385)
+  vehicle.orb_init.semi_major_axis  = trick.attach_units( "km",6732.90120152)
+  vehicle.orb_init.planet_name      = "Earth"
+  vehicle.orb_init.orbit_frame_name = "Earth.inertial"
+"#;
+        let err = parse_orbital_init_py(py).unwrap_err();
+        assert!(
+            format!("{err}").contains("set06 (arg-latitude/radial-vel) shape requires all of"),
+            "got: {err}"
+        );
     }
 
     #[test]

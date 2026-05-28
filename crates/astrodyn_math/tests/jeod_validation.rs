@@ -61,7 +61,9 @@ fn validate_iss_orbital_elements_to_cartesian() {
     oe.e_mag = ecc;
     oe.inclination = init.inclination;
     oe.long_asc_node = init.ascending_node;
-    oe.arg_periapsis = init.arg_periapsis;
+    oe.arg_periapsis = init
+        .arg_periapsis
+        .expect("ISS set01 must have arg_periapsis");
     oe.semiparam = a * (1.0 - ecc * ecc);
     oe.mean_anom = mean_anomaly;
     oe.mean_motion = n;
@@ -398,11 +400,14 @@ fn validate_orbital_init_parser() {
         49.708417385 * deg2rad,
         init.ascending_node
     );
+    let argp = init
+        .arg_periapsis
+        .expect("ISS set01 must have arg_periapsis");
     assert!(
-        (init.arg_periapsis - 100.582445989 * deg2rad).abs() < 1e-12,
+        (argp - 100.582445989 * deg2rad).abs() < 1e-12,
         "arg_periapsis: expected {} rad, got {}",
         100.582445989 * deg2rad,
-        init.arg_periapsis
+        argp
     );
     assert_eq!(init.planet_name, "Earth");
     assert_eq!(init.reference_frame, "Earth.inertial");

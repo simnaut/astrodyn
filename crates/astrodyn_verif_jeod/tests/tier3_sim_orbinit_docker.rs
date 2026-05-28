@@ -40,6 +40,12 @@
 //!   RUN_0104: STS-114 orbital elements in inertial frame (set04, altitudes + true anomaly)
 //!   RUN_0005: ISS orbital elements in inertial frame (set05, altitudes + time_periapsis)
 //!   RUN_0105: STS-114 orbital elements in inertial frame (set05, altitudes + time_periapsis)
+//!   RUN_0006: ISS orbital elements in inertial frame (set06, arg-latitude + radial-vel)
+//!   RUN_0106: STS-114 orbital elements in inertial frame (set06, arg-latitude + radial-vel)
+//!   RUN_0010: ISS orbital elements in inertial frame (set10, sma/ecc + true anomaly)
+//!   RUN_0110: STS-114 orbital elements in inertial frame (set10, sma/ecc + true anomaly)
+//!   RUN_0011: ISS orbital elements in inertial frame (set11, altitudes + true anomaly)
+//!   RUN_0111: STS-114 orbital elements in inertial frame (set11, altitudes + true anomaly)
 //!   RUN_0101: STS-114 orbital elements in inertial frame (set01, time_periapsis)
 //!   RUN_0201: ISS orbital elements in planet-fixed (pfix) frame (set01)
 //!   RUN_0301: STS-114 orbital elements in planet-fixed (pfix) frame (set01)
@@ -319,6 +325,105 @@ fn tier3_orbinit_docker_run0105_sts_inertial() {
         "RUN_0105 (STS-114 inertial set05, altitudes + time periapsis)",
         4.21e-9,
         4.73e-12,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0006 / RUN_0106: set06 (arg-latitude + radial-vel), inertial frame.
+// Exercises `init_from_arg_latitude_radial_vel`: JEOD's
+// `SmaIncAscnodeArglatRadRadvel` branch derives (e, ν, ω) from the orbital
+// radius / radial-velocity pair via the eccentric-anomaly identities, then
+// resolves the sma + true-anomaly shape. Tolerances are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0006_iss_inertial() {
+    // Observed: pos=4.66e-10 m, vel=2.27e-13 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0006(),
+        "orbinit_0006_orbinit.csv",
+        "RUN_0006 (ISS inertial set06, arg-latitude + radial-vel)",
+        4.89e-10,
+        2.39e-13,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0106_sts_inertial() {
+    // Observed: pos=6.59e-10 m, vel=0 m/s (5% above → listed; vel floored at
+    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0106(),
+        "orbinit_0106_orbinit.csv",
+        "RUN_0106 (STS-114 inertial set06, arg-latitude + radial-vel)",
+        6.91e-10,
+        1.0e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0010 / RUN_0110: set10 (sma/ecc + true-anomaly), inertial frame.
+// Exercises `init_from_orbital_elements` directly — JEOD's
+// `SmaEccIncAscnodeArgperTanom` branch derives semiparam = a·(1−e²) and
+// resolves the true anomaly. Tolerances are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0010_iss_inertial() {
+    // Observed: pos=6.59e-10 m, vel=4.55e-13 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0010(),
+        "orbinit_0010_orbinit.csv",
+        "RUN_0010 (ISS inertial set10, sma/ecc + true anomaly)",
+        6.91e-10,
+        4.77e-13,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0110_sts_inertial() {
+    // Observed: pos=1.14e-9 m, vel=0 m/s (5% above → listed; vel floored at
+    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0110(),
+        "orbinit_0110_orbinit.csv",
+        "RUN_0110 (STS-114 inertial set10, sma/ecc + true anomaly)",
+        1.20e-9,
+        1.0e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0011 / RUN_0111: set11 (apo/peri altitudes + true-anomaly), inertial
+// frame. JEOD's `CaseEleven` is the same option as set04, so this reuses
+// `init_from_altitudes_true_anomaly`. Tolerances are 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0011_iss_inertial() {
+    // Observed: pos=4.66e-10 m, vel=0 m/s (5% above → listed; vel floored at
+    // 1e-13 m/s). Matches RUN_0004 exactly — set11 (CaseEleven) is the same
+    // JEOD option as set04 with the same ISS elements.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0011(),
+        "orbinit_0011_orbinit.csv",
+        "RUN_0011 (ISS inertial set11, altitudes + true anomaly)",
+        4.89e-10,
+        1.0e-13,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0111_sts_inertial() {
+    // Observed: pos=2.13e-9 m, vel=2.27e-13 m/s (5% above → listed). Matches
+    // RUN_0104 exactly — set11 (CaseEleven) is the same JEOD option as set04
+    // with the same STS-114 elements.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0111(),
+        "orbinit_0111_orbinit.csv",
+        "RUN_0111 (STS-114 inertial set11, altitudes + true anomaly)",
+        2.24e-9,
+        2.39e-13,
     );
 }
 

@@ -708,6 +708,15 @@ run_orbinit_group() {
         # set05 apo/peri-altitude + time-periapsis parameterization (ISS + STS, inertial)
         "SET_test/RUN_0005:orbinit_0005:orbinit_0005_orbinit.csv"
         "SET_test/RUN_0105:orbinit_0105:orbinit_0105_orbinit.csv"
+        # set06 sma/inc/raan/arg-latitude/orb-radius/radial-vel parameterization (ISS + STS, inertial)
+        "SET_test/RUN_0006:orbinit_0006:orbinit_0006_orbinit.csv"
+        "SET_test/RUN_0106:orbinit_0106:orbinit_0106_orbinit.csv"
+        # set10 sma/ecc + true-anomaly parameterization (ISS + STS, inertial)
+        "SET_test/RUN_0010:orbinit_0010:orbinit_0010_orbinit.csv"
+        "SET_test/RUN_0110:orbinit_0110:orbinit_0110_orbinit.csv"
+        # set11 apo/peri-altitude + true-anomaly parameterization (CaseEleven == set04; ISS + STS, inertial)
+        "SET_test/RUN_0011:orbinit_0011:orbinit_0011_orbinit.csv"
+        "SET_test/RUN_0111:orbinit_0111:orbinit_0111_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

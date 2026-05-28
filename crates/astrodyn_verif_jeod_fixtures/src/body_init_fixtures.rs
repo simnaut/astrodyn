@@ -96,24 +96,36 @@ pub struct OrbitalInitRecord {
     /// sets.
     pub semi_latus_rectum: Option<f64>,
     /// Apoapsis altitude in metres above the planet equatorial radius, when
-    /// the JEOD source uses the altitude shape (sets 04/05
-    /// `IncAscnodeAltperAltapo…`). `None` for sma/slr-parameterized sets.
+    /// the JEOD source uses the altitude shape (sets 04/05/11
+    /// `IncAscnodeAltperAltapo…`). `None` for the sma/slr/set06 sets.
     pub alt_apoapsis: Option<f64>,
     /// Periapsis altitude in metres above the planet equatorial radius, when
-    /// the JEOD source uses the altitude shape (sets 04/05). `None` for
-    /// sma/slr-parameterized sets.
+    /// the JEOD source uses the altitude shape (sets 04/05/11). `None` for the
+    /// sma/slr/set06 sets.
     pub alt_periapsis: Option<f64>,
+    /// Orbital radius (distance from planet centre) in metres, when the JEOD
+    /// source uses the arg-latitude / radial-vel shape (set06
+    /// `SmaIncAscnodeArglatRadRadvel`). `None` otherwise.
+    pub orb_radius: Option<f64>,
+    /// Radial velocity (time derivative of the orbital radius) in m/s, when the
+    /// JEOD source uses the set06 shape. `None` otherwise.
+    pub radial_vel: Option<f64>,
     /// Orbital eccentricity (dimensionless), when the JEOD source provides it
-    /// directly (sma/slr sets). `None` for the altitude shape (sets 04/05),
-    /// where eccentricity is derived from the apo/peri altitudes by the
-    /// `init_from_altitudes_*` converters.
+    /// directly (sma/slr sets 01/02/03/10). `None` for the altitude shape
+    /// (sets 04/05/11) and set06, where eccentricity is derived by the
+    /// `init_from_*` converters.
     pub eccentricity: Option<f64>,
     /// Inclination in radians.
     pub inclination: f64,
     /// Right Ascension of the Ascending Node, in radians.
     pub ascending_node: f64,
-    /// Argument of periapsis, in radians.
-    pub arg_periapsis: f64,
+    /// Argument of periapsis, in radians. Supplied directly by sets
+    /// 01/02/03/04/05/10/11; `None` for set06, where JEOD derives it from
+    /// `arg_latitude − true_anomaly`.
+    pub arg_periapsis: Option<f64>,
+    /// Argument of latitude (true anomaly + argument of periapsis) in radians,
+    /// when the JEOD source uses the set06 shape. `None` otherwise.
+    pub arg_latitude: Option<f64>,
     /// Time-since-periapsis in seconds, when the JEOD source uses it.
     pub time_periapsis: Option<f64>,
     /// Mean anomaly in radians, when the JEOD source uses it.
@@ -282,14 +294,19 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
     let name = parse_str_field(entry, "name")
         .ok_or_else(|| format!("orbital_inits entry missing \"name\": {entry}"))?;
     // Exactly one orbit *shape* source is present per JEOD set: sets 01/02/10
-    // carry sma; set03 carries slr; sets 04/05 carry an apo/peri altitude
-    // pair (both required together). All are stored as nullable so the parser
-    // tolerates any shape; the converter that consumes the record asserts the
-    // field it needs is present. Reject zero or multiple shape sources.
+    // carry sma; set03 carries slr; sets 04/05/11 carry an apo/peri altitude
+    // pair (both required together); set06 carries sma plus the
+    // arg-latitude/radial-vel pair (`orb_radius`+`radial_vel`+`arg_latitude`).
+    // All are stored as nullable so the parser tolerates any shape; the
+    // converter that consumes the record asserts the field it needs is present.
+    // Reject zero or multiple shape sources.
     let semi_major_axis = parse_opt_num_field(entry, "semi_major_axis");
     let semi_latus_rectum = parse_opt_num_field(entry, "semi_latus_rectum");
     let alt_apoapsis = parse_opt_num_field(entry, "alt_apoapsis");
     let alt_periapsis = parse_opt_num_field(entry, "alt_periapsis");
+    let orb_radius = parse_opt_num_field(entry, "orb_radius");
+    let radial_vel = parse_opt_num_field(entry, "radial_vel");
+    let arg_latitude = parse_opt_num_field(entry, "arg_latitude");
     if alt_apoapsis.is_some() != alt_periapsis.is_some() {
         return Err(format!(
             "orbital_inits[{name}]: the altitude shape requires both alt_apoapsis and \
@@ -297,28 +314,46 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
              --bin extract_body_init -- --jeod-home $JEOD_HOME"
         ));
     }
+    // set06 (`SmaIncAscnodeArglatRadRadvel`): sma is the shape size, and the
+    // arg-latitude/radial-vel triple (`orb_radius`, `radial_vel`,
+    // `arg_latitude`) supplies the location. All three travel together — reject
+    // a partial set06 record so a stale/malformed deck can't slip through.
+    let n_set06 = u8::from(orb_radius.is_some())
+        + u8::from(radial_vel.is_some())
+        + u8::from(arg_latitude.is_some());
+    let is_set06 = n_set06 > 0;
+    if is_set06 && n_set06 != 3 {
+        return Err(format!(
+            "orbital_inits[{name}]: the set06 (arg-latitude/radial-vel) shape requires all of \
+             orb_radius, radial_vel, and arg_latitude together, got {n_set06}/3. Regenerate \
+             with: cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home \
+             $JEOD_HOME"
+        ));
+    }
+    // The orbit *size* source is sma (sets 01/02/06/10), slr (set03), or the
+    // altitude pair (sets 04/05/11) — mutually exclusive per JEOD set.
     let n_shapes = u8::from(semi_major_axis.is_some())
         + u8::from(semi_latus_rectum.is_some())
         + u8::from(alt_apoapsis.is_some());
     if n_shapes != 1 {
         return Err(format!(
-            "orbital_inits[{name}]: expected exactly one orbit-shape source (semi_major_axis, \
+            "orbital_inits[{name}]: expected exactly one orbit-size source (semi_major_axis, \
              semi_latus_rectum, or alt_apoapsis+alt_periapsis), found {n_shapes}. They are \
              mutually exclusive per JEOD set. Regenerate with: cargo run -p astrodyn_verif_jeod \
              --bin extract_body_init -- --jeod-home $JEOD_HOME"
         ));
     }
-    // Eccentricity is supplied directly by sma/slr sets; the altitude shape
-    // derives it from the apo/peri altitudes in the converter, so it is
-    // optional here. Require it iff no altitude pair is present.
+    // Eccentricity is supplied directly by the sma/slr sets 01/02/03/10; the
+    // altitude shape (04/05/11) and set06 derive it in the converter, so it is
+    // optional here. Require it iff neither the altitude pair nor set06 is present.
     let eccentricity = parse_opt_num_field(entry, "eccentricity");
-    if eccentricity.is_none() && alt_apoapsis.is_none() {
+    if eccentricity.is_none() && alt_apoapsis.is_none() && !is_set06 {
         return Err(format!(
             "orbital_inits[{name}]: missing eccentricity (required for the sma/slr shapes)"
         ));
     }
-    // The altitude shape derives eccentricity (stored as `null` in the JSON); an
-    // eccentricity present alongside the altitude pair is ambiguous and signals a
+    // The altitude shape and set06 derive eccentricity (stored as `null` in the
+    // JSON); an eccentricity present alongside either is ambiguous and signals a
     // malformed or stale deck, so reject it to keep the schema unambiguous.
     if eccentricity.is_some() && alt_apoapsis.is_some() {
         return Err(format!(
@@ -328,12 +363,33 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
              $JEOD_HOME"
         ));
     }
+    if eccentricity.is_some() && is_set06 {
+        return Err(format!(
+            "orbital_inits[{name}]: eccentricity must not be set alongside the set06 \
+             (arg-latitude/radial-vel) shape; set06 derives eccentricity. Regenerate with: \
+             cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home $JEOD_HOME"
+        ));
+    }
     let inclination = parse_num_field(entry, "inclination")
         .ok_or_else(|| format!("orbital_inits[{name}]: missing inclination"))?;
     let ascending_node = parse_num_field(entry, "ascending_node")
         .ok_or_else(|| format!("orbital_inits[{name}]: missing ascending_node"))?;
-    let arg_periapsis = parse_num_field(entry, "arg_periapsis")
-        .ok_or_else(|| format!("orbital_inits[{name}]: missing arg_periapsis"))?;
+    // arg_periapsis is supplied by every set except set06, where JEOD derives it
+    // from `arg_latitude − true_anomaly`. Require it iff this is not a set06 record.
+    let arg_periapsis = parse_opt_num_field(entry, "arg_periapsis");
+    if arg_periapsis.is_none() && !is_set06 {
+        return Err(format!(
+            "orbital_inits[{name}]: missing arg_periapsis (required for every set except set06)"
+        ));
+    }
+    if arg_periapsis.is_some() && is_set06 {
+        return Err(format!(
+            "orbital_inits[{name}]: arg_periapsis must not be set alongside the set06 \
+             (arg-latitude/radial-vel) shape; set06 derives it from arg_latitude − true_anomaly. \
+             Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_body_init -- \
+             --jeod-home $JEOD_HOME"
+        ));
+    }
     let time_periapsis = parse_opt_num_field(entry, "time_periapsis");
     let mean_anomaly = parse_opt_num_field(entry, "mean_anomaly");
     let true_anomaly = parse_opt_num_field(entry, "true_anomaly");
@@ -346,10 +402,13 @@ fn parse_orbital_init_entry(entry: &str) -> Result<OrbitalInitRecord, String> {
         semi_latus_rectum,
         alt_apoapsis,
         alt_periapsis,
+        orb_radius,
+        radial_vel,
         eccentricity,
         inclination,
         ascending_node,
         arg_periapsis,
+        arg_latitude,
         time_periapsis,
         mean_anomaly,
         true_anomaly,
@@ -694,7 +753,7 @@ mod tests {
   "trans_states": []
 }"#;
         let err = parse_bundle_json(json).unwrap_err();
-        assert!(err.contains("exactly one orbit-shape source"), "got: {err}");
+        assert!(err.contains("exactly one orbit-size source"), "got: {err}");
         assert!(err.contains("mutually exclusive"), "got: {err}");
     }
 
@@ -758,6 +817,100 @@ mod tests {
 }"#;
         let err = parse_bundle_json(json).unwrap_err();
         assert!(err.contains("alt_apoapsis and alt_periapsis"), "got: {err}");
+    }
+
+    #[test]
+    fn parses_set06_arg_latitude_radial_vel() {
+        // set06: sma + arg-latitude/radial-vel triple, no eccentricity, no
+        // arg_periapsis. JEOD derives e/ν/ω in the converter.
+        let json = r#"{
+  "schema_version": 2,
+  "vehicle": "TEST",
+  "reference_inertial": null,
+  "orbital_inits": [
+    {
+      "name": "set_06",
+      "semi_major_axis": 6732901.2,
+      "semi_latus_rectum": null,
+      "alt_apoapsis": null,
+      "alt_periapsis": null,
+      "orb_radius": 6728562.76,
+      "radial_vel": -8.61072308,
+      "eccentricity": null,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "arg_periapsis": null,
+      "arg_latitude": 6.99,
+      "time_periapsis": null,
+      "mean_anomaly": null,
+      "true_anomaly": null,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
+    }
+  ],
+  "trans_states": []
+}"#;
+        let b = parse_bundle_json(json).unwrap();
+        let r = &b.orbital_inits[0];
+        assert_eq!(r.semi_major_axis, Some(6732901.2));
+        assert_eq!(r.orb_radius, Some(6728562.76));
+        assert_eq!(r.radial_vel, Some(-8.61072308));
+        assert_eq!(r.arg_latitude, Some(6.99));
+        assert_eq!(r.eccentricity, None);
+        assert_eq!(r.arg_periapsis, None);
+    }
+
+    #[test]
+    fn rejects_partial_set06_triple() {
+        // The set06 triple must travel together; an incomplete one is malformed.
+        let json = r#"{
+  "schema_version": 2,
+  "vehicle": "TEST",
+  "reference_inertial": null,
+  "orbital_inits": [
+    {
+      "name": "set_bad",
+      "semi_major_axis": 6732901.2,
+      "orb_radius": 6728562.76,
+      "arg_latitude": 6.99,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
+    }
+  ],
+  "trans_states": []
+}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(
+            err.contains("set06 (arg-latitude/radial-vel) shape requires all of"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_arg_periapsis_for_non_set06() {
+        // Every non-set06 record must carry arg_periapsis.
+        let json = r#"{
+  "schema_version": 2,
+  "vehicle": "TEST",
+  "reference_inertial": null,
+  "orbital_inits": [
+    {
+      "name": "set_bad",
+      "semi_major_axis": 6732901.2,
+      "eccentricity": 0.001,
+      "inclination": 0.9,
+      "ascending_node": 0.86,
+      "true_anomaly": 5.23,
+      "planet_name": "Earth",
+      "reference_frame": "Earth.inertial"
+    }
+  ],
+  "trans_states": []
+}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(err.contains("missing arg_periapsis"), "got: {err}");
     }
 
     #[test]
