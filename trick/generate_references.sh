@@ -1513,10 +1513,11 @@ PID_TIME_REVERSAL=$LAST_BG_PID
 #
 # Note the 86400 s log cycle: the RNP transform is a pure function of time, so
 # a handful of samples suffices. The short RUNs (Transform / init / Polar_off /
-# prop_off, which stop at 1 s) log only t=0; the 24 h `prop` RUN logs t=0 and
-# t=86400 s. This keeps `rnp_prop_rnp.csv` tiny (a 1 s cycle over 24 h would
-# emit ~86 k rows / ~95 MB). The crossval tests iterate whatever rows are
-# present, so fewer samples is fine.
+# prop_off) stop at 1 s and log t=0 plus, where Trick emits an end-of-run flush,
+# a final t=1 row (prop_off has it, Polar_off does not); the 24 h `prop` RUN
+# logs t=0 and t=86400 s. This keeps `rnp_prop_rnp.csv` tiny (a 1 s cycle over
+# 24 h would emit ~86 k rows / ~95 MB). The crossval tests iterate whatever rows
+# are present, so fewer samples is fine.
 RNP_VERIF_SNIPPET='
 dr = trick.sim_services.DRAscii("rnp_ASCII")
 dr.set_cycle(86400.0)

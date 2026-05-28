@@ -320,8 +320,10 @@ const POLAR_DAILY_1999_03: &[(f64, f64, f64)] = &[
 ];
 
 /// Port of JEOD `polar_motion_j2000.cc::update_rotation`'s table lookup:
-/// linear interpolation of xp/yp (in radians) on the UT1 MJD, clamping to the
-/// boundary values outside the table. Returns `(xp_rad, yp_rad)`.
+/// linear interpolation of xp/yp (in radians) on the UT1 MJD. Returns
+/// `(xp_rad, yp_rad)`. JEOD clamps to the boundary values outside its full
+/// table; our bundled fixture is narrow, so out-of-range lookups panic
+/// instead (see Panics).
 ///
 /// # Panics
 /// Panics if `ut1_mjd` falls outside [`POLAR_DAILY_1999_03`] — the bundled
@@ -338,7 +340,11 @@ fn polar_xp_yp_rad(ut1_mjd: f64) -> (f64, f64) {
         tbl[last].0
     );
     // Bracket: largest i with mjd[i] <= ut1_mjd < mjd[i+1] (JEOD's loop).
-    let mut idx = 0usize;
+    // Default to the final interval so the right-edge-inclusive case
+    // (ut1_mjd == tbl[last].0, no strict `< mjd[i+1]` match) interpolates
+    // [last-1, last] at frac=1.0 — the exact last value — rather than
+    // extrapolating against the first interval.
+    let mut idx = last - 1;
     for i in 0..last {
         if ut1_mjd < tbl[i + 1].0 {
             idx = i;
@@ -499,9 +505,9 @@ fn rnp_j2000_polar_off_crossval() {
 }
 
 // non-recipe: default-EOP RNP scenario with polar motion ENABLED
-// (`enable_polar=True`), single 1 s record. UT1 from the committed IERS C04
-// table; polar xp/yp interpolated from the daily IERS C04 entries. Validates
-// the full composite `T_parent_this = polar^T × rotation^T × NP`.
+// (`enable_polar=True`), 1 s RUN logging t=0 and t=1. UT1 from the committed
+// IERS C04 table; polar xp/yp interpolated from the daily IERS C04 entries.
+// Validates the full composite `T_parent_this = polar^T × rotation^T × NP`.
 // 1999-03-04 00:00:00 UTC, leap = 32 s. Tolerances are 1.05× observed max.
 #[test]
 fn rnp_j2000_prop_off_crossval() {
