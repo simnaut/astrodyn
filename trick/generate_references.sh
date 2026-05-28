@@ -1519,9 +1519,17 @@ PID_TIME_REVERSAL=$LAST_BG_PID
 # functions of time (integrator-independent), so these validate our RNP
 # model directly. Object names match the SIM_RNP_J2000_prop S_define
 # (`earth.rnp.*`, `earth.logging.*`, `earth.planet.pfix.*`).
+#
+# Note the 86400 s log cycle: the RNP transform is a pure function of time, so
+# a handful of samples suffices. The short RUNs (Transform / init / Polar_off /
+# prop_off) stop at 1 s and log t=0 plus, where Trick emits an end-of-run flush,
+# a final t=1 row (prop_off has it, Polar_off does not); the 24 h `prop` RUN
+# logs t=0 and t=86400 s. This keeps `rnp_prop_rnp.csv` tiny (a 1 s cycle over
+# 24 h would emit ~86 k rows / ~95 MB). The crossval tests iterate whatever rows
+# are present, so fewer samples is fine.
 RNP_VERIF_SNIPPET='
 dr = trick.sim_services.DRAscii("rnp_ASCII")
-dr.set_cycle(1.0)
+dr.set_cycle(86400.0)
 dr.freq = trick.sim_services.DR_Always
 dr.add_variable("earth.rnp.RJ2000.theta_gast")
 dr.add_variable("earth.rnp.NJ2000.equa_of_equi")
@@ -1536,16 +1544,25 @@ for grp in ["earth.logging.nut_trans", "earth.logging.prec_trans",
 trick.add_data_record_group(dr)
 '
 
-# Group 23: SIM_RNP_J2000_prop — RNP transform validation. Only the two RUNs
-# with explicit leap-second / UT1 overrides are regenerated here; their time
-# setup is exact and deterministic. The default-EOP RUNs (prop, prop_off,
-# Polar_off) need JEOD's EOP/UT1 table sourced to validate without feeding
-# JEOD output (computational independence) — tracked as the remainder of #99.
+# Group 23: SIM_RNP_J2000_prop — RNP transform validation. Five RUNs:
+#   - RUN_J2000_RNP_Transform / _init pin TAI-UTC and UT1-TAI via explicit
+#     overrides (exact, deterministic time setup; polar-independent matrices).
+#   - RUN_J2000_RNP_Polar_off / _prop_off / _prop use JEOD's DEFAULT EOP tables
+#     (TAI->UT1 from tai_to_ut1.cc, polar xp/yp from polar_motion/xpyp_daily.cc).
+#     Both default tables derive from the same IERS "EOP 14 C04 (IAU2000)" input
+#     file, which we have committed independently (UT1 as EopTable; polar daily
+#     entries extracted in the crossval test) — so the composite T_parent_this
+#     these RUNs log can be validated without feeding JEOD output back in
+#     (computational independence preserved). Polar_off disables polar motion;
+#     prop_off enables it (1 s, t=0); prop enables it over 24 h (t=0 and t=86400 s).
 run_rnp_verif_group() {
     local sim_dir="models/environment/RNP/RNPJ2000/verif/SIM_RNP_J2000_prop"
     local -a RUNS=(
         "SET_test/RUN_J2000_RNP_Transform:rnp_transform:rnp_transform_rnp.csv"
         "SET_test/RUN_J2000_RNP_init:rnp_init:rnp_init_rnp.csv"
+        "SET_test/RUN_J2000_RNP_Polar_off:rnp_polar_off:rnp_polar_off_rnp.csv"
+        "SET_test/RUN_J2000_RNP_prop_off:rnp_prop_off:rnp_prop_off_rnp.csv"
+        "SET_test/RUN_J2000_RNP_prop:rnp_prop:rnp_prop_rnp.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

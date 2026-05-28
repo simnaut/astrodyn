@@ -341,6 +341,25 @@ impl SimulationTime {
         self.tt_tjt() + 40_000.0 + 2_400_000.5
     }
 
+    /// UT1 truncated Julian time.
+    ///
+    /// `UT1 TJT = TAI TJT + (UT1 - TAI) / SECONDS_PER_DAY`, where the
+    /// offset is the IERS-interpolated value when an EOP table is
+    /// installed, or the constant set by [`Self::set_ut1_tai_offset`].
+    ///
+    /// Used by Earth polar-motion: JEOD's `PolarMotionJ2000` interpolates
+    /// its xp/yp table on the UT1 Modified Julian Date
+    /// (`time_ut1.trunc_julian_time + 40000`, i.e. `ut1_julian_date() -
+    /// 2400000.5`).
+    pub fn ut1_tjt(&self) -> f64 {
+        self.tai_tjt + self.ut1_tai_offset / SECONDS_PER_DAY
+    }
+
+    /// UT1 Julian Date.
+    pub fn ut1_julian_date(&self) -> f64 {
+        self.ut1_tjt() + 40_000.0 + 2_400_000.5
+    }
+
     // --- Typed accessors (Phase 1 #103) ------------------------------------
     //
     // Additive typed getters returning `SecondsSince<S>` for each time scale
@@ -495,6 +514,28 @@ mod tests {
             (jd - 2_451_545.0).abs() < 1e-8,
             "TT JD at J2000: {}, expected 2451545.0",
             jd
+        );
+    }
+
+    #[test]
+    fn ut1_julian_date_tracks_ut1_tai_offset() {
+        // With an explicit UT1−TAI offset, UT1 TJT = TAI TJT + offset/86400,
+        // and the Julian-date sibling is that + 2440000.5 (the TJT epoch).
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        let offset = -31.35_f64; // representative late-1990s UT1−TAI
+        sim.set_ut1_tai_offset(offset);
+
+        let tt_tjt = sim.tt_tjt();
+        let tai_tjt = tt_tjt - TAI_TT_OFFSET / SECONDS_PER_DAY;
+        let expected_ut1_tjt = tai_tjt + offset / SECONDS_PER_DAY;
+        assert!(
+            (sim.ut1_tjt() - expected_ut1_tjt).abs() < 1e-12,
+            "ut1_tjt {} vs expected {expected_ut1_tjt}",
+            sim.ut1_tjt()
+        );
+        assert!(
+            (sim.ut1_julian_date() - (sim.ut1_tjt() + 40_000.0 + 2_400_000.5)).abs() < 1e-9,
+            "ut1_julian_date must be ut1_tjt + 2440000.5"
         );
     }
 
