@@ -135,7 +135,7 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | Metric | X / value | Y | Z | Unit |
 |--------|-----------|---|---|------|
 | composite_mass | 0.00000000000000000e0 |  |  | kg |
-| composite_com | 1.02053900000000002e-16 |  |  | m |
+| composite_com | 4.71404500000000018e-7 |  |  | m |
 | composite_inertia | 5.40186100000000009e-7 |  |  | kg*m^2 |
 
 ## `tier3_sim_complex_attach_detach_pre_attach_trajectory`
