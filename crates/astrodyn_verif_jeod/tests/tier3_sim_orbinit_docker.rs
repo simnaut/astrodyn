@@ -49,6 +49,14 @@
 //!   RUN_0101: STS-114 orbital elements in inertial frame (set01, time_periapsis)
 //!   RUN_0201: ISS orbital elements in planet-fixed (pfix) frame (set01)
 //!   RUN_0301: STS-114 orbital elements in planet-fixed (pfix) frame (set01)
+//!   RUN_0202: ISS orbital elements in pfix frame (set02, mean anomaly)
+//!   RUN_0302: STS-114 orbital elements in pfix frame (set02, mean anomaly)
+//!   RUN_0203: ISS orbital elements in pfix frame (set03, slr + true anomaly)
+//!   RUN_0303: STS-114 orbital elements in pfix frame (set03, slr + true anomaly)
+//!   RUN_0204: ISS orbital elements in pfix frame (set04, altitudes + true anomaly)
+//!   RUN_0304: STS-114 orbital elements in pfix frame (set04, altitudes + true anomaly)
+//!   RUN_0205: ISS orbital elements in pfix frame (set05, altitudes + time_periapsis)
+//!   RUN_0305: STS-114 orbital elements in pfix frame (set05, altitudes + time_periapsis)
 //!   RUN_0401: STS-114 direct Cartesian state in inertial frame
 //!
 //! All scenarios share the same JEOD epoch: 2005-07-28 10:09:59 UT1.
@@ -458,6 +466,125 @@ fn tier3_orbinit_docker_run0301_sts_pfix() {
         sim_orbinit_docker::run_0301(),
         "orbinit_0301_orbinit.csv",
         "RUN_0301 (STS-114 pfix set01)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0202 / RUN_0302: set02 (mean-anomaly) in planet-fixed (pfix) frame.
+// Same converter as RUN_0002/0102, but the elements are interpreted in
+// Earth.pfix and rotated to inertial at the SIM epoch, so the residual
+// reflects RNP-series drift over the Earth-rotation arm. Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0202_iss_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed). The
+    // residual reflects RNP-series drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0202(),
+        "orbinit_0202_orbinit.csv",
+        "RUN_0202 (ISS pfix set02, mean anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0302_sts_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0302(),
+        "orbinit_0302_orbinit.csv",
+        "RUN_0302 (STS-114 pfix set02, mean anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0203 / RUN_0303: set03 (semi-latus rectum + true-anomaly) in pfix frame.
+// Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0203_iss_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0203(),
+        "orbinit_0203_orbinit.csv",
+        "RUN_0203 (ISS pfix set03, slr + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0303_sts_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0303(),
+        "orbinit_0303_orbinit.csv",
+        "RUN_0303 (STS-114 pfix set03, slr + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0204 / RUN_0304: set04 (apo/peri altitudes + true-anomaly) in pfix frame.
+// Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0204_iss_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0204(),
+        "orbinit_0204_orbinit.csv",
+        "RUN_0204 (ISS pfix set04, altitudes + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0304_sts_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0304(),
+        "orbinit_0304_orbinit.csv",
+        "RUN_0304 (STS-114 pfix set04, altitudes + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0205 / RUN_0305: set05 (apo/peri altitudes + time-periapsis) in pfix
+// frame. Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0205_iss_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0205(),
+        "orbinit_0205_orbinit.csv",
+        "RUN_0205 (ISS pfix set05, altitudes + time periapsis)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0305_sts_pfix() {
+    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0305(),
+        "orbinit_0305_orbinit.csv",
+        "RUN_0305 (STS-114 pfix set05, altitudes + time periapsis)",
         1.59e-5,
         1.23e-8,
     );
