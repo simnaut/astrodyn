@@ -378,9 +378,7 @@ const PRE_ATTACH_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 // drift; the quaternion residuals are JEOD's `%g`-formatted CSV
 // print precision (~3e-8 rad on a non-trivially rotated body).
 //
-// Observed (JSON report, this test):
-//   veh1: pos=1.667e-9, vel=3.065e-11, quat=2.980e-8, ω=5.55e-17
-//   veh2: pos=5.555e-10, vel=0, quat=2.980e-8, ω=2.08e-17
+// Tolerances 1.05× observed max (CLAUDE.md), per-body.
 const ATTACHED_VEH1_POSITION_TOL_M: f64 = 1.75e-9;
 const ATTACHED_VEH1_VELOCITY_TOL_MPS: f64 = 3.22e-11;
 const ATTACHED_VEH1_QUAT_ANGLE_TOL_RAD: f64 = 3.13e-8;
@@ -397,9 +395,7 @@ const ATTACHED_VEH2_ANG_VEL_TOL_RAD_PER_S: f64 = 2.19e-17;
 // independently integrated again. Same dominant-error story as the
 // attached window — f64 round-off + JEOD CSV print precision.
 //
-// Observed (JSON report, this test):
-//   veh1: pos=1.651e-9, vel=3.065e-11, quat=2.980e-8, ω=2.08e-17
-//   veh2: pos=2.976e-10, vel=1.532e-11, quat=2.980e-8, ω=2.08e-17
+// Tolerances 1.05× observed max (CLAUDE.md), per-body.
 const POST_DETACH_VEH1_POSITION_TOL_M: f64 = 1.74e-9;
 const POST_DETACH_VEH1_VELOCITY_TOL_MPS: f64 = 3.22e-11;
 const POST_DETACH_VEH1_QUAT_ANGLE_TOL_RAD: f64 = 3.13e-8;

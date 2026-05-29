@@ -362,12 +362,11 @@ fn simple_attach_offset_and_rotation() -> (DVec3, DMat3) {
 // Tolerances are set to ~5% above observed max error per project
 // policy (CLAUDE.md "Cross-validation tolerances"). Observed values
 // come from `target/tier3_crossval/tier3_sim_kinematic_propagation_
-// simple.json` and are documented inline below.
+// simple.json`.
 
 /// Free-flying veh3 across the full run: no force, no torque, RK4 on
 /// rigid-body kinematics. Error floor is rounding from JEOD's CSV
-/// (~17 sig figures) plus integrator round-off. Observed:
-/// pos=1.28e-12, vel=0, quat=0, ang_vel=0.
+/// (~17 sig figures) plus integrator round-off.
 const VEH3_POSITION_TOL_M: f64 = 1.5e-12;
 const VEH3_VELOCITY_TOL_MPS: f64 = 1e-15;
 const VEH3_QUAT_ANGLE_TOL_RAD: f64 = 1e-15;
@@ -378,8 +377,7 @@ const VEH3_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 /// absorbs JEOD's scalar-first quaternion CSV print precision —
 /// the recorder writes `Q_parent_this.{scalar,vector}` as separate
 /// %g-formatted f64 fields and the round-trip drifts ~4e-8 rad on a
-/// non-trivially-rotated body. Observed: pos=1.4e-13, vel=0,
-/// quat=4.2e-8, ang_vel=0.
+/// non-trivially-rotated body.
 const PRE_ATTACH_POSITION_TOL_M: f64 = 1.5e-13;
 const PRE_ATTACH_VELOCITY_TOL_MPS: f64 = 1e-15;
 const PRE_ATTACH_QUAT_ANGLE_TOL_RAD: f64 = 4.5e-8;
@@ -389,7 +387,6 @@ const PRE_ATTACH_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 /// `kernel(veh2_csv, link) ≈ veh1_csv`. The CSV samples are JEOD's
 /// own `composite_body` recorder; the residual reflects rounding
 /// from JEOD's printf format plus the kernel's f64 round-off.
-/// Observed: pos=8.9e-15, vel=1.1e-16, quat=3.0e-8.
 const ATTACH_INVARIANT_POSITION_TOL_M: f64 = 1e-14;
 const ATTACH_INVARIANT_VELOCITY_TOL_MPS: f64 = 1.5e-16;
 const ATTACH_INVARIANT_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;
@@ -401,8 +398,7 @@ const ATTACH_INVARIANT_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;
 /// absorbs the same `2 · acos(|q · q'|)` ULP residual that pins the
 /// kernel-vs-CSV invariant — when both quaternions are unit-norm but
 /// differ by a few ULPs, the angle test reports ~1e-7–1e-8 rad even
-/// though the underlying components agree to 1 ULP. Observed:
-/// pos=0, vel=0, quat=4.2e-8, ang_vel=0.
+/// though the underlying components agree to 1 ULP.
 const RUNNER_PROP_POSITION_TOL_M: f64 = 1e-15;
 const RUNNER_PROP_VELOCITY_TOL_MPS: f64 = 1e-15;
 const RUNNER_PROP_QUAT_ANGLE_TOL_RAD: f64 = 4.5e-8;
@@ -414,11 +410,9 @@ const RUNNER_PROP_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 /// kinematic child derived from veh2 by `propagate_state_via_storage`
 /// each tick. Position / velocity residual is dominated by the
 /// momentum-conservation kernel's f64 round-off propagating through
-/// the 10-second integrated window (f64 angular-momentum solve at
-/// 1.7e-9 m / 3.1e-11 m/s on veh1, half that on veh2). Quaternion
-/// tolerance absorbs the same JEOD-recorder %g print rounding that
-/// pins the pre-attach window. Observed: pos=1.67e-9, vel=3.07e-11,
-/// quat=2.98e-8, ang_vel≈0.
+/// the 10-second integrated window (the f64 angular-momentum solve on
+/// veh1, half that on veh2). Quaternion tolerance absorbs the same
+/// JEOD-recorder %g print rounding that pins the pre-attach window.
 const ATTACHED_POSITION_TOL_M: f64 = 1.75e-9;
 const ATTACHED_VELOCITY_TOL_MPS: f64 = 3.25e-11;
 const ATTACHED_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;
@@ -429,8 +423,7 @@ const ATTACHED_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 /// the inverse-split inertial states `Simulation::detach` derives.
 /// The error floor mirrors the attached-window residual since both
 /// bodies have just resumed independent RK4 integration from JEOD-
-/// equivalent initial conditions. Observed: pos=1.65e-9,
-/// vel=3.06e-11, quat=2.98e-8, ang_vel≈0.
+/// equivalent initial conditions.
 const POST_DETACH_POSITION_TOL_M: f64 = 1.75e-9;
 const POST_DETACH_VELOCITY_TOL_MPS: f64 = 3.25e-11;
 const POST_DETACH_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;

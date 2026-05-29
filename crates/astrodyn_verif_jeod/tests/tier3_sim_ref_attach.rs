@@ -439,11 +439,10 @@ fn tier3_sim_ref_attach_pt2pt() {
     // attachment to Earth.pfix at offset = (10, 0, 0) with rotation
     // diag(-1, -1, 1).
     //
-    // Tolerances per CLAUDE.md "5% above observed max" policy.
-    // Observed (this PR's regen): post_pos ≈ 15.08 m,
-    // post_vel ≈ 1.10e-3 m/s — same magnitudes as the matrix run
-    // (the named-point algebra is exactly the inverse of the matrix
-    // form for our mass-point geometry).
+    // Tolerances per CLAUDE.md "5% above observed max" policy. The
+    // residuals are the same magnitudes as the matrix run (the
+    // named-point algebra is exactly the inverse of the matrix form
+    // for our mass-point geometry).
     assert!(
         max_post_pos_err < 16.0,
         "post-attach position error too large: {max_post_pos_err:.3} m"

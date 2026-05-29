@@ -166,8 +166,7 @@ fn tier3_csr_compare_gravity_octants() {
 }
 
 // Our GGM05C 70×70 gravity kernel reproduces JEOD's logged `grav_accel`
-// to machine precision (observed per-component max: x = 0, y ≈ 3.5e-18,
-// z ≈ 4.4e-16 m/s² — i.e. ~15 significant figures on a ~7 m/s² signal).
+// to machine precision (~15 significant figures on a ~7 m/s² signal).
 // 1.05× observed would be a sub-ULP / zero tolerance, so these use a
 // uniform 1e-14 m/s² machine-epsilon floor that proves bit-level
 // agreement while absorbing last-ULP variation in the 70×70 harmonic sum.
