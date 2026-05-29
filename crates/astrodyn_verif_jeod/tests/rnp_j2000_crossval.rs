@@ -264,8 +264,8 @@ fn rnp_j2000_transform_crossval() {
         CalendarDate::new(1991, 4, 6, 7, 51, 28.386_009),
         26.0,
         0.402_521 - 26.0,
-        // Observed: prec/nut/NP ~1e-18, rot 8.5e-12 (GMST-conversion FP floor);
-        // GAST angle 1.13e-11. Tolerances 1.05× observed max (CLAUDE.md).
+        // The rot residual sits at the GMST-conversion FP floor.
+        // Tolerances 1.05× observed max (CLAUDE.md).
         9.0e-12,
         1.2e-11,
     );
@@ -282,7 +282,7 @@ fn rnp_j2000_init_crossval() {
         CalendarDate::new(1999, 3, 4, 0, 0, 0.0),
         32.0,
         0.649_32 - 32.0,
-        // Observed: matrices ≤ 4.74e-12, GAST angle 4.85e-12. 1.05× observed.
+        // Tolerances 1.05× observed max.
         5.0e-12,
         5.1e-12,
     );
@@ -496,8 +496,8 @@ fn rnp_j2000_polar_off_crossval() {
         CalendarDate::new(1999, 3, 4, 0, 0, 0.0),
         32.0,
         false,
-        // Observed: prec/nut/NP ~1e-20, rot 4.40e-12, T_parent_this 4.40e-12,
-        // GAST angle 4.56e-12 (GMST-conversion FP floor). 1.05× observed max.
+        // The rot / T_parent_this residuals sit at the GMST-conversion
+        // FP floor. Tolerances 1.05× observed max.
         4.7e-12,
         4.7e-12,
         4.8e-12,
@@ -517,8 +517,8 @@ fn rnp_j2000_prop_off_crossval() {
         CalendarDate::new(1999, 3, 4, 0, 0, 0.0),
         32.0,
         true,
-        // Observed: prec/nut/NP ~1e-20, rot 4.74e-12, T_parent_this 4.74e-12
-        // (polar fold-in is FP-exact vs JEOD), GAST 5.02e-12. 1.05× observed.
+        // Polar fold-in is FP-exact vs JEOD; residuals sit at the FP
+        // floor. Tolerances 1.05× observed max.
         5.0e-12,
         5.0e-12,
         5.3e-12,
@@ -537,10 +537,10 @@ fn rnp_j2000_prop_crossval() {
         CalendarDate::new(1999, 3, 3, 0, 0, 0.0),
         32.0,
         true,
-        // Observed: prec/nut/NP ~1e-20, rot 6.94e-8, T_parent_this 6.94e-8,
-        // GAST 7.32e-8. The 24 h GMST/UT1 accumulation at t=86400 dominates
-        // (T_parent_this tracks the rot error, so the polar interpolation
-        // across the daily-table bracket is itself consistent). 1.05× observed.
+        // The 24 h GMST/UT1 accumulation at t=86400 dominates the
+        // residual (T_parent_this tracks the rot error, so the polar
+        // interpolation across the daily-table bracket is itself
+        // consistent). Tolerances 1.05× observed max.
         7.3e-8,
         7.3e-8,
         7.7e-8,

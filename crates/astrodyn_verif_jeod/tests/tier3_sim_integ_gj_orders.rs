@@ -137,8 +137,8 @@ fn tier3_integ_gj_order4() {
     let (err, _, _) = gj_order_errors();
     println!("GJ order 4 max relative energy error (10 orbits, dt=1s): {err:.6e}");
     // GJ-4 with dt=1s over 10 orbits: bootstrap priming (5 RK4 steps) produces
-    // a transient energy spike; operational mode is much better. Tolerance at 5%
-    // above observed 3.86e-7.
+    // a transient energy spike; operational mode is much better. Tolerance
+    // 5% above observed max.
     assert!(
         err < 4.1e-7,
         "GJ-4 energy conservation: {err:.6e} >= 4.1e-7"
@@ -149,8 +149,8 @@ fn tier3_integ_gj_order4() {
 fn tier3_integ_gj_order8() {
     let (_, err, _) = gj_order_errors();
     println!("GJ order 8 max relative energy error (10 orbits, dt=1s): {err:.6e}");
-    // GJ-8: 9 RK4 priming steps -> larger bootstrap spike. Tolerance at 5%
-    // above observed 1.67e-6.
+    // GJ-8: 9 RK4 priming steps -> larger bootstrap spike. Tolerance
+    // 5% above observed max.
     assert!(
         err < 1.76e-6,
         "GJ-8 energy conservation: {err:.6e} >= 1.76e-6"
@@ -161,8 +161,8 @@ fn tier3_integ_gj_order8() {
 fn tier3_integ_gj_order12() {
     let (_, _, err) = gj_order_errors();
     println!("GJ order 12 max relative energy error (10 orbits, dt=1s): {err:.6e}");
-    // GJ-12: 13 RK4 priming steps -> largest bootstrap spike. Tolerance at 5%
-    // above observed 1.24e-5.
+    // GJ-12: 13 RK4 priming steps -> largest bootstrap spike. Tolerance
+    // 5% above observed max.
     assert!(
         err < 1.31e-5,
         "GJ-12 energy conservation: {err:.6e} >= 1.31e-5"

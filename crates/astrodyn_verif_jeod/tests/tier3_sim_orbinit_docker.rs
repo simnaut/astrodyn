@@ -185,7 +185,7 @@ fn assert_orbinit_match(
 fn tier3_orbinit_docker_run0001_iss_inertial() {
     // RUN_0001: ISS, SmaEccIncAscnodeArgperTimeperi, reference=Earth.inertial.
     // No frame rotation required — recipe output is already in inertial.
-    // Observed: pos=6.25e-9 m, vel=6.19e-12 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0001(),
         "orbinit_0001_orbinit.csv",
@@ -201,7 +201,7 @@ fn tier3_orbinit_docker_run0001_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0101_sts_inertial() {
-    // Observed: pos=1.04e-9 m, vel=2.27e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0101(),
         "orbinit_0101_orbinit.csv",
@@ -219,7 +219,7 @@ fn tier3_orbinit_docker_run0101_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0002_iss_inertial() {
-    // Observed: pos=3.26e-9 m, vel=3.40e-12 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0002(),
         "orbinit_0002_orbinit.csv",
@@ -231,7 +231,7 @@ fn tier3_orbinit_docker_run0002_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0102_sts_inertial() {
-    // Observed: pos=1.68e-9 m, vel=2.33e-12 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0102(),
         "orbinit_0102_orbinit.csv",
@@ -250,7 +250,7 @@ fn tier3_orbinit_docker_run0102_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0003_iss_inertial() {
-    // Observed: pos=5.21e-10 m, vel=2.27e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0003(),
         "orbinit_0003_orbinit.csv",
@@ -262,7 +262,7 @@ fn tier3_orbinit_docker_run0003_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0103_sts_inertial() {
-    // Observed: pos=1.40e-9 m, vel=9.37e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0103(),
         "orbinit_0103_orbinit.csv",
@@ -282,8 +282,8 @@ fn tier3_orbinit_docker_run0103_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0004_iss_inertial() {
-    // Observed: pos=4.66e-10 m, vel=0 m/s (5% above → listed; vel floored at
-    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    // Tolerances 1.05× observed max; vel floored at 1e-13 m/s since the
+    // exact-zero observed residual leaves no headroom.
     assert_orbinit_match(
         sim_orbinit_docker::run_0004(),
         "orbinit_0004_orbinit.csv",
@@ -295,7 +295,7 @@ fn tier3_orbinit_docker_run0004_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0104_sts_inertial() {
-    // Observed: pos=2.13e-9 m, vel=2.27e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0104(),
         "orbinit_0104_orbinit.csv",
@@ -314,7 +314,7 @@ fn tier3_orbinit_docker_run0104_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0005_iss_inertial() {
-    // Observed: pos=5.35e-9 m, vel=5.57e-12 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0005(),
         "orbinit_0005_orbinit.csv",
@@ -326,7 +326,7 @@ fn tier3_orbinit_docker_run0005_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0105_sts_inertial() {
-    // Observed: pos=4.01e-9 m, vel=4.51e-12 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0105(),
         "orbinit_0105_orbinit.csv",
@@ -346,7 +346,7 @@ fn tier3_orbinit_docker_run0105_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0006_iss_inertial() {
-    // Observed: pos=4.66e-10 m, vel=2.27e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0006(),
         "orbinit_0006_orbinit.csv",
@@ -358,8 +358,8 @@ fn tier3_orbinit_docker_run0006_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0106_sts_inertial() {
-    // Observed: pos=6.59e-10 m, vel=0 m/s (5% above → listed; vel floored at
-    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    // Tolerances 1.05× observed max; vel floored at 1e-13 m/s since the
+    // exact-zero observed residual leaves no headroom.
     assert_orbinit_match(
         sim_orbinit_docker::run_0106(),
         "orbinit_0106_orbinit.csv",
@@ -378,7 +378,7 @@ fn tier3_orbinit_docker_run0106_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0010_iss_inertial() {
-    // Observed: pos=6.59e-10 m, vel=4.55e-13 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0010(),
         "orbinit_0010_orbinit.csv",
@@ -390,8 +390,8 @@ fn tier3_orbinit_docker_run0010_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0110_sts_inertial() {
-    // Observed: pos=1.14e-9 m, vel=0 m/s (5% above → listed; vel floored at
-    // 1e-13 m/s since the exact-zero observed residual leaves no headroom).
+    // Tolerances 1.05× observed max; vel floored at 1e-13 m/s since the
+    // exact-zero observed residual leaves no headroom.
     assert_orbinit_match(
         sim_orbinit_docker::run_0110(),
         "orbinit_0110_orbinit.csv",
@@ -409,9 +409,9 @@ fn tier3_orbinit_docker_run0110_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0011_iss_inertial() {
-    // Observed: pos=4.66e-10 m, vel=0 m/s (5% above → listed; vel floored at
-    // 1e-13 m/s). Matches RUN_0004 exactly — set11 (CaseEleven) is the same
-    // JEOD option as set04 with the same ISS elements.
+    // Tolerances 1.05× observed max; vel floored at 1e-13 m/s. Matches
+    // RUN_0004 exactly — set11 (CaseEleven) is the same JEOD option as
+    // set04 with the same ISS elements.
     assert_orbinit_match(
         sim_orbinit_docker::run_0011(),
         "orbinit_0011_orbinit.csv",
@@ -423,9 +423,9 @@ fn tier3_orbinit_docker_run0011_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0111_sts_inertial() {
-    // Observed: pos=2.13e-9 m, vel=2.27e-13 m/s (5% above → listed). Matches
-    // RUN_0104 exactly — set11 (CaseEleven) is the same JEOD option as set04
-    // with the same STS-114 elements.
+    // Tolerances 1.05× observed max. Matches RUN_0104 exactly — set11
+    // (CaseEleven) is the same JEOD option as set04 with the same
+    // STS-114 elements.
     assert_orbinit_match(
         sim_orbinit_docker::run_0111(),
         "orbinit_0111_orbinit.csv",
@@ -442,10 +442,9 @@ fn tier3_orbinit_docker_run0111_sts_inertial() {
 #[test]
 fn tier3_orbinit_docker_run0201_iss_pfix() {
     // RUN_0201: ISS pfix set01. Requires RNP rotation at the SIM epoch
-    // (handled inside the recipe). Observed: pos=1.51e-5 m, vel=1.17e-8 m/s
-    // (5% above → listed). The residual reflects tiny differences
-    // between our RNP series and JEOD's over the ~11 000 km Earth
-    // rotation arm from 2005-07-28.
+    // (handled inside the recipe). Tolerances 1.05× observed max. The
+    // residual reflects tiny differences between our RNP series and
+    // JEOD's over the ~11 000 km Earth rotation arm from 2005-07-28.
     assert_orbinit_match(
         sim_orbinit_docker::run_0201(),
         "orbinit_0201_orbinit.csv",
@@ -461,7 +460,7 @@ fn tier3_orbinit_docker_run0201_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0301_sts_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0301(),
         "orbinit_0301_orbinit.csv",
@@ -480,8 +479,8 @@ fn tier3_orbinit_docker_run0301_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0202_iss_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed). The
-    // residual reflects RNP-series drift over the Earth-rotation arm.
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
     assert_orbinit_match(
         sim_orbinit_docker::run_0202(),
         "orbinit_0202_orbinit.csv",
@@ -493,7 +492,7 @@ fn tier3_orbinit_docker_run0202_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0302_sts_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0302(),
         "orbinit_0302_orbinit.csv",
@@ -510,7 +509,7 @@ fn tier3_orbinit_docker_run0302_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0203_iss_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0203(),
         "orbinit_0203_orbinit.csv",
@@ -522,7 +521,7 @@ fn tier3_orbinit_docker_run0203_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0303_sts_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0303(),
         "orbinit_0303_orbinit.csv",
@@ -539,7 +538,7 @@ fn tier3_orbinit_docker_run0303_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0204_iss_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0204(),
         "orbinit_0204_orbinit.csv",
@@ -551,7 +550,7 @@ fn tier3_orbinit_docker_run0204_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0304_sts_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0304(),
         "orbinit_0304_orbinit.csv",
@@ -568,7 +567,7 @@ fn tier3_orbinit_docker_run0304_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0205_iss_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0205(),
         "orbinit_0205_orbinit.csv",
@@ -580,7 +579,7 @@ fn tier3_orbinit_docker_run0205_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0305_sts_pfix() {
-    // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
+    // Tolerances 1.05× observed max (CLAUDE.md).
     assert_orbinit_match(
         sim_orbinit_docker::run_0305(),
         "orbinit_0305_orbinit.csv",

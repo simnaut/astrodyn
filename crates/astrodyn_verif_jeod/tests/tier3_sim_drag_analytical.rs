@@ -399,8 +399,8 @@ fn tier3_drag_no_drag_at_zero_density() {
     println!("  Energy conservation error: {de:.6e} J/kg");
     println!("  Angular momentum conservation error: {dh:.6e} m^2/s");
 
-    // RK4 at dt=10s conserves energy to ~1e-3 J/kg over one orbit (observed 9.5e-4)
-    // and angular momentum to ~1 m^2/s (observed 0.84).
+    // RK4 at dt=10s conserves energy to ~1e-3 J/kg over one orbit and
+    // angular momentum to ~1 m^2/s.
     assert!(
         de < 1e-3,
         "Energy should be conserved with zero density: |dE|={de:.6e} J/kg"

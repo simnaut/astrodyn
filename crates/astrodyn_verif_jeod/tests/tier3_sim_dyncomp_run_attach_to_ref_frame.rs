@@ -1293,8 +1293,7 @@ fn tier3_sim_dyncomp_run_attach_to_ref_frame() {
 // absorbing into the quaternion residual (the LVLH initial attitude is
 // sourced from the CSV t=0 quaternion; the recurring trajectory's quat
 // drift over 1000 s tracks the JEOD/our composite-body sample timing
-// offset). With matched RNP cadence — observed maxes: pos=1.240e-4 m,
-// vel=3.115e-7 m/s, quat=2.550e-3 rad, ang_vel=6.130e-6 rad/s.
+// offset). Tolerances 1.05× observed max with matched RNP cadence.
 const PRE_ATTACH_POS_TOL_M: f64 = 1.30e-4;
 const PRE_ATTACH_VEL_TOL_MPS: f64 = 3.27e-7;
 const PRE_ATTACH_QUAT_TOL_RAD: f64 = 2.68e-3;
@@ -1303,8 +1302,7 @@ const PRE_ATTACH_ANG_VEL_TOL_RAD_PER_S: f64 = 6.44e-6;
 // attached_first (t=1000..1400): body glued to Earth.pfix matrix-attach
 // at the body's current pfix-relative pose. With matched RNP cadence
 // the position residual collapses to the rigid-composition f64 floor.
-// Observed maxes: pos=1.771e-4 m, vel=1.119e-8 m/s, quat=2.766e-3 rad,
-// ang_vel=1.290e-7 rad/s.
+// Tolerances 1.05× observed max.
 const ATTACHED_FIRST_POS_TOL_M: f64 = 1.86e-4;
 const ATTACHED_FIRST_VEL_TOL_MPS: f64 = 1.18e-8;
 const ATTACHED_FIRST_QUAT_TOL_RAD: f64 = 2.91e-3;
@@ -1313,9 +1311,8 @@ const ATTACHED_FIRST_ANG_VEL_TOL_RAD_PER_S: f64 = 1.36e-7;
 // burn_free_flight (t=1400..1800 + t=2200..2600 + t=2050..2200 inner):
 // post-detach free-flight (with the velocity-only rewind) and the
 // post-burn free-flight after the maneuver finishes. Errors accumulate
-// from the same RK4 floor plus the rewind round-trip. Matched RNP
-// cadence — observed maxes: pos=3.330e-4 m, vel=3.895e-7 m/s,
-// quat=3.819e-3 rad, ang_vel=3.368e-6 rad/s.
+// from the same RK4 floor plus the rewind round-trip. Tolerances 1.05×
+// observed max with matched RNP cadence.
 const FREE_FLIGHT_POS_TOL_M: f64 = 3.50e-4;
 const FREE_FLIGHT_VEL_TOL_MPS: f64 = 4.10e-7;
 const FREE_FLIGHT_QUAT_TOL_RAD: f64 = 4.01e-3;
@@ -1326,9 +1323,8 @@ const FREE_FLIGHT_ANG_VEL_TOL_RAD_PER_S: f64 = 3.54e-6;
 // force is collected through the runner's `set_body_external_force`,
 // but the body is frame-attached so the force has no effect on the
 // derived state — exactly mirroring JEOD's `frame_attach.isAttached()`
-// gate that bypasses integration. Matched RNP cadence — observed
-// maxes: pos=3.233e-4 m, vel=1.739e-7 m/s, quat=3.336e-3 rad,
-// ang_vel=3.951e-6 rad/s.
+// gate that bypasses integration. Tolerances 1.05× observed max with
+// matched RNP cadence.
 const ATTACHED_BURN_POS_TOL_M: f64 = 3.40e-4;
 const ATTACHED_BURN_VEL_TOL_MPS: f64 = 1.83e-7;
 const ATTACHED_BURN_QUAT_TOL_RAD: f64 = 3.51e-3;
@@ -1344,8 +1340,7 @@ const ATTACHED_BURN_ANG_VEL_TOL_RAD_PER_S: f64 = 4.15e-6;
 // drift that floors the `attached_first` window's quat residual.
 // Rotated through the (-3, -1.5, 4) CoM offset that becomes a
 // sub-cm position contribution.
-// Matched RNP cadence — observed maxes: pos=9.616e-3 m,
-// vel=5.529e-7 m/s, quat=3.870e-3 rad, ang_vel=1.802e-7 rad/s.
+// Tolerances 1.05× observed max with matched RNP cadence.
 const ATTACHED_SURFACE_PT_POS_TOL_M: f64 = 1.01e-2;
 const ATTACHED_SURFACE_PT_VEL_TOL_MPS: f64 = 5.81e-7;
 const ATTACHED_SURFACE_PT_QUAT_TOL_RAD: f64 = 4.07e-3;
@@ -1364,8 +1359,7 @@ const ATTACHED_SURFACE_PT_ANG_VEL_TOL_RAD_PER_S: f64 = 1.90e-7;
 // captures `t_inertial_struct`. The drift, rotated through
 // `(-3, -1.5, 4)`, dominates the position residual. The quat
 // residual itself reflects that same accumulated drift.
-// Matched RNP cadence — observed maxes: pos=2.720e-1 m,
-// vel=9.903e-6 m/s, quat=6.349e-2 rad, ang_vel=1.074e-7 rad/s.
+// Tolerances 1.05× observed max with matched RNP cadence.
 const ATTACHED_SURFACE_MATRIX_POS_TOL_M: f64 = 2.86e-1;
 const ATTACHED_SURFACE_MATRIX_VEL_TOL_MPS: f64 = 1.04e-5;
 const ATTACHED_SURFACE_MATRIX_QUAT_TOL_RAD: f64 = 6.67e-2;
@@ -1381,9 +1375,7 @@ const ATTACHED_SURFACE_MATRIX_ANG_VEL_TOL_RAD_PER_S: f64 = 1.13e-7;
 // before the run ends. The quat-angle tolerance is therefore the
 // largest dimensionless tolerance in this test, but it is still set
 // to ~5 % above the observed max so a regression that doubled the
-// drift to ~30° would still trip the gate. Matched RNP cadence —
-// observed maxes: pos=1.738e-1 m, vel=1.873e-4 m/s, quat=2.686e-1
-// rad, ang_vel=2.120e-4 rad/s.
+// drift to ~30° would still trip the gate. Matched RNP cadence.
 const POST_FINAL_DETACH_POS_TOL_M: f64 = 1.83e-1;
 const POST_FINAL_DETACH_VEL_TOL_MPS: f64 = 1.97e-4;
 const POST_FINAL_DETACH_QUAT_TOL_RAD: f64 = 2.82e-1;

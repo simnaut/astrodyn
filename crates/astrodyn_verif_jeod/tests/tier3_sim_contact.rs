@@ -279,24 +279,24 @@ fn line_mass_props() -> MassProperties {
 // regression guard on the stage-equivalence invariant.
 
 // `CONTACT_FORCE_TOL` covers the loosest observed stage-4 force error
-// across the five inter-body tests (off-center oblique at 9.089e-9 N
-// — see `tier3_contact_point_off_center_stage4_probe`). Head-on tests
-// sit ~3 orders of magnitude tighter (~1.7e-12 N). The literal is
-// ~1.1× the off-center observed for cross-platform FP headroom, which
-// is generous on head-on but still ~7 orders of magnitude tighter
-// than the pre-#460 `POINT_OFF_CENTER_FORCE_TOL` of 0.0375 N — any
-// real per-stage force regression trips this bar with room to spare.
+// across the five inter-body tests (off-center oblique — see
+// `tier3_contact_point_off_center_stage4_probe`). Head-on tests sit
+// several orders of magnitude tighter. The literal is ~1.1× the
+// off-center observed for cross-platform FP headroom, which is
+// generous on head-on but still many orders of magnitude tighter than
+// the pre-#460 `POINT_OFF_CENTER_FORCE_TOL` of 0.0375 N — any real
+// per-stage force regression trips this bar with room to spare.
 const CONTACT_FORCE_TOL: f64 = 1.0e-8;
 
 // `CONTACT_TORQUE_TOL` is the noise-floor tolerance, set above the
-// loosest observed stage-4 torque error: off-center oblique at
-// 2.025e-13 N·m (head-on rotated tops out at 1.191e-13). FP round-off
-// on torque arms of order 1 m crossed with forces of order 1 N sits
-// at ~1e-13 N·m; a strict 1.05× literal would false-fail on platforms
-// whose FP rounding paths differ by a few ULPs. `3.0e-13` is ~1.5×
-// the off-center observed and ~2.5× the head-on rotated observed —
-// large enough to absorb cross-platform FP variance, still ~10 orders
-// of magnitude tighter than the pre-#460 `POINT_OFF_CENTER_TORQUE_TOL`
+// loosest observed stage-4 torque error (off-center oblique, with
+// head-on rotated tighter still). FP round-off on torque arms of
+// order 1 m crossed with forces of order 1 N sits at ~1e-13 N·m; a
+// strict 1.05× literal would false-fail on platforms whose FP
+// rounding paths differ by a few ULPs. `3.0e-13` is ~1.5× the
+// off-center observed and ~2.5× the head-on rotated observed — large
+// enough to absorb cross-platform FP variance, still many orders of
+// magnitude tighter than the pre-#460 `POINT_OFF_CENTER_TORQUE_TOL`
 // of 3.1e-3 N·m.
 const CONTACT_TORQUE_TOL: f64 = 3.0e-13;
 
@@ -1443,12 +1443,12 @@ fn ground_steel() -> ContactMaterial {
 /// `Δv ≈ (1/6) × F × dt / m = 93 081 m/s`, exactly matching the t=0.05 CSV
 /// velocity.
 ///
-/// Tolerances per CLAUDE.md "5% above observed max" policy. Observed:
-/// position 2.79 nm, velocity 4.4e-11 m/s — essentially bit-for-bit
-/// agreement with JEOD's CSV (residual is f64 roundoff in the
-/// gravity-coupled RK4). The constants below are 1.05× observed maxima.
-const GROUND_POS_TOL: f64 = 3.0e-9; // m (observed 2.794 nm)
-const GROUND_VEL_TOL: f64 = 5.0e-11; // m/s (observed 4.366e-11 m/s)
+/// Tolerances per CLAUDE.md "5% above observed max" policy. The
+/// residuals show essentially bit-for-bit agreement with JEOD's CSV
+/// (f64 roundoff in the gravity-coupled RK4). The constants below are
+/// 1.05× observed maxima.
+const GROUND_POS_TOL: f64 = 3.0e-9; // m
+const GROUND_VEL_TOL: f64 = 5.0e-11; // m/s
 
 #[test]
 fn tier3_contact_ground() {

@@ -262,10 +262,9 @@ fn run_integ_test(
 // preset; cross-validation math is owned by `CrossvalReport`.
 #[test]
 fn tier3_simulation_lsode_abm4() {
-    // Observed max-component errors over 14 orbits (80000 s sim time):
-    //   position [3.406e-4, 3.260e-4, 2.152e-4] m
-    //   velocity [3.870e-7, 3.553e-7, 2.362e-7] m/s
-    // Tolerances set to 5% above observed (CLAUDE.md tolerance policy).
+    // Max-component errors over 14 orbits (80000 s sim time) sit at the
+    // FP-noise floor. Tolerances set to 5% above observed (CLAUDE.md
+    // tolerance policy).
     run_integ_test(
         "tier3_simulation_lsode_abm4",
         "integ_abm4",
@@ -289,10 +288,9 @@ fn tier3_simulation_lsode_abm4() {
 // non-recipe: same derived μ + CSV-rotated IC as `tier3_simulation_lsode_abm4`.
 #[test]
 fn tier3_simulation_lsode_default() {
-    // Observed max-component errors (our LSODE vs JEOD LSODE, 14 orbits):
-    //   position [9.160e-4, 8.721e-4, 5.785e-4] m
-    //   velocity [1.038e-6, 9.572e-7, 6.385e-7] m/s
-    // Tolerances set to 1.05× observed (CLAUDE.md tolerance policy).
+    // Max-component errors (our LSODE vs JEOD LSODE, 14 orbits) sit at
+    // the FP-noise floor. Tolerances set to 1.05× observed (CLAUDE.md
+    // tolerance policy).
     let cfg = astrodyn::LsodeConfig::non_stiff_adams().with_tolerances(2.3e-16, 0.0);
     run_integ_test(
         "tier3_simulation_lsode_default",
