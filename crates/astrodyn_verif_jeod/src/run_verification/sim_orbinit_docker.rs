@@ -46,7 +46,10 @@
 //!   * RUN_0310 — STS-114 orbital elements (set10, sma/ecc + true anomaly) in `Earth.pfix`;
 //!   * RUN_0211 — ISS orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.pfix`;
 //!   * RUN_0311 — STS-114 orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.pfix`;
-//!   * RUN_0401 — STS-114 direct Cartesian state in `Earth.inertial`.
+//!   * RUN_0401 — STS-114 direct Cartesian state in `Earth.inertial`;
+//!   * RUN_0400 — ISS direct Cartesian state in `Earth.inertial`;
+//!   * RUN_0410 — ISS direct Cartesian state in `Earth.pfix`;
+//!   * RUN_0411 — STS-114 direct Cartesian state in `Earth.pfix`.
 //!
 //! set01 and set02 resolve to [`init_from_mean_anomaly`]; set01 derives
 //! `M = t_peri·√(μ/a³)` from the fixture's `time_periapsis`, while set02
@@ -431,14 +434,45 @@ fn true_anomaly_sma_state(vehicle: &str, init_name: &str, mu_earth: f64) -> Tran
     resolve_reference_frame(vehicle, init_name, &init.reference_frame, state_ref)
 }
 
-/// Materialize a JEOD direct-Cartesian fixture (RUN_0401 only) into an
-/// inertial-frame translational state. The fixture is a pass-through:
-/// `position`/`velocity` arrays are taken verbatim.
+/// Materialize a JEOD direct-Cartesian (`DynBodyInitTransState`) fixture
+/// into an inertial-frame translational state.
+///
+/// `Earth.inertial` fixtures are a pass-through: `position`/`velocity` are
+/// taken verbatim. `Earth.pfix` fixtures are expressed in the rotating
+/// planet-fixed frame and composed into inertial through the full
+/// reference-frame relation JEOD applies for a direct trans-state init
+/// (`DynBodyInit::apply_user_inputs` → `RefFrameState` composition).
+///
+/// Unlike the orbital-element pfix path — which rotates the elements'
+/// Cartesian image as pure 3-vectors (JEOD `dyn_body_init_orbit.cc`
+/// overrides the composition) — the direct trans-state path goes through
+/// `compute_relative_state`, so the velocity carries the planet-rotation
+/// `ω × r` term. With A = inertial, B = pfix, C = vehicle and the pfix
+/// frame's `ang_vel_this = [0, 0, planet_omega]` (JEOD `planet_rnp.cc`),
+/// JEOD's `RefFrameState::incr_left` reduces (zero parent-frame
+/// translation) to:
+///   r_inertial = T_pfix_inertial · r_pfix
+///   v_inertial = T_pfix_inertial · (v_pfix + ω_pfix × r_pfix)
+/// where the `ω × r` cross product is evaluated in the pfix frame before
+/// the rotation, matching JEOD's order of operations. Any other frame
+/// fails loudly.
 fn trans_state(vehicle: &str, init_name: &str) -> TranslationalState {
     let trans = load_trans_state(vehicle, init_name);
-    TranslationalState {
-        position: DVec3::from_array(trans.position),
-        velocity: DVec3::from_array(trans.velocity),
+    let position = DVec3::from_array(trans.position);
+    let velocity = DVec3::from_array(trans.velocity);
+    match trans.reference_frame.as_str() {
+        "Earth.inertial" => TranslationalState { position, velocity },
+        "Earth.pfix" => {
+            let t_inertial_pfix = t_inertial_pfix_at_epoch();
+            let t_pfix_inertial = t_inertial_pfix.transpose();
+            let omega_pfix = DVec3::new(0.0, 0.0, EARTH.omega);
+            let velocity_in_pfix = velocity + omega_pfix.cross(position);
+            TranslationalState {
+                position: t_pfix_inertial * position,
+                velocity: t_pfix_inertial * velocity_in_pfix,
+            }
+        }
+        other => panic!("{vehicle}/{init_name}: unsupported reference_frame '{other}'"),
     }
 }
 
@@ -518,6 +552,29 @@ fn build_run_0301(_init: &InitialConditions) -> SimulationBuilder {
 fn build_run_0401(_init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
     let state = trans_state("STS_114", "trans_TransState_inertial_body");
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0400: ISS direct Cartesian state in `Earth.inertial` (pass-through).
+fn build_run_0400(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = trans_state("ISS", "trans_TransState_inertial_body");
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0410: ISS direct Cartesian state in `Earth.pfix`. The pfix branch
+/// composes the planet-fixed state into inertial including the planet
+/// rotation `ω × r` velocity term.
+fn build_run_0410(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = trans_state("ISS", "trans_TransState_pfix_body");
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0411: STS-114 direct Cartesian state in `Earth.pfix`.
+fn build_run_0411(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = trans_state("STS_114", "trans_TransState_pfix_body");
     build_orbinit_docker(mu, state)
 }
 
@@ -1293,6 +1350,59 @@ pub fn run_0401() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0401",
         scenario: build_run_0401,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0400: ISS direct Cartesian state (`DynBodyInitTransState`) in
+/// `Earth.inertial`. Pass-through of the literal position/velocity from
+/// `trans_TransState_inertial_body`.
+pub fn run_0400() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0400",
+        scenario: build_run_0400,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0410: ISS direct Cartesian state (`DynBodyInitTransState`) in
+/// `Earth.pfix`. The pfix branch composes the planet-fixed state into
+/// inertial with the planet-rotation velocity term.
+pub fn run_0410() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0410",
+        scenario: build_run_0410,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0411: STS-114 direct Cartesian state (`DynBodyInitTransState`) in
+/// `Earth.pfix`.
+pub fn run_0411() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0411",
+        scenario: build_run_0411,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,

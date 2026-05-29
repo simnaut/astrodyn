@@ -41,7 +41,8 @@
 //!   `trans_Orbit_pfix_body_set06.py`           — pfix orbit (sma/inc/raan/arg-latitude/orb-radius/radial-vel)
 //!   `trans_Orbit_pfix_body_set10.py`           — pfix orbit (sma/ecc + true anomaly)
 //!   `trans_Orbit_pfix_body_set11.py`           — pfix orbit (apo/peri altitudes + true anomaly; same as set04)
-//!   `trans_TransState_inertial_body.py`        — direct Cartesian (STS_114 only)
+//!   `trans_TransState_inertial_body.py`        — direct Cartesian state in `Earth.inertial`
+//!   `trans_TransState_pfix_body.py`            — direct Cartesian state in `Earth.pfix`
 //!
 //! Scenarios extracted: `ISS`, `STS_114`. Each scenario writes a single
 //! `test_data/body_init/<vehicle>.json`. The `reference_inertial` and
@@ -90,7 +91,10 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_pfix_body_set10",
             "trans_Orbit_pfix_body_set11",
         ],
-        trans_states: &[],
+        trans_states: &[
+            "trans_TransState_inertial_body",
+            "trans_TransState_pfix_body",
+        ],
     },
     Scenario {
         vehicle: "STS_114",
@@ -113,7 +117,10 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_pfix_body_set10",
             "trans_Orbit_pfix_body_set11",
         ],
-        trans_states: &["trans_TransState_inertial_body"],
+        trans_states: &[
+            "trans_TransState_inertial_body",
+            "trans_TransState_pfix_body",
+        ],
     },
 ];
 

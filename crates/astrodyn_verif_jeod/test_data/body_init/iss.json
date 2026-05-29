@@ -4,7 +4,7 @@
   "source": "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/",
   "jeod_version": "5.4",
   "jeod_commit": "27893108bbde8bb162b3213a30d57af89acd1c76",
-  "generated_utc": "2026-05-29T04:20:12Z",
+  "generated_utc": "2026-05-29T05:59:53Z",
   "note": "Body initialization vectors. Regenerate with: cargo run -p astrodyn_verif_jeod --bin extract_body_init -- --jeod-home $JEOD_HOME",
   "reference_inertial": {"position": [1244540.53, 5655938.85, 3425643.22], "velocity": [-6003.833051, -1469.496044, 4590.511776]},
   "orbital_inits": [
@@ -314,5 +314,17 @@
     }
   ],
   "trans_states": [
+    {
+      "name": "trans_TransState_inertial_body",
+      "position": [1244540.53, 5655938.85, 3425643.22],
+      "velocity": [-6003.833051, -1469.496044, 4590.511776],
+      "reference_frame": "Earth.inertial"
+    },
+    {
+      "name": "trans_TransState_pfix_body",
+      "position": [5406298.57, -2074684.56, 3426540.03],
+      "velocity": [-706.065581, 5764.307162, 4587.246163],
+      "reference_frame": "Earth.pfix"
+    }
   ]
 }

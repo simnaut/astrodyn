@@ -64,6 +64,9 @@
 //!   RUN_0211: ISS orbital elements in pfix frame (set11, altitudes + true anomaly)
 //!   RUN_0311: STS-114 orbital elements in pfix frame (set11, altitudes + true anomaly)
 //!   RUN_0401: STS-114 direct Cartesian state in inertial frame
+//!   RUN_0400: ISS direct Cartesian state in inertial frame
+//!   RUN_0410: ISS direct Cartesian state in planet-fixed (pfix) frame
+//!   RUN_0411: STS-114 direct Cartesian state in planet-fixed (pfix) frame
 //!
 //! All scenarios share the same JEOD epoch: 2005-07-28 10:09:59 UT1.
 //! The SIM disables polar motion (`earth.rnp.enable_polar = False`).
@@ -709,5 +712,57 @@ fn tier3_orbinit_docker_run0401_sts_trans_state() {
         "RUN_0401 (STS-114 inertial cart)",
         1.0e-6,
         1.0e-9,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0400: ISS direct Cartesian state in inertial frame
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0400_iss_trans_state() {
+    // RUN_0400 uses DynBodyInitTransState (direct Cartesian input in
+    // inertial). Recipe initialization is a pass-through to the body
+    // state and the JEOD CSV logs the input to full precision, so the
+    // residual is exactly zero; both tolerances are floored at 1e-13.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0400(),
+        "orbinit_0400_orbinit.csv",
+        "RUN_0400 (ISS inertial cart)",
+        1.0e-13,
+        1.0e-13,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0410 / RUN_0411: direct Cartesian state in planet-fixed (pfix) frame.
+// Unlike the orbital-element pfix RUNs, the direct trans-state path composes
+// the planet-fixed state into inertial through the full reference-frame
+// relation (including the planet-rotation `ω × r` velocity term). The residual
+// reflects RNP-series drift over the Earth-rotation arm plus the ~10-char CSV
+// input precision. Tolerances 1.05× observed max (CLAUDE.md).
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0410_iss_pfix_trans_state() {
+    // Tolerances 1.05× observed max (CLAUDE.md).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0410(),
+        "orbinit_0410_orbinit.csv",
+        "RUN_0410 (ISS pfix cart)",
+        1.589e-5,
+        1.225e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0411_sts_pfix_trans_state() {
+    // Tolerances 1.05× observed max (CLAUDE.md).
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0411(),
+        "orbinit_0411_orbinit.csv",
+        "RUN_0411 (STS-114 pfix cart)",
+        1.589e-5,
+        1.225e-8,
     );
 }
