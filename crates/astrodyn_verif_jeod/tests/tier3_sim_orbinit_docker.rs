@@ -57,6 +57,12 @@
 //!   RUN_0304: STS-114 orbital elements in pfix frame (set04, altitudes + true anomaly)
 //!   RUN_0205: ISS orbital elements in pfix frame (set05, altitudes + time_periapsis)
 //!   RUN_0305: STS-114 orbital elements in pfix frame (set05, altitudes + time_periapsis)
+//!   RUN_0206: ISS orbital elements in pfix frame (set06, arg-latitude + radial-vel)
+//!   RUN_0306: STS-114 orbital elements in pfix frame (set06, arg-latitude + radial-vel)
+//!   RUN_0210: ISS orbital elements in pfix frame (set10, sma/ecc + true anomaly)
+//!   RUN_0310: STS-114 orbital elements in pfix frame (set10, sma/ecc + true anomaly)
+//!   RUN_0211: ISS orbital elements in pfix frame (set11, altitudes + true anomaly)
+//!   RUN_0311: STS-114 orbital elements in pfix frame (set11, altitudes + true anomaly)
 //!   RUN_0401: STS-114 direct Cartesian state in inertial frame
 //!
 //! All scenarios share the same JEOD epoch: 2005-07-28 10:09:59 UT1.
@@ -584,6 +590,103 @@ fn tier3_orbinit_docker_run0305_sts_pfix() {
         sim_orbinit_docker::run_0305(),
         "orbinit_0305_orbinit.csv",
         "RUN_0305 (STS-114 pfix set05, altitudes + time periapsis)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0206 / RUN_0306: set06 (arg-latitude + radial-vel) in pfix frame.
+// Same converter as RUN_0006/0106, but the elements are interpreted in
+// Earth.pfix and rotated to inertial at the SIM epoch. Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0206_iss_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0206(),
+        "orbinit_0206_orbinit.csv",
+        "RUN_0206 (ISS pfix set06, arg-latitude + radial-vel)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0306_sts_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0306(),
+        "orbinit_0306_orbinit.csv",
+        "RUN_0306 (STS-114 pfix set06, arg-latitude + radial-vel)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0210 / RUN_0310: set10 (sma/ecc + true-anomaly) in pfix frame.
+// Same converter as RUN_0010/0110, rotated to inertial at the SIM epoch.
+// Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0210_iss_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0210(),
+        "orbinit_0210_orbinit.csv",
+        "RUN_0210 (ISS pfix set10, sma/ecc + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0310_sts_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0310(),
+        "orbinit_0310_orbinit.csv",
+        "RUN_0310 (STS-114 pfix set10, sma/ecc + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_0211 / RUN_0311: set11 (altitudes + true-anomaly) in pfix frame. JEOD's
+// CaseEleven is the same option as set04, so this reuses
+// `init_from_altitudes_true_anomaly`, rotated to inertial at the SIM epoch.
+// Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0211_iss_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0211(),
+        "orbinit_0211_orbinit.csv",
+        "RUN_0211 (ISS pfix set11, altitudes + true anomaly)",
+        1.59e-5,
+        1.23e-8,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0311_sts_pfix() {
+    // Tolerances 1.05× observed max. The residual reflects RNP-series
+    // drift over the Earth-rotation arm.
+    assert_orbinit_match(
+        sim_orbinit_docker::run_0311(),
+        "orbinit_0311_orbinit.csv",
+        "RUN_0311 (STS-114 pfix set11, altitudes + true anomaly)",
         1.59e-5,
         1.23e-8,
     );

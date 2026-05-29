@@ -38,6 +38,9 @@
 //!   `trans_Orbit_pfix_body_set03.py`           — pfix orbit (semi-latus rectum + true anomaly)
 //!   `trans_Orbit_pfix_body_set04.py`           — pfix orbit (apo/peri altitudes + true anomaly)
 //!   `trans_Orbit_pfix_body_set05.py`           — pfix orbit (apo/peri altitudes + time periapsis)
+//!   `trans_Orbit_pfix_body_set06.py`           — pfix orbit (sma/inc/raan/arg-latitude/orb-radius/radial-vel)
+//!   `trans_Orbit_pfix_body_set10.py`           — pfix orbit (sma/ecc + true anomaly)
+//!   `trans_Orbit_pfix_body_set11.py`           — pfix orbit (apo/peri altitudes + true anomaly; same as set04)
 //!   `trans_TransState_inertial_body.py`        — direct Cartesian (STS_114 only)
 //!
 //! Scenarios extracted: `ISS`, `STS_114`. Each scenario writes a single
@@ -83,6 +86,9 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_pfix_body_set03",
             "trans_Orbit_pfix_body_set04",
             "trans_Orbit_pfix_body_set05",
+            "trans_Orbit_pfix_body_set06",
+            "trans_Orbit_pfix_body_set10",
+            "trans_Orbit_pfix_body_set11",
         ],
         trans_states: &[],
     },
@@ -103,6 +109,9 @@ const SCENARIOS: &[Scenario] = &[
             "trans_Orbit_pfix_body_set03",
             "trans_Orbit_pfix_body_set04",
             "trans_Orbit_pfix_body_set05",
+            "trans_Orbit_pfix_body_set06",
+            "trans_Orbit_pfix_body_set10",
+            "trans_Orbit_pfix_body_set11",
         ],
         trans_states: &["trans_TransState_inertial_body"],
     },

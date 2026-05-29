@@ -40,6 +40,12 @@
 //!   * RUN_0304 — STS-114 orbital elements (set04, apo/peri altitudes + true anomaly) in `Earth.pfix`;
 //!   * RUN_0205 — ISS orbital elements (set05, apo/peri altitudes + time periapsis) in `Earth.pfix`;
 //!   * RUN_0305 — STS-114 orbital elements (set05, apo/peri altitudes + time periapsis) in `Earth.pfix`;
+//!   * RUN_0206 — ISS orbital elements (set06, arg-latitude + radial-vel) in `Earth.pfix`;
+//!   * RUN_0306 — STS-114 orbital elements (set06, arg-latitude + radial-vel) in `Earth.pfix`;
+//!   * RUN_0210 — ISS orbital elements (set10, sma/ecc + true anomaly) in `Earth.pfix`;
+//!   * RUN_0310 — STS-114 orbital elements (set10, sma/ecc + true anomaly) in `Earth.pfix`;
+//!   * RUN_0211 — ISS orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.pfix`;
+//!   * RUN_0311 — STS-114 orbital elements (set11, apo/peri altitudes + true anomaly) in `Earth.pfix`;
 //!   * RUN_0401 — STS-114 direct Cartesian state in `Earth.inertial`.
 //!
 //! set01 and set02 resolve to [`init_from_mean_anomaly`]; set01 derives
@@ -291,8 +297,10 @@ fn require_arg_periapsis(
 /// `e = (alt_apo − alt_peri)/(2a)` (`dyn_body_init_orbit.cc:277-283`), then
 /// resolves the true anomaly. `r_eq` is JEOD's Earth equatorial radius
 /// (`EARTH.shape.r_eq()` = `1000·6378.137` m), the same value
-/// `environment/planet/data/src/earth.cc` assigns `Planet::r_eq`. The set04
-/// decks are `Earth.inertial` only.
+/// `environment/planet/data/src/earth.cc` assigns `Planet::r_eq`. The orbital
+/// elements are interpreted in `init.reference_frame`: `Earth.inertial` decks
+/// pass through, `Earth.pfix` decks are rotated to inertial via
+/// [`resolve_reference_frame`]. set11 (`CaseEleven`) shares this converter.
 fn altitudes_true_anomaly_state(
     vehicle: &str,
     init_name: &str,
@@ -361,8 +369,9 @@ fn altitudes_time_periapsis_state(
 /// **orbital radius**, and **radial velocity**. JEOD recovers `(e, ν, ω)` from
 /// the radius / radial-velocity pair via the eccentric-anomaly identities and
 /// then resolves the sma + true-anomaly shape
-/// (`dyn_body_init_orbit.cc:221-261`). The set06 decks are `Earth.inertial`
-/// only.
+/// (`dyn_body_init_orbit.cc:221-261`). The orbital elements are interpreted in
+/// `init.reference_frame`: `Earth.inertial` decks pass through, `Earth.pfix`
+/// decks are rotated to inertial via [`resolve_reference_frame`].
 fn arg_latitude_radial_vel_state(
     vehicle: &str,
     init_name: &str,
@@ -381,14 +390,7 @@ fn arg_latitude_radial_vel_state(
     let radial_vel = init.radial_vel.unwrap_or_else(|| {
         panic!("{vehicle}/{init_name}: set06 expected radial_vel in the fixture")
     });
-    assert_eq!(
-        init.reference_frame.as_str(),
-        "Earth.inertial",
-        "{vehicle}/{init_name}: set06 recipe only supports Earth.inertial frames, got '{}' — \
-         add frame handling if a pfix set06 RUN is introduced",
-        init.reference_frame,
-    );
-    init_from_arg_latitude_radial_vel(
+    let state_ref = init_from_arg_latitude_radial_vel(
         a,
         init.inclination,
         init.ascending_node,
@@ -396,7 +398,8 @@ fn arg_latitude_radial_vel_state(
         orb_radius,
         radial_vel,
         mu_earth,
-    )
+    );
+    resolve_reference_frame(vehicle, init_name, &init.reference_frame, state_ref)
 }
 
 /// Materialize a JEOD set10 (`SmaEccIncAscnodeArgperTanom`) fixture into an
@@ -405,7 +408,9 @@ fn arg_latitude_radial_vel_state(
 /// `ShapeSemiMajorAxis` + `LocationTrueAnom` path
 /// (`dyn_body_init_orbit.cc:256-261`), which derives `semiparam = a·(1−e²)` and
 /// resolves the true anomaly directly. This is exactly
-/// [`init_from_orbital_elements`]. The set10 decks are `Earth.inertial` only.
+/// [`init_from_orbital_elements`]. The orbital elements are interpreted in
+/// `init.reference_frame`: `Earth.inertial` decks pass through, `Earth.pfix`
+/// decks are rotated to inertial via [`resolve_reference_frame`].
 fn true_anomaly_sma_state(vehicle: &str, init_name: &str, mu_earth: f64) -> TranslationalState {
     let init = load_orbital_init(vehicle, init_name);
     let a = init.semi_major_axis.unwrap_or_else(|| {
@@ -414,14 +419,7 @@ fn true_anomaly_sma_state(vehicle: &str, init_name: &str, mu_earth: f64) -> Tran
     let true_anomaly = init.true_anomaly.unwrap_or_else(|| {
         panic!("{vehicle}/{init_name}: set10 expected true_anomaly in the fixture")
     });
-    assert_eq!(
-        init.reference_frame.as_str(),
-        "Earth.inertial",
-        "{vehicle}/{init_name}: set10 recipe only supports Earth.inertial frames, got '{}' — \
-         add frame handling if a pfix set10 RUN is introduced",
-        init.reference_frame,
-    );
-    init_from_orbital_elements(
+    let state_ref = init_from_orbital_elements(
         a,
         require_eccentricity(vehicle, init_name, &init),
         init.inclination,
@@ -429,7 +427,8 @@ fn true_anomaly_sma_state(vehicle: &str, init_name: &str, mu_earth: f64) -> Tran
         require_arg_periapsis(vehicle, init_name, &init),
         true_anomaly,
         mu_earth,
-    )
+    );
+    resolve_reference_frame(vehicle, init_name, &init.reference_frame, state_ref)
 }
 
 /// Materialize a JEOD direct-Cartesian fixture (RUN_0401 only) into an
@@ -579,6 +578,50 @@ fn build_run_0205(_init: &InitialConditions) -> SimulationBuilder {
 fn build_run_0305(_init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
     let state = altitudes_time_periapsis_state("STS_114", "trans_Orbit_pfix_body_set05", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0206: ISS set06 (arg-latitude + radial-vel) elements in `Earth.pfix`.
+fn build_run_0206(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = arg_latitude_radial_vel_state("ISS", "trans_Orbit_pfix_body_set06", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0306: STS-114 set06 (arg-latitude + radial-vel) elements in `Earth.pfix`.
+fn build_run_0306(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = arg_latitude_radial_vel_state("STS_114", "trans_Orbit_pfix_body_set06", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0210: ISS set10 (sma/ecc + true-anomaly) elements in `Earth.pfix`.
+fn build_run_0210(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = true_anomaly_sma_state("ISS", "trans_Orbit_pfix_body_set10", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0310: STS-114 set10 (sma/ecc + true-anomaly) elements in `Earth.pfix`.
+fn build_run_0310(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = true_anomaly_sma_state("STS_114", "trans_Orbit_pfix_body_set10", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0211: ISS set11 (altitudes + true-anomaly) elements in `Earth.pfix`.
+/// Same JEOD option as set04 (`CaseEleven`).
+fn build_run_0211(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = altitudes_true_anomaly_state("ISS", "trans_Orbit_pfix_body_set11", mu);
+    build_orbinit_docker(mu, state)
+}
+
+/// RUN_0311: STS-114 set11 (altitudes + true-anomaly) elements in `Earth.pfix`.
+/// Same JEOD option as set04 (`CaseEleven`).
+fn build_run_0311(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let state = altitudes_true_anomaly_state("STS_114", "trans_Orbit_pfix_body_set11", mu);
     build_orbinit_docker(mu, state)
 }
 
@@ -1128,6 +1171,109 @@ pub fn run_0305() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0305",
         scenario: build_run_0305,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0206: ISS orbital elements (set06, arg-latitude + radial-vel) in
+/// `Earth.pfix`. The pfix branch applies the inertial↔pfix rotation at the
+/// SIM epoch.
+pub fn run_0206() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0206",
+        scenario: build_run_0206,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0306: STS-114 orbital elements (set06, arg-latitude + radial-vel) in
+/// `Earth.pfix`.
+pub fn run_0306() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0306",
+        scenario: build_run_0306,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0210: ISS orbital elements (set10, sma/ecc + true anomaly) in
+/// `Earth.pfix`.
+pub fn run_0210() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0210",
+        scenario: build_run_0210,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0310: STS-114 orbital elements (set10, sma/ecc + true anomaly) in
+/// `Earth.pfix`.
+pub fn run_0310() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0310",
+        scenario: build_run_0310,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0211: ISS orbital elements (set11, altitudes + true anomaly) in
+/// `Earth.pfix`. Same JEOD option as set04 (`CaseEleven`).
+pub fn run_0211() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0211",
+        scenario: build_run_0211,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0311: STS-114 orbital elements (set11, altitudes + true anomaly) in
+/// `Earth.pfix`. Same JEOD option as set04 (`CaseEleven`).
+pub fn run_0311() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0311",
+        scenario: build_run_0311,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,
