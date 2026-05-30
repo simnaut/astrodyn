@@ -738,6 +738,10 @@ run_orbinit_group() {
         # set11 apo/peri-altitude + true-anomaly parameterization (CaseEleven == set04; ISS + STS, planet-fixed)
         "SET_test/RUN_0211:orbinit_0211:orbinit_0211_orbinit.csv"
         "SET_test/RUN_0311:orbinit_0311:orbinit_0311_orbinit.csv"
+        # direct-Cartesian (DynBodyInitTransState) variants
+        "SET_test/RUN_0400:orbinit_0400:orbinit_0400_orbinit.csv"
+        "SET_test/RUN_0410:orbinit_0410:orbinit_0410_orbinit.csv"
+        "SET_test/RUN_0411:orbinit_0411:orbinit_0411_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
