@@ -6,6 +6,8 @@
 //! - `de421.bsp` (~17 MB) — JPL DE421 ephemeris.
 //! - `de440.bsp` (~31 MB) — JPL DE440 short-subset ephemeris.
 //! - `moon_pa_de421_1900-2050.bpc` (~1.7 MB) — lunar PA orientation kernel.
+//! - `moon_fk_de421.epa` (~345 B) — lunar PA→ME frame-offset kernel
+//!   (converted from NAIF `moon_080317.tf`).
 //!
 //! These files are *not* bundled into the published `.crate`. Downstream
 //! consumers obtain them on demand via [`crate::data::load`], which
@@ -40,4 +42,13 @@ pub fn de421_path() -> PathBuf {
 /// See [`de421_path`] for the published-crate caveat.
 pub fn moon_pa_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/moon_pa_de421_1900-2050.bpc")
+}
+
+/// Absolute path to the committed `moon_fk_de421.epa` — the Moon PA→ME frame
+/// kernel (Euler parameters) converted from NAIF `moon_080317.tf` via
+/// `cargo xtask generate-orientation-kernels` (in-workspace builds only).
+///
+/// See [`de421_path`] for the published-crate caveat.
+pub fn moon_fk_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/moon_fk_de421.epa")
 }

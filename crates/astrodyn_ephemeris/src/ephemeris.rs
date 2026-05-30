@@ -113,6 +113,29 @@ impl Ephemeris {
         Ok(())
     }
 
+    /// Load a frame-kernel (FK) Euler-parameter set from raw bytes — the
+    /// constant fixed-offset rotations that one body-fixed frame has relative
+    /// to another (e.g. the Moon mean-Earth/mean-rotation frame `MOON_ME_DE421`
+    /// relative to the principal-axes frame `MOON_PA_DE421`).
+    ///
+    /// The bytes are an ANISE `.epa` blob produced from a NAIF `.tf` frame
+    /// kernel by `cargo xtask generate-orientation-kernels`; pair with
+    /// `data::load(&data::MOON_FK)`. Load this *in addition to* the principal-
+    /// axes BPC ([`Self::load_bpc_bytes`] with `data::MOON_PA`): the BPC gives
+    /// J2000→PA and this FK gives PA→ME, so a single
+    /// [`Self::get_body_rotation_to`] with [`BodyFixedFrame::MoonMeDe421`]
+    /// resolves J2000→ME end to end.
+    pub fn load_euler_bytes(&mut self, bytes: &[u8]) -> Result<(), EphemerisError> {
+        let ds = anise::structure::EulerParameterDataSet::try_from_bytes(bytes).map_err(|e| {
+            EphemerisError::LoadError(format!("Euler-parameter (FK) load failed: {e}"))
+        })?;
+        let almanac = std::mem::take(&mut self.almanac);
+        // Use a fixed alias rather than `with_euler_parameters` (which keys on
+        // `Epoch::now()`): the alias must be deterministic for reproducible runs.
+        self.almanac = almanac.with_euler_parameters_as(ds, Some("astrodyn_fk".to_string()));
+        Ok(())
+    }
+
     /// Print a summary of loaded data (SPK, BPC) for debugging.
     pub fn describe_loaded(&self) {
         self.almanac
@@ -600,5 +623,86 @@ mod typed_accessor_tests {
                 J2000_TDB_JD,
             )
             .unwrap();
+    }
+
+    /// Load DE421 + the Moon PA BPC + the PA→ME frame kernel (`.epa`), so
+    /// `MoonMeDe421` rotation queries resolve J2000→PA→ME end to end.
+    fn load_de421_with_moon_me() -> Ephemeris {
+        let mut ephem = load_de421_with_moon_pa();
+        let fk = crate::assets::moon_fk_path();
+        assert!(fk.exists(), "moon FK .epa not found at {}", fk.display());
+        let bytes = std::fs::read(&fk).expect("read moon FK .epa");
+        ephem.load_euler_bytes(&bytes).expect("load moon FK .epa");
+        ephem
+    }
+
+    // The Moon mean-Earth (ME) frame differs from the principal-axes (PA) frame
+    // by a *constant* fixed rotation (the FK offset). Cross-validate without a
+    // JEOD reference CSV by exploiting that invariant two ways:
+    //
+    //  1. The relative DCM `me_from_pa = ME · PAᵀ` must be the SAME at every
+    //     epoch (the PA→ME offset is time-invariant), and
+    //  2. its rotation angle must equal the FK's fixed offset — moon_080317.tf
+    //     defines `TKFRAME_31007_ANGLES = (67.92, 78.56, 0.30)` arcsec about
+    //     axes (3,2,1), a net rotation of ~104 arcsec.
+    #[test]
+    fn moon_me_offset_from_pa_is_constant_and_matches_fk() {
+        use astrodyn_quantities::prelude::Moon;
+
+        let ephem = load_de421_with_moon_me();
+
+        // Two well-separated epochs (J2000 and ~+100 days) to prove invariance.
+        let epochs = [J2000_TDB_JD, J2000_TDB_JD + 100.0];
+        let mut me_from_pa: Vec<glam::DMat3> = Vec::new();
+        for jd in epochs {
+            let pa = ephem
+                .get_body_rotation_to_jd::<Moon>(
+                    EphemerisBody::Moon,
+                    BodyFixedFrame::MoonPaDe421,
+                    jd,
+                )
+                .expect("PA rotation")
+                .matrix();
+            let me = ephem
+                .get_body_rotation_to_jd::<Moon>(
+                    EphemerisBody::Moon,
+                    BodyFixedFrame::MoonMeDe421,
+                    jd,
+                )
+                .expect("ME rotation")
+                .matrix();
+            // me_from_pa maps a PA-frame vector to ME: ME = me_from_pa · PA, so
+            // me_from_pa = ME · PAᵀ.
+            me_from_pa.push(me * pa.transpose());
+        }
+
+        // (1) Time-invariance: the two relative DCMs agree to ~1e-12.
+        let drift = (me_from_pa[0] - me_from_pa[1]).to_cols_array();
+        let max_drift = drift.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
+        assert!(
+            max_drift < 1e-12,
+            "PA→ME offset must be time-invariant; max element drift = {max_drift:e}",
+        );
+
+        // (2) Magnitude: rotation angle of me_from_pa equals the FK offset.
+        // angle = acos((trace - 1) / 2). The three small-angle sub-rotations
+        // (67.92, 78.56, 0.30 arcsec) compose to a net angle near
+        // hypot(67.92, 78.56, 0.30) ≈ 103.8 arcsec (to first order).
+        let trace = me_from_pa[0].to_cols_array().iter().step_by(4).sum::<f64>();
+        let angle_rad = ((trace - 1.0) / 2.0).clamp(-1.0, 1.0).acos();
+        let angle_arcsec = angle_rad.to_degrees() * 3600.0;
+        let expected_arcsec = (67.92_f64.powi(2) + 78.56_f64.powi(2) + 0.30_f64.powi(2)).sqrt();
+        assert!(
+            (angle_arcsec - expected_arcsec).abs() < 0.5,
+            "PA→ME offset angle {angle_arcsec:.3}″ should match the FK offset \
+             {expected_arcsec:.3}″ (within 0.5″)",
+        );
+
+        // The ME frame must NOT be identical to PA — i.e. the offset is real,
+        // not a silent fall-through to the PA matrix.
+        assert!(
+            angle_arcsec > 1.0,
+            "ME and PA must differ by the lunar libration offset, got {angle_arcsec:.3}″",
+        );
     }
 }

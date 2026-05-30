@@ -84,6 +84,21 @@ pub const MOON_PA: KernelSpec = KernelSpec {
     bytes: 1_770_496,
 };
 
+/// Moon mean-Earth/mean-rotation (ME) frame kernel (~345 B).
+///
+/// ANISE `.epa` (Euler parameters) carrying the *constant* PA→ME offset
+/// (`MOON_ME_DE421`, NAIF 31007, relative to `MOON_PA_DE421`). Converted from
+/// NAIF's `moon_080317.tf` frame kernel via
+/// `cargo xtask generate-orientation-kernels`. Load alongside [`MOON_PA`]: the
+/// BPC gives J2000→PA and this gives PA→ME, so ANISE resolves J2000→ME (the
+/// cartographic frame all lunar DEM lat/lon are referenced to) end to end.
+pub const MOON_FK: KernelSpec = KernelSpec {
+    name: "moon_fk_de421.epa",
+    url: "https://github.com/simnaut/astrodyn/releases/download/kernels-v1/moon_fk_de421.epa",
+    sha256: "cc2c6e03f28656d317da2b79107c16b4cd0cf01c87a1645f3354d6f53b314c6d",
+    bytes: 345,
+};
+
 /// Locate and return the bytes for `spec`. See the module-level docs
 /// for the four-step lookup order.
 ///

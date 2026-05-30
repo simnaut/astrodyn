@@ -34,6 +34,15 @@ Subcommands:
                             release-with-debug, emit a JSON sample.
                             Wraps the binary so local invocations
                             match the CI `perf-baseline-track` flow.
+    generate-orientation-kernels
+                            Convert NAIF text kernels into ANISE binary
+                            assets under crates/astrodyn_ephemeris/assets/:
+                            an FK (.tf) -> .epa (Euler parameters, e.g. the
+                            Moon PA->ME offset) and/or a TPC pair
+                            (pck + gm) -> .pca (planetary constants for IAU
+                            body-fixed rotations). Inputs are NAIF generic
+                            kernels the contributor downloads first; see the
+                            subcommand options for the canonical URLs.
     publish                 Publish the 13 non-verif crates to crates.io
                             in topological order. Pass --dry-run to
                             walk the sequence without uploading to
@@ -118,6 +127,9 @@ fn main() {
         }
         "publish" => {
             publish(args.collect());
+        }
+        "generate-orientation-kernels" => {
+            generate_orientation_kernels(args.collect());
         }
         other => {
             eprintln!("xtask: unknown subcommand `{other}`\n\n{HELP}");
@@ -463,6 +475,135 @@ fn perf_baseline(argv: Vec<String>) {
     if !status.success() {
         eprintln!("perf-baseline: tier3_perf_runner exited non-zero");
         exit(status.code().unwrap_or(1));
+    }
+}
+
+// ── generate-orientation-kernels ──────────────────────────────────────────
+//
+// Converts NAIF text kernels into the ANISE binary forms that
+// `astrodyn_ephemeris` loads for body-fixed orientation. Two outputs:
+//
+//   * `.epa` (EulerParameterDataSet) from an FK (`.tf`) — the constant
+//     PA->ME frame offset for the Moon (MOON_ME_DE421, NAIF 31007).
+//   * `.pca` (PlanetaryDataSet) from a TPC pair (orientation `pck` + gravity
+//     `gm`) — the IAU 2015 rotation elements for body-fixed planet frames.
+//
+// The inputs are NAIF *source* kernels (not JEOD output), so this honours
+// the computational-independence rule on the same footing as the bundled
+// `de421.bsp` / `moon_pa_de421` kernels. Canonical sources:
+//
+//   moon_080317.tf : https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_080317.tf
+//   pck00011.tpc   : https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+//   gm_de440.tpc   : https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc
+//
+// Download those, then e.g.:
+//   cargo xtask generate-orientation-kernels \
+//       --moon-fk moon_080317.tf \
+//       --pck pck00011.tpc --gm gm_de440.tpc
+fn generate_orientation_kernels(argv: Vec<String>) {
+    use anise::naif::kpl::parser::{convert_fk, convert_tpc};
+
+    let mut moon_fk: Option<PathBuf> = None;
+    let mut pck: Option<PathBuf> = None;
+    let mut gm: Option<PathBuf> = None;
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+    let mut out_dir = workspace_root.join("crates/astrodyn_ephemeris/assets");
+
+    let mut iter = argv.into_iter();
+    while let Some(arg) = iter.next() {
+        let mut take = |label: &str| {
+            iter.next().unwrap_or_else(|| {
+                eprintln!("generate-orientation-kernels: {label} needs a value");
+                exit(2);
+            })
+        };
+        match arg.as_str() {
+            "--moon-fk" => moon_fk = Some(PathBuf::from(take("--moon-fk"))),
+            "--pck" => pck = Some(PathBuf::from(take("--pck"))),
+            "--gm" => gm = Some(PathBuf::from(take("--gm"))),
+            "--out-dir" => out_dir = PathBuf::from(take("--out-dir")),
+            "-h" | "--help" => {
+                println!("{HELP}");
+                exit(0);
+            }
+            other => {
+                eprintln!("generate-orientation-kernels: unknown arg `{other}`\n\n{HELP}");
+                exit(2);
+            }
+        }
+    }
+
+    std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
+        eprintln!(
+            "generate-orientation-kernels: cannot create out dir {}: {e}",
+            out_dir.display()
+        );
+        exit(1);
+    });
+
+    if moon_fk.is_none() && pck.is_none() {
+        eprintln!(
+            "generate-orientation-kernels: nothing to do — pass --moon-fk <FK> \
+             and/or --pck <PCK> --gm <GM>"
+        );
+        exit(2);
+    }
+
+    if let Some(fk_path) = moon_fk {
+        let out = out_dir.join("moon_fk_de421.epa");
+        let ds = convert_fk(&fk_path, false).unwrap_or_else(|e| {
+            eprintln!(
+                "generate-orientation-kernels: convert_fk({}) failed: {e}",
+                fk_path.display()
+            );
+            exit(1);
+        });
+        ds.save_as(&out, true).unwrap_or_else(|e| {
+            eprintln!(
+                "generate-orientation-kernels: writing {} failed: {e}",
+                out.display()
+            );
+            exit(1);
+        });
+        eprintln!(
+            "generate-orientation-kernels: wrote {} (crc32 = {:#010x})",
+            out.display(),
+            ds.crc32()
+        );
+    }
+
+    if pck.is_some() || gm.is_some() {
+        let (Some(pck), Some(gm)) = (pck, gm) else {
+            eprintln!(
+                "generate-orientation-kernels: --pck and --gm must be given together \
+                 (convert_tpc needs both the orientation and gravity TPC files)"
+            );
+            exit(2);
+        };
+        let out = out_dir.join("pck11.pca");
+        let ds = convert_tpc(&pck, &gm).unwrap_or_else(|e| {
+            eprintln!(
+                "generate-orientation-kernels: convert_tpc({}, {}) failed: {e}",
+                pck.display(),
+                gm.display()
+            );
+            exit(1);
+        });
+        ds.save_as(&out, true).unwrap_or_else(|e| {
+            eprintln!(
+                "generate-orientation-kernels: writing {} failed: {e}",
+                out.display()
+            );
+            exit(1);
+        });
+        eprintln!(
+            "generate-orientation-kernels: wrote {} (crc32 = {:#010x})",
+            out.display(),
+            ds.crc32()
+        );
     }
 }
 
