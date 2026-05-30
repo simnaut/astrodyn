@@ -299,6 +299,28 @@ impl<P: Planet> Frame for PlanetFixed<P> {
     const NAME: &'static str = "PlanetFixed";
 }
 
+/// Site-anchored topocentric (ENU) frame on planet `P`.
+///
+/// East-North-Up axes anchored at a fixed geodetic site (lat/lon/alt) on `P`:
+/// X = East, Y = North, Z = local geodetic Up (outward ellipsoid normal). Unlike
+/// [`Ned<Chief>`] — which is parameterized by a *vehicle* and tracks that
+/// vehicle's sub-point — this frame is pinned to a fixed surface location (a
+/// landing site, a ground station), so it does not require a dummy vehicle.
+///
+/// The anchor itself is runtime data carried by the
+/// `FrameTransform<PlanetFixed<P>, Topocentric<P>>` a builder returns (see
+/// `astrodyn_math::topocentric`); the zero-sized marker only labels the frame
+/// identity, exactly like [`PlanetFixed<P>`]/[`Lvlh`]/[`Ned`].
+#[derive(Debug)]
+pub struct Topocentric<P: Planet>(PhantomData<P>);
+// Phantom-only generic — hand-rolled Clone/Copy, same rationale as `PlanetFixed`.
+impl_clone_phantom!([P: Planet] Topocentric[P]);
+impl_copy_phantom!([P: Planet] Topocentric[P]);
+impl<P: Planet> FrameSealed for Topocentric<P> {}
+impl<P: Planet> Frame for Topocentric<P> {
+    const NAME: &'static str = "Topocentric";
+}
+
 /// Body (CoM-centered) frame of vehicle `V`. Rotates with the vehicle.
 #[derive(Debug, Clone, Copy)]
 pub struct BodyFrame<V: Vehicle>(PhantomData<V>);
