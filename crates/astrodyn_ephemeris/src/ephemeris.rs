@@ -16,10 +16,42 @@ use anise::constants::celestial_objects::*;
 use anise::constants::frames::*;
 use anise::constants::orientations::J2000;
 use anise::prelude::*;
-use astrodyn_quantities::prelude::{Position, RootInertial, Vec3Ext, Velocity};
+use astrodyn_quantities::prelude::{
+    FrameTransform, Planet, PlanetFixed, Position, RootInertial, Vec3Ext, Velocity,
+};
 use glam::DVec3;
 
 use crate::bodies::EphemerisBody;
+
+/// Selects which body-fixed realization a rotation query targets.
+///
+/// A single body can have several body-fixed frames that differ by tens of
+/// arcseconds — enough to mislocate a cartographic product (DEM, gazetteer)
+/// by hundreds of metres on the surface. Rather than hard-code one choice per
+/// body, [`Ephemeris::get_body_rotation_to`] takes this selector so the caller
+/// picks the realization its data is referenced to.
+///
+/// `#[non_exhaustive]`: more body-fixed realizations will be added over time,
+/// so downstream `match`es must include a wildcard arm. Adding a variant is
+/// therefore a non-breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BodyFixedFrame {
+    /// The body's IAU body-fixed frame (IAU 2015 rotation elements, via ANISE's
+    /// built-in `IAU_<body>` orientation). Used for Mars today; extended to the
+    /// other major bodies separately.
+    Iau,
+    /// The Moon DE421 Principal-Axes frame (NAIF 31006), from the
+    /// `moon_pa_de421` BPC kernel. This is the frame the gravity field and
+    /// mass concentrations are referenced to — *not* cartographic lat/lon.
+    MoonPaDe421,
+    /// The Moon DE421 Mean-Earth/mean-rotation frame (NAIF 31007). This is the
+    /// frame lunar cartography (LOLA, SLDEM2015 DEMs, all map lat/lon) is
+    /// referenced to. Reaching it requires the lunar frame kernel (PA→ME
+    /// offset) to be loaded in addition to the PA BPC; without it the query
+    /// fails loudly with a [`EphemerisError::QueryError`].
+    MoonMeDe421,
+}
 
 /// Planetary ephemeris reader backed by ANISE (pure Rust SPICE).
 ///
@@ -224,6 +256,74 @@ impl Ephemeris {
             }
         };
 
+        self.body_rotation_matrix(body, orient, epoch)
+    }
+
+    /// Typed, frame-tagged sibling of [`Self::get_body_rotation_epoch`].
+    ///
+    /// Returns the inertial→body-fixed rotation as a
+    /// [`FrameTransform<RootInertial, PlanetFixed<P>>`] — composing directly
+    /// with the rest of the typed frame math instead of a bare `DMat3` the
+    /// caller must re-wrap. The [`BodyFixedFrame`] selector picks *which*
+    /// body-fixed realization (e.g. Moon PA vs. ME) the result targets, so the
+    /// caller's cartographic data and the rotation agree on a frame.
+    ///
+    /// The planet tag `P` is supplied by the caller and is a pure label: this
+    /// method does **not** verify that `P` corresponds to `body` (the phantom
+    /// carries no runtime identity). Callers already cross this `RootInertial →
+    /// PlanetFixed<P>` boundary today when they relabel ephemeris output; pass
+    /// the `P` that matches `body`.
+    pub fn get_body_rotation_to<P: Planet>(
+        &self,
+        body: EphemerisBody,
+        frame: BodyFixedFrame,
+        epoch: Epoch,
+    ) -> Result<FrameTransform<RootInertial, PlanetFixed<P>>, EphemerisError> {
+        // JEOD_INV: EP.17 — refuse (body, frame) pairs with no orientation model
+        // registered here rather than handing ANISE an unknown frame ID.
+        let orient = match (body, frame) {
+            (EphemerisBody::Moon, BodyFixedFrame::MoonPaDe421) => 31006,
+            (EphemerisBody::Moon, BodyFixedFrame::MoonMeDe421) => 31007,
+            (EphemerisBody::Mars, BodyFixedFrame::Iau) => 499,
+            (body, frame) => {
+                return Err(EphemerisError::QueryError(format!(
+                    "No orientation model for {body:?} in body-fixed frame {frame:?}"
+                )));
+            }
+        };
+
+        let matrix = self.body_rotation_matrix(body, orient, epoch)?;
+        Ok(FrameTransform::from_matrix(matrix))
+    }
+
+    /// TDB-Julian-Date convenience wrapper over [`Self::get_body_rotation_to`].
+    ///
+    /// When issuing multiple queries at the same instant, prefer
+    /// [`Self::get_body_rotation_to`] paired with [`Self::tdb_jd_to_epoch`] to
+    /// amortise the [`Epoch`] construction.
+    pub fn get_body_rotation_to_jd<P: Planet>(
+        &self,
+        body: EphemerisBody,
+        frame: BodyFixedFrame,
+        tdb_jd: f64,
+    ) -> Result<FrameTransform<RootInertial, PlanetFixed<P>>, EphemerisError> {
+        self.get_body_rotation_to::<P>(body, frame, Self::tdb_jd_to_epoch(tdb_jd))
+    }
+
+    /// Shared core for the rotation accessors: query ANISE for the
+    /// J2000→`orient` rotation of `body` and convert it to a `glam::DMat3`.
+    ///
+    /// Both the bare [`Self::get_body_rotation_epoch`] and the typed
+    /// [`Self::get_body_rotation_to`] route through here, so they are
+    /// bit-for-bit identical for the same `orient` — the only difference is
+    /// whether the caller receives a raw matrix or a wrapped
+    /// [`FrameTransform`].
+    fn body_rotation_matrix(
+        &self,
+        body: EphemerisBody,
+        orient: i32,
+        epoch: Epoch,
+    ) -> Result<glam::DMat3, EphemerisError> {
         let from_frame = Frame::new(body_to_naif(body), J2000);
         let to_frame = Frame::new(body_to_naif(body), orient);
 
@@ -430,6 +530,75 @@ mod typed_accessor_tests {
         let ephem = load_de421();
         let _ = ephem
             .get_body_rotation(EphemerisBody::Moon, J2000_TDB_JD)
+            .unwrap();
+    }
+
+    /// Load DE421 plus the committed Moon principal-axes BPC, so Moon-PA
+    /// rotation queries resolve.
+    fn load_de421_with_moon_pa() -> Ephemeris {
+        let mut ephem = load_de421();
+        let bpc = crate::assets::moon_pa_path();
+        assert!(bpc.exists(), "moon_pa BPC not found at {}", bpc.display(),);
+        ephem.load_bpc(&bpc).expect("load moon_pa BPC");
+        ephem
+    }
+
+    // The typed `get_body_rotation_to` and the bare `get_body_rotation_epoch`
+    // route through the same private `body_rotation_matrix` core, so for the
+    // same body-fixed realization (Moon PA) they must agree bit-for-bit. This
+    // is what keeps the `bevy_parity_*` suite green after call sites migrate
+    // from `from_matrix(get_body_rotation_epoch(..))` to the typed accessor.
+    #[test]
+    fn get_body_rotation_to_matches_bare_accessor_bit_for_bit_moon_pa() {
+        use astrodyn_quantities::prelude::Moon;
+
+        let ephem = load_de421_with_moon_pa();
+        let epoch = Ephemeris::tdb_jd_to_epoch(J2000_TDB_JD);
+
+        let bare = ephem
+            .get_body_rotation_epoch(EphemerisBody::Moon, epoch)
+            .expect("bare Moon PA rotation");
+        let typed = ephem
+            .get_body_rotation_to::<Moon>(EphemerisBody::Moon, BodyFixedFrame::MoonPaDe421, epoch)
+            .expect("typed Moon PA rotation");
+
+        // Compare bit patterns: the typed path must not perturb a single bit.
+        let bare_bits = bare.to_cols_array().map(f64::to_bits);
+        let typed_bits = typed.matrix().to_cols_array().map(f64::to_bits);
+        assert_eq!(
+            bare_bits, typed_bits,
+            "typed accessor must reproduce the bare DMat3 bit-for-bit",
+        );
+    }
+
+    // The typed accessor refuses (body, frame) pairs with no registered
+    // orientation model — the EP.17 fail-loud arm for the new selector API.
+    #[test]
+    #[should_panic(expected = "No orientation model")]
+    fn get_body_rotation_to_panics_on_unsupported_pair() {
+        use astrodyn_quantities::prelude::Sun;
+
+        let ephem = load_de421();
+        let _ = ephem
+            .get_body_rotation_to_jd::<Sun>(EphemerisBody::Sun, BodyFixedFrame::Iau, J2000_TDB_JD)
+            .unwrap();
+    }
+
+    // Requesting the Moon ME frame without the lunar frame kernel loaded must
+    // fail loudly (the PA→ME offset is not available), not silently return PA.
+    #[test]
+    #[should_panic(expected = "Rotation query failed")]
+    fn get_body_rotation_to_moon_me_panics_without_frame_kernel() {
+        use astrodyn_quantities::prelude::Moon;
+
+        // PA BPC loaded, but no PA→ME frame kernel: ME (31007) is unreachable.
+        let ephem = load_de421_with_moon_pa();
+        let _ = ephem
+            .get_body_rotation_to_jd::<Moon>(
+                EphemerisBody::Moon,
+                BodyFixedFrame::MoonMeDe421,
+                J2000_TDB_JD,
+            )
             .unwrap();
     }
 }

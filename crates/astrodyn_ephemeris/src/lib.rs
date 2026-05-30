@@ -59,7 +59,7 @@ pub mod data;
 pub mod ephemeris;
 
 pub use bodies::EphemerisBody;
-pub use ephemeris::{Ephemeris, EphemerisError};
+pub use ephemeris::{BodyFixedFrame, Ephemeris, EphemerisError};
 
 // Re-export ANISE's `Epoch` so callers that hoist epoch construction out
 // of per-query paths (`Ephemeris::get_state_typed_epoch`,
