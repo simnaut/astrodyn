@@ -122,6 +122,37 @@ pub const MARS: PlanetConfig = PlanetConfig {
     shadow_radius: 3_396_000.0,
 };
 
+/// Jupiter — shape preset for rendering / sizing an outer planet.
+///
+/// Constants from JEOD source:
+/// - Geometry: `planet/data/src/jupiter.cc` (1-bar oblate ellipsoid)
+/// - Gravity: `gravity/data/src/jupiter_spherical.cc` (mu = 1.26731229e17 m³/s²)
+///
+/// No spin model is wired ([`RotationModel::None`], `omega = 0`): astrodyn does
+/// not propagate or spin Jupiter, so this preset carries geometry + μ only,
+/// for sizing and placement. A body-fixed orientation, when one is needed,
+/// comes from the ephemeris IAU rotation — never from this config's `omega`.
+pub const JUPITER: PlanetConfig = PlanetConfig {
+    shape: astrodyn_planet::presets::JUPITER,
+    rotation_model: RotationModel::None,
+    omega: 0.0,
+    shadow_radius: 71_492_000.0,
+};
+
+/// Saturn — shape preset for rendering / sizing an outer planet.
+///
+/// Constants from JEOD source:
+/// - Geometry: `ephemerides/verif/SIM_prop_planet/data/src/saturn_planet.cc`
+/// - Gravity: `saturn_spherical_gravity.cc` (mu = 3.7931187e16 m³/s²)
+///
+/// As with [`JUPITER`], no spin model is wired — geometry + μ only.
+pub const SATURN: PlanetConfig = PlanetConfig {
+    shape: astrodyn_planet::presets::SATURN,
+    rotation_model: RotationModel::None,
+    omega: 0.0,
+    shadow_radius: 60_268_000.0,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,7 +169,7 @@ mod tests {
 
     #[test]
     fn all_configs_positive_radii() {
-        for config in [EARTH, MOON, SUN, MARS] {
+        for config in [EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             assert!(
                 config.shadow_radius > 0.0,
                 "{}: shadow_radius must be positive",
@@ -149,6 +180,38 @@ mod tests {
                 "{}: omega must be non-negative",
                 config.shape.name
             );
+            // PlanetShape::new already enforces r_pol ≤ r_eq (oblate/spherical);
+            // re-assert at the config level so a fat-fingered preset trips here.
+            assert!(
+                config.shape.r_pol() <= config.shape.r_eq(),
+                "{}: r_pol must not exceed r_eq (oblate only)",
+                config.shape.name
+            );
         }
+    }
+
+    // Spot-check the JEOD-sourced outer-planet geometry so a transcription
+    // error in the body constants is caught here rather than downstream.
+    // Bit-exact comparison (`to_bits`) keeps the denied `clippy::float_cmp`
+    // lint quiet while still pinning the exact JEOD values.
+    #[test]
+    fn jupiter_saturn_geometry_matches_jeod() {
+        // Full geometry (r_eq, flattening, derived r_pol) plus μ, pinned to the
+        // exact JEOD source values. Jupiter: jupiter.cc / jupiter_spherical.cc.
+        assert_eq!(JUPITER.shape.r_eq().to_bits(), 71_492_000.0_f64.to_bits());
+        assert_eq!(JUPITER.shape.flat_coeff.to_bits(), 0.06487_f64.to_bits());
+        assert_eq!(
+            JUPITER.shape.r_pol().to_bits(),
+            (71_492_000.0_f64 * (1.0 - 0.06487)).to_bits()
+        );
+        assert_eq!(JUPITER.shape.mu.to_bits(), 1.267_312_29e17_f64.to_bits());
+        // Saturn: saturn_planet.cc / saturn_spherical_gravity.cc.
+        assert_eq!(SATURN.shape.r_eq().to_bits(), 60_268_000.0_f64.to_bits());
+        assert_eq!(SATURN.shape.flat_coeff.to_bits(), 0.09796_f64.to_bits());
+        assert_eq!(
+            SATURN.shape.r_pol().to_bits(),
+            (60_268_000.0_f64 * (1.0 - 0.09796)).to_bits()
+        );
+        assert_eq!(SATURN.shape.mu.to_bits(), 3.793_118_7e16_f64.to_bits());
     }
 }

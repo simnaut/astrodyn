@@ -72,6 +72,11 @@ impl PlanetShape {
     /// - `r_pol` is finite and `> 0`,
     /// - `r_pol <= r_eq` (oblate or spherical).
     ///
+    /// Triaxial bodies (three distinct semi-axes, e.g. small irregular moons
+    /// and asteroids) are **not** representable — this is a biaxial
+    /// (oblate/spherical) ellipsoid only. A triaxial variant would be a
+    /// separate type, not a relaxation of this one.
+    ///
     /// Violations panic with a fail-loud diagnostic naming the offending
     /// field and the violated invariant. This is a `const fn` so that the
     /// canonical preset constants in [`crate::presets`] (and any future
@@ -223,7 +228,7 @@ mod tests {
 
     #[test]
     fn polar_radius_consistent_with_flattening() {
-        for planet in [EARTH, MOON, SUN, MARS] {
+        for planet in [EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             let expected_r_pol = planet.r_eq() * (1.0 - planet.flat_coeff);
             let err = (planet.r_pol() - expected_r_pol).abs();
             assert!(
@@ -239,7 +244,7 @@ mod tests {
 
     #[test]
     fn all_values_positive() {
-        for planet in [EARTH, MOON, SUN, MARS] {
+        for planet in [EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             assert!(planet.mu > 0.0, "{}: mu must be positive", planet.name);
             assert!(
                 planet.r_eq() > 0.0,
@@ -281,7 +286,7 @@ mod tests {
 
     #[test]
     fn eccentricity_positive() {
-        for planet in [EARTH, MOON, SUN, MARS] {
+        for planet in [EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             let e = planet.e_ellipsoid();
             assert!(e > 0.0 && e < 1.0, "{}: e={}", planet.name, e);
         }
@@ -324,7 +329,7 @@ mod tests {
         // preset and our hand-built shape. We reach for the values via
         // a non-const accessor expression so clippy doesn't fold the
         // comparison to a literal.
-        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             assert!(
                 planet.r_eq() > planet.r_pol(),
                 "{}: r_eq={} not > r_pol={}",
@@ -358,7 +363,7 @@ mod tests {
     fn mu_accessor_matches_typed_and_preserves_value() {
         // The typed getter must round-trip the raw f64 mu without loss.
         // GravParam stores its value in base SI (m³/s²).
-        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             assert_eq!(planet.mu_typed().value, planet.mu);
         }
     }
@@ -366,7 +371,7 @@ mod tests {
     #[test]
     fn eccentricity_squared_matches_definition() {
         // e_ellip_sq = 2f - f^2; e_ellipsoid is its sqrt.
-        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS, JUPITER, SATURN] {
             let f = planet.flat_coeff;
             let expected = 2.0 * f - f * f;
             assert!((planet.e_ellip_sq() - expected).abs() < 1e-15);

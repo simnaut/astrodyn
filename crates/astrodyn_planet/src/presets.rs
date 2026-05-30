@@ -13,9 +13,10 @@
 //! depending on `astrodyn_planet`.
 
 use astrodyn_quantities::body_constants::{
-    EARTH_FLAT_COEFF, EARTH_MU, EARTH_R_EQ, EARTH_R_POL, MARS_FLAT_COEFF, MARS_MU, MARS_R_EQ,
-    MARS_R_POL, MOON_FLAT_COEFF, MOON_MU, MOON_R_EQ, MOON_R_POL, SUN_FLAT_COEFF, SUN_MU, SUN_R_EQ,
-    SUN_R_POL,
+    EARTH_FLAT_COEFF, EARTH_MU, EARTH_R_EQ, EARTH_R_POL, JUPITER_FLAT_COEFF, JUPITER_MU,
+    JUPITER_R_EQ, JUPITER_R_POL, MARS_FLAT_COEFF, MARS_MU, MARS_R_EQ, MARS_R_POL, MOON_FLAT_COEFF,
+    MOON_MU, MOON_R_EQ, MOON_R_POL, SATURN_FLAT_COEFF, SATURN_MU, SATURN_R_EQ, SATURN_R_POL,
+    SUN_FLAT_COEFF, SUN_MU, SUN_R_EQ, SUN_R_POL,
 };
 
 use crate::planet::PlanetShape;
@@ -39,3 +40,29 @@ pub const SUN: PlanetShape = PlanetShape::new("Sun", SUN_MU, SUN_R_EQ, SUN_R_POL
 /// values live in [`astrodyn_quantities::body_constants`].
 pub const MARS: PlanetShape =
     PlanetShape::new("Mars", MARS_MU, MARS_R_EQ, MARS_R_POL, MARS_FLAT_COEFF);
+
+/// Jupiter (1-bar oblate ellipsoid). Constants from JEOD
+/// `planet/data/src/jupiter.cc` and `gravity/data/src/jupiter_spherical.cc`;
+/// numeric values live in [`astrodyn_quantities::body_constants`].
+///
+/// Like all [`PlanetShape`] presets this is an oblate ellipsoid (r_pol ≤ r_eq);
+/// see [`PlanetShape::new`] for the oblate-only restriction.
+pub const JUPITER: PlanetShape = PlanetShape::new(
+    "Jupiter",
+    JUPITER_MU,
+    JUPITER_R_EQ,
+    JUPITER_R_POL,
+    JUPITER_FLAT_COEFF,
+);
+
+/// Saturn (1-bar oblate ellipsoid). Constants from JEOD
+/// `ephemerides/verif/SIM_prop_planet/data/src/saturn_planet.cc` and
+/// `saturn_spherical_gravity.cc`; numeric values live in
+/// [`astrodyn_quantities::body_constants`].
+pub const SATURN: PlanetShape = PlanetShape::new(
+    "Saturn",
+    SATURN_MU,
+    SATURN_R_EQ,
+    SATURN_R_POL,
+    SATURN_FLAT_COEFF,
+);
