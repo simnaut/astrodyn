@@ -683,8 +683,8 @@ pub fn load_orbinit_csv(path: &Path) -> Vec<OrbInitRecord> {
 }
 
 /// One row from a full-state SIM_orbinit CSV (14 columns: time +
-/// pos[3] + vel[3] + quaternion vector[3] + quaternion scalar +
-/// ang_vel[3]). Used by the rotational-init RUNs (RUN_1230 / RUN_2100)
+/// `pos[3]` + `vel[3]` + quaternion `vector[3]` + quaternion scalar +
+/// `ang_vel[3]`). Used by the rotational-init RUNs (RUN_1230 / RUN_2100)
 /// where the comparison covers attitude and rate, not just position /
 /// velocity.
 #[derive(Debug)]
