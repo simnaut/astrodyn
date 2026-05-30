@@ -206,7 +206,7 @@ fn quat_angle_between(a: JeodQuat, b: JeodQuat) -> f64 {
     let av = a.vector();
     let bv = b.vector();
     let dot = a.scalar() * b.scalar() + av.x * bv.x + av.y * bv.y + av.z * bv.z;
-    2.0 * dot.abs().clamp(-1.0, 1.0).acos()
+    2.0 * dot.abs().min(1.0).acos()
 }
 
 /// Full-state cross-validation for the rotational-init RUNs: in

@@ -522,7 +522,7 @@ fn build_orbinit_docker(mu_earth: f64, body: TranslationalState) -> SimulationBu
 /// `inertia_spec = Body` and an identity `pt_orientation`
 /// (`StructToBody`), so the inertia is already expressed about the CG
 /// in a body frame aligned with structure — a direct
-/// [`MassProperties::with_inertia`] (`t_parent_this = identity`). These
+/// [`MassProperties::with_inertia`](astrodyn::MassProperties) (`t_parent_this = identity`). These
 /// are JEOD *source* initial conditions (permitted by the computational-
 /// independence rule), not values read back from JEOD output.
 fn iss_mass_properties() -> astrodyn::MassProperties {
