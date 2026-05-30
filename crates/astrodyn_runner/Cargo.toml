@@ -1,6 +1,6 @@
 [package]
 name = "astrodyn_runner"
-description = "Standalone arena-state simulation harness driving the astrodyn pipeline without Bevy ECS"
+description = "Standalone arena-state simulation harness that owns all state and drives the astrodyn pipeline — batch propagation and the Tier 3 test harness"
 readme = "README.md"
 keywords = ["orbital-mechanics", "simulation", "propagator", "aerospace"]
 categories = ["science", "aerospace", "simulation"]

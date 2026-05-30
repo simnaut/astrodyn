@@ -2,11 +2,23 @@
 
 ## Project
 
-Rust port of [NASA JEOD](https://github.com/nasa/jeod) v5.4 using Bevy ECS instead of
-NASA's Trick. Phases 1–7 closed April 2026; ongoing work is tracked as GitHub issues.
+Pure-Rust port of [NASA JEOD](https://github.com/nasa/jeod) v5.4 — the JSC Engineering
+Orbital Dynamics physics — as an **engine-agnostic** library. Ongoing work is tracked
+as GitHub issues.
+
+**Engine independence is a design goal, not an accident.** JEOD's physics carried a
+dependence on NASA's Trick sim framework (Trick-generated `S_define` wiring, logging,
+job scheduling threaded into the physics); that coupling is the mistake we are
+deliberately avoiding. astrodyn's physics has *zero* dependence on any sim engine: it
+is plain borrow-based Rust that a host drives. Bevy ECS (`astrodyn_bevy`) and the
+standalone arena runner (`astrodyn_runner`) are two interchangeable drivers, and a
+third-party host can drive the same pipeline with its own storage and scheduling.
+Treat the engine as a removable consumer at the top of the stack — never let engine
+concerns (ECS components, Bevy systems, schedules, async) leak into `astrodyn` or the
+`astrodyn_*` physics crates.
 
 **Read before refactoring**:
-- [Strategy](https://github.com/simnaut/astrodyn/wiki/Strategy) — architecture and phase history.
+- [Strategy](https://github.com/simnaut/astrodyn/wiki/Strategy) — architecture and project history.
 - [Audit-2026-05](https://github.com/simnaut/astrodyn/wiki/Audit-2026-05) — load-bearing guardrails
   (CI, parity-superset invariant, typed-quantity facade, JEOD invariant catalog).
 
@@ -38,7 +50,7 @@ against `// JEOD_INV: XX.YY` source tags by `tests/invariant_coverage.rs`. Per-c
   test reveals missing physics, port the JEOD code — don't approximate it or read JEOD's
   output.
 
-- **Tier 3 cross-validation is definition of done**. When a phase delivers new physics,
+- **Tier 3 cross-validation is definition of done**. When new physics is delivered,
   a `tier3_*` test exercising it via the full `Simulation::step()` pipeline must
   accompany it. Initial conditions may come from JEOD source files (`Modified_data/*.py`,
   `S_define`, gravity coefficient files) or the t=0 row of a JEOD reference CSV — both
