@@ -56,6 +56,21 @@ pub fn de421_with_moon_me() -> Result<Ephemeris, EphemerisError> {
     Ok(eph)
 }
 
+/// DE421 ephemeris plus the IAU planetary-constants kernel, so body-fixed
+/// IAU rotations resolve for the planets.
+///
+/// Use this whenever a consumer needs an IAU body-fixed orientation (a ground
+/// track or rotating texture) for any body — Jupiter, Venus, the Moon, Mars,
+/// …: every [`BodyFixedFrame::Iau`](astrodyn_ephemeris::BodyFixedFrame::Iau)
+/// query resolves from this planetary-constants kernel. The IAU frames use the
+/// ANISE IAU 2015 model (NAIF `pck00011`).
+pub fn de421_with_iau() -> Result<Ephemeris, EphemerisError> {
+    let mut eph = de421()?;
+    let pca = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::PCK11)?;
+    eph.load_pca_bytes(&pca)?;
+    Ok(eph)
+}
+
 /// JPL DE440 planetary ephemeris (Sun, Moon, planets, 1849–2150).
 ///
 /// Required by the NASA NESC GN&C Lunar Check Cases (NESC-RP-23-01853);
@@ -122,6 +137,33 @@ mod tests {
         assert!(
             max_diff > 1e-5,
             "ME must differ from PA by the libration offset; max element diff = {max_diff:e}",
+        );
+    }
+
+    // The `de421_with_iau` recipe resolves a planet IAU rotation through the
+    // facade (a valid, non-identity orientation), proving the PCA loaded.
+    #[test]
+    fn de421_with_iau_resolves_jupiter_rotation() {
+        use crate::Jupiter;
+
+        let eph = super::de421_with_iau().expect("load DE421 + IAU PCA");
+        let m = eph
+            .get_body_rotation_to_jd::<Jupiter>(
+                EphemerisBody::Jupiter,
+                BodyFixedFrame::Iau,
+                2_451_545.0,
+            )
+            .expect("Jupiter IAU rotation")
+            .matrix();
+        // Jupiter's prime meridian has rotated far from J2000 ICRF: the matrix
+        // must be a real rotation, not identity.
+        let off_identity = (m - glam::DMat3::IDENTITY)
+            .to_cols_array()
+            .iter()
+            .fold(0.0_f64, |acc, &x| acc.max(x.abs()));
+        assert!(
+            off_identity > 0.1,
+            "Jupiter IAU orientation must be a real rotation, not identity (got {off_identity:e})",
         );
     }
 }
