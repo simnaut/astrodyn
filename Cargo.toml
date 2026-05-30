@@ -1,7 +1,7 @@
 [package]
 name = "astrodyn"
-description = "Pipeline orchestration, VehicleBuilder, and recipes — single API surface for ECS adapters"
-keywords = ["orbital-mechanics", "simulation", "aerospace", "ecs", "physics"]
+description = "Gateway to the astrodyn orbital-dynamics framework — a pure-Rust, engine-agnostic port of NASA JEOD (spherical-harmonics gravity, RNP Earth rotation, atmosphere, drag/SRP, multi-body dynamics) composing the astrodyn_* physics crates into one pipeline API any host can drive"
+keywords = ["orbital-mechanics", "simulation", "aerospace", "propagator", "physics"]
 categories = ["science", "aerospace", "simulation"]
 readme = "README.md"
 version.workspace = true

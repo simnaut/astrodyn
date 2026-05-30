@@ -1,15 +1,18 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
-//! ECS-agnostic orchestration layer for JEOD physics.
+//! Engine-agnostic orchestration layer for JEOD physics.
 //!
-//! This crate is the **single dependency** for ECS adapters and mission
-//! crates. It re-exports the types from the `astrodyn_*` physics crates that
-//! such consumers need, plus orchestration functions that compose them
-//! into pipeline stages.
+//! This crate is the **single physics dependency** for any host — a batch
+//! propagator, a custom integrator loop, an ECS adapter, or mission crates.
+//! It re-exports the types from the `astrodyn_*` physics crates that such
+//! consumers need, plus orchestration functions that compose them into
+//! pipeline stages. The pipeline carries no game-engine, ECS, or async-runtime
+//! dependency of its own.
 //!
-//! ## Per-body functions (primary API for ECS integration)
+//! ## Per-body functions (primary API for host integration)
 //!
-//! Composable, borrow-based functions that any ECS adapter can call from
-//! its system functions. The ECS world remains the single source of truth.
+//! Composable, borrow-based functions that any host can call from its update
+//! loop. The host's own storage remains the single source of truth — the
+//! pipeline never owns state.
 //!
 //! - [`accumulate_gravity`] — gravity accumulation across sources
 //! - [`evaluate_atmosphere`] — atmosphere evaluation pipeline
@@ -28,10 +31,11 @@
 //!
 //! For batch propagation and Tier 3 tests, see the `astrodyn_runner` crate which
 //! provides a standalone `Simulation` struct that owns all state and drives the
-//! pipeline. ECS adapters should **not** use `astrodyn_runner` — use the per-body
-//! functions from this crate instead. `astrodyn_runner` is a parallel non-Bevy
-//! consumer that, like `astrodyn_bevy` and mission code, depends on `astrodyn`
-//! and only `astrodyn` for physics.
+//! pipeline. A host that embeds the pipeline into its own storage should call
+//! the per-body functions from this crate directly rather than depending on
+//! `astrodyn_runner`. `astrodyn_runner` and `astrodyn_bevy` are the two
+//! reference consumers shipped in the workspace; like mission code, each
+//! depends on `astrodyn` and only `astrodyn` for physics.
 //!
 //! ## Re-export discipline
 //!
@@ -46,7 +50,7 @@
 //! ## Pipeline ordering
 //!
 //! See [`PipelineStage`] and [`PIPELINE_ORDER`] for the canonical stage
-//! execution order that any adapter must respect.
+//! execution order that any host must respect.
 //!
 //! ## Quick start
 //!
@@ -230,7 +234,7 @@ pub use astrodyn_dynamics::body_init::{
 // already-exposed `compute_kinematic_child_state`.
 pub use astrodyn_dynamics::kinematic_propagation::KinematicChildInputs;
 
-// astrodyn_dynamics typed siblings: ECS components built on the typed
+// astrodyn_dynamics typed siblings: host storage types built on the typed
 // state primitives so storage carries frame phantoms rather than
 // re-lifting raw `DVec3` every step.
 pub use astrodyn_dynamics::forces::{
@@ -273,15 +277,15 @@ pub use astrodyn_interactions::{
 // `RefFrameTrans`, `RefFrameState`) are needed by mission code that
 // constructs or reads frame nodes; `frame_compute_relative_state_via_storage`
 // drives cross-frame state queries. `FrameTree` (concrete arena) is the
-// non-Bevy storage implementation — used by `astrodyn_runner`'s
+// reference arena-storage implementation — used by `astrodyn_runner`'s
 // `Simulation` state container.
 pub use astrodyn_frames::{
     compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameStorage,
     FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
 };
 
-// astrodyn_time: simulation-time + leap-second + epoch surface that the
-// Bevy adapter and mission code consume through `SimulationTime` /
+// astrodyn_time: simulation-time + leap-second + epoch surface that
+// hosts and mission code consume through `SimulationTime` /
 // `default_leap_second_table()`. `SimulationTime` + `TimeScaleId` are the
 // multi-scale time API (mirrors JEOD's `TimeManager` aggregate);
 // `time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate}` are the
@@ -324,8 +328,8 @@ pub use astrodyn_gravity::relativistic;
 // astrodyn_planet: planet shape
 pub use astrodyn_planet::PlanetShape;
 
-// astrodyn_quantities: typed-quantity foundation. ECS adapters (e.g. the
-// `astrodyn_bevy` root crate) consume these types via `astrodyn` to
+// astrodyn_quantities: typed-quantity foundation. Hosts (e.g. the
+// `astrodyn_bevy` adapter) consume these types via `astrodyn` to
 // preserve the "single dependency" invariant.
 pub use astrodyn_quantities::aliases::{
     Acceleration, AngularAcceleration, AngularVelocity, Force, InertiaTensor, Position, Torque,
@@ -349,8 +353,8 @@ pub use astrodyn_quantities::frame_transform::FrameTransform;
 pub use astrodyn_quantities::qty3::Qty3;
 pub use astrodyn_quantities::{define_planet, define_vehicle};
 
-// uom scalar quantities used directly by the Bevy adapter for typed
-// component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
+// uom scalar quantities used directly by hosts for typed storage
+// fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
 pub use uom::si::f64::{Angle, Mass, Ratio};
 
 /// Re-export of [`uom::si::mass::kilogram`] for typed-quantity callers
@@ -363,7 +367,7 @@ pub use uom::si::mass::kilogram;
 /// [`Angle`].
 ///
 /// Mirrors `astrodyn_quantities::ext::F64Ext::rad(f)` but exists at the
-/// `astrodyn` boundary so ECS adapters don't need to import
+/// `astrodyn` boundary so hosts don't need to import
 /// `astrodyn_quantities` (or `uom::si::angle::radian`) directly.
 #[inline]
 pub fn radians(value: f64) -> Angle {

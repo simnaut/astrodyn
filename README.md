@@ -1,29 +1,90 @@
 # astrodyn
 
-Pipeline orchestration, the typestate `VehicleBuilder`, and the
-recipes module — the single API surface that any consumer (the Bevy
-adapter or a non-Bevy runner) depends on.
+A pure-Rust orbital-dynamics simulation framework — a port of the physics in
+[NASA JEOD](https://github.com/nasa/jeod) v5.4 (the JSC Engineering Orbital
+Dynamics package). It models what a high-fidelity space-mission propagator
+needs: spherical-harmonics gravity, Earth rotation (RNP precession/nutation),
+multiple time scales, reference-frame trees, atmosphere and drag, solar
+radiation pressure, third-body and gravity-gradient effects, and multi-body
+rigid-body dynamics with a family of integrators.
 
-`astrodyn` composes the
-[`astrodyn_*`](https://github.com/simnaut/astrodyn/tree/main/crates) physics
-crates into pipeline stages and re-exports their types so a downstream
-crate only needs `astrodyn` to access the entire physics surface.
-Pure Rust, zero Bevy dependency.
+The framework is **engine-agnostic**: the physics is plain Rust with no game
+engine, ECS, or async runtime baked in, so it can be driven from a batch
+propagator, a custom integrator loop, an ECS, or any other host. It is split
+into a stack of small, single-responsibility `astrodyn_*` physics crates (each
+independently publishable), an orchestration **gateway** crate (`astrodyn`,
+this crate) that any host depends on, and optional reference consumers. See
+[The astrodyn workspace](#the-astrodyn-workspace) below for the full crate map.
+
+## This crate (`astrodyn`)
+
+`astrodyn` is the orchestration gateway: it composes the `astrodyn_*` physics
+crates into pipeline stages and re-exports their types, so a host needs only
+`astrodyn` to reach the entire physics surface. It also provides the typestate
+`VehicleBuilder` and the `recipes` module of mission presets. The per-stage
+pipeline functions are borrow-based and storage-agnostic — the host owns state
+and decides how to store it. No game-engine or runtime dependency.
 
 **Status:** pre-1.0. Tier 3 cross-validated against JEOD Trick simulations
 (see the [Tier3-Regeneration wiki page](https://github.com/simnaut/astrodyn/wiki/Tier3-Regeneration)).
 API may change before 1.0.
 
+## The astrodyn workspace
+
+The framework is organized into architectural layers. Every consumer of
+physics reads through `astrodyn` and only `astrodyn`; the `astrodyn_*` crates
+below it are plain Rust and can also be used à la carte.
+
+**Foundations**
+
+| Crate | Responsibility |
+| --- | --- |
+| [`astrodyn_quantities`](https://docs.rs/astrodyn_quantities) | Phantom-tagged typed quantities (`Position<F>`, `Velocity<F>`, `Quat<L,T>`, …) — frame/unit safety at API boundaries |
+| [`astrodyn_math`](https://docs.rs/astrodyn_math) | Quaternion, Euler, geodetic, orbital-element, and LVLH math kernels |
+| [`astrodyn_time`](https://docs.rs/astrodyn_time) | Time scales (TAI/UTC/UT1/TDB/TT/GMST) and converters |
+
+**Environment & physics**
+
+| Crate | Responsibility |
+| --- | --- |
+| [`astrodyn_frames`](https://docs.rs/astrodyn_frames) | Reference-frame tree and Earth rotation (RNP, nutation, precession) |
+| [`astrodyn_planet`](https://docs.rs/astrodyn_planet) | Planet definitions and presets (Earth, Moon, Sun, Mars) |
+| [`astrodyn_ephemeris`](https://docs.rs/astrodyn_ephemeris) | DE4xx (SPICE) binary ephemeris reader |
+| [`astrodyn_gravity`](https://docs.rs/astrodyn_gravity) | Spherical-harmonics gravity (Gottlieb), tides, and third-body |
+| [`astrodyn_atmosphere`](https://docs.rs/astrodyn_atmosphere) | Atmospheric density models (exponential, MET) |
+| [`astrodyn_interactions`](https://docs.rs/astrodyn_interactions) | Aerodynamic drag, SRP, gravity-gradient torque, shadow, and contact |
+| [`astrodyn_dynamics`](https://docs.rs/astrodyn_dynamics) | Rigid-body dynamics, integrators (RK4, RKF45, GJ, ABM4), mass tree, body initialization |
+
+**Orchestration & consumers**
+
+| Crate | Responsibility |
+| --- | --- |
+| [`astrodyn`](https://docs.rs/astrodyn) | **This crate.** Pipeline orchestration, `VehicleBuilder`, recipes — the single API surface every host depends on |
+| [`astrodyn_runner`](https://docs.rs/astrodyn_runner) | Standalone arena-state harness that owns all state and drives the pipeline — batch propagation and the Tier 3 test harness |
+| [`astrodyn_bevy`](https://docs.rs/astrodyn_bevy) | Optional adapter for hosts built on the [Bevy](https://bevyengine.org/) ECS: component derives, systems, plugin registration |
+
+`astrodyn_runner` and `astrodyn_bevy` are the two reference consumers shipped
+in this workspace; a host with different storage or scheduling needs depends on
+`astrodyn` directly and supplies its own state container.
+
+**Verification** (not published to crates.io). The `astrodyn_verif_jeod`,
+`astrodyn_verif_jeod_fixtures`, `astrodyn_verif_nesc`, and
+`astrodyn_verif_parity` crates hold the JEOD Tier 3 cross-validation rigs, the
+NESC GN&C Lunar Check Cases track, and the parity tests asserting the two
+reference consumers stay bit-identical. They live in the
+[workspace](https://github.com/simnaut/astrodyn/tree/main/crates) but stay
+in-tree as `publish = false`.
+
 ## Quick start
 
-Most users want one of the consumer crates rather than this orchestration
-layer directly:
+Many users want one of the reference consumer crates rather than this
+orchestration layer directly:
 
-- `astrodyn_bevy` for the Bevy-ECS production runtime,
-- `astrodyn_runner` for plain-Rust batch propagation and Tier 3 tests.
+- `astrodyn_runner` for plain-Rust batch propagation and Tier 3 tests,
+- `astrodyn_bevy` if your host is built on the Bevy ECS.
 
-If you are building a custom adapter on top of the pipeline, depend on
-`astrodyn` directly:
+If you are wiring the pipeline into your own host (a batch tool, an integrator
+loop, a different ECS, …), depend on `astrodyn` directly:
 
 ```toml
 [dependencies]
@@ -43,9 +104,9 @@ let cfg = VehicleBuilder::new()
     .rk4()
     .gravity(GravityControl::new_spherical(0_usize, false))
     .build();
-// `cfg` is a `VehicleConfig` ready to hand to either
-// `astrodyn_bevy::spawn_bevy::<Earth>(...)` or
-// `astrodyn_runner::Simulation::add_vehicle(...)`.
+// `cfg` is a `VehicleConfig` ready to hand to any host — e.g.
+// `astrodyn_runner::Simulation::add_vehicle(...)` for batch propagation,
+// or `astrodyn_bevy::spawn_bevy::<Earth>(...)` for a Bevy host.
 # let _ = cfg;
 ```
 
@@ -55,19 +116,19 @@ The typestate `VehicleBuilder` rejects misuse at compile time
 ## Layered architecture
 
 ```
-astrodyn_bevy        (Bevy ECS adapter)
+host  (astrodyn_runner, astrodyn_bevy, or your own)
    ↓
-astrodyn         ←  this crate (pure Rust, zero Bevy)
+astrodyn         ←  this crate (the single gateway, no engine dependency)
    ↓
 astrodyn_dynamics, astrodyn_gravity, astrodyn_time, astrodyn_frames,
 astrodyn_atmosphere, astrodyn_interactions, astrodyn_ephemeris,
 astrodyn_planet, astrodyn_math, astrodyn_quantities
 ```
 
-`astrodyn` (this crate) sits at the workspace root. The Bevy-ECS
-adapter is `astrodyn_bevy` (`crates/astrodyn_bevy/`), and `astrodyn` is
-also exercised directly by the standalone `astrodyn_runner` Tier 3
-harness; both consumers share the same API surface. See the
+`astrodyn` (this crate) sits at the workspace root and is the only physics
+dependency a host needs. `astrodyn_runner` is the standalone arena-state host
+used by the Tier 3 harness; `astrodyn_bevy` is the optional Bevy-ECS adapter.
+Any host shares the same API surface. See the
 [Strategy wiki page](https://github.com/simnaut/astrodyn/wiki/Strategy)
 for the layered-architecture rules.
 
@@ -79,10 +140,11 @@ for the layered-architecture rules.
   `vehicle`, `scenarios`. Mission-facing only; the JEOD-source-backed
   Tier 3 verification scaffolding lives in `astrodyn_verif_jeod`.
 - Per-stage pipeline functions (`accumulate_gravity`,
-  `validate_body`, …) that mirror the `AstrodynSet` schedule slot the
-  Bevy adapter exposes.
-- Frame-tree orchestration helpers shared by `astrodyn_bevy` and
-  `astrodyn_runner`: `SourceFrameIds` (root + per-source frame IDs),
+  `validate_body`, …), one per stage of the per-step pipeline, that a host
+  schedules in order. (The Bevy adapter maps these onto its `AstrodynSet`
+  schedule slots; a batch host just calls them in sequence.)
+- Frame-tree orchestration helpers shared by the reference consumers:
+  `SourceFrameIds` (root + per-source frame IDs),
   `sync_pfix_rotation` (writes a planet-fixed child's rotation +
   angular velocity into a `FrameTree`),
   `evaluate_and_apply_frame_switch::<SourceId, F>` (generic
@@ -130,12 +192,14 @@ inherits it; users on older toolchains get a clean
 `error: package <name> requires Rust 1.89` from cargo rather than a
 deep dependency-tree compile error.
 
-The binding constraint is `bevy = "0.18"` (0.18.1 declares its own
-`rust-version = "1.89"`, which MSRV-aware resolution in cargo 1.85+
-enforces transitively). Our own direct usage of recent stdlib features
-(`u{32,usize}::is_multiple_of`, stabilized in 1.87; `#[diagnostic::
-on_unimplemented]`; recent const generics) sits comfortably below this
-floor.
+The binding constraint is the workspace's `bevy = "0.18"` dependency (used
+only by the optional `astrodyn_bevy` adapter — `astrodyn` and the `astrodyn_*`
+physics crates do not depend on it): bevy 0.18.1 declares its own
+`rust-version = "1.89"`, which MSRV-aware resolution in cargo 1.85+ enforces
+transitively, and the floor is shared workspace-wide via `[workspace.package]`.
+Our own direct usage of recent stdlib features (`u{32,usize}::is_multiple_of`,
+stabilized in 1.87; `#[diagnostic::on_unimplemented]`; recent const generics)
+sits comfortably below this floor.
 
 **Bump policy.** Raising the MSRV is treated as a minor-version event,
 not a patch. The project tracks the last two to three stable Rust
@@ -167,7 +231,9 @@ distinction (astrodyn is an independent reimplementation, not a JEOD fork).
 
 - [Project README](https://github.com/simnaut/astrodyn/blob/main/README.md) and
   [`CLAUDE.md`](https://github.com/simnaut/astrodyn/blob/main/CLAUDE.md) — workspace-level architecture.
+- [`crates/astrodyn_runner/examples/batch_propagation.rs`](https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_runner/examples/batch_propagation.rs)
+  — engine-agnostic worked example (plain-Rust host).
 - [`crates/astrodyn_bevy/examples/typed_mission.rs`](https://github.com/simnaut/astrodyn/blob/main/crates/astrodyn_bevy/examples/typed_mission.rs)
-  — canonical worked example.
+  — the same pipeline driven from a Bevy ECS host.
 - Rendered rustdoc:
   <https://docs.rs/astrodyn>
