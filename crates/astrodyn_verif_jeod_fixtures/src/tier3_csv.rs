@@ -682,6 +682,61 @@ pub fn load_orbinit_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
+/// One row from a full-state SIM_orbinit CSV (14 columns: time +
+/// `pos[3]` + `vel[3]` + quaternion `vector[3]` + quaternion scalar +
+/// `ang_vel[3]`). Used by the rotational-init RUNs (RUN_1230 / RUN_2100)
+/// where the comparison covers attitude and rate, not just position /
+/// velocity.
+#[derive(Debug)]
+pub struct OrbInitFullStateRecord {
+    /// Sample time in seconds.
+    pub time: f64,
+    /// Body position in metres.
+    pub position: DVec3,
+    /// Body velocity in m/s.
+    pub velocity: DVec3,
+    /// Composite-body attitude quaternion `[q0, q1, q2, q3]`, JEOD
+    /// scalar-first left-transformation (parent→body) convention.
+    pub quaternion: [f64; 4],
+    /// Body-frame angular velocity in rad/s
+    /// (`composite_body.state.rot.ang_vel_this`).
+    pub ang_vel_body: DVec3,
+}
+
+/// Parse a full-state SIM_orbinit CSV at `path`.
+///
+/// Column layout (matching `ORBINIT_ROT_SNIPPET` in
+/// `trick/generate_references.sh`): `time, pos[0..2], vel[0..2],
+/// Q_parent_this.vector[0..2], Q_parent_this.scalar, ang_vel_this[0..2]`.
+/// The scalar component lands at column 10; the returned `quaternion`
+/// reorders it to JEOD's scalar-first `[q0, q1, q2, q3]` layout.
+pub fn load_orbinit_full_state_csv(path: &Path) -> Vec<OrbInitFullStateRecord> {
+    let content = read_csv(path, "SIM_orbinit (full state)");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 14,
+            "line {}: full-state SIM_orbinit CSV expected >=14 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(OrbInitFullStateRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            // Columns 7,8,9 = vector[0..2]; column 10 = scalar.
+            quaternion: [p(10), p(7), p(8), p(9)],
+            ang_vel_body: DVec3::new(p(11), p(12), p(13)),
+        });
+    }
+    records
+}
+
 /// Same shape as [`OrbInitRecord`] (time + pos + vel). Used by SIM_GJ_test.
 pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
     let content = read_csv(path, "SIM_GJ_test");
