@@ -657,6 +657,31 @@ for ii in range(3):
 trick.add_data_record_group(dr)
 '
 
+# ── Full-state ASCII logging snippet for SIM_orbinit double-vehicle RUNs ──
+# RUN_0441 / 0571 / 0681 / 3771 initialize the STS-114 *chaser* relative to an
+# ISS frame; the chaser is the cross-validation subject. Logs the chaser
+# composite-body position, velocity, attitude quaternion (vector[0..2] then
+# scalar — JEOD scalar-first left-transformation, parent->body) and body-frame
+# angular velocity. Column order matches load_orbinit_full_state_csv in
+# tier3_csv.rs:  time, pos[3], vel[3], quat.vector[3], quat.scalar, ang_vel[3].
+# Independent of ORBINIT_ROT_SNIPPET (which logs the `target` object); do not
+# share — the double-vehicle RUNs log `chaser`.
+ORBINIT_REL_SNIPPET='
+dr = trick.sim_services.DRAscii("orbinit_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("chaser.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("chaser.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("chaser.dyn_body.composite_body.state.rot.Q_parent_this.vector[" + str(ii) + "]")
+dr.add_variable("chaser.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+for ii in range(3):
+    dr.add_variable("chaser.dyn_body.composite_body.state.rot.ang_vel_this[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
 # ── ASCII logging snippet for SIM_VER_DRAG (aerodynamic drag verification) ──
 # Logs aggregate aero force/torque, inertial velocity, and acceleration magnitude.
 DRAG_SNIPPET='
@@ -824,6 +849,43 @@ run_orbinit_rot_group() {
 }
 throttled_bg run_orbinit_rot_group
 PID_ORBINIT_ROT=$LAST_BG_PID
+
+# Group 2c: SIM_orbinit double-vehicle RUNs. The STS-114 chaser is initialized
+# relative to an ISS frame (composite-body, LVLH, NED). These use the
+# ORBINIT_REL_SNIPPET (chaser composite-body pos + vel + quaternion + ang_vel).
+run_orbinit_rel_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_orbinit"
+    local -a RUNS=(
+        # DynBodyInitTransState, reference = ISS.composite_body
+        "SET_test/RUN_0441:orbinit_0441:orbinit_0441_orbinit.csv"
+        # DynBodyInitLvlhTransState, ref_body = ISS (LVLH)
+        "SET_test/RUN_0571:orbinit_0571:orbinit_0571_orbinit.csv"
+        # DynBodyInitNedTransState, ref_body = ISS (NED, spherical)
+        "SET_test/RUN_0681:orbinit_0681:orbinit_0681_orbinit.csv"
+        # DynBodyInitLvlhState full state (pos/vel/att/rate), ref_body = ISS
+        "SET_test/RUN_3771:orbinit_3771:orbinit_3771_orbinit.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_orbinit rel group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$ORBINIT_REL_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_orbinit_rel_group
+PID_ORBINIT_REL=$LAST_BG_PID
 
 # Group 3: SIM_OrbElem
 throttled_bg run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET"
@@ -2858,6 +2920,7 @@ wait $PID_DYNCOMP       || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1
 wait $PID_CSR_COMPARE   || { echo "WARN: SIM_csr_compare group had failures"; FAIL=1; }
 wait $PID_ORBINIT       || { echo "WARN: SIM_orbinit group had failures"; FAIL=1; }
 wait $PID_ORBINIT_ROT   || { echo "WARN: SIM_orbinit rot group had failures"; FAIL=1; }
+wait $PID_ORBINIT_REL   || { echo "WARN: SIM_orbinit rel group had failures"; FAIL=1; }
 wait $PID_ORBELEM       || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
 wait $PID_LVLH          || { echo "WARN: SIM_LVLH group had failures"; FAIL=1; }
 wait $PID_NED           || { echo "WARN: SIM_NED group had failures"; FAIL=1; }
