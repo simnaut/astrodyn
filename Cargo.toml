@@ -44,6 +44,13 @@ uom = { workspace = true }
 # fixture has a recorded SHA-256 sidecar matching its bytes).
 sha2 = { workspace = true }
 
+[features]
+# Forward serialization to the typed surface so consumers that read physics
+# through `astrodyn` can `(de)serialize` `CartesianState` without depending on
+# `astrodyn_quantities` directly. OFF by default — the production build stays
+# serde-free.
+serde = ["astrodyn_quantities/serde"]
+
 [workspace]
 resolver = "2"
 members = [
@@ -114,6 +121,14 @@ thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 typenum = "1.20"
 sha2 = "0.11"
+
+# Optional serialization. Opted into per-crate behind a non-default `serde`
+# feature (currently only `astrodyn_quantities`, for the `CartesianState`
+# interchange record). `default-features = false` keeps it `no_std`-clean;
+# the `derive` feature is requested at the crate that needs it. `serde_json`
+# is a test-only dev-dependency for round-trip coverage.
+serde = { version = "1", default-features = false }
+serde_json = "1"
 
 # Benchmarking — dev-only deps, opted into per-crate via
 # `[dev-dependencies]` on the crates that own `benches/`. `pprof`

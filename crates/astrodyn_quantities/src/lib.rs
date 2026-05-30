@@ -169,6 +169,7 @@ mod sealed;
 pub mod aliases;
 pub mod body_attitude;
 pub mod body_constants;
+pub mod cartesian_state;
 pub mod diagnostics;
 pub mod dims;
 pub mod ext;
@@ -187,6 +188,7 @@ pub mod time_scale;
 
 pub use aliases::*;
 pub use body_attitude::BodyAttitude;
+pub use cartesian_state::CartesianState;
 pub use dims::*;
 pub use frame::*;
 pub use frame_transform::*;

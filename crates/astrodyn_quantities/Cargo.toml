@@ -18,15 +18,21 @@ glam = { workspace = true }
 uom = { workspace = true }
 typenum = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
 proptest = "1"
+serde_json = { workspace = true }
 
 [features]
 # Exposes test-only phantom markers (e.g. `TestVehicle`) so downstream crates
 # can write frame-composition tests without needing to implement sealed
 # marker traits. Never enabled in production builds.
 test-utils = []
+# Opt-in (de)serialization for the typed interchange surface: `Qty3` (raw-SI
+# triple), `SecondsSince`, and the `CartesianState` record. OFF by default so
+# the production dependency graph stays serde-free; kernels never enable it.
+serde = ["dep:serde"]
 
 [lints]
 workspace = true

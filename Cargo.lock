@@ -325,6 +325,8 @@ version = "0.2.0"
 dependencies = [
  "glam 0.30.10",
  "proptest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "typenum",
  "uom",
