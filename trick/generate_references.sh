@@ -619,6 +619,9 @@ trick.add_data_record_group(dr)
 
 # ── ASCII logging snippet for SIM_orbinit (body initialization) ──
 # Logs position and velocity of the initialized body.
+# NOTE: shared by all translation-only orbinit RUNs — do NOT add columns
+# here (it would shift every existing orbinit_*_orbinit.csv layout). The
+# rotational-init RUNs use ORBINIT_ROT_SNIPPET instead.
 ORBINIT_SNIPPET='
 dr = trick.sim_services.DRAscii("orbinit_ASCII")
 dr.set_cycle(1.0)
@@ -627,6 +630,30 @@ for ii in range(3):
     dr.add_variable("target.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
 for ii in range(3):
     dr.add_variable("target.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
+# ── Full-state ASCII logging snippet for SIM_orbinit rotational-init RUNs ──
+# Logs position, velocity, the composite-body attitude quaternion
+# (Q_parent_this.vector[0..2] then Q_parent_this.scalar — JEOD
+# scalar-first left-transformation, parent->body), and the body-frame
+# angular velocity (ang_vel_this). Used only by RUN_1230 / RUN_2100, the
+# attitude+rate initialization RUNs. Column order must match
+# load_orbinit_full_state_csv in tier3_csv.rs:
+#   time, pos[3], vel[3], quat.vector[3], quat.scalar, ang_vel[3]
+ORBINIT_ROT_SNIPPET='
+dr = trick.sim_services.DRAscii("orbinit_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.rot.Q_parent_this.vector[" + str(ii) + "]")
+dr.add_variable("target.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.rot.ang_vel_this[" + str(ii) + "]")
 trick.add_data_record_group(dr)
 '
 
@@ -764,6 +791,39 @@ run_orbinit_group() {
 }
 throttled_bg run_orbinit_group
 PID_ORBINIT=$LAST_BG_PID
+
+# Group 2b: SIM_orbinit rotational-init RUNs (attitude + rate). These use the
+# full-state ORBINIT_ROT_SNIPPET (pos + vel + quaternion + ang_vel) rather
+# than the shared translation-only ORBINIT_SNIPPET.
+run_orbinit_rot_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_orbinit"
+    local -a RUNS=(
+        # DynBodyInitRotState: inertial attitude + rate (ISS)
+        "SET_test/RUN_2100:orbinit_2100:orbinit_2100_orbinit.csv"
+        # DynBodyInitLvlhRotState: LVLH-relative attitude + rate (ISS)
+        "SET_test/RUN_1230:orbinit_1230:orbinit_1230_orbinit.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_orbinit rot group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$ORBINIT_ROT_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_orbinit_rot_group
+PID_ORBINIT_ROT=$LAST_BG_PID
 
 # Group 3: SIM_OrbElem
 throttled_bg run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET"
@@ -2797,6 +2857,7 @@ FAIL=0
 wait $PID_DYNCOMP       || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
 wait $PID_CSR_COMPARE   || { echo "WARN: SIM_csr_compare group had failures"; FAIL=1; }
 wait $PID_ORBINIT       || { echo "WARN: SIM_orbinit group had failures"; FAIL=1; }
+wait $PID_ORBINIT_ROT   || { echo "WARN: SIM_orbinit rot group had failures"; FAIL=1; }
 wait $PID_ORBELEM       || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
 wait $PID_LVLH          || { echo "WARN: SIM_LVLH group had failures"; FAIL=1; }
 wait $PID_NED           || { echo "WARN: SIM_NED group had failures"; FAIL=1; }

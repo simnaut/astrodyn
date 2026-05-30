@@ -78,16 +78,18 @@
 use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
-    calendar_to_tjt, compute_t_parent_this_from_tjt, default_leap_second_table,
-    init_from_altitudes_time_periapsis, init_from_altitudes_true_anomaly,
-    init_from_arg_latitude_radial_vel, init_from_mean_anomaly, init_from_orbital_elements,
-    init_from_semi_latus_rectum_true_anomaly, ut1_to_gmst_seconds, CalendarDate, GravityControl,
-    GravityControls, GravityGradient, GravityModel, GravitySource, GravitySourceEntry,
-    RotationModel, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
+    calendar_to_tjt, compute_quaternion_from_euler_angles_typed, compute_t_parent_this_from_tjt,
+    default_leap_second_table, init_from_altitudes_time_periapsis,
+    init_from_altitudes_true_anomaly, init_from_arg_latitude_radial_vel, init_from_mean_anomaly,
+    init_from_orbital_elements, init_from_semi_latus_rectum_true_anomaly, ut1_to_gmst_seconds,
+    BodyAction, CalendarDate, EulerSequence, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, GravitySourceEntry, LvlhAngularVelocityFrame, RotationModel,
+    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
 use astrodyn_verif_jeod_fixtures::orbital_init::{load_orbital_init, load_trans_state};
 use glam::{DMat3, DVec3};
-use uom::si::f64::Time;
+use uom::si::angle::degree;
+use uom::si::f64::{Angle, Time};
 use uom::si::time::second;
 
 /// Integrator step size shared by every recipe. Matches the value the
@@ -509,6 +511,161 @@ fn build_orbinit_docker(mu_earth: f64, body: TranslationalState) -> SimulationBu
         ..Default::default()
     });
     sb
+}
+
+/// ISS mass properties used by SIM_orbinit's rotational-init RUNs.
+///
+/// Source-cited literals from `Modified_data/ISS/mass.py`
+/// (`set_ISS_mass`): `mass = 100000.0` kg, CG `position =
+/// [-10.201, 0.206, 2.558]` m, and a body-frame (CG-centred) diagonal
+/// inertia `diag(7e12, 12e12, 10e12)` kg·m². The deck sets
+/// `inertia_spec = Body` and an identity `pt_orientation`
+/// (`StructToBody`), so the inertia is already expressed about the CG
+/// in a body frame aligned with structure — a direct
+/// [`MassProperties::with_inertia`] (`t_parent_this = identity`). These
+/// are JEOD *source* initial conditions (permitted by the computational-
+/// independence rule), not values read back from JEOD output.
+fn iss_mass_properties() -> astrodyn::MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(7.0e12, 0.0, 0.0),
+        DVec3::new(0.0, 12.0e12, 0.0),
+        DVec3::new(0.0, 0.0, 10.0e12),
+    );
+    astrodyn::MassProperties::with_inertia(100_000.0, inertia, DVec3::new(-10.201, 0.206, 2.558))
+}
+
+/// Scenario builder for the rotational-init RUNs (RUN_1230 / RUN_2100).
+///
+/// Identical point-mass-Earth setup to [`build_orbinit_docker`], but the
+/// vehicle is initialized 6-DOF: the supplied `rot` rotational state
+/// (computed by a [`BodyAction`] rotational initializer) and the ISS
+/// mass properties are attached alongside the translational state so the
+/// integrator + frame propagation exercise the attitude/rate path
+/// end-to-end. The mass properties match JEOD's `set_ISS_mass` deck so
+/// the torque-free rate integration runs against the same inertia.
+fn build_orbinit_docker_rot(
+    mu_earth: f64,
+    body: TranslationalState,
+    rot: RotationalState,
+) -> SimulationBuilder {
+    let mut sb = build_orbinit_docker(mu_earth, body);
+    sb.bodies[0].rot = Some(super::typed_helpers::rot_typed(&rot));
+    sb.bodies[0].mass = Some(super::typed_helpers::mass_typed(&iss_mass_properties()));
+    sb
+}
+
+/// RUN_2100 rotational state: direct inertial attitude + angular rate
+/// (JEOD `DynBodyInitRotState`, `reference_ref_frame = Earth.inertial`).
+///
+/// The attitude is the Yaw-Pitch-Roll (JEOD `Yaw_Pitch_Roll` =
+/// `EulerSequence::ZYX`, both discriminant 5) Euler triple
+/// `[77.590713, -30.604895, -46.100115]` deg from
+/// `Modified_data/ISS/att_RotState_inertial_body.py`. JEOD copies the
+/// computed `T_parent_this` straight onto the user frame
+/// (`dyn_body_init.cc:300-302`), and because the reference frame
+/// `Earth.inertial` *is* ISS's integration frame the user frame's
+/// rotational state is the body state with no further composition — so
+/// the Euler-derived quaternion is the body's inertial attitude
+/// directly.
+///
+/// The angular rate is the inertial body rate from
+/// `Modified_data/ISS/rate_RotState_inertial_body.py`:
+/// `[w_iss_lvlh[0], w_iss_lvlh[1] + w_lvlh, w_iss_lvlh[2]]` deg/s with
+/// `w_iss_lvlh = [0.002, 0.006, -0.003]` (`iss_rate_def.py`) and
+/// `w_lvlh = -0.06556131568278` (`lvlh_rate_def.py`). The deck leaves
+/// `rate_in_parent` unset (JEOD default `false`,
+/// `dyn_body_init.hh:176`), so `ang_velocity` is the body-frame rate
+/// (`ang_vel_this`, `dyn_body_init.cc:310-312`) — used verbatim as
+/// `ang_vel_body`.
+fn attitude_rate_inertial_state() -> RotationalState {
+    // Euler angles (deg) — Modified_data/ISS/att_RotState_inertial_body.py.
+    let angles = [
+        Angle::new::<degree>(77.590_713),
+        Angle::new::<degree>(-30.604_895),
+        Angle::new::<degree>(-46.100_115),
+    ];
+    let quaternion = compute_quaternion_from_euler_angles_typed(angles, EulerSequence::ZYX).inner();
+
+    // Body rate wrt inertial (deg/s) — Modified_data/ISS rate decks.
+    // w_iss_lvlh = [0.002, 0.006, -0.003]; w_lvlh = -0.06556131568278.
+    let w_iss_lvlh = [0.002, 0.006, -0.003];
+    let w_lvlh = -0.065_561_315_682_78;
+    let ang_vel_deg = DVec3::new(w_iss_lvlh[0], w_iss_lvlh[1] + w_lvlh, w_iss_lvlh[2]);
+    let ang_vel_body = DVec3::new(
+        Angle::new::<degree>(ang_vel_deg.x).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(ang_vel_deg.y).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(ang_vel_deg.z).get::<uom::si::angle::radian>(),
+    );
+
+    BodyAction::InitRot {
+        quaternion,
+        ang_vel_body,
+    }
+    .apply_rotational()
+    .expect("BodyAction::InitRot is a rotational action and must yield Some(RotationalState)")
+}
+
+/// RUN_1230 rotational state: LVLH-relative attitude + angular rate
+/// (JEOD `DynBodyInitLvlhRotState`, planet Earth).
+///
+/// The body is aligned with the reference orbit's LVLH frame: the
+/// Pitch-Yaw-Roll (JEOD `Pitch_Yaw_Roll` = `EulerSequence::YZX`, both
+/// discriminant 2) Euler triple is `[0, 0, 0]` deg from
+/// `Modified_data/ISS/rot_LvlhRotState_lvlh_body.py`, so the LVLH→body
+/// quaternion is identity. The LVLH-relative angular velocity is
+/// `w_iss_lvlh = [0.002, 0.006, -0.003]` deg/s (`iss_rate_def.py`); the
+/// deck leaves `rate_in_parent` unset (JEOD default `false`), so the
+/// rate is interpreted in the body frame
+/// ([`LvlhAngularVelocityFrame::Body`]).
+///
+/// `init_rot_from_lvlh` composes the LVLH→body attitude / LVLH-relative
+/// rate with the reference orbit's LVLH frame orientation and angular
+/// velocity wrt inertial; the reference orbit is the inertial Cartesian
+/// state from `trans_TransState_inertial_body`.
+fn lvlh_rot_state(reference: TranslationalState) -> RotationalState {
+    let angles = [
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_lvlh_body =
+        compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
+
+    // LVLH-relative body rate (deg/s) — iss_rate_def.py.
+    let w_iss_lvlh_deg = DVec3::new(0.002, 0.006, -0.003);
+    let ang_vel_lvlh_to_body = DVec3::new(
+        Angle::new::<degree>(w_iss_lvlh_deg.x).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(w_iss_lvlh_deg.y).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(w_iss_lvlh_deg.z).get::<uom::si::angle::radian>(),
+    );
+
+    BodyAction::InitLvlhRot {
+        q_lvlh_body,
+        ang_vel_lvlh_to_body,
+        ang_vel_frame: LvlhAngularVelocityFrame::Body,
+        reference_position: reference.position,
+        reference_velocity: reference.velocity,
+    }
+    .apply_rotational()
+    .expect("BodyAction::InitLvlhRot is a rotational action and must yield Some(RotationalState)")
+}
+
+/// RUN_2100: ISS inertial Cartesian translation + direct inertial
+/// attitude/rate init (`DynBodyInitRotState`, `Earth.inertial`).
+fn build_run_2100(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let trans = trans_state("ISS", "trans_TransState_inertial_body");
+    let rot = attitude_rate_inertial_state();
+    build_orbinit_docker_rot(mu, trans, rot)
+}
+
+/// RUN_1230: ISS inertial Cartesian translation + LVLH-relative
+/// attitude/rate init (`DynBodyInitLvlhRotState`, Earth).
+fn build_run_1230(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let trans = trans_state("ISS", "trans_TransState_inertial_body");
+    let rot = lvlh_rot_state(trans);
+    build_orbinit_docker_rot(mu, trans, rot)
 }
 
 /// Recipes opt out of every runner-vs-JEOD tolerance group because they
@@ -1403,6 +1560,48 @@ pub fn run_0411() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0411",
         scenario: build_run_0411,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_2100: ISS inertial Cartesian translation + direct inertial
+/// attitude/rate initialization (`DynBodyInitRotState`,
+/// `Earth.inertial`). The first *rotational* RUN in SIM_orbinit: the
+/// recipe attaches a 6-DOF body whose initial attitude is the
+/// Yaw-Pitch-Roll Euler triple `[77.59, -30.60, -46.10]` deg and whose
+/// body-frame rate is the inertial rate from the ISS / LVLH rate decks.
+pub fn run_2100() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_2100",
+        scenario: build_run_2100,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_1230: ISS inertial Cartesian translation + LVLH-relative
+/// attitude/rate initialization (`DynBodyInitLvlhRotState`, Earth). The
+/// body is aligned with the reference orbit's LVLH frame (identity
+/// LVLH→body) with an LVLH-relative body rate; `init_rot_from_lvlh`
+/// composes that with the LVLH frame's own orientation / angular
+/// velocity wrt inertial.
+pub fn run_1230() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_1230",
+        scenario: build_run_1230,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,

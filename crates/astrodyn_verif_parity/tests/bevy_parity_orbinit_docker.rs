@@ -197,3 +197,16 @@ fn bevy_parity_orbinit_docker_run_0410() {
 fn bevy_parity_orbinit_docker_run_0411() {
     sim_orbinit_docker::run_0411().run_and_assert_parity::<astrodyn::Earth>();
 }
+
+// Rotational-init RUNs (6-DOF): the recipe attaches a rotational state
+// to the vehicle, so the runner↔bevy bit-identity comparison covers
+// attitude + angular rate in addition to position / velocity.
+#[test]
+fn bevy_parity_orbinit_docker_run_2100() {
+    sim_orbinit_docker::run_2100().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_1230() {
+    sim_orbinit_docker::run_1230().run_and_assert_parity::<astrodyn::Earth>();
+}
