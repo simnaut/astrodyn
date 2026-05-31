@@ -319,7 +319,12 @@ pub enum BodyAction {
         r_polar: f64,
         /// Rotation matrix from ECI to PCPF (planet-fixed) frame.
         t_eci_pcpf: DMat3,
-        /// Planet angular velocity in the ECI frame (rad/s).
+        /// Planet angular velocity expressed in **pfix coordinates**
+        /// (`[0, 0, planet_omega]` about the pfix z-axis; rad/s) — JEOD's
+        /// `planet_rnp.cc` convention. Unlike
+        /// [`InitTransNed`](Self::InitTransNed)'s ECI-frame value, this is
+        /// the pfix-frame `ang_vel_this` consumed by
+        /// [`ned_reference_frame_state`].
         omega_planet: DVec3,
     },
 }
@@ -439,12 +444,11 @@ impl BodyAction {
                 // Build the inertial→NED frame for the ground point, then
                 // compose the body's NED-frame offset up to inertial via
                 // `incr_left` (carrying the planet-rotation ω×r velocity).
-                // The NED-frame velocity offset is interpreted in NED
-                // coordinates, so rotate it into the inertial frame B's
-                // axes before composing — matching `init_from_ned`'s
-                // handling of the planet-fixed NED velocity, but here as a
-                // user offset on top of the (already ω×r-carrying) NED
-                // frame origin.
+                // `ned_position`/`ned_velocity` stay in NED coordinates —
+                // `init_trans_relative_to_frame` applies the inertial→NED
+                // transform internally — and the composition adds the
+                // ω×r term on top of the (already ω×r-carrying) NED frame
+                // origin.
                 let frame = ned_reference_frame_state(
                     geodetic,
                     *r_equatorial,

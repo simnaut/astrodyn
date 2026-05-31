@@ -1454,14 +1454,19 @@ mod tests {
         // still carry the planet's inertial angular velocity: the body
         // rotates with the planet. The magnitude of the inertial body rate
         // must equal |ω_planet|, and its representation in the body frame
-        // must equal the inertial ω rotated through the inertial→body
-        // attitude.
+        // must equal the *inertial* ω rotated through the inertial→body
+        // attitude. The ECI→pfix rotation here includes a deliberate tilt
+        // (not a pure z-rotation) so the pfix z-axis is off the ECI z-axis
+        // — exercising the precession/nutation case where ω_planet's pfix
+        // and inertial components genuinely differ.
         let geodetic = GeodeticState {
             latitude: 28.6082_f64.to_radians(),
             longitude: (-80.6040_f64).to_radians(),
             altitude: 3.0,
         };
-        let t_eci_pcpf = DMat3::from_axis_angle(DVec3::Z, 1.234);
+        let t_eci_pcpf =
+            DMat3::from_axis_angle(DVec3::Z, 1.234) * DMat3::from_axis_angle(DVec3::X, 0.3);
+        // ω_planet is expressed in pfix coordinates (about the pfix z-axis).
         let omega_planet = DVec3::new(0.0, 0.0, 7.292_115e-5);
 
         let rot = init_rot_from_ned(
@@ -1482,13 +1487,16 @@ mod tests {
             omega_planet.length()
         );
 
-        // The body-frame ω equals T_inertial_body · ω_planet (ω expressed
-        // in the inertial frame, rotated into the body frame).
+        // The body-frame ω equals T_inertial_body · ω_inertial. ω_planet is
+        // a pfix-frame vector, so first rotate it into the inertial frame
+        // (T_pfix_eci = T_eci_pcpf⁻¹ = T_eci_pcpfᵀ) before applying the
+        // inertial→body attitude.
         let t_inertial_body = rot.quaternion.left_quat_to_transformation();
-        let expected_body = t_inertial_body * omega_planet;
+        let omega_inertial = t_eci_pcpf.transpose() * omega_planet;
+        let expected_body = t_inertial_body * omega_inertial;
         assert!(
             (rot.ang_vel_body - expected_body).length() < 1e-18,
-            "body-frame ω {:?} != T_inertial_body·ω_planet {:?}",
+            "body-frame ω {:?} != T_inertial_body·ω_inertial {:?}",
             rot.ang_vel_body,
             expected_body
         );

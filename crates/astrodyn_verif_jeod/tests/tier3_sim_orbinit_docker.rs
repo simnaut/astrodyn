@@ -1021,11 +1021,11 @@ fn tier3_orbinit_docker_run3822_pad39a_ned_full_state() {
     // with NED. The inertial attitude is the non-trivial NED→inertial rotation;
     // the inertial body rate recovers ω_earth.
     // Tolerances 1.05× observed max (CLAUDE.md).
-    // pos error (~15 µm) is dominated by the geodetic-ellipsoid inversion
-    // (Borkowski solver vs JEOD `update_from_ellip`); vel ~0.8 nm/s; the
-    // inertial attitude composes bit-exactly (quat-angle observed 0, floored)
-    // and the inertial body rate recovers ω_earth bit-exactly (ang-vel
-    // observed ~2e-20, floored).
+    // The position residual is dominated by the geodetic-ellipsoid inversion
+    // (our Borkowski solver vs JEOD `update_from_ellip`). The inertial
+    // attitude composes bit-exactly and the inertial body rate recovers
+    // ω_earth bit-exactly, so the quat-angle and ang-vel tolerances are
+    // floors (the observed residuals leave no headroom).
     assert_orbinit_full_state(
         sim_orbinit_docker::run_3822(),
         "orbinit_3822_orbinit.csv",
