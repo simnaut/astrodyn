@@ -39,6 +39,23 @@ pub fn de421_with_moon_pa() -> Result<Ephemeris, EphemerisError> {
     Ok(eph)
 }
 
+/// DE421 ephemeris plus the Moon principal-axes BPC **and** the PA→ME frame
+/// kernel, so the Moon mean-Earth/mean-rotation (ME) frame resolves.
+///
+/// Use this for lunar **cartography** — DEMs (LOLA, SLDEM2015) and all lunar
+/// map lat/lon are referenced to ME, which differs from the principal-axes
+/// (PA) frame by ~tens of arcseconds (≈0.5 km on the surface). Query it via
+/// [`Ephemeris::get_body_rotation_to`] with
+/// [`BodyFixedFrame::MoonMeDe421`](astrodyn_ephemeris::BodyFixedFrame::MoonMeDe421).
+/// Use [`de421_with_moon_pa`] instead when you want the gravity/libration PA
+/// frame rather than the cartographic ME frame.
+pub fn de421_with_moon_me() -> Result<Ephemeris, EphemerisError> {
+    let mut eph = de421_with_moon_pa()?;
+    let fk = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::MOON_FK)?;
+    eph.load_euler_bytes(&fk)?;
+    Ok(eph)
+}
+
 /// JPL DE440 planetary ephemeris (Sun, Moon, planets, 1849–2150).
 ///
 /// Required by the NASA NESC GN&C Lunar Check Cases (NESC-RP-23-01853);
@@ -69,4 +86,42 @@ pub fn de440_with_moon_pa() -> Result<Ephemeris, EphemerisError> {
     let bpc = astrodyn_ephemeris::data::load(&astrodyn_ephemeris::data::MOON_PA)?;
     eph.load_bpc_bytes(&bpc)?;
     Ok(eph)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{BodyFixedFrame, EphemerisBody, Moon};
+
+    // The `de421_with_moon_me` recipe resolves the J2000→ME rotation through
+    // the facade, and ME is genuinely distinct from PA (the lunar libration
+    // offset), proving the bundled FK loaded and chained onto the PA BPC.
+    #[test]
+    fn de421_with_moon_me_resolves_me_distinct_from_pa() {
+        let eph = super::de421_with_moon_me().expect("load DE421 + Moon PA + ME FK");
+        let pa = eph
+            .get_body_rotation_to_jd::<Moon>(
+                EphemerisBody::Moon,
+                BodyFixedFrame::MoonPaDe421,
+                2_451_545.0,
+            )
+            .expect("PA")
+            .matrix();
+        let me = eph
+            .get_body_rotation_to_jd::<Moon>(
+                EphemerisBody::Moon,
+                BodyFixedFrame::MoonMeDe421,
+                2_451_545.0,
+            )
+            .expect("ME")
+            .matrix();
+        // The two frames must differ (PA→ME offset is ~104 arcsec ≈ 5e-4 rad).
+        let max_diff = (pa - me)
+            .to_cols_array()
+            .iter()
+            .fold(0.0_f64, |m, &x| m.max(x.abs()));
+        assert!(
+            max_diff > 1e-5,
+            "ME must differ from PA by the libration offset; max element diff = {max_diff:e}",
+        );
+    }
 }

@@ -4904,6 +4904,9 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "0.1.0"
+dependencies = [
+ "anise",
+]
 
 [[package]]
 name = "zerocopy"
