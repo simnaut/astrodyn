@@ -245,3 +245,25 @@ fn bevy_parity_orbinit_docker_run_3771() {
 fn bevy_parity_orbinit_docker_run_3822() {
     sim_orbinit_docker::run_3822().run_and_assert_parity::<astrodyn::Earth>();
 }
+
+// Structure-frame / named-mass-point vehicle-relative init: the chaser's
+// structure / attach_point reference frame is built from the target's
+// composite-body inertial state and mass tree, the user offset/attitude/rate is
+// composed onto it, and the chaser composite_body state is derived through the
+// chaser's own StructToBody — all inside the scenario factory. Runner↔bevy
+// bit-identity here implies the structure / named-point compose produced the
+// same f64 pattern on both runtimes.
+#[test]
+fn bevy_parity_orbinit_docker_run_4451() {
+    sim_orbinit_docker::run_4451().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_5461() {
+    sim_orbinit_docker::run_5461().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_4681() {
+    sim_orbinit_docker::run_4681().run_and_assert_parity::<astrodyn::Earth>();
+}

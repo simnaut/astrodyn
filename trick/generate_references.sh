@@ -867,6 +867,13 @@ run_orbinit_rel_group() {
         "SET_test/RUN_0681:orbinit_0681:orbinit_0681_orbinit.csv"
         # DynBodyInitLvlhState full state (pos/vel/att/rate), ref_body = ISS
         "SET_test/RUN_3771:orbinit_3771:orbinit_3771_orbinit.csv"
+        # DynBodyInitTransState + DynBodyInitRotState, reference = ISS.structure
+        "SET_test/RUN_4451:orbinit_4451:orbinit_4451_orbinit.csv"
+        # Mixed reference: pos/att rel ISS.attach_point (named mass point),
+        # rate rel ISS LVLH
+        "SET_test/RUN_5461:orbinit_5461:orbinit_5461_orbinit.csv"
+        # DynBodyInitNedTransState/NedRotState, ref_body = PAD_39A (NED, elliptical)
+        "SET_test/RUN_4681:orbinit_4681:orbinit_4681_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
