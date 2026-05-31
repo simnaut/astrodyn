@@ -927,3 +927,79 @@ fn tier3_orbinit_docker_run1230_iss_lvlh_att_rate() {
         5.0e-19,
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Double-vehicle relative-init RUNs (STS-114 chaser relative to ISS target).
+// The chaser state is composed with the (default-initialized) ISS inertial
+// state through `RefFrameState::incr_left`. Full-state cross-validation:
+// position / velocity / attitude-angle / angular-rate against the JEOD-logged
+// chaser composite-body t=0 row. Tolerances are 1.05× observed (CLAUDE.md);
+// for the translation-only RUNs the chaser carries identity attitude / zero
+// rate (deck `rotational_dynamics = False`), so the rotational tolerances are
+// floors. RUN_3771's non-identity Pitch_Roll_Yaw [90,0,0] attitude makes the
+// quaternion-angle assertion a genuine convention check.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run0441_sts_body_relative() {
+    // RUN_0441: STS-114 translation in the ISS composite-body frame.
+    // Tolerances 1.05× observed; rotational tolerances are floors
+    // (chaser attitude/rate are identity/zero in this translation-only RUN).
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_0441(),
+        "orbinit_0441_orbinit.csv",
+        "RUN_0441 (STS body-relative trans)",
+        5.47e-10,
+        9.55e-13,
+        1.0e-12,
+        1.0e-18,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0571_sts_lvlh_relative() {
+    // RUN_0571: STS-114 translation in the ISS LVLH frame (ω×r in velocity).
+    // Tolerances 1.05× observed; rotational tolerances are floors.
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_0571(),
+        "orbinit_0571_orbinit.csv",
+        "RUN_0571 (STS LVLH-relative trans)",
+        5.47e-10,
+        1.07e-12,
+        1.0e-12,
+        1.0e-18,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run0681_sts_ned_relative() {
+    // RUN_0681: STS-114 translation in the NED frame relative to ISS
+    // (spherical lat/lon, composed pfix→inertial).
+    // Tolerances 1.05× observed; rotational tolerances are floors.
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_0681(),
+        "orbinit_0681_orbinit.csv",
+        "RUN_0681 (STS NED-relative trans)",
+        2.20e-9,
+        3.06e-12,
+        1.0e-12,
+        1.0e-18,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run3771_sts_lvlh_full_state() {
+    // RUN_3771: STS-114 full state in the ISS LVLH frame — Pitch_Roll_Yaw
+    // [90,0,0] attitude + LVLH-relative body rate.
+    // Tolerances 1.05× observed; quat-angle floored (observed exactly 0 —
+    // the non-identity attitude composes bit-exactly), ang-vel 1.05× observed.
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_3771(),
+        "orbinit_3771_orbinit.csv",
+        "RUN_3771 (STS LVLH full state)",
+        5.47e-10,
+        1.07e-12,
+        1.0e-12,
+        4.59e-19,
+    );
+}

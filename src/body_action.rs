@@ -35,9 +35,11 @@ use glam::{DMat3, DVec3};
 pub use astrodyn_dynamics::body_init::LvlhAngularVelocityFrame;
 use astrodyn_dynamics::body_init::{
     init_from_lvlh, init_from_mean_anomaly, init_from_ned, init_from_orbital_elements,
-    init_from_time_periapsis, init_rot_from_lvlh,
+    init_from_time_periapsis, init_rot_from_lvlh, init_rot_relative_to_frame,
+    init_trans_relative_to_frame,
 };
 use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
+use astrodyn_frames::RefFrameState;
 use astrodyn_math::{GeodeticState, JeodQuat, OrbitalElements};
 use astrodyn_quantities::frame::SelfPlanet;
 
@@ -65,7 +67,15 @@ pub enum OrbitalElementSet {
 /// matches JEOD's per-action semantics: `MassBodyInit` only writes
 /// mass properties, `DynBodyInitTransState` only writes translational
 /// state, etc.
+/// `#[non_exhaustive]`: this enum is an internal initialization-recipe
+/// dispatch type whose roadmap is to grow one variant per ported JEOD
+/// body-action kind. It is `pub` only for the Bevy adapter and tests —
+/// the user-facing API is the typestate `VehicleBuilder` / `VehicleConfig`,
+/// not raw `BodyAction` construction. Marking it non-exhaustive makes
+/// that expected additive growth a non-breaking change, so porting the
+/// next body-action kind no longer trips a public-API stability fence.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum BodyAction {
     /// Replace the subject's mass properties.
     ///
@@ -188,6 +198,59 @@ pub enum BodyAction {
         reference_velocity: DVec3,
     },
 
+    /// Replace the subject's translational state from an offset
+    /// expressed in a reference frame `B` that is a child of the
+    /// inertial integration frame (a target vehicle's composite-body
+    /// frame, or a vehicle-centred LVLH / NED frame).
+    ///
+    /// JEOD analog: the translation-only vehicle-relative inits
+    /// (`DynBodyInitTransState` with a body reference frame,
+    /// `DynBodyInitLvlhTransState` / `DynBodyInitNedTransState` with
+    /// `ref_body_name` set). The reference frame's full inertial state
+    /// is resolved by the caller (which already holds the target
+    /// vehicle's state) and passed as `reference_frame`; the offset is
+    /// composed up to the inertial frame via
+    /// [`astrodyn_frames::RefFrameState::incr_left`], including the
+    /// reference frame's `ω × r` velocity term.
+    InitTransRelativeFrame {
+        /// Reference frame `B`'s state wrt the inertial frame (origin
+        /// position/velocity in inertial coordinates, `T_inertial_B`,
+        /// and `ω_inertial_B` in `B`).
+        reference_frame: RefFrameState,
+        /// Subject position offset expressed in frame `B` (m).
+        offset_position: DVec3,
+        /// Subject velocity offset expressed in frame `B` (m/s).
+        offset_velocity: DVec3,
+    },
+
+    /// Replace the subject's full state (translational + rotational)
+    /// from an offset + attitude/rate expressed in a reference frame
+    /// `B` that is a child of the inertial integration frame.
+    ///
+    /// JEOD analog: the full-state vehicle-relative init
+    /// (`DynBodyInitLvlhState` with `set_items = Pos_Vel_Att_Rate` and
+    /// `ref_body_name` set). Both substates are composed up to the
+    /// inertial frame via
+    /// [`astrodyn_frames::RefFrameState::incr_left`]:
+    /// translation including the `ω × r` velocity term, attitude via
+    /// `Q_A:C = Q_B:C · Q_A:B`, and rate via
+    /// `w_A:C = T_B:C · w_A:B + w_B:C`.
+    InitFullRelativeFrame {
+        /// Reference frame `B`'s state wrt the inertial frame.
+        reference_frame: RefFrameState,
+        /// Subject position offset expressed in frame `B` (m).
+        offset_position: DVec3,
+        /// Subject velocity offset expressed in frame `B` (m/s).
+        offset_velocity: DVec3,
+        /// B→subject attitude (scalar-first, left-transformation; JEOD
+        /// convention).
+        q_frame_subject: JeodQuat,
+        /// Angular velocity of the subject wrt frame `B`, expressed in
+        /// the subject body frame (rad/s) — JEOD `rate_in_parent =
+        /// false`.
+        ang_vel_frame_to_subject: DVec3,
+    },
+
     /// Replace the subject's translational state from NED
     /// (North-East-Down) position + velocity.
     ///
@@ -276,6 +339,25 @@ impl BodyAction {
                 *reference_position,
                 *reference_velocity,
             )),
+            BodyAction::InitTransRelativeFrame {
+                reference_frame,
+                offset_position,
+                offset_velocity,
+            } => Some(init_trans_relative_to_frame(
+                reference_frame,
+                *offset_position,
+                *offset_velocity,
+            )),
+            BodyAction::InitFullRelativeFrame {
+                reference_frame,
+                offset_position,
+                offset_velocity,
+                ..
+            } => Some(init_trans_relative_to_frame(
+                reference_frame,
+                *offset_position,
+                *offset_velocity,
+            )),
             BodyAction::InitTransNed {
                 geodetic,
                 ned_velocity,
@@ -322,10 +404,21 @@ impl BodyAction {
                 *reference_position,
                 *reference_velocity,
             )),
+            BodyAction::InitFullRelativeFrame {
+                reference_frame,
+                q_frame_subject,
+                ang_vel_frame_to_subject,
+                ..
+            } => Some(init_rot_relative_to_frame(
+                reference_frame,
+                *q_frame_subject,
+                *ang_vel_frame_to_subject,
+            )),
             BodyAction::InitMass { .. }
             | BodyAction::InitTrans { .. }
             | BodyAction::InitTransOrbital { .. }
             | BodyAction::InitTransLvlh { .. }
+            | BodyAction::InitTransRelativeFrame { .. }
             | BodyAction::InitTransNed { .. } => None,
         }
     }
@@ -340,6 +433,8 @@ impl BodyAction {
             | BodyAction::InitLvlhRot { .. }
             | BodyAction::InitTransOrbital { .. }
             | BodyAction::InitTransLvlh { .. }
+            | BodyAction::InitTransRelativeFrame { .. }
+            | BodyAction::InitFullRelativeFrame { .. }
             | BodyAction::InitTransNed { .. } => None,
         }
     }

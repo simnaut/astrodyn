@@ -210,3 +210,28 @@ fn bevy_parity_orbinit_docker_run_2100() {
 fn bevy_parity_orbinit_docker_run_1230() {
     sim_orbinit_docker::run_1230().run_and_assert_parity::<astrodyn::Earth>();
 }
+
+// Double-vehicle relative-init RUNs: the STS-114 chaser is composed with the
+// ISS reference frame (body / LVLH / NED) via `RefFrameState::incr_left`. The
+// composition runs inside the scenario factory, so runner↔bevy bit-identity
+// here also implies the relative-init kernels produced the same f64 pattern
+// on both runtimes.
+#[test]
+fn bevy_parity_orbinit_docker_run_0441() {
+    sim_orbinit_docker::run_0441().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_0571() {
+    sim_orbinit_docker::run_0571().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_0681() {
+    sim_orbinit_docker::run_0681().run_and_assert_parity::<astrodyn::Earth>();
+}
+
+#[test]
+fn bevy_parity_orbinit_docker_run_3771() {
+    sim_orbinit_docker::run_3771().run_and_assert_parity::<astrodyn::Earth>();
+}

@@ -78,13 +78,14 @@
 use super::fixtures::load_mu_earth;
 use crate::verification::{CsvReference, InitialConditions, Tolerances, VerificationCase};
 use astrodyn::{
-    calendar_to_tjt, compute_quaternion_from_euler_angles_typed, compute_t_parent_this_from_tjt,
-    default_leap_second_table, init_from_altitudes_time_periapsis,
+    calendar_to_tjt, compute_body_lvlh_frame, compute_quaternion_from_euler_angles_typed,
+    compute_t_parent_this_from_tjt, default_leap_second_table, init_from_altitudes_time_periapsis,
     init_from_altitudes_true_anomaly, init_from_arg_latitude_radial_vel, init_from_mean_anomaly,
     init_from_orbital_elements, init_from_semi_latus_rectum_true_anomaly, ut1_to_gmst_seconds,
     BodyAction, CalendarDate, EulerSequence, GravityControl, GravityControls, GravityGradient,
-    GravityModel, GravitySource, GravitySourceEntry, LvlhAngularVelocityFrame, RotationModel,
-    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
+    GravityModel, GravitySource, GravitySourceEntry, JeodQuat, LvlhAngularVelocityFrame,
+    RefFrameRot, RefFrameState, RefFrameTrans, RotationModel, RotationalState, SimulationBuilder,
+    SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
 use astrodyn_verif_jeod_fixtures::orbital_init::{load_orbital_init, load_trans_state};
 use glam::{DMat3, DVec3};
@@ -666,6 +667,313 @@ fn build_run_1230(_init: &InitialConditions) -> SimulationBuilder {
     let trans = trans_state("ISS", "trans_TransState_inertial_body");
     let rot = lvlh_rot_state(trans);
     build_orbinit_docker_rot(mu, trans, rot)
+}
+
+// ── Vehicle-relative initialization (double-vehicle RUNs) ───────────────────
+//
+// In RUN_0441/0571/0681/3771 the STS-114 chaser's state is specified relative
+// to an ISS frame, and JEOD composes it with the already-initialized ISS
+// inertial state through `RefFrameState::incr_left`. The ISS target falls
+// into the default branch of `Modified_data/double_vehicle_run.py`:
+//   set_ISS_trans_TransState_inertial_body  (inertial Cartesian, below)
+//   set_ISS_rot_LvlhRotState_lvlh_body      (identity LVLH→body, LVLH rate)
+// so the ISS inertial trans/rot used as the reference are exactly the
+// RUN_1230 reference state. The chaser offset numbers come from the
+// `Modified_data/STS_114/*` decks (JEOD source — permitted).
+
+/// ISS target inertial translational state — `set_ISS_trans_TransState_inertial_body`
+/// (`Modified_data/ISS/trans_TransState_inertial_body.py`), the default ISS
+/// translation in `double_vehicle_run.py`.
+fn iss_reference_trans() -> TranslationalState {
+    trans_state("ISS", "trans_TransState_inertial_body")
+}
+
+/// ISS target inertial rotational state — `set_ISS_rot_LvlhRotState_lvlh_body`
+/// (`Modified_data/ISS/rot_LvlhRotState_lvlh_body.py`): identity LVLH→body
+/// (Pitch_Yaw_Roll Euler `[0,0,0]`) with LVLH-relative body rate
+/// `w_iss_lvlh = [0.002, 0.006, -0.003]` deg/s (`iss_rate_def.py`, body
+/// frame). `init_rot_from_lvlh` composes this with the ISS LVLH frame's own
+/// orientation/rate wrt inertial — identical to RUN_1230's `lvlh_rot_state`.
+fn iss_reference_rot(trans: TranslationalState) -> RotationalState {
+    lvlh_rot_state(trans)
+}
+
+/// ISS composite-body frame `B` expressed wrt the inertial frame: origin at
+/// the ISS inertial position/velocity, oriented by the ISS inertial→body
+/// attitude `T_inertial_issbody`, rotating at the ISS body-frame inertial
+/// rate `ω_inertial_issbody`. This is the reference frame for RUN_0441
+/// (chaser offset in `ISS.composite_body`).
+fn iss_body_frame_state() -> RefFrameState {
+    let trans = iss_reference_trans();
+    let rot = iss_reference_rot(trans);
+    let t_parent_this = rot.quaternion.left_quat_to_transformation();
+    RefFrameState {
+        trans: RefFrameTrans {
+            position: trans.position,
+            velocity: trans.velocity,
+        },
+        rot: RefFrameRot {
+            q_parent_this: rot.quaternion,
+            t_parent_this,
+            ang_vel_this: rot.ang_vel_body,
+        },
+    }
+}
+
+/// ISS LVLH frame `B` expressed wrt the inertial frame, from the ISS inertial
+/// orbit state (JEOD `LvlhFrame::compute_lvlh_frame`): origin co-located /
+/// co-moving with ISS, oriented by `T_inertial_lvlh`, rotating at the orbital
+/// rate `ω_inertial_lvlh = [0, -|h|/|r|², 0]` in LVLH. Reference frame for
+/// RUN_0571 / RUN_3771 (chaser offset / full state in the ISS LVLH frame).
+fn iss_lvlh_frame_state() -> RefFrameState {
+    let trans = iss_reference_trans();
+    let lvlh = compute_body_lvlh_frame(trans.position, trans.velocity);
+    RefFrameState {
+        trans: RefFrameTrans {
+            position: trans.position,
+            velocity: trans.velocity,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this),
+            t_parent_this: lvlh.t_parent_this,
+            ang_vel_this: lvlh.ang_vel_this,
+        },
+    }
+}
+
+/// STS-114 mass properties for the chaser body
+/// (`Modified_data/STS_114/mass.py`, `set_STS_114_mass`): `mass = 10000` kg,
+/// CG `position = [27.856, 0.003, 9.600]` m, body-frame (CG-centred) diagonal
+/// inertia `diag(7e11, 12e11, 10e11)` kg·m². The deck's non-identity
+/// `pt_orientation` (`StructToBody` = `diag(-1, 1, -1)`) rotates the structure
+/// frame relative to the body frame, but the relative-init targets and the
+/// CSV log the **composite_body** frame, so the structure↔body rotation does
+/// not enter this translation/attitude cross-validation; the body-frame
+/// inertia is used directly (`with_inertia`, identity `t_parent_this`).
+fn sts_mass_properties() -> astrodyn::MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(7.0e11, 0.0, 0.0),
+        DVec3::new(0.0, 12.0e11, 0.0),
+        DVec3::new(0.0, 0.0, 10.0e11),
+    );
+    astrodyn::MassProperties::with_inertia(10_000.0, inertia, DVec3::new(27.856, 0.003, 9.600))
+}
+
+/// STS-114 chaser ISS-relative position offset, common to RUN_0441 / 0571 /
+/// 3771 (the body / LVLH translation decks share the same component sum from
+/// `Modified_data/STS_114/trans_*`):
+///   x = 10.201 + 9.844 + 5 + 9.600 − 9.600
+///   y = −0.206 + 0 + 0 + 0.003 − 0.003
+///   z = −2.558 + 5.252 + 100 − 3.937 + 27.856
+fn sts_offset_position() -> DVec3 {
+    DVec3::new(
+        10.201 + 9.844 + 5.0 + 9.600 - 9.600,
+        -0.206 + 0.000 + 0.0 + 0.003 - 0.003,
+        -2.558 + 5.252 + 100.0 - 3.937 + 27.856,
+    )
+}
+
+/// STS-114 chaser ISS-relative velocity offset for RUN_0441 / 0571 / 3771:
+/// `[0, 0, -1]` m/s (`Modified_data/STS_114/trans_*` velocity).
+fn sts_offset_velocity() -> DVec3 {
+    DVec3::new(0.0, 0.0, -1.0)
+}
+
+/// Build a 6-DOF chaser scenario for the double-vehicle relative-init RUNs.
+/// The ISS reference state is computed and used to construct the reference
+/// frame; the chaser is the single body the CSV logs and cross-validates.
+/// `rot` carries the chaser's composite-body rotational state (identity for
+/// the translation-only RUNs where `rotational_dynamics = False`, the
+/// composed LVLH attitude for RUN_3771).
+fn build_orbinit_relative(
+    mu_earth: f64,
+    chaser_trans: TranslationalState,
+    chaser_rot: RotationalState,
+) -> SimulationBuilder {
+    let mut sb = build_orbinit_docker(mu_earth, chaser_trans);
+    sb.bodies[0].rot = Some(super::typed_helpers::rot_typed(&chaser_rot));
+    sb.bodies[0].mass = Some(super::typed_helpers::mass_typed(&sts_mass_properties()));
+    sb
+}
+
+/// RUN_0441: STS-114 chaser translation given in the ISS composite-body frame
+/// (`trans_TransState_tbody_body`, `reference_ref_frame_name =
+/// "ISS.composite_body"`). The offset is composed with the ISS body frame's
+/// inertial state via `incr_left` (translation only; chaser attitude/rate
+/// stay at identity/zero, matching the deck's `rotational_dynamics = False`).
+fn build_run_0441(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let frame = iss_body_frame_state();
+    let chaser_trans = BodyAction::InitTransRelativeFrame {
+        reference_frame: frame,
+        offset_position: sts_offset_position(),
+        offset_velocity: sts_offset_velocity(),
+    }
+    .apply_translational()
+    .expect("InitTransRelativeFrame must yield Some(TranslationalState)");
+    build_orbinit_relative(mu, chaser_trans, RotationalState::default())
+}
+
+/// RUN_0571: STS-114 chaser translation given in the ISS LVLH frame
+/// (`trans_LvlhTransState_tlvlh_body`, `ref_body_name = "ISS"`, planet Earth).
+/// The offset is composed with the ISS LVLH frame's inertial state via
+/// `incr_left`, which carries the LVLH frame-rate `ω × r` term (the LVLH frame
+/// rotates at the orbital rate). Translation only.
+fn build_run_0571(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let frame = iss_lvlh_frame_state();
+    let chaser_trans = BodyAction::InitTransRelativeFrame {
+        reference_frame: frame,
+        offset_position: sts_offset_position(),
+        offset_velocity: sts_offset_velocity(),
+    }
+    .apply_translational()
+    .expect("InitTransRelativeFrame must yield Some(TranslationalState)");
+    build_orbinit_relative(mu, chaser_trans, RotationalState::default())
+}
+
+/// ISS NED frame `B` expressed wrt the inertial frame, for RUN_0681
+/// (chaser offset in the NED frame relative to ISS, spherical lat/lon).
+///
+/// JEOD `DynBodyInitNedState::apply` (`ref_body = ISS`) builds the NED frame
+/// as a child of the planet-fixed (pfix) frame: its origin is co-located /
+/// co-moving with ISS (ISS state expressed wrt pfix), its orientation is the
+/// NED-axes-from-spherical-lat/lon matrix, and it has *zero* angular velocity
+/// wrt pfix (`NorthEastDown::build_ned_orientation` zeroes `ang_vel_this`).
+/// Because pfix itself rotates at the planet rate wrt inertial, the NED
+/// frame's inertial state is obtained by composing pfix→inertial:
+///   S_inertial:ned = incr_left(S_inertial:pfix, S_pfix:ned)
+/// where the pfix frame carries `ω_planet` (in pfix coordinates, +z). The
+/// spherical latitude/longitude (`lat = asin(z/r)`, `lon = atan2(y, x)` from
+/// the pfix position) match JEOD `PlanetFixedPosition::cart_to_spher`, and the
+/// NED-axes matrix matches `build_ned_orientation`.
+fn iss_ned_frame_state() -> RefFrameState {
+    let trans = iss_reference_trans();
+    let t_inertial_pfix = t_inertial_pfix_at_epoch();
+    let omega_pfix = DVec3::new(0.0, 0.0, EARTH.omega);
+
+    // ISS state wrt pfix, expressed in pfix coordinates (JEOD
+    // `compute_relative_state` ISS.composite_body wrt pfix):
+    //   r_pfix = T_inertial_pfix · r_inertial
+    //   v_pfix = T_inertial_pfix · v_inertial − ω_planet × r_pfix
+    let r_pfix = t_inertial_pfix * trans.position;
+    let v_pfix = t_inertial_pfix * trans.velocity - omega_pfix.cross(r_pfix);
+
+    // Spherical latitude / longitude from the pfix position
+    // (JEOD `cart_to_spher`).
+    let r_local = r_pfix.length();
+    let lat = (r_pfix.z / r_local).asin();
+    let lon = r_pfix.y.atan2(r_pfix.x);
+
+    // NED-axes matrix T_pfix_ned (JEOD `build_ned_orientation`): rows are
+    // North, East, Down. glam `from_cols` takes columns, so each column j
+    // gathers the jth component of (North, East, Down).
+    let (sin_lat, cos_lat) = lat.sin_cos();
+    let (sin_lon, cos_lon) = lon.sin_cos();
+    let t_pfix_ned = DMat3::from_cols(
+        DVec3::new(-sin_lat * cos_lon, -sin_lon, -cos_lat * cos_lon),
+        DVec3::new(-sin_lat * sin_lon, cos_lon, -cos_lat * sin_lon),
+        DVec3::new(cos_lat, 0.0, -sin_lat),
+    );
+
+    // S_inertial:pfix — pfix frame wrt inertial (origin coincident, rotating
+    // at ω_planet expressed in pfix coordinates, +z).
+    let s_inertial_pfix = RefFrameState {
+        trans: RefFrameTrans {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_inertial_pfix),
+            t_parent_this: t_inertial_pfix,
+            ang_vel_this: omega_pfix,
+        },
+    };
+
+    // S_pfix:ned — NED frame wrt pfix (origin at ISS pfix state, NED axes,
+    // zero rate wrt pfix). Composed up to inertial in place.
+    let mut s_inertial_ned = RefFrameState {
+        trans: RefFrameTrans {
+            position: r_pfix,
+            velocity: v_pfix,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_pfix_ned),
+            t_parent_this: t_pfix_ned,
+            ang_vel_this: DVec3::ZERO,
+        },
+    };
+    s_inertial_ned.incr_left(&s_inertial_pfix);
+    s_inertial_ned
+}
+
+/// RUN_0681: STS-114 chaser translation in the NED frame relative to ISS
+/// (`trans_NedTransState_tned_body`, `ref_body_name = "ISS"`,
+/// `altlatlong_type = spherical`). The offset
+/// (`Modified_data/STS_114/trans_NedTransState_tned_body.py`) is position
+/// `[17.504, 17.914, 126.613]` m and planet-fixed NED velocity
+/// `[-0.101060, -0.095858, -0.972466]` m/s, composed with the ISS NED frame
+/// via `incr_left`. The planet-rotation velocity contribution enters through
+/// the pfix→inertial step in [`iss_ned_frame_state`]. Translation only.
+fn build_run_0681(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let frame = iss_ned_frame_state();
+    let chaser_trans = BodyAction::InitTransRelativeFrame {
+        reference_frame: frame,
+        offset_position: DVec3::new(17.504, 17.914, 126.613),
+        offset_velocity: DVec3::new(-0.101060, -0.095858, -0.972466),
+    }
+    .apply_translational()
+    .expect("InitTransRelativeFrame must yield Some(TranslationalState)");
+    build_orbinit_relative(mu, chaser_trans, RotationalState::default())
+}
+
+/// RUN_3771: STS-114 chaser full state (Pos_Vel_Att_Rate) in the ISS LVLH
+/// frame (`full_LvlhState_tlvlh_body`). Position/velocity are the same LVLH
+/// offset as RUN_0571; the attitude is the Pitch_Roll_Yaw (JEOD
+/// `Pitch_Roll_Yaw` = `EulerSequence::YXZ`) Euler triple `[90, 0, 0]` deg
+/// (LVLH→body), and the LVLH-relative body rate is
+/// `[−w_sts_lvlh[2], w_sts_lvlh[1], w_sts_lvlh[0]]` deg/s with
+/// `w_sts_lvlh = [0.06, 0.03, 0.02]` (`chaser_rate_def.py`). Both substates
+/// are composed with the ISS LVLH frame via `incr_left`.
+fn build_run_3771(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let frame = iss_lvlh_frame_state();
+
+    // LVLH→body attitude: Pitch_Roll_Yaw (YXZ) Euler [90, 0, 0] deg.
+    let angles = [
+        Angle::new::<degree>(90.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_frame_subject =
+        compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YXZ).inner();
+
+    // LVLH-relative body rate (deg/s), body frame (rate_in_parent unset →
+    // false). chaser_rate_def.py: w_sts_lvlh = [0.06, 0.03, 0.02];
+    // ang_velocity = [-w_sts_lvlh[2], w_sts_lvlh[1], w_sts_lvlh[0]].
+    let w_sts_lvlh = [0.06, 0.03, 0.02];
+    let ang_vel_deg = DVec3::new(-w_sts_lvlh[2], w_sts_lvlh[1], w_sts_lvlh[0]);
+    let ang_vel_frame_to_subject = DVec3::new(
+        Angle::new::<degree>(ang_vel_deg.x).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(ang_vel_deg.y).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(ang_vel_deg.z).get::<uom::si::angle::radian>(),
+    );
+
+    let action = BodyAction::InitFullRelativeFrame {
+        reference_frame: frame,
+        offset_position: sts_offset_position(),
+        offset_velocity: sts_offset_velocity(),
+        q_frame_subject,
+        ang_vel_frame_to_subject,
+    };
+    let chaser_trans = action
+        .apply_translational()
+        .expect("InitFullRelativeFrame must yield Some(TranslationalState)");
+    let chaser_rot = action
+        .apply_rotational()
+        .expect("InitFullRelativeFrame must yield Some(RotationalState)");
+    build_orbinit_relative(mu, chaser_trans, chaser_rot)
 }
 
 /// Recipes opt out of every runner-vs-JEOD tolerance group because they
@@ -1602,6 +1910,70 @@ pub fn run_1230() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_1230",
         scenario: build_run_1230,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0441: STS-114 chaser, translation in the ISS composite-body frame.
+pub fn run_0441() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0441",
+        scenario: build_run_0441,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0571: STS-114 chaser, translation in the ISS LVLH frame.
+pub fn run_0571() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0571",
+        scenario: build_run_0571,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_0681: STS-114 chaser, translation in the NED frame relative to ISS.
+pub fn run_0681() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_0681",
+        scenario: build_run_0681,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_3771: STS-114 chaser, full state (pos/vel/att/rate) in the ISS LVLH frame.
+pub fn run_3771() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_3771",
+        scenario: build_run_3771,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,

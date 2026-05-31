@@ -558,24 +558,135 @@ pub fn init_from_lvlh(
 ) -> TranslationalState {
     // Typed entry: lift inertial inputs and use `LvlhFrame::compute`,
     // which returns the full struct (orientation + angular velocity +
-    // origin state). Bit-identical to the deprecated f64 path.
-    // LVLH is computed in the central body's planet-inertial frame.
-    // Earth here is the documented assumption; non-Earth init paths use
-    // their own constructors. Bit-identical to the prior code.
+    // origin state). LVLH is computed in the central body's
+    // planet-inertial frame. Earth here is the documented assumption;
+    // non-Earth init paths use their own constructors.
     use astrodyn_quantities::frame::{Earth, PlanetInertial};
     let lvlh = astrodyn_math::LvlhFrame::compute(
         ref_position.m_at::<PlanetInertial<Earth>>(),
         ref_velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     );
 
-    // t_parent_this transforms from inertial to LVLH.
-    // Its transpose transforms from LVLH to inertial.
-    let t_lvlh_to_inertial = lvlh.t_parent_this.transpose();
+    // The LVLH frame B sits as a child of the inertial frame A, co-located
+    // and co-moving with the reference orbit, oriented by `t_parent_this`
+    // and rotating at `ang_vel_this` (the orbital rate). Compose the user
+    // offset S_B:C (chaser relative to LVLH) up to inertial via JEOD
+    // `RefFrameState::incr_left` (A = inertial, B = LVLH, C = chaser).
+    // The earlier translation-only port dropped the ω×r velocity term,
+    // which is negligible only for a non-rotating reference frame; for an
+    // orbiting target's LVLH it is required and is what the
+    // vehicle-relative RUNs exercise.
+    let frame = lvlh_reference_frame_state(
+        lvlh.t_parent_this,
+        lvlh.ang_vel_this,
+        ref_position,
+        ref_velocity,
+    );
+    init_trans_relative_to_frame(&frame, lvlh_pos, lvlh_vel)
+}
 
-    let position = ref_position + t_lvlh_to_inertial * lvlh_pos;
-    let velocity = ref_velocity + t_lvlh_to_inertial * lvlh_vel;
+/// Build an [`astrodyn_frames::RefFrameState`] for a reference frame `B`
+/// that is a child of the inertial frame, from its inertial origin
+/// state, parent→B orientation, and B-frame angular velocity wrt the
+/// inertial frame. The attitude quaternion cache is derived from
+/// `t_parent_this` (JEOD `Q_parent_this` is canonical).
+fn lvlh_reference_frame_state(
+    t_parent_this: DMat3,
+    ang_vel_this: DVec3,
+    origin_position: DVec3,
+    origin_velocity: DVec3,
+) -> astrodyn_frames::RefFrameState {
+    astrodyn_frames::RefFrameState {
+        trans: astrodyn_frames::RefFrameTrans {
+            position: origin_position,
+            velocity: origin_velocity,
+        },
+        rot: astrodyn_frames::RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_parent_this),
+            t_parent_this,
+            ang_vel_this,
+        },
+    }
+}
 
-    TranslationalState { position, velocity }
+/// Initialize a subject vehicle's translational state from an offset
+/// expressed in a reference frame `B` that is a child of the inertial
+/// integration frame, composing through JEOD `RefFrameState::incr_left`
+/// (the canonical port lives in
+/// [`astrodyn_frames::RefFrameState::incr_left`]). Used for the
+/// body-relative and vehicle-LVLH / vehicle-NED translation-only inits,
+/// where `frame` carries the reference frame's inertial state and
+/// `offset_*` the user offset. The composition includes the reference
+/// frame's `ω × r` velocity term.
+///
+/// # Arguments
+/// * `frame` - Reference frame B's state wrt inertial (origin
+///   position/velocity in inertial coordinates, `T_inertial_B`,
+///   `ω_inertial_B` in B).
+/// * `offset_position` - Subject position offset in frame B (m).
+/// * `offset_velocity` - Subject velocity offset in frame B (m/s).
+// JEOD_INV: BA.15 — relative-state init composes the reference-frame
+// state with the user offset via incr_left, including the ω_A:B × x_B:C
+// frame-rate term in the velocity.
+pub fn init_trans_relative_to_frame(
+    frame: &astrodyn_frames::RefFrameState,
+    offset_position: DVec3,
+    offset_velocity: DVec3,
+) -> TranslationalState {
+    // S_B:C — the subject's offset wrt B, with identity relative
+    // orientation / zero relative rate (translation-only init).
+    let mut composed = astrodyn_frames::RefFrameState {
+        trans: astrodyn_frames::RefFrameTrans {
+            position: offset_position,
+            velocity: offset_velocity,
+        },
+        rot: astrodyn_frames::RefFrameRot::default(),
+    };
+    composed.incr_left(frame);
+    TranslationalState {
+        position: composed.trans.position,
+        velocity: composed.trans.velocity,
+    }
+}
+
+/// Initialize a subject vehicle's full rotational state from an attitude
+/// and angular velocity expressed relative to a reference frame `B` that
+/// is a child of the inertial integration frame, via JEOD
+/// `RefFrameState::incr_left`.
+///
+/// `q_frame_subject` is the user-supplied B→subject attitude (scalar-first
+/// left-transformation, JEOD convention) and `ang_vel_frame_to_subject`
+/// the angular velocity of the subject wrt B, expressed in the subject
+/// body frame (`ang_vel_this`, JEOD `rate_in_parent = false`). The
+/// reference frame's own inertial→B attitude and angular velocity come
+/// from `frame`. The returned [`RotationalState`] is the subject's
+/// inertial→body attitude and body-frame angular velocity wrt inertial:
+/// `Q_A:C = Q_B:C · Q_A:B`, `w_A:C = T_B:C · w_A:B + w_B:C`.
+// JEOD_INV: BA.15 — full relative-state init composes attitude and rate
+// via incr_left.
+pub fn init_rot_relative_to_frame(
+    frame: &astrodyn_frames::RefFrameState,
+    q_frame_subject: JeodQuat,
+    ang_vel_frame_to_subject: DVec3,
+) -> RotationalState {
+    let mut q_frame_subject = q_frame_subject;
+    q_frame_subject.normalize();
+
+    // S_B:C — subject wrt B: user attitude + body-frame relative rate.
+    let mut composed = astrodyn_frames::RefFrameState {
+        trans: astrodyn_frames::RefFrameTrans::default(),
+        rot: astrodyn_frames::RefFrameRot {
+            q_parent_this: q_frame_subject,
+            t_parent_this: q_frame_subject.left_quat_to_transformation(),
+            ang_vel_this: ang_vel_frame_to_subject,
+        },
+    };
+    composed.incr_left(frame);
+
+    RotationalState {
+        quaternion: composed.rot.q_parent_this,
+        ang_vel_body: composed.rot.ang_vel_this,
+    }
 }
 
 /// Frame in which the user-supplied LVLH-relative angular velocity is expressed.
@@ -972,11 +1083,18 @@ mod tests {
         );
         let t = lvlh.t_parent_this;
 
-        // Recover LVLH-relative position and velocity
+        // Recover LVLH-relative position and velocity. This is the
+        // forward `compute_relative_state` direction (JEOD `decr_left`):
+        //   x_B:C = T_A:B · (x_A:C - x_A:B)
+        //   v_B:C = T_A:B · (v_A:C - v_A:B) - ω_A:B × x_B:C
+        // The ω×r Coriolis term must be subtracted here to invert the
+        // `incr_left` composition `init_from_lvlh` now performs — an
+        // inversion that dropped it would only round-trip a non-rotating
+        // reference frame.
         let delta_pos = state.position - ref_pos;
         let delta_vel = state.velocity - ref_vel;
         let recovered_lvlh_pos = t * delta_pos;
-        let recovered_lvlh_vel = t * delta_vel;
+        let recovered_lvlh_vel = t * delta_vel - lvlh.ang_vel_this.cross(recovered_lvlh_pos);
 
         let pos_err = (recovered_lvlh_pos - lvlh_offset_pos).length();
         let vel_err = (recovered_lvlh_vel - lvlh_offset_vel).length();
@@ -991,6 +1109,86 @@ mod tests {
             "LVLH round-trip velocity error: {} m/s",
             vel_err
         );
+    }
+
+    // =======================================================================
+    // incr_left composition kernels
+    // =======================================================================
+
+    fn frame_state(
+        position: DVec3,
+        velocity: DVec3,
+        t_parent_this: DMat3,
+        ang_vel_this: DVec3,
+    ) -> astrodyn_frames::RefFrameState {
+        astrodyn_frames::RefFrameState {
+            trans: astrodyn_frames::RefFrameTrans { position, velocity },
+            rot: astrodyn_frames::RefFrameRot {
+                q_parent_this: JeodQuat::left_quat_from_transformation(&t_parent_this),
+                t_parent_this,
+                ang_vel_this,
+            },
+        }
+    }
+
+    #[test]
+    fn init_trans_relative_to_frame_identity_is_plain_add() {
+        // With an identity, non-rotating reference frame, the relative
+        // translation init reduces to a vector add onto the frame origin.
+        let frame = frame_state(
+            DVec3::new(1.0, 2.0, 3.0),
+            DVec3::new(0.1, 0.2, 0.3),
+            DMat3::IDENTITY,
+            DVec3::ZERO,
+        );
+        let out = init_trans_relative_to_frame(
+            &frame,
+            DVec3::new(10.0, 20.0, 30.0),
+            DVec3::new(1.0, 1.0, 1.0),
+        );
+        assert!((out.position - DVec3::new(11.0, 22.0, 33.0)).length() < 1e-12);
+        assert!((out.velocity - DVec3::new(1.1, 1.2, 1.3)).length() < 1e-12);
+    }
+
+    #[test]
+    fn init_trans_relative_to_frame_includes_omega_cross_r() {
+        // A reference frame rotating about +z at ω; an offset purely
+        // along +x with zero relative velocity acquires inertial velocity
+        // ω × r = (0,0,ω) × (r,0,0) = (0, ω·r, 0).
+        let omega = 0.001;
+        let r = 100.0;
+        let frame = frame_state(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            DMat3::IDENTITY,
+            DVec3::new(0.0, 0.0, omega),
+        );
+        let out = init_trans_relative_to_frame(&frame, DVec3::new(r, 0.0, 0.0), DVec3::ZERO);
+        let expected = DVec3::new(0.0, omega * r, 0.0);
+        assert!(
+            (out.velocity - expected).length() < 1e-12,
+            "ω×r term missing: got {:?}, expected {:?}",
+            out.velocity,
+            expected
+        );
+    }
+
+    #[test]
+    fn init_rot_relative_to_frame_composes_attitude_and_rate() {
+        // Frame B rotates wrt inertial; identity B→subject attitude with
+        // zero relative rate must forward the frame's orientation and
+        // rate to the subject (w_A:C = T_B:C·w_A:B = w_A:B for identity).
+        let t_parent_this = DMat3::from_axis_angle(DVec3::Z, 0.3);
+        let w_frame = DVec3::new(0.0, 0.0, 0.002);
+        let frame = frame_state(DVec3::ZERO, DVec3::ZERO, t_parent_this, w_frame);
+        let out = init_rot_relative_to_frame(&frame, JeodQuat::identity(), DVec3::ZERO);
+        // Inertial→subject attitude equals inertial→frame attitude.
+        let q_frame = JeodQuat::left_quat_from_transformation(&t_parent_this);
+        let dot = out.quaternion.scalar() * q_frame.scalar()
+            + out.quaternion.vector().dot(q_frame.vector());
+        assert!(dot.abs() > 1.0 - 1e-12, "attitude not forwarded");
+        // Subject inertial rate equals the frame rate (identity B→C).
+        assert!((out.ang_vel_body - w_frame).length() < 1e-12);
     }
 
     // =======================================================================
