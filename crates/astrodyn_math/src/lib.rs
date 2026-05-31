@@ -86,6 +86,7 @@ pub mod quaternion;
 pub mod solar_beta;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+pub mod topocentric;
 pub mod types;
 
 pub use astrodyn_quantities::{
@@ -107,4 +108,5 @@ pub use orbital_elements::OrbitalElements;
 pub use solar_beta::{
     compute_body_solar_beta, compute_body_solar_beta_typed, solar_beta_angle_typed,
 };
+pub use topocentric::topocentric_enu_transform;
 pub use types::*;

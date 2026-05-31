@@ -342,7 +342,7 @@ pub use astrodyn_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use astrodyn_quantities::frame::{
     BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Jupiter, Lvlh, Mars, MassNode, Moon, Ned,
     Planet, PlanetFixed, PlanetInertial, RootInertial, Saturn, SelfPlanet, SelfRef,
-    StructuralFrame, Sun, Vehicle,
+    StructuralFrame, Sun, Topocentric, Vehicle,
 };
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
@@ -388,6 +388,15 @@ pub use astrodyn_math::JeodQuat;
 
 // astrodyn_math: derived state types
 pub use astrodyn_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, OrbitalError};
+// Geodetic conversions + site-anchored topocentric (ENU) frame builder, so a
+// consumer can build a site anchor and a local-horizon frame entirely through
+// the facade (e.g. a landing-site camera over DEM terrain). The ENU builder
+// returns `FrameTransform<PlanetFixed<P>, Topocentric<P>>`, which composes with
+// the ephemeris `FrameTransform<RootInertial, PlanetFixed<P>>`.
+pub use astrodyn_math::{
+    cartesian_to_geodetic_typed, geodetic_to_cartesian_typed, topocentric_enu_transform,
+    GeodeticStateTyped,
+};
 
 // astrodyn_math::euler_angles: typed-quantity Euler-angle helpers
 // paired with the already-exposed `EulerSequence`.

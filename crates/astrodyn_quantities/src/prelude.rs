@@ -10,7 +10,7 @@ pub use crate::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use crate::frame::{
     BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Jupiter, Lvlh, Mars, MassNode, Moon, Ned,
     Planet, PlanetFixed, PlanetInertial, RootInertial, Saturn, SelfPlanet, SelfRef,
-    StructuralFrame, Sun, Vehicle,
+    StructuralFrame, Sun, Topocentric, Vehicle,
 };
 pub use crate::frame_transform::FrameTransform;
 pub use crate::integ_origin::IntegOrigin;
