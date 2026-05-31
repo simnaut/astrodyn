@@ -95,6 +95,25 @@ use astrodyn_verif_jeod::tier3_csv::{
 };
 use astrodyn_verif_jeod::verification::{CsvReference, InitialConditions, VerificationCase};
 
+// Structure-frame / named-mass-point vehicle-relative tolerances: 1.05× the
+// observed max per component. Exact-zero residuals (the attitude composes
+// bit-exactly; RUN_5461's pos/vel compose bit-exactly) are floored where 1.05×0
+// leaves no headroom. RUN_4681's position residual is dominated by the
+// geodetic-ellipsoid inversion (our Borkowski solver vs JEOD `update_from_ellip`,
+// the same ~1.5e-5 m residual RUN_3822 sees).
+const TOL_4451_POS: f64 = 5.47e-10;
+const TOL_4451_VEL: f64 = 2.39e-13;
+const TOL_4451_QUAT: f64 = 1.0e-12;
+const TOL_4451_ANGVEL: f64 = 1.14e-19;
+const TOL_5461_POS: f64 = 1.0e-12;
+const TOL_5461_VEL: f64 = 1.0e-12;
+const TOL_5461_QUAT: f64 = 1.0e-12;
+const TOL_5461_ANGVEL: f64 = 6.54e-19;
+const TOL_4681_POS: f64 = 1.58e-5;
+const TOL_4681_VEL: f64 = 8.63e-10;
+const TOL_4681_QUAT: f64 = 1.0e-12;
+const TOL_4681_ANGVEL: f64 = 3.65e-18;
+
 /// Build the recipe's `Simulation` exactly the way the parity trait
 /// does — call the scenario factory with a default `InitialConditions`
 /// (the recipes compute their initial state from committed body-init
@@ -1034,5 +1053,69 @@ fn tier3_orbinit_docker_run3822_pad39a_ned_full_state() {
         8.83e-10,
         1.0e-12,
         1.0e-19,
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Structure-frame / named-mass-point vehicle-relative RUNs. The STS-114 chaser
+// is initialized relative to a non-composite-body frame of the target (the ISS
+// structure frame, the ISS attach_point named mass point, or the NED frame at
+// PAD_39A) and on its own structure / attach_point frame, then JEOD's
+// propagation derives the chaser composite_body frame (the CSV subject). The
+// non-trivial attitudes (−90°, 180°) are genuine convention checks (Euler
+// sequence, deg→rad, scalar-first↔scalar-last, struct↔body mass-tree rotation).
+// Full-state cross-validation: pos / vel / attitude-angle / angular-rate against
+// the JEOD-logged chaser composite-body t=0 row. Tolerances 1.05× observed.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run4451_sts_structure_relative() {
+    // RUN_4451: STS-114 full state in the ISS *structure* frame, chaser
+    // body_frame_id = structure. Pitch_Yaw_Roll [−90,0,0] attitude + structure-
+    // frame rate; converted to the chaser composite_body through STS-114's
+    // non-identity StructToBody. Tolerances 1.05× observed max (CLAUDE.md).
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_4451(),
+        "orbinit_4451_orbinit.csv",
+        "RUN_4451 (STS structure-relative full state)",
+        TOL_4451_POS,
+        TOL_4451_VEL,
+        TOL_4451_QUAT,
+        TOL_4451_ANGVEL,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run5461_sts_attach_point_mixed() {
+    // RUN_5461: STS-114 mixed-reference init — position/attitude relative to the
+    // ISS attach_point (named mass point, Yaw_Pitch_Roll [180,0,0]), angular
+    // rate relative to the ISS LVLH frame. The chaser body_frame_id =
+    // attach_point; the composite_body velocity ω×r term uses the LVLH-sourced
+    // composite rate. Tolerances 1.05× observed max (CLAUDE.md).
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_5461(),
+        "orbinit_5461_orbinit.csv",
+        "RUN_5461 (STS attach_point mixed-reference)",
+        TOL_5461_POS,
+        TOL_5461_VEL,
+        TOL_5461_QUAT,
+        TOL_5461_ANGVEL,
+    );
+}
+
+#[test]
+fn tier3_orbinit_docker_run4681_sts_ned_pad_relative() {
+    // RUN_4681: PAD_39A target full-NED at its geodetic ground point; STS-114
+    // chaser in the NED frame relative to PAD_39A (elliptical, body_frame_id =
+    // structure). Combines the vehicle-relative compose, the geodetic NED frame,
+    // and STS-114's non-identity StructToBody. Tolerances 1.05× observed max.
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_4681(),
+        "orbinit_4681_orbinit.csv",
+        "RUN_4681 (STS NED-relative to PAD_39A)",
+        TOL_4681_POS,
+        TOL_4681_VEL,
+        TOL_4681_QUAT,
+        TOL_4681_ANGVEL,
     );
 }

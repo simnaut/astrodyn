@@ -1006,6 +1006,44 @@ fn pad_39a_mass_properties() -> astrodyn::MassProperties {
     astrodyn::MassProperties::with_inertia(1.0, inertia, DVec3::ZERO)
 }
 
+/// PAD_39A geodetic ground point (deg→rad, ellipsoidal lat/lon, alt 3 m), from
+/// `Modified_data/PAD_39A/full_NedState_ned_struct.py` (and the matching
+/// `earth.pad_39a.loc` in `double_vehicle_run.py`).
+fn pad_39a_geodetic() -> astrodyn::GeodeticState {
+    astrodyn::GeodeticState {
+        latitude: Angle::new::<degree>(28.6082).get::<uom::si::angle::radian>(),
+        longitude: Angle::new::<degree>(-80.6040).get::<uom::si::angle::radian>(),
+        altitude: 3.0,
+    }
+}
+
+/// PAD_39A full-NED initialization action (`DynBodyInitNedState`,
+/// `set_items = Pos_Vel_Att_Rate`, elliptical), shared by RUN_3822 and the
+/// RUN_4681 NED-frame construction. The body sits `[0, 0, 10]` m Down from the
+/// geodetic point, aligned with the local NED frame (Pitch_Yaw_Roll [0,0,0]),
+/// at rest in NED (`Modified_data/PAD_39A/full_NedState_ned_struct.py`).
+fn pad_39a_full_ned_action() -> BodyAction {
+    let angles = [
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_ned_body = compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
+    BodyAction::InitFullNed {
+        geodetic: pad_39a_geodetic(),
+        ned_position: DVec3::new(0.0, 0.0, 10.0),
+        ned_velocity: DVec3::ZERO,
+        q_ned_body,
+        ang_vel_ned_to_body: DVec3::ZERO,
+        r_equatorial: EARTH.shape.r_eq(),
+        r_polar: EARTH.shape.r_pol(),
+        t_eci_pcpf: t_inertial_pfix_at_epoch(),
+        // pfix-frame angular velocity (JEOD `planet_rnp.cc` stores
+        // `ang_vel_this = [0, 0, planet_omega]` about the pfix z-axis).
+        omega_planet: DVec3::new(0.0, 0.0, EARTH.omega),
+    }
+}
+
 /// RUN_3822: PAD_39A single-vehicle full state (Pos_Vel_Att_Rate) in the local
 /// NED frame at a geodetic ground point (`DynBodyInitNedState`,
 /// `altlatlong_type = elliptical`, no reference body).
@@ -1028,37 +1066,7 @@ fn pad_39a_mass_properties() -> astrodyn::MassProperties {
 /// angular velocity recovers `ω_earth`.
 fn build_run_3822(_init: &InitialConditions) -> SimulationBuilder {
     let mu = load_mu_earth();
-
-    // Geodetic reference point (deg→rad), ellipsoidal lat/lon.
-    let geodetic = astrodyn::GeodeticState {
-        latitude: Angle::new::<degree>(28.6082).get::<uom::si::angle::radian>(),
-        longitude: Angle::new::<degree>(-80.6040).get::<uom::si::angle::radian>(),
-        altitude: 3.0,
-    };
-
-    // NED→body attitude: Pitch_Yaw_Roll (YZX) Euler [0, 0, 0] deg → identity.
-    let angles = [
-        Angle::new::<degree>(0.0),
-        Angle::new::<degree>(0.0),
-        Angle::new::<degree>(0.0),
-    ];
-    let q_ned_body = compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
-
-    let action = BodyAction::InitFullNed {
-        geodetic,
-        // NED offset: [North, East, Down] = [0, 0, 10] m.
-        ned_position: DVec3::new(0.0, 0.0, 10.0),
-        ned_velocity: DVec3::ZERO,
-        q_ned_body,
-        ang_vel_ned_to_body: DVec3::ZERO,
-        r_equatorial: EARTH.shape.r_eq(),
-        r_polar: EARTH.shape.r_pol(),
-        t_eci_pcpf: t_inertial_pfix_at_epoch(),
-        // pfix-frame angular velocity (JEOD `planet_rnp.cc` stores
-        // `ang_vel_this = [0, 0, planet_omega]` about the pfix z-axis), the
-        // same convention `iss_ned_frame_state` uses for RUN_0681.
-        omega_planet: DVec3::new(0.0, 0.0, EARTH.omega),
-    };
+    let action = pad_39a_full_ned_action();
     let trans = action
         .apply_translational()
         .expect("InitFullNed must yield Some(TranslationalState)");
@@ -1070,6 +1078,562 @@ fn build_run_3822(_init: &InitialConditions) -> SimulationBuilder {
     sb.bodies[0].rot = Some(super::typed_helpers::rot_typed(&rot));
     sb.bodies[0].mass = Some(super::typed_helpers::mass_typed(&pad_39a_mass_properties()));
     sb
+}
+
+// ── Structure-frame / named-mass-point vehicle-relative initialization ──────
+//
+// RUN_4451 / RUN_5461 / RUN_4681 initialize the STS-114 chaser relative to a
+// *non-composite-body* frame of the target — the target's `structure` frame
+// (RUN_4451) or a named mass point `attach_point` (RUN_5461) — and the chaser's
+// own `body_frame_id` is `structure` (RUN_4451/4681) or `attach_point`
+// (RUN_5461), not `composite_body`. JEOD's `DynBodyInit::apply_user_inputs`
+// composes the user offset/attitude onto the reference frame, sets the result
+// on the subject's `body_frame_id` frame, then `propagate_state()` derives the
+// chaser's `composite_body` frame (what the CSV logs) from it.
+//
+// Mass tree (each vehicle): the `structure` point is the root; the
+// `composite_body` (CG) point is its `StructToBody` child (position = CG in
+// structure coords, `T_parent_this` = T_struct_body); a named mass point is a
+// `StructToPoint` child (position = point in structure coords, `T_parent_this`
+// = T_struct_point). JEOD `mass_point_init.cc` stores StructTo* matrices as
+// `T_parent_this` (parent = structure) verbatim.
+//
+// All composition below is the canonical `RefFrameState` math
+// (`incr_right` / `negate`) — the same operators JEOD's
+// `compute_derived_state_forward` / `compute_derived_state_reverse`
+// (`dyn_body_propagate_state.cc`) and `compute_relative_state`
+// (`ref_frame_state.cc`) reduce to for rigid mass-point offsets. No new physics
+// kernel is required: a structure / named-point frame state is a deterministic
+// rigid compose of the composite-body inertial state with the mass tree.
+
+/// A rigid mass-point relative state `S_parent:point` (parent → point): the
+/// point's origin at `position` in parent coordinates, axes rotated by
+/// `t_struct_point` (parent → point), and *zero* angular velocity wrt the
+/// parent (the point is rigidly fixed in the structure). This mirrors a JEOD
+/// `MassPoint`'s stored `{position, T_parent_this}` (`mass_point.hh`), promoted
+/// to a [`RefFrameState`] so it composes through [`RefFrameState::incr_right`].
+fn rigid_mass_point_state(position: DVec3, t_struct_point: DMat3) -> RefFrameState {
+    RefFrameState {
+        trans: RefFrameTrans {
+            position,
+            velocity: DVec3::ZERO,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_struct_point),
+            t_parent_this: t_struct_point,
+            ang_vel_this: DVec3::ZERO,
+        },
+    }
+}
+
+/// Build a target vehicle's `structure`-frame state wrt the inertial frame from
+/// its `composite_body` inertial state and its `StructToBody` mass properties
+/// (`cg_struct` = CG location in structure coordinates, `t_struct_body` =
+/// structure → body rotation).
+///
+/// JEOD computes this in `propagate_state_from_composite` via
+/// `compute_derived_state_reverse(composite_body, composite_properties,
+/// structure)` (`dyn_body_propagate_state.cc`). Expressed as a frame compose,
+/// `S_inertial:struct = S_inertial:composite ∘ S_composite:struct`, where
+/// `S_composite:struct = negate(S_struct:composite)` and `S_struct:composite`
+/// is the rigid `{cg_struct, t_struct_body}` point. The reverse step carries
+/// the composite-body inertial rate into the structure-frame `ω × r` velocity.
+// JEOD_INV: BA.17 — structure frame from composite via the rigid mass-tree
+// reverse relation (compute_derived_state_reverse), a RefFrameState compose.
+fn vehicle_structure_frame_state(
+    composite_inertial: &RefFrameState,
+    cg_struct: DVec3,
+    t_struct_body: DMat3,
+) -> RefFrameState {
+    let s_struct_composite = rigid_mass_point_state(cg_struct, t_struct_body);
+    let s_composite_struct = RefFrameState::negate(&s_struct_composite);
+    composite_inertial.incr_right(&s_composite_struct)
+}
+
+/// Build a target vehicle's named-mass-point frame state wrt the inertial frame
+/// from its `composite_body` inertial state, its `StructToBody` mass properties,
+/// and the named point's `StructToPoint` data (`pt_struct` = point location in
+/// structure coordinates, `t_struct_point` = structure → point rotation).
+///
+/// JEOD computes this in `compute_vehicle_point_states` via
+/// `compute_derived_state_forward(structure, point->mass_point, point)`
+/// (`dyn_body_propagate_state.cc`) — i.e. forward from the *structure* frame
+/// (built first by the reverse step above) through the rigid point. Expressed as
+/// a frame compose, `S_inertial:point = S_inertial:struct ∘ S_struct:point`,
+/// where `S_struct:point` is the rigid `{pt_struct, t_struct_point}` point.
+fn vehicle_mass_point_frame_state(
+    composite_inertial: &RefFrameState,
+    cg_struct: DVec3,
+    t_struct_body: DMat3,
+    pt_struct: DVec3,
+    t_struct_point: DMat3,
+) -> RefFrameState {
+    let s_inertial_struct =
+        vehicle_structure_frame_state(composite_inertial, cg_struct, t_struct_body);
+    let s_struct_point = rigid_mass_point_state(pt_struct, t_struct_point);
+    s_inertial_struct.incr_right(&s_struct_point)
+}
+
+/// Rigid `S_subject_bframe:composite` for converting a chaser state initialized
+/// on its `body_frame_id` frame into the `composite_body` frame the CSV logs.
+///
+/// JEOD's `DynBodyInit::apply` sets the computed state on the subject's
+/// `body_frame_id` frame, then `propagate_state()` derives `composite_body`.
+/// When `body_frame_id = structure`, `S_struct:composite` is the rigid
+/// `StructToBody` point `{cg_struct, t_struct_body}`. When `body_frame_id` is a
+/// named point, `S_point:composite = negate(S_struct:point) ∘ S_struct:composite`
+/// walks point → structure → composite through the mass tree
+/// (`compute_relative_state`, `mass_point.cc`).
+fn chaser_bframe_to_composite_structure(cg_struct: DVec3, t_struct_body: DMat3) -> RefFrameState {
+    rigid_mass_point_state(cg_struct, t_struct_body)
+}
+
+/// Rigid `S_point:composite` for a chaser initialized on a named mass point:
+/// `S_point:composite = negate(S_struct:point) ∘ S_struct:composite`.
+fn chaser_bframe_to_composite_point(
+    cg_struct: DVec3,
+    t_struct_body: DMat3,
+    pt_struct: DVec3,
+    t_struct_point: DMat3,
+) -> RefFrameState {
+    let s_struct_point = rigid_mass_point_state(pt_struct, t_struct_point);
+    let s_point_struct = RefFrameState::negate(&s_struct_point);
+    let s_struct_composite = rigid_mass_point_state(cg_struct, t_struct_body);
+    s_point_struct.incr_right(&s_struct_composite)
+}
+
+/// STS-114 chaser `StructToBody` CG location in structure coordinates (m) and
+/// the structure → body rotation matrix `T_struct_body`, from
+/// `Modified_data/STS_114/mass.py` (`set_STS_114_mass`): `position =
+/// [27.856, 0.003, 9.600]`, `pt_orientation` (InputMatrix, StructToBody) rows
+/// `[-1,0,0] / [0,1,0] / [0,0,-1]` = `diag(-1, 1, -1)`.
+fn sts_cg_struct() -> DVec3 {
+    DVec3::new(27.856, 0.003, 9.600)
+}
+fn sts_t_struct_body() -> DMat3 {
+    // Row-major rows [-1,0,0]/[0,1,0]/[0,0,-1]; glam from_cols takes columns.
+    DMat3::from_cols(
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(0.0, 1.0, 0.0),
+        DVec3::new(0.0, 0.0, -1.0),
+    )
+}
+
+/// STS-114 chaser `attach_point` mass point: structure-coordinate location
+/// `[3.937, 0.003, 9.600]` m and `T_struct_point` rows `[-1,0,0] / [0,1,0] /
+/// [0,0,-1]` = `diag(-1, 1, -1)` (`Modified_data/STS_114/mass.py`, StructToPoint).
+fn sts_attach_pt_struct() -> DVec3 {
+    DVec3::new(3.937, 0.003, 9.600)
+}
+fn sts_attach_t_struct_point() -> DMat3 {
+    DMat3::from_cols(
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(0.0, 1.0, 0.0),
+        DVec3::new(0.0, 0.0, -1.0),
+    )
+}
+
+/// ISS target `StructToBody` CG location `[-10.201, 0.206, 2.558]` m and
+/// identity `T_struct_body` (`Modified_data/ISS/mass.py`, StructToBody
+/// `pt_orientation` = identity).
+fn iss_cg_struct() -> DVec3 {
+    DVec3::new(-10.201, 0.206, 2.558)
+}
+fn iss_t_struct_body() -> DMat3 {
+    DMat3::IDENTITY
+}
+
+/// ISS target `attach_point` mass point: structure-coordinate location
+/// `[9.844, 0.000, 5.282]` m and `T_struct_point` rows `[0,0,1] / [0,-1,0] /
+/// [1,0,0]` (`Modified_data/ISS/mass.py`, StructToPoint, InputMatrix).
+fn iss_attach_pt_struct() -> DVec3 {
+    DVec3::new(9.844, 0.000, 5.282)
+}
+fn iss_attach_t_struct_point() -> DMat3 {
+    // Row-major rows [0,0,1]/[0,-1,0]/[1,0,0]; glam from_cols takes columns.
+    DMat3::from_cols(
+        DVec3::new(0.0, 0.0, 1.0),
+        DVec3::new(0.0, -1.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
+    )
+}
+
+/// Convert a deg/s 3-vector to a rad/s `DVec3` (uom-checked, no lossy literal).
+fn deg_per_s_to_rad(v: DVec3) -> DVec3 {
+    DVec3::new(
+        Angle::new::<degree>(v.x).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(v.y).get::<uom::si::angle::radian>(),
+        Angle::new::<degree>(v.z).get::<uom::si::angle::radian>(),
+    )
+}
+
+/// RUN_4451: STS-114 chaser full state (trans + rot) given in the **ISS
+/// structure** frame (`trans_TransState_tstruct_struct` +
+/// `rot_RotState_tstruct_struct`, `reference_ref_frame_name = "ISS.structure"`,
+/// `body_frame_id = "structure"`, `state_items = Both`).
+///
+/// The reference is the ISS structure frame, derived from the ISS composite-body
+/// inertial state and its `StructToBody` mass properties. The chaser's user
+/// offset / attitude / rate are composed onto it; the result is the chaser's
+/// *structure*-frame inertial state, then converted to the chaser
+/// `composite_body` frame the CSV logs. Offsets are
+/// `Modified_data/STS_114/trans_TransState_tstruct_struct.py` /
+/// `rot_RotState_tstruct_struct.py`:
+///   * position `[9.844+5+9.600, 0.003, 5.252+100−3.937]` m, velocity `[0,0,−1]`,
+///   * attitude Pitch_Yaw_Roll (YZX) Euler `[−90, 0, 0]` deg (structure→structure),
+///   * rate `[−w_sts_issb[0], w_sts_issb[1], −w_sts_issb[2]]` deg/s, with
+///     `w_sts_issb = w_sts_lvlh − w_iss_lvlh`, `w_sts_lvlh = [0.06, 0.03, 0.02]`
+///     (`chaser_rate_def.py`), `w_iss_lvlh = [0.002, 0.006, −0.003]`
+///     (`iss_rate_def.py`). The deck leaves `rate_in_parent` unset (JEOD default
+///     false), so the rate is in the chaser structure frame.
+fn build_run_4451(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+
+    // ISS structure frame wrt inertial, from the ISS composite-body state.
+    let iss_composite = iss_body_frame_state();
+    let ref_frame =
+        vehicle_structure_frame_state(&iss_composite, iss_cg_struct(), iss_t_struct_body());
+
+    // Chaser offsets, attitude (YZX [-90,0,0]), and structure-frame rate.
+    let offset_position = DVec3::new(9.844 + 5.0 + 9.600, 0.000 + 0.003, 5.252 + 100.0 - 3.937);
+    let offset_velocity = DVec3::new(0.0, 0.0, -1.0);
+
+    let angles = [
+        Angle::new::<degree>(-90.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_frame_subject =
+        compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
+
+    // w_sts_issb = w_sts_lvlh − w_iss_lvlh; ang_velocity = [-issb0, issb1, -issb2].
+    let w_sts_lvlh = DVec3::new(0.06, 0.03, 0.02);
+    let w_iss_lvlh = DVec3::new(0.002, 0.006, -0.003);
+    let w_sts_issb = w_sts_lvlh - w_iss_lvlh;
+    let ang_vel_frame_to_subject =
+        deg_per_s_to_rad(DVec3::new(-w_sts_issb.x, w_sts_issb.y, -w_sts_issb.z));
+
+    // Compose the user offset/attitude/rate onto the ISS structure frame: this
+    // is the chaser's *structure*-frame inertial state.
+    let action = BodyAction::InitFullRelativeFrame {
+        reference_frame: ref_frame,
+        offset_position,
+        offset_velocity,
+        q_frame_subject,
+        ang_vel_frame_to_subject,
+    };
+    let chaser_struct_trans = action
+        .apply_translational()
+        .expect("InitFullRelativeFrame must yield Some(TranslationalState)");
+    let chaser_struct_rot = action
+        .apply_rotational()
+        .expect("InitFullRelativeFrame must yield Some(RotationalState)");
+
+    // Convert chaser structure-frame state → chaser composite_body (CSV subject).
+    let (chaser_trans, chaser_rot) = chaser_struct_to_composite(
+        &chaser_struct_trans,
+        &chaser_struct_rot,
+        chaser_bframe_to_composite_structure(sts_cg_struct(), sts_t_struct_body()),
+    );
+    build_orbinit_relative(mu, chaser_trans, chaser_rot)
+}
+
+/// Compose a chaser `body_frame_id`-frame inertial state with the rigid
+/// `S_bframe:composite` mass-point relation to obtain the chaser
+/// `composite_body` inertial state (the JEOD `propagate_state` derivation,
+/// expressed as `S_inertial:composite = S_inertial:bframe ∘ S_bframe:composite`).
+fn chaser_struct_to_composite(
+    bframe_trans: &TranslationalState,
+    bframe_rot: &RotationalState,
+    s_bframe_composite: RefFrameState,
+) -> (TranslationalState, RotationalState) {
+    let t_parent_this = bframe_rot.quaternion.left_quat_to_transformation();
+    let s_inertial_bframe = RefFrameState {
+        trans: RefFrameTrans {
+            position: bframe_trans.position,
+            velocity: bframe_trans.velocity,
+        },
+        rot: RefFrameRot {
+            q_parent_this: bframe_rot.quaternion,
+            t_parent_this,
+            ang_vel_this: bframe_rot.ang_vel_body,
+        },
+    };
+    let s_inertial_composite = s_inertial_bframe.incr_right(&s_bframe_composite);
+    (
+        TranslationalState {
+            position: s_inertial_composite.trans.position,
+            velocity: s_inertial_composite.trans.velocity,
+        },
+        RotationalState {
+            quaternion: s_inertial_composite.rot.q_parent_this,
+            ang_vel_body: s_inertial_composite.rot.ang_vel_this,
+        },
+    )
+}
+
+/// RUN_5461: STS-114 chaser with **mixed references** — position/attitude given
+/// relative to the **ISS `attach_point`** named mass point
+/// (`trans_TransState_tpoint_point` + `att_RotState_tpoint_point`,
+/// `body_frame_id = "attach_point"`), and the angular rate given separately in
+/// the **ISS LVLH** frame (`rate_LvlhRotState_tlvlh_body`,
+/// `body_frame_id = "composite_body"`, `ref_body = ISS`, planet Earth).
+///
+/// JEOD applies the two rotational body-actions independently: the attitude
+/// action sets the chaser's `attach_point`-frame attitude (no rate), and the
+/// LVLH rate action sets the chaser's `composite_body`-frame rate. We compute
+/// each path separately and assemble the chaser `composite_body` state.
+///
+/// Offsets (`Modified_data/STS_114/*`):
+///   * position `[100, 0, 5]` m, velocity `[−1, 0, 0]` relative to attach_point,
+///   * attitude Yaw_Pitch_Roll (ZYX) Euler `[180, 0, 0]` deg
+///     (attach_point → attach_point),
+///   * LVLH rate `[−w_sts_lvlh[2], w_sts_lvlh[1], w_sts_lvlh[0]]` deg/s with
+///     `w_sts_lvlh = [0.06, 0.03, 0.02]` (`chaser_rate_def.py`), interpreted in
+///     the chaser composite body frame (`rate_in_parent` unset → false).
+fn build_run_5461(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+    let iss_composite = iss_body_frame_state();
+
+    // ── Position + attitude path: relative to the ISS attach_point ──────────
+    let ref_point = vehicle_mass_point_frame_state(
+        &iss_composite,
+        iss_cg_struct(),
+        iss_t_struct_body(),
+        iss_attach_pt_struct(),
+        iss_attach_t_struct_point(),
+    );
+    let offset_position = DVec3::new(100.0, 0.0, 5.0);
+    let offset_velocity = DVec3::new(-1.0, 0.0, 0.0);
+
+    // Attitude Yaw_Pitch_Roll (ZYX) [180,0,0] deg, attach_point → attach_point.
+    let angles = [
+        Angle::new::<degree>(180.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_point_subject =
+        compute_quaternion_from_euler_angles_typed(angles, EulerSequence::ZYX).inner();
+
+    // Attitude action carries zero attach-point-relative rate (the rate is set
+    // by the separate LVLH action). Compose position + attitude onto the
+    // attach_point frame: this is the chaser's *attach_point*-frame inertial
+    // pos/vel/att.
+    let att_action = BodyAction::InitFullRelativeFrame {
+        reference_frame: ref_point,
+        offset_position,
+        offset_velocity,
+        q_frame_subject: q_point_subject,
+        ang_vel_frame_to_subject: DVec3::ZERO,
+    };
+    let chaser_pt_trans = att_action
+        .apply_translational()
+        .expect("InitFullRelativeFrame must yield Some(TranslationalState)");
+    let chaser_pt_rot = att_action
+        .apply_rotational()
+        .expect("InitFullRelativeFrame must yield Some(RotationalState)");
+
+    // ── Rate path: chaser composite-body rate given in the ISS LVLH frame ───
+    // The chaser composite_body rate wrt inertial composes the LVLH-relative
+    // body rate with the ISS LVLH frame's inertial rate — exactly RUN_1230's
+    // `init_rot_from_lvlh` composition (the LVLH frame is built from the ISS
+    // inertial orbit, the same reference RUN_3771 uses).
+    let iss_trans = iss_reference_trans();
+    let w_sts_lvlh = DVec3::new(0.06, 0.03, 0.02);
+    let ang_vel_lvlh_to_body =
+        deg_per_s_to_rad(DVec3::new(-w_sts_lvlh.z, w_sts_lvlh.y, w_sts_lvlh.x));
+    let composite_ang_vel = BodyAction::InitLvlhRot {
+        q_lvlh_body: JeodQuat::identity(),
+        ang_vel_lvlh_to_body,
+        ang_vel_frame: LvlhAngularVelocityFrame::Body,
+        reference_position: iss_trans.position,
+        reference_velocity: iss_trans.velocity,
+    }
+    .apply_rotational()
+    .expect("InitLvlhRot must yield Some(RotationalState)")
+    .ang_vel_body;
+
+    // JEOD `update_integrated_state` (integration frame = composite_body)
+    // reconciles the independently-sourced states onto composite_body:
+    //   * attitude / position from the attach_point source frame,
+    //   * rate from the composite_body source (the LVLH action), so the
+    //     velocity ω×r term uses the *composite* rate, not the attach path's.
+    // `S_composite:attach` = rigid attach_point→composite relation through the
+    // chaser mass tree; the conversion mirrors lines 388-516 of
+    // `dyn_body_propagate_state.cc`.
+    let s_attach_composite = chaser_bframe_to_composite_point(
+        sts_cg_struct(),
+        sts_t_struct_body(),
+        sts_attach_pt_struct(),
+        sts_attach_t_struct_point(),
+    );
+    let s_composite_attach = RefFrameState::negate(&s_attach_composite);
+
+    // Composite attitude: T_inertial_composite = T_composite_attach^T · T_inertial_attach
+    // i.e. Q_inertial_composite = conj(Q_composite_attach) · Q_inertial_attach.
+    let q_inertial_composite = s_composite_attach
+        .rot
+        .q_parent_this
+        .conjugate()
+        .multiply(&chaser_pt_rot.quaternion);
+    let t_inertial_composite = q_inertial_composite.left_quat_to_transformation();
+
+    // r_composite->attach:composite from the rigid relation.
+    let r_composite_attach = s_composite_attach.trans.position;
+
+    // Position: r_composite = r_attach − T_inertial_composite^T · r_composite->attach:composite.
+    let chaser_position =
+        chaser_pt_trans.position - t_inertial_composite.transpose() * r_composite_attach;
+
+    // Velocity: v_composite = v_attach − T_inertial_composite^T · (ω_composite × r_composite->attach:composite),
+    // with ω_composite the LVLH-sourced composite rate.
+    let chaser_velocity = chaser_pt_trans.velocity
+        - t_inertial_composite.transpose() * composite_ang_vel.cross(r_composite_attach);
+
+    let chaser_trans = TranslationalState {
+        position: chaser_position,
+        velocity: chaser_velocity,
+    };
+    let chaser_rot = RotationalState {
+        quaternion: q_inertial_composite,
+        ang_vel_body: composite_ang_vel,
+    };
+    build_orbinit_relative(mu, chaser_trans, chaser_rot)
+}
+
+/// RUN_4681: target PAD_39A initialized full-NED at its geodetic ground point
+/// (the RUN_3822 path), and STS-114 chaser initialized in the **NED frame
+/// relative to PAD_39A** (`trans_NedTransState_tned_struct_pad_39a` +
+/// `rot_NedRotState_tned_struct_pad_39a`, `reference = Earth.inertial`,
+/// `ref_body = PAD_39A`, `body_frame_id = "structure"`, elliptical NED).
+///
+/// The reference is the NED frame at PAD_39A's geodetic location (the PAD sits
+/// at its ground point with identity structure↔body, so the NED frame origin is
+/// the PAD position). The chaser NED offset / attitude / rate compose onto it;
+/// because the chaser `body_frame_id = structure` and STS-114 has a non-identity
+/// `StructToBody`, the result is converted to the chaser `composite_body` frame.
+///
+/// Offsets (`Modified_data/STS_114/*_pad_39a.py`):
+///   * NED position `[0, 0, −40]` m, NED velocity `[0, 0, −100]` m/s,
+///   * attitude Pitch_Yaw_Roll (YZX) Euler `[0, 0, 0]` deg (structure aligned
+///     with NED), rate `[1, 0, 0]` deg/s (chaser structure frame).
+fn build_run_4681(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+
+    // NED frame at PAD_39A's actual position (10 m below the ground point).
+    let ned_frame = ned_reference_frame_state_at_pad();
+
+    // Chaser NED offset / attitude (YZX [0,0,0] = identity) / structure-frame rate.
+    let offset_position = DVec3::new(0.0, 0.0, -40.0);
+    let offset_velocity = DVec3::new(0.0, 0.0, -100.0);
+    let angles = [
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_frame_subject =
+        compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
+    let ang_vel_frame_to_subject = deg_per_s_to_rad(DVec3::new(1.0, 0.0, 0.0));
+
+    let action = BodyAction::InitFullRelativeFrame {
+        reference_frame: ned_frame,
+        offset_position,
+        offset_velocity,
+        q_frame_subject,
+        ang_vel_frame_to_subject,
+    };
+    let chaser_struct_trans = action
+        .apply_translational()
+        .expect("InitFullRelativeFrame must yield Some(TranslationalState)");
+    let chaser_struct_rot = action
+        .apply_rotational()
+        .expect("InitFullRelativeFrame must yield Some(RotationalState)");
+
+    // Chaser structure-frame state → chaser composite_body (CSV subject).
+    let (chaser_trans, chaser_rot) = chaser_struct_to_composite(
+        &chaser_struct_trans,
+        &chaser_struct_rot,
+        chaser_bframe_to_composite_structure(sts_cg_struct(), sts_t_struct_body()),
+    );
+    build_orbinit_relative(mu, chaser_trans, chaser_rot)
+}
+
+/// Build the NED frame state wrt inertial at PAD_39A for the RUN_4681 chaser
+/// reference (`DynBodyInitNedState` with `ref_body = PAD_39A`).
+///
+/// JEOD `dyn_body_init_ned_state.cc:148-162` builds the NED frame at the *ref
+/// body's* location, not the bare geodetic point: it takes
+/// `PAD_39A.composite_body` expressed wrt pfix, sets the NED origin to that pfix
+/// position/velocity (`set_ned_trans_states`), recovers the geodetic lat/lon
+/// from that pfix position (`update_from_cart`), and builds the elliptical
+/// NED-axes matrix from it. The PAD sits 10 m Down from the geodetic ground
+/// point (its own `full_NedState` offset), so the NED frame origin is the PAD's
+/// actual position, 10 m below the bare ground point — using the bare geodetic
+/// point would mis-place the reference by exactly that 10 m. The PAD inertial
+/// state is the RUN_3822 result.
+///
+/// Construction mirrors [`iss_ned_frame_state`] (the RUN_0681 NED frame), but
+/// the lat/lon comes from the geodetic (elliptical) inversion of the PAD pfix
+/// position rather than a spherical lat/lon, and the origin is the PAD pfix
+/// state rather than the ISS pfix state.
+fn ned_reference_frame_state_at_pad() -> RefFrameState {
+    // PAD_39A composite_body inertial state (RUN_3822).
+    let pad = pad_39a_full_ned_action();
+    let pad_trans = pad
+        .apply_translational()
+        .expect("InitFullNed must yield Some(TranslationalState)");
+
+    let t_inertial_pfix = t_inertial_pfix_at_epoch();
+    let omega_pfix = DVec3::new(0.0, 0.0, EARTH.omega);
+
+    // PAD state wrt pfix, in pfix coordinates (JEOD `compute_relative_state`).
+    let r_pfix = t_inertial_pfix * pad_trans.position;
+    let v_pfix = t_inertial_pfix * pad_trans.velocity - omega_pfix.cross(r_pfix);
+
+    // Geodetic (elliptical) lat/lon from the PAD pfix position (JEOD
+    // `update_from_cart` / `update_from_ellip`).
+    let geo =
+        astrodyn::GeodeticState::from_planet_fixed(r_pfix, EARTH.shape.r_eq(), EARTH.shape.r_pol());
+    let (sin_lat, cos_lat) = geo.latitude.sin_cos();
+    let (sin_lon, cos_lon) = geo.longitude.sin_cos();
+
+    // NED-axes matrix T_pfix_ned (JEOD `build_ned_orientation`): rows North,
+    // East, Down. glam `from_cols` takes columns.
+    let t_pfix_ned = DMat3::from_cols(
+        DVec3::new(-sin_lat * cos_lon, -sin_lon, -cos_lat * cos_lon),
+        DVec3::new(-sin_lat * sin_lon, cos_lon, -cos_lat * sin_lon),
+        DVec3::new(cos_lat, 0.0, -sin_lat),
+    );
+
+    // S_inertial:pfix — pfix frame wrt inertial (origin coincident, rotating at
+    // ω_planet expressed in pfix coordinates, +z).
+    let s_inertial_pfix = RefFrameState {
+        trans: RefFrameTrans {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_inertial_pfix),
+            t_parent_this: t_inertial_pfix,
+            ang_vel_this: omega_pfix,
+        },
+    };
+
+    // S_pfix:ned — NED frame wrt pfix (origin at PAD pfix state, NED axes, zero
+    // rate wrt pfix). Composed up to inertial in place.
+    let mut s_inertial_ned = RefFrameState {
+        trans: RefFrameTrans {
+            position: r_pfix,
+            velocity: v_pfix,
+        },
+        rot: RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_pfix_ned),
+            t_parent_this: t_pfix_ned,
+            ang_vel_this: DVec3::ZERO,
+        },
+    };
+    s_inertial_ned.incr_left(&s_inertial_pfix);
+    s_inertial_ned
 }
 
 /// Recipes opt out of every runner-vs-JEOD tolerance group because they
@@ -2087,6 +2651,55 @@ pub fn run_3771() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_3771",
         scenario: build_run_3771,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_4451: STS-114 chaser, full state in the ISS structure frame.
+pub fn run_4451() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_4451",
+        scenario: build_run_4451,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_5461: STS-114 chaser, mixed-reference init (pos/att rel ISS attach_point,
+/// rate rel ISS LVLH).
+pub fn run_5461() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_5461",
+        scenario: build_run_5461,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_4681: STS-114 chaser, full state in the NED frame relative to PAD_39A.
+pub fn run_4681() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_4681",
+        scenario: build_run_4681,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,
