@@ -99,6 +99,20 @@ pub const MOON_FK: KernelSpec = KernelSpec {
     bytes: 345,
 };
 
+/// Planetary-constants kernel — IAU 2015 body orientation elements (~45 KB).
+///
+/// ANISE `.pca` (PlanetaryDataSet) carrying the IAU pole RA/Dec + prime-
+/// meridian rotation for the planets, converted from NAIF's `pck00011.tpc` +
+/// `gm_de440.tpc` via `cargo xtask generate-orientation-kernels`. Required for
+/// every IAU body-fixed rotation
+/// ([`BodyFixedFrame::Iau`](crate::BodyFixedFrame::Iau)).
+pub const PCK11: KernelSpec = KernelSpec {
+    name: "pck11.pca",
+    url: "https://github.com/simnaut/astrodyn/releases/download/kernels-v1/pck11.pca",
+    sha256: "486df2ada7064d79f33b2a4f5d26902474d569108f01c349ada5b39aad52ff72",
+    bytes: 45_604,
+};
+
 /// Locate and return the bytes for `spec`. See the module-level docs
 /// for the four-step lookup order.
 ///

@@ -37,9 +37,11 @@ use crate::bodies::EphemerisBody;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BodyFixedFrame {
-    /// The body's IAU body-fixed frame (IAU 2015 rotation elements, via ANISE's
-    /// built-in `IAU_<body>` orientation). Used for Mars today; extended to the
-    /// other major bodies separately.
+    /// The body's IAU body-fixed frame (IAU 2015 rotation elements, NAIF
+    /// `pck00011`, via ANISE's `IAU_<body>` orientation). Available for the
+    /// planets (Mercury…Neptune), the Sun, and the Moon. Requires the
+    /// planetary-constants kernel (PCA) to be loaded via
+    /// [`Ephemeris::load_pca_bytes`]; without it the query fails loudly.
     Iau,
     /// The Moon DE421 Principal-Axes frame (NAIF 31006), from the
     /// `moon_pa_de421` BPC kernel. This is the frame the gravity field and
@@ -133,6 +135,26 @@ impl Ephemeris {
         // Use a fixed alias rather than `with_euler_parameters` (which keys on
         // `Epoch::now()`): the alias must be deterministic for reproducible runs.
         self.almanac = almanac.with_euler_parameters_as(ds, Some("astrodyn_fk".to_string()));
+        Ok(())
+    }
+
+    /// Load a planetary-constants set (PCA) from raw bytes — the IAU rotation
+    /// elements (pole RA/Dec + prime-meridian rate) for body-fixed planet
+    /// frames.
+    ///
+    /// The bytes are an ANISE `.pca` blob produced from NAIF's `pck00011.tpc` +
+    /// `gm_de440.tpc` by `cargo xtask generate-orientation-kernels`; pair with
+    /// `data::load(&data::PCK11)`. Required before any
+    /// [`Self::get_body_rotation_to`] query with [`BodyFixedFrame::Iau`] (the
+    /// IAU frames resolve from this planetary data; without it the query fails
+    /// loudly).
+    pub fn load_pca_bytes(&mut self, bytes: &[u8]) -> Result<(), EphemerisError> {
+        let ds = anise::structure::PlanetaryDataSet::try_from_bytes(bytes).map_err(|e| {
+            EphemerisError::LoadError(format!("planetary-constants (PCA) load failed: {e}"))
+        })?;
+        let almanac = std::mem::take(&mut self.almanac);
+        // Fixed alias, deterministic (cf. `load_euler_bytes`).
+        self.almanac = almanac.with_planetary_data_as(ds, Some("astrodyn_pck".to_string()));
         Ok(())
     }
 
@@ -279,7 +301,8 @@ impl Ephemeris {
             }
         };
 
-        self.body_rotation_matrix(body, orient, epoch)
+        // Moon (301) and Mars (499) both have body_to_naif → body center.
+        self.body_rotation_matrix(body_to_naif(body), orient, epoch)
     }
 
     /// Typed, frame-tagged sibling of [`Self::get_body_rotation_epoch`].
@@ -303,11 +326,21 @@ impl Ephemeris {
         epoch: Epoch,
     ) -> Result<FrameTransform<RootInertial, PlanetFixed<P>>, EphemerisError> {
         // JEOD_INV: EP.17 — refuse (body, frame) pairs with no orientation model
-        // registered here rather than handing ANISE an unknown frame ID.
-        let orient = match (body, frame) {
-            (EphemerisBody::Moon, BodyFixedFrame::MoonPaDe421) => 31006,
-            (EphemerisBody::Moon, BodyFixedFrame::MoonMeDe421) => 31007,
-            (EphemerisBody::Mars, BodyFixedFrame::Iau) => 499,
+        // registered here rather than handing ANISE an unknown frame ID. Each
+        // arm yields the (center, orient) NAIF id pair for the query.
+        let (center, orient) = match (body, frame) {
+            (EphemerisBody::Moon, BodyFixedFrame::MoonPaDe421) => (MOON, 31006),
+            (EphemerisBody::Moon, BodyFixedFrame::MoonMeDe421) => (MOON, 31007),
+            // IAU body-fixed frame: ANISE keys the IAU rotation by the body
+            // center, and the IAU frame's orientation id equals that center id
+            // (IAU_JUPITER == 599, IAU_MARS == 499, …). Requires the planetary-
+            // constants kernel (PCA) to be loaded; see `load_pca_bytes`.
+            (body, BodyFixedFrame::Iau) => {
+                let center = body_center_naif(body).ok_or_else(|| {
+                    EphemerisError::QueryError(format!("No IAU orientation model for {body:?}"))
+                })?;
+                (center, center)
+            }
             (body, frame) => {
                 return Err(EphemerisError::QueryError(format!(
                     "No orientation model for {body:?} in body-fixed frame {frame:?}"
@@ -315,7 +348,7 @@ impl Ephemeris {
             }
         };
 
-        let matrix = self.body_rotation_matrix(body, orient, epoch)?;
+        let matrix = self.body_rotation_matrix(center, orient, epoch)?;
         Ok(FrameTransform::from_matrix(matrix))
     }
 
@@ -334,21 +367,24 @@ impl Ephemeris {
     }
 
     /// Shared core for the rotation accessors: query ANISE for the
-    /// J2000→`orient` rotation of `body` and convert it to a `glam::DMat3`.
+    /// J2000→`orient` rotation of the body centered at NAIF id `center` and
+    /// convert it to a `glam::DMat3`.
     ///
     /// Both the bare [`Self::get_body_rotation_epoch`] and the typed
     /// [`Self::get_body_rotation_to`] route through here, so they are
-    /// bit-for-bit identical for the same `orient` — the only difference is
-    /// whether the caller receives a raw matrix or a wrapped
-    /// [`FrameTransform`].
+    /// bit-for-bit identical for the same `(center, orient)` — the only
+    /// difference is whether the caller receives a raw matrix or a wrapped
+    /// [`FrameTransform`]. `center` is the body-*center* NAIF id (e.g. 301 for
+    /// the Moon, 599 for Jupiter — *not* a system barycenter), since both the
+    /// J2000 source frame and the body-fixed target frame are centered there.
     fn body_rotation_matrix(
         &self,
-        body: EphemerisBody,
+        center: i32,
         orient: i32,
         epoch: Epoch,
     ) -> Result<glam::DMat3, EphemerisError> {
-        let from_frame = Frame::new(body_to_naif(body), J2000);
-        let to_frame = Frame::new(body_to_naif(body), orient);
+        let from_frame = Frame::new(center, J2000);
+        let to_frame = Frame::new(center, orient);
 
         // JEOD_INV: EP.17 — ANISE raises a segment-not-found or no-orientation-data
         // error when the requested body's orientation data is not loaded (e.g.
@@ -392,6 +428,31 @@ fn body_to_naif(body: EphemerisBody) -> i32 {
         EphemerisBody::Pluto => PLUTO_BARYCENTER,
         EphemerisBody::Moon => MOON,
         EphemerisBody::Sun => SUN,
+    }
+}
+
+/// Map `EphemerisBody` to its body-*center* NAIF ID for IAU body-fixed
+/// rotations, or `None` for bodies with no IAU rotation model here.
+///
+/// Differs from [`body_to_naif`] for the gas giants: that function returns the
+/// system *barycenter* (5/6/7/8) — correct for translation queries — but the
+/// IAU body-fixed frame is centered on the planet *body* (599/699/799/899).
+/// The Solar-System / Earth-Moon barycenters and Pluto have no IAU frame here.
+fn body_center_naif(body: EphemerisBody) -> Option<i32> {
+    match body {
+        EphemerisBody::Mercury => Some(MERCURY),
+        EphemerisBody::Venus => Some(VENUS),
+        EphemerisBody::Earth => Some(EARTH),
+        EphemerisBody::Mars => Some(MARS),
+        EphemerisBody::Jupiter => Some(JUPITER),
+        EphemerisBody::Saturn => Some(SATURN),
+        EphemerisBody::Uranus => Some(URANUS),
+        EphemerisBody::Neptune => Some(NEPTUNE),
+        EphemerisBody::Moon => Some(MOON),
+        EphemerisBody::Sun => Some(SUN),
+        EphemerisBody::SolarSystemBarycenter
+        | EphemerisBody::EarthMoonBarycenter
+        | EphemerisBody::Pluto => None,
     }
 }
 
@@ -596,14 +657,22 @@ mod typed_accessor_tests {
 
     // The typed accessor refuses (body, frame) pairs with no registered
     // orientation model — the EP.17 fail-loud arm for the new selector API.
+    // The typed accessor refuses (body, frame) pairs that name a frame the
+    // body cannot occupy — e.g. a non-Moon body with a Moon-specific frame —
+    // via the catch-all EP.17 arm.
     #[test]
     #[should_panic(expected = "No orientation model")]
     fn get_body_rotation_to_panics_on_unsupported_pair() {
-        use astrodyn_quantities::prelude::Sun;
+        use astrodyn_quantities::prelude::Mars;
 
+        // Mars cannot be expressed in the Moon principal-axes frame.
         let ephem = load_de421();
         let _ = ephem
-            .get_body_rotation_to_jd::<Sun>(EphemerisBody::Sun, BodyFixedFrame::Iau, J2000_TDB_JD)
+            .get_body_rotation_to_jd::<Mars>(
+                EphemerisBody::Mars,
+                BodyFixedFrame::MoonPaDe421,
+                J2000_TDB_JD,
+            )
             .unwrap();
     }
 
@@ -704,5 +773,90 @@ mod typed_accessor_tests {
             angle_arcsec > 1.0,
             "ME and PA must differ by the lunar libration offset, got {angle_arcsec:.3}″",
         );
+    }
+
+    /// DE421 plus the IAU planetary-constants kernel (PCA), so `Iau` rotations
+    /// for the planets resolve.
+    fn load_de421_with_pca() -> Ephemeris {
+        let mut ephem = load_de421();
+        let pca = crate::assets::pck_path();
+        assert!(pca.exists(), "pck11.pca not found at {}", pca.display());
+        let bytes = std::fs::read(&pca).expect("read pck11.pca");
+        ephem.load_pca_bytes(&bytes).expect("load pck11.pca");
+        ephem
+    }
+
+    // Cross-validate the generic IAU body-fixed rotation without a SPICE call:
+    // the body-fixed Z axis (the pole) of the J2000→IAU rotation, read back as
+    // ICRF RA/Dec, must match Jupiter's published IAU 2015 pole
+    // (α0 = 268.0566°, δ0 = 64.4953°; pck00011 BODY599_POLE_RA/DEC). This pins
+    // both that the IAU model engaged and that we used the right body center
+    // (599, not the Jupiter-system barycenter 5).
+    #[test]
+    fn iau_jupiter_pole_matches_iau_2015() {
+        use astrodyn_quantities::prelude::Jupiter;
+
+        let ephem = load_de421_with_pca();
+        let m = ephem
+            .get_body_rotation_to_jd::<Jupiter>(
+                EphemerisBody::Jupiter,
+                BodyFixedFrame::Iau,
+                J2000_TDB_JD,
+            )
+            .expect("Jupiter IAU rotation")
+            .matrix();
+
+        // m maps J2000 → body-fixed; the body-fixed +Z (pole) expressed in
+        // J2000 is the third row of m: (m20, m21, m22).
+        let a = m.to_cols_array();
+        let pole = glam::DVec3::new(a[2], a[5], a[8]).normalize();
+        let ra = pole.y.atan2(pole.x).to_degrees().rem_euclid(360.0);
+        let dec = pole.z.asin().to_degrees();
+
+        // IAU 2015 Jupiter pole; ~0.05° tolerance absorbs the small nutation
+        // terms and the rate·T contribution at J2000 (T≈0).
+        assert!(
+            (ra - 268.0566).abs() < 0.05,
+            "Jupiter IAU pole RA {ra:.4}° should be ≈268.0566°",
+        );
+        assert!(
+            (dec - 64.4953).abs() < 0.05,
+            "Jupiter IAU pole Dec {dec:.4}° should be ≈64.4953°",
+        );
+    }
+
+    // IAU rotation without the planetary-constants kernel loaded must fail
+    // loudly — the IAU pole/PM elements live in the PCA, so a missing kernel
+    // can't silently fall through.
+    #[test]
+    #[should_panic(expected = "Rotation query failed")]
+    fn iau_rotation_panics_without_pca_loaded() {
+        use astrodyn_quantities::prelude::Jupiter;
+
+        let ephem = load_de421(); // no PCA
+        let _ = ephem
+            .get_body_rotation_to_jd::<Jupiter>(
+                EphemerisBody::Jupiter,
+                BodyFixedFrame::Iau,
+                J2000_TDB_JD,
+            )
+            .unwrap();
+    }
+
+    // A body with no IAU model registered (a barycenter) is refused with the
+    // EP.17 fail-loud message rather than handed to ANISE as an unknown frame.
+    #[test]
+    #[should_panic(expected = "No IAU orientation model")]
+    fn iau_rotation_panics_on_body_without_center() {
+        use astrodyn_quantities::prelude::Earth;
+
+        let ephem = load_de421_with_pca();
+        let _ = ephem
+            .get_body_rotation_to_jd::<Earth>(
+                EphemerisBody::SolarSystemBarycenter,
+                BodyFixedFrame::Iau,
+                J2000_TDB_JD,
+            )
+            .unwrap();
     }
 }
