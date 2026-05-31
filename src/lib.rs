@@ -335,6 +335,7 @@ pub use astrodyn_quantities::aliases::{
     Acceleration, AngularAcceleration, AngularVelocity, Force, InertiaTensor, Position, Torque,
     Velocity,
 };
+pub use astrodyn_quantities::cartesian_state::CartesianState;
 pub use astrodyn_quantities::diagnostics::CompatibleVehiclePair;
 pub use astrodyn_quantities::dims::GravParam;
 pub use astrodyn_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};

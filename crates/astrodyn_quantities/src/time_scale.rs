@@ -105,6 +105,26 @@ impl<S: TimeScale> SecondsSince<S> {
     }
 }
 
+// Hand-written serde (gated): a `SecondsSince<S>` round-trips as its raw SI
+// seconds (an `f64`); the time-scale `S` is carried by the static type, not
+// the serialized form, so it generates no spurious `S: Serialize` bound.
+#[cfg(feature = "serde")]
+impl<S: TimeScale> serde::Serialize for SecondsSince<S> {
+    fn serialize<Ser: serde::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
+        // Read the field rather than `self.as_seconds()`: `as_seconds(self)`
+        // takes `self` by value, but `SecondsSince<S>: Copy` only holds when
+        // `S: Copy` (the derive's bound), which `TimeScale` does not require.
+        self.value.get::<second>().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, S: TimeScale> serde::Deserialize<'de> for SecondsSince<S> {
+    fn deserialize<De: serde::Deserializer<'de>>(deserializer: De) -> Result<Self, De::Error> {
+        Ok(Self::from_seconds(f64::deserialize(deserializer)?))
+    }
+}
+
 /// Explicit converter between two time scales.
 ///
 /// The converters exposed by this crate model the *constant* offsets only

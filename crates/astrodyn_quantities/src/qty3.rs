@@ -152,3 +152,25 @@ impl<D: ?Sized + Dimension, F: Frame> Default for Qty3<D, F> {
         Self::zero()
     }
 }
+
+// `serde` support is hand-written (not derived) for the same reason the other
+// trait impls above are: the `D`/`F` type parameters are phantom and must not
+// leak into the serialized form or generate spurious `D: Serialize` bounds. A
+// `Qty3` round-trips as its raw-SI `[x, y, z]` triple — the dimension and frame
+// are carried by the static type at the deserialization site, so they need no
+// runtime encoding.
+#[cfg(feature = "serde")]
+impl<D: ?Sized + Dimension, F: Frame> serde::Serialize for Qty3<D, F> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let v = self.raw_si();
+        [v.x, v.y, v.z].serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, D: ?Sized + Dimension, F: Frame> serde::Deserialize<'de> for Qty3<D, F> {
+    fn deserialize<De: serde::Deserializer<'de>>(deserializer: De) -> Result<Self, De::Error> {
+        let [x, y, z] = <[f64; 3]>::deserialize(deserializer)?;
+        Ok(Self::from_raw_si(DVec3::new(x, y, z)))
+    }
+}
