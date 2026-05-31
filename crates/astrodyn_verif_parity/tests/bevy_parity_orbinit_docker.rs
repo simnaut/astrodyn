@@ -235,3 +235,13 @@ fn bevy_parity_orbinit_docker_run_0681() {
 fn bevy_parity_orbinit_docker_run_3771() {
     sim_orbinit_docker::run_3771().run_and_assert_parity::<astrodyn::Earth>();
 }
+
+// Single-vehicle NED full-state init: the PAD_39A body's NED-frame offset /
+// attitude / rate is composed with the geodetic ground point's inertial→NED
+// frame (carrying the planet rotation) inside the scenario factory, so
+// runner↔bevy bit-identity here implies the NED-rot init kernels produced the
+// same f64 pattern on both runtimes.
+#[test]
+fn bevy_parity_orbinit_docker_run_3822() {
+    sim_orbinit_docker::run_3822().run_and_assert_parity::<astrodyn::Earth>();
+}

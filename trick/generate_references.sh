@@ -827,6 +827,9 @@ run_orbinit_rot_group() {
         "SET_test/RUN_2100:orbinit_2100:orbinit_2100_orbinit.csv"
         # DynBodyInitLvlhRotState: LVLH-relative attitude + rate (ISS)
         "SET_test/RUN_1230:orbinit_1230:orbinit_1230_orbinit.csv"
+        # DynBodyInitNedState full-state (Pos_Vel_Att_Rate), elliptical/geodetic
+        # NED at a ground point, single vehicle (PAD_39A). Logs `target`.
+        "SET_test/RUN_3822:orbinit_3822:orbinit_3822_orbinit.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do

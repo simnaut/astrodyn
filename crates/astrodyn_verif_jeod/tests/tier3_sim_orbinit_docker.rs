@@ -1003,3 +1003,36 @@ fn tier3_orbinit_docker_run3771_sts_lvlh_full_state() {
         4.59e-19,
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// RUN_3822: single-vehicle full-state NED initialization at a geodetic ground
+// point (PAD_39A, elliptical/ellipsoid lat/lon). The body is aligned with and
+// at rest in the local NED frame, but the NED frame rotates with the Earth — so
+// the body's *inertial* attitude is the non-trivial inertial→NED rotation at
+// 28.6°N / −80.6°E (a genuine NED-axis / scalar-first↔scalar-last convention
+// check, NOT a trivial identity pass) and its *inertial* angular velocity
+// recovers ω_earth. Tolerances are 1.05× the observed max (CLAUDE.md).
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tier3_orbinit_docker_run3822_pad39a_ned_full_state() {
+    // RUN_3822: PAD_39A, DynBodyInitNedState full state, elliptical/geodetic
+    // NED at lat 28.6082° / lon −80.6040° / alt 3 m, body 10 m Down, aligned
+    // with NED. The inertial attitude is the non-trivial NED→inertial rotation;
+    // the inertial body rate recovers ω_earth.
+    // Tolerances 1.05× observed max (CLAUDE.md).
+    // The position residual is dominated by the geodetic-ellipsoid inversion
+    // (our Borkowski solver vs JEOD `update_from_ellip`). The inertial
+    // attitude composes bit-exactly and the inertial body rate recovers
+    // ω_earth bit-exactly, so the quat-angle and ang-vel tolerances are
+    // floors (the observed residuals leave no headroom).
+    assert_orbinit_full_state(
+        sim_orbinit_docker::run_3822(),
+        "orbinit_3822_orbinit.csv",
+        "RUN_3822 (PAD_39A NED full state)",
+        1.58e-5,
+        8.83e-10,
+        1.0e-12,
+        1.0e-19,
+    );
+}

@@ -35,8 +35,8 @@ use glam::{DMat3, DVec3};
 pub use astrodyn_dynamics::body_init::LvlhAngularVelocityFrame;
 use astrodyn_dynamics::body_init::{
     init_from_lvlh, init_from_mean_anomaly, init_from_ned, init_from_orbital_elements,
-    init_from_time_periapsis, init_rot_from_lvlh, init_rot_relative_to_frame,
-    init_trans_relative_to_frame,
+    init_from_time_periapsis, init_rot_from_lvlh, init_rot_from_ned, init_rot_relative_to_frame,
+    init_trans_relative_to_frame, ned_reference_frame_state,
 };
 use astrodyn_dynamics::{MassProperties, RotationalState, TranslationalState};
 use astrodyn_frames::RefFrameState;
@@ -269,6 +269,64 @@ pub enum BodyAction {
         /// Planet angular velocity in the ECI frame (rad/s).
         omega_planet: DVec3,
     },
+
+    /// Replace the subject's full state (translational + rotational) from
+    /// a position/velocity offset plus an attitude/rate, all expressed in
+    /// the local North-East-Down (NED) frame at a single ground point (no
+    /// reference body).
+    ///
+    /// Note on `omega_planet`: unlike [`InitTransNed`](Self::InitTransNed)
+    /// (whose `omega_planet` is the ECI-frame value consumed by
+    /// `init_from_ned`'s `ω × r`), this variant's `omega_planet` is the
+    /// **pfix-frame** angular velocity (`[0, 0, planet_omega]` about the
+    /// pfix z-axis, JEOD's `planet_rnp.cc` convention) — see
+    /// [`astrodyn_dynamics::body_init::ned_reference_frame_state`].
+    ///
+    /// JEOD analog: `DynBodyInitNedState` (`set_items = Pos_Vel_Att_Rate`,
+    /// `ref_body == nullptr`) and its rotational sibling
+    /// `DynBodyInitNedRotState`. The NED frame is built from the geodetic
+    /// reference point as a child of the rotating planet-fixed frame
+    /// (carrying the planet's `ω_planet` rate wrt inertial), then both
+    /// substates are composed up to the inertial integration frame via
+    /// [`astrodyn_frames::RefFrameState::incr_left`]:
+    /// translation through
+    /// [`astrodyn_dynamics::body_init::init_from_ned`] (with the planet's
+    /// `ω × r` velocity term), attitude/rate through
+    /// [`astrodyn_dynamics::body_init::init_rot_from_ned`]
+    /// (`Q_inertial_body = Q_ned_body · Q_inertial_ned`,
+    /// `w_inertial_body_in_body = T_ned_body · w_inertial_ned_in_ned +
+    /// w_ned_body_in_body`). Because the NED frame rotates with the
+    /// planet, a body at rest in NED carries the planet's inertial rate.
+    InitFullNed {
+        /// Geodetic position of the reference point (latitude, longitude,
+        /// altitude). When the deck uses `altlatlong_type = elliptical`
+        /// this is the geodetic (ellipsoidal) latitude/longitude.
+        geodetic: GeodeticState,
+        /// NED-frame position offset of the body from the reference point
+        /// (m).
+        ned_position: DVec3,
+        /// Planet-fixed velocity offset expressed in the NED frame (m/s).
+        ned_velocity: DVec3,
+        /// NED→body attitude quaternion (scalar-first, left-transformation;
+        /// JEOD convention).
+        q_ned_body: JeodQuat,
+        /// Angular velocity of the body wrt the NED frame, expressed in the
+        /// body frame (rad/s) — JEOD `rate_in_parent = false`.
+        ang_vel_ned_to_body: DVec3,
+        /// Equatorial radius of the central body (m).
+        r_equatorial: f64,
+        /// Polar radius of the central body (m).
+        r_polar: f64,
+        /// Rotation matrix from ECI to PCPF (planet-fixed) frame.
+        t_eci_pcpf: DMat3,
+        /// Planet angular velocity expressed in **pfix coordinates**
+        /// (`[0, 0, planet_omega]` about the pfix z-axis; rad/s) — JEOD's
+        /// `planet_rnp.cc` convention. Unlike
+        /// [`InitTransNed`](Self::InitTransNed)'s ECI-frame value, this is
+        /// the pfix-frame `ang_vel_this` consumed by
+        /// [`ned_reference_frame_state`].
+        omega_planet: DVec3,
+    },
 }
 
 impl BodyAction {
@@ -373,6 +431,37 @@ impl BodyAction {
                 t_eci_pcpf,
                 *omega_planet,
             )),
+            BodyAction::InitFullNed {
+                geodetic,
+                ned_position,
+                ned_velocity,
+                r_equatorial,
+                r_polar,
+                t_eci_pcpf,
+                omega_planet,
+                ..
+            } => {
+                // Build the inertial→NED frame for the ground point, then
+                // compose the body's NED-frame offset up to inertial via
+                // `incr_left` (carrying the planet-rotation ω×r velocity).
+                // `ned_position`/`ned_velocity` stay in NED coordinates —
+                // `init_trans_relative_to_frame` applies the inertial→NED
+                // transform internally — and the composition adds the
+                // ω×r term on top of the (already ω×r-carrying) NED frame
+                // origin.
+                let frame = ned_reference_frame_state(
+                    geodetic,
+                    *r_equatorial,
+                    *r_polar,
+                    t_eci_pcpf,
+                    *omega_planet,
+                );
+                Some(init_trans_relative_to_frame(
+                    &frame,
+                    *ned_position,
+                    *ned_velocity,
+                ))
+            }
             BodyAction::InitMass { .. }
             | BodyAction::InitRot { .. }
             | BodyAction::InitLvlhRot { .. } => None,
@@ -414,6 +503,24 @@ impl BodyAction {
                 *q_frame_subject,
                 *ang_vel_frame_to_subject,
             )),
+            BodyAction::InitFullNed {
+                geodetic,
+                q_ned_body,
+                ang_vel_ned_to_body,
+                r_equatorial,
+                r_polar,
+                t_eci_pcpf,
+                omega_planet,
+                ..
+            } => Some(init_rot_from_ned(
+                *q_ned_body,
+                *ang_vel_ned_to_body,
+                geodetic,
+                *r_equatorial,
+                *r_polar,
+                t_eci_pcpf,
+                *omega_planet,
+            )),
             BodyAction::InitMass { .. }
             | BodyAction::InitTrans { .. }
             | BodyAction::InitTransOrbital { .. }
@@ -435,7 +542,8 @@ impl BodyAction {
             | BodyAction::InitTransLvlh { .. }
             | BodyAction::InitTransRelativeFrame { .. }
             | BodyAction::InitFullRelativeFrame { .. }
-            | BodyAction::InitTransNed { .. } => None,
+            | BodyAction::InitTransNed { .. }
+            | BodyAction::InitFullNed { .. } => None,
         }
     }
 }
@@ -513,6 +621,48 @@ mod tests {
         assert!(out.ang_vel_body.length() > 0.0);
         assert!(action.apply_translational().is_none());
         assert!(action.apply_mass().is_none());
+    }
+
+    #[test]
+    fn init_full_ned_dispatches_to_kernels() {
+        // Smoke test for the variant dispatch: a body aligned with and at
+        // rest in the local NED frame at a non-trivial geodetic location
+        // must yield both a translational and a rotational state, leave
+        // `apply_mass` returning None, and report `is_ready() == true`.
+        // Kernel correctness (origin-velocity agreement with `init_from_ned`,
+        // planet-rate recovery, non-trivial inertial attitude) is covered by
+        // `astrodyn_dynamics::body_init::tests::ned_rot_*`.
+        const EARTH_R_EQ: f64 = 6_378_137.0;
+        const EARTH_R_POL: f64 = EARTH_R_EQ * (1.0 - 1.0 / 298.257_223_563);
+        let geodetic = GeodeticState {
+            latitude: 28.6082_f64.to_radians(),
+            longitude: (-80.6040_f64).to_radians(),
+            altitude: 3.0,
+        };
+        let t_eci_pcpf = DMat3::from_axis_angle(DVec3::Z, 1.234);
+        let omega_planet = DVec3::new(0.0, 0.0, 7.292_115e-5);
+        let action = BodyAction::InitFullNed {
+            geodetic,
+            ned_position: DVec3::new(0.0, 0.0, 10.0),
+            ned_velocity: DVec3::ZERO,
+            q_ned_body: JeodQuat::identity(),
+            ang_vel_ned_to_body: DVec3::ZERO,
+            r_equatorial: EARTH_R_EQ,
+            r_polar: EARTH_R_POL,
+            t_eci_pcpf,
+            omega_planet,
+        };
+        assert!(action.is_ready());
+        let trans = action.apply_translational().expect("trans present");
+        let rot = action.apply_rotational().expect("rot present");
+        assert!(action.apply_mass().is_none());
+
+        // Ground point ~ Earth radius from the center.
+        assert!(trans.position.length() > 6.0e6 && trans.position.length() < 6.6e6);
+        // NED frame rotates with the planet: identity NED→body does NOT yield
+        // identity inertial→body, and the inertial body rate is non-zero.
+        assert_ne!(rot.quaternion, JeodQuat::identity());
+        assert!(rot.ang_vel_body.length() > 0.0);
     }
 
     #[test]

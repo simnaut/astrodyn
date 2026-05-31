@@ -889,6 +889,167 @@ pub fn init_from_ned(
     TranslationalState { position, velocity }
 }
 
+/// Build the inertial→NED reference-frame state for a single ground point
+/// (no reference body), reproducing JEOD `DynBodyInitNedState::apply` for
+/// the `ref_body == nullptr` branch
+/// (`models/dynamics/body_action/src/dyn_body_init_ned_state.cc:114-146`,
+/// `models/utils/planet_fixed/north_east_down/src/north_east_down.cc`).
+///
+/// JEOD constructs the NED frame as a child of the planet-centered,
+/// planet-fixed (pfix) frame:
+/// - its origin is the geodetic/spherical reference point converted to
+///   planet-fixed Cartesian (`update_from_ellip` / `update_from_spher`),
+/// - it is stationary wrt the rotating planet
+///   (`Vector3::initialize(ned_frame.state.trans.velocity)` —
+///   `dyn_body_init_ned_state.cc:117`),
+/// - its orientation is the NED-axes matrix `T_pfix_ned`
+///   (`build_ned_orientation`, identical to [`compute_ned_rotation`]),
+/// - it has *zero* angular velocity wrt pfix
+///   (`build_ned_orientation` zeroes `ang_vel_this`).
+///
+/// Because pfix itself rotates at `ω_planet` wrt the inertial integration
+/// frame, the NED frame's inertial state is obtained by composing
+/// pfix→inertial via [`astrodyn_frames::RefFrameState::incr_left`]
+/// (A = inertial, B = pfix, C = NED), which carries the `ω_planet × r`
+/// velocity term into the NED origin's inertial velocity and `ω_planet`
+/// (rotated into NED coordinates) into the NED frame's inertial rate.
+///
+/// `geodetic` must carry **geodetic** latitude/longitude when the deck
+/// specifies `altlatlong_type = elliptical` and **geocentric/spherical**
+/// latitude/longitude when it specifies `spherical`; the caller is
+/// responsible for supplying the matching `GeodeticState` and the matching
+/// position conversion (this function uses [`GeodeticState::to_planet_fixed`],
+/// the ellipsoid conversion, for the origin). The NED-axes matrix uses the
+/// same `(lat, lon)` so the orientation is consistent with the origin.
+///
+/// # Arguments
+/// * `geodetic` - Reference point (latitude rad, longitude rad, altitude m).
+/// * `r_eq` - Planet equatorial radius (m).
+/// * `r_pol` - Planet polar radius (m).
+/// * `t_eci_pcpf` - Rotation matrix from ECI (inertial) to PCPF (pfix).
+/// * `omega_planet` - Planet angular velocity expressed in **pfix
+///   coordinates** (rad/s). This is the pfix frame's `ang_vel_this` in
+///   JEOD's convention: `[0, 0, planet_omega]` about the pfix z-axis
+///   (`planet_rnp.cc:199-201, 245-247` sets the pfix angular velocity in
+///   the pfix frame, *not* the ECI frame). For Earth this is
+///   `[0, 0, EARTH.omega]`. Because precession+nutation tilt the pfix
+///   z-axis off the ECI z-axis, this is **not** the same as the ECI-frame
+///   `[0, 0, ω]` rotated into pfix — JEOD anchors the rotation rate to the
+///   pfix axes, so the caller must pass the pfix-frame value directly.
+// JEOD_INV: BA.16 — single-point NED frame is a child of pfix with zero
+// rate wrt pfix; its inertial state is incr_left(pfix-wrt-inertial,
+// NED-wrt-pfix), so the planet-rotation ω×r velocity and ω_planet rate
+// (anchored to the pfix axes) enter from pfix.
+pub fn ned_reference_frame_state(
+    geodetic: &GeodeticState,
+    r_eq: f64,
+    r_pol: f64,
+    t_eci_pcpf: &DMat3,
+    omega_planet: DVec3,
+) -> astrodyn_frames::RefFrameState {
+    // NED origin in pfix coordinates (ellipsoid conversion), stationary
+    // wrt the rotating planet (zero pfix-frame velocity).
+    let pcpf_pos = geodetic.to_planet_fixed(r_eq, r_pol);
+
+    // NED-axes matrix T_pfix_ned (JEOD `build_ned_orientation`); rows are
+    // North, East, Down.
+    let t_pfix_ned = compute_ned_rotation(geodetic.latitude, geodetic.longitude);
+
+    // S_inertial:pfix — pfix frame wrt inertial (origin coincident with the
+    // planet center, rotating at `omega_planet` already in pfix
+    // coordinates — JEOD `planet_rnp.cc` stores the pfix `ang_vel_this`
+    // about the pfix z-axis).
+    let s_inertial_pfix = astrodyn_frames::RefFrameState {
+        trans: astrodyn_frames::RefFrameTrans {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        },
+        rot: astrodyn_frames::RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(t_eci_pcpf),
+            t_parent_this: *t_eci_pcpf,
+            ang_vel_this: omega_planet,
+        },
+    };
+
+    // S_pfix:ned — NED frame wrt pfix (origin at the ground point, NED
+    // axes, zero rate and zero velocity wrt pfix). Composed up to inertial
+    // in place via incr_left.
+    let mut s_inertial_ned = astrodyn_frames::RefFrameState {
+        trans: astrodyn_frames::RefFrameTrans {
+            position: pcpf_pos,
+            velocity: DVec3::ZERO,
+        },
+        rot: astrodyn_frames::RefFrameRot {
+            q_parent_this: JeodQuat::left_quat_from_transformation(&t_pfix_ned),
+            t_parent_this: t_pfix_ned,
+            ang_vel_this: DVec3::ZERO,
+        },
+    };
+    s_inertial_ned.incr_left(&s_inertial_pfix);
+    s_inertial_ned
+}
+
+/// Initialize rotational state from an attitude + angular velocity
+/// expressed relative to the local North-East-Down (NED) frame at a single
+/// ground point.
+///
+/// Port of JEOD `DynBodyInitNedRotState` / `DynBodyInitNedState::apply`
+/// (`ref_body == nullptr`) / `DynBodyInit::apply_user_inputs` for the
+/// rotational sub-state (`set_items = Att | Rate`). See
+/// `models/dynamics/body_action/src/dyn_body_init_ned_rot_state.cc`,
+/// `dyn_body_init_ned_state.cc`, and the rotational branches of
+/// `dyn_body_init.cc:298-315`.
+///
+/// The inertial→NED frame is built by [`ned_reference_frame_state`] (NED
+/// axes from the geodetic location, NED frame stationary wrt pfix but
+/// carrying pfix's `ω_planet` rate wrt inertial), then composed with the
+/// user-supplied NED→body attitude / NED-relative angular velocity via
+/// [`init_rot_relative_to_frame`] (JEOD `RefFrameState::incr_left`,
+/// A = inertial, B = NED, C = body):
+///
+/// ```text
+/// Q_inertial_body         = Q_ned_body * Q_inertial_ned
+/// w_inertial_body_in_body = T_ned_body * w_inertial_ned_in_ned
+///                         + w_ned_body_in_body
+/// ```
+///
+/// Because the NED frame rotates with the planet, `w_inertial_ned_in_ned`
+/// is non-zero (it is `ω_planet` rotated into NED coordinates) even when
+/// the user-supplied NED-relative rate is zero — so a body "aligned with
+/// and at rest in NED" still has the planet's inertial angular velocity.
+/// This is the rotational analog of the `ω_planet × r` velocity term in
+/// [`init_from_ned`].
+///
+/// # Arguments
+/// * `q_ned_body` - NED→body attitude quaternion (scalar-first,
+///   left-transformation; JEOD convention). The angular velocity is
+///   interpreted in the body frame (JEOD `rate_in_parent = false`, the
+///   default and the only sense the NED-rot verif decks use).
+/// * `ang_vel_ned_to_body` - Angular velocity of the body wrt the NED
+///   frame, expressed in the body frame (rad/s).
+/// * `geodetic` - Reference point (latitude rad, longitude rad, altitude m).
+/// * `r_eq` - Planet equatorial radius (m).
+/// * `r_pol` - Planet polar radius (m).
+/// * `t_eci_pcpf` - Rotation matrix from ECI (inertial) to PCPF (pfix).
+/// * `omega_planet` - Planet angular velocity expressed in **pfix
+///   coordinates** (rad/s), e.g. `[0, 0, EARTH.omega]` (see
+///   [`ned_reference_frame_state`] for why this is the pfix-frame value,
+///   not the ECI-frame value).
+// JEOD_INV: BA.16 — NED-rot init composes inertial→NED (carrying pfix's
+// ω_planet rate) with NED→body (user input) per RefFrameState::incr_left.
+pub fn init_rot_from_ned(
+    q_ned_body: JeodQuat,
+    ang_vel_ned_to_body: DVec3,
+    geodetic: &GeodeticState,
+    r_eq: f64,
+    r_pol: f64,
+    t_eci_pcpf: &DMat3,
+    omega_planet: DVec3,
+) -> RotationalState {
+    let frame = ned_reference_frame_state(geodetic, r_eq, r_pol, t_eci_pcpf, omega_planet);
+    init_rot_relative_to_frame(&frame, q_ned_body, ang_vel_ned_to_body)
+}
+
 /// Compute the PCPF-to-NED transformation matrix at a given geodetic location.
 ///
 /// The NED frame axes expressed in the PCPF frame are:
@@ -1232,6 +1393,120 @@ mod tests {
             state.position.z.abs() < 1e-6,
             "Position Z: expected 0, got {}",
             state.position.z
+        );
+    }
+
+    // =======================================================================
+    // NED rotational init
+    // =======================================================================
+
+    #[test]
+    fn ned_rot_frame_origin_velocity_agrees_with_init_from_ned() {
+        // The NED frame origin's inertial position/velocity (zero
+        // NED-relative offset) must match `init_from_ned` with a zero NED
+        // velocity, for a non-trivial location and a non-trivial planet
+        // rotation. This pins the translational consistency between the
+        // frame builder and the existing NED translation kernel.
+        let geodetic = GeodeticState {
+            latitude: 28.6082_f64.to_radians(),
+            longitude: (-80.6040_f64).to_radians(),
+            altitude: 3.0,
+        };
+        // Non-trivial ECI→PCPF rotation about +z (a GMST-like angle).
+        let t_eci_pcpf = DMat3::from_axis_angle(DVec3::Z, 1.234);
+        let omega_planet = DVec3::new(0.0, 0.0, 7.292_115e-5);
+
+        let frame = ned_reference_frame_state(
+            &geodetic,
+            EARTH_R_EQ,
+            EARTH_R_POL,
+            &t_eci_pcpf,
+            omega_planet,
+        );
+
+        let via_init = init_from_ned(
+            &geodetic,
+            DVec3::ZERO,
+            EARTH_R_EQ,
+            EARTH_R_POL,
+            &t_eci_pcpf,
+            omega_planet,
+        );
+
+        assert!(
+            (frame.trans.position - via_init.position).length() < 1e-6,
+            "NED frame origin position disagrees with init_from_ned: {:?} vs {:?}",
+            frame.trans.position,
+            via_init.position
+        );
+        assert!(
+            (frame.trans.velocity - via_init.velocity).length() < 1e-9,
+            "NED frame origin velocity disagrees with init_from_ned: {:?} vs {:?}",
+            frame.trans.velocity,
+            via_init.velocity
+        );
+    }
+
+    #[test]
+    fn ned_rot_aligned_body_recovers_planet_rate() {
+        // A body aligned with and at rest in the NED frame (identity
+        // NED→body, zero NED-relative rate) at a non-trivial location must
+        // still carry the planet's inertial angular velocity: the body
+        // rotates with the planet. The magnitude of the inertial body rate
+        // must equal |ω_planet|, and its representation in the body frame
+        // must equal the *inertial* ω rotated through the inertial→body
+        // attitude. The ECI→pfix rotation here includes a deliberate tilt
+        // (not a pure z-rotation) so the pfix z-axis is off the ECI z-axis
+        // — exercising the precession/nutation case where ω_planet's pfix
+        // and inertial components genuinely differ.
+        let geodetic = GeodeticState {
+            latitude: 28.6082_f64.to_radians(),
+            longitude: (-80.6040_f64).to_radians(),
+            altitude: 3.0,
+        };
+        let t_eci_pcpf =
+            DMat3::from_axis_angle(DVec3::Z, 1.234) * DMat3::from_axis_angle(DVec3::X, 0.3);
+        // ω_planet is expressed in pfix coordinates (about the pfix z-axis).
+        let omega_planet = DVec3::new(0.0, 0.0, 7.292_115e-5);
+
+        let rot = init_rot_from_ned(
+            JeodQuat::identity(),
+            DVec3::ZERO,
+            &geodetic,
+            EARTH_R_EQ,
+            EARTH_R_POL,
+            &t_eci_pcpf,
+            omega_planet,
+        );
+
+        // |ω_body| == |ω_planet| (a pure rotation of the same vector).
+        assert!(
+            (rot.ang_vel_body.length() - omega_planet.length()).abs() < 1e-15,
+            "inertial body rate magnitude {} != |omega_planet| {}",
+            rot.ang_vel_body.length(),
+            omega_planet.length()
+        );
+
+        // The body-frame ω equals T_inertial_body · ω_inertial. ω_planet is
+        // a pfix-frame vector, so first rotate it into the inertial frame
+        // (T_pfix_eci = T_eci_pcpf⁻¹ = T_eci_pcpfᵀ) before applying the
+        // inertial→body attitude.
+        let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+        let omega_inertial = t_eci_pcpf.transpose() * omega_planet;
+        let expected_body = t_inertial_body * omega_inertial;
+        assert!(
+            (rot.ang_vel_body - expected_body).length() < 1e-18,
+            "body-frame ω {:?} != T_inertial_body·ω_inertial {:?}",
+            rot.ang_vel_body,
+            expected_body
+        );
+
+        // Non-trivial inertial attitude: identity NED→body at this lat/lon
+        // composes with the non-identity inertial→NED rotation, so the
+        // body's inertial attitude must NOT be identity.
+        assert!(
+            rot.quaternion.vector().length() > 1e-3,
+            "expected a non-trivial inertial→body attitude at 28.6N/-80.6E"
         );
     }
 

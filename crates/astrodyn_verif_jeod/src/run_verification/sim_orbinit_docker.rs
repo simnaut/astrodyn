@@ -976,6 +976,102 @@ fn build_run_3771(_init: &InitialConditions) -> SimulationBuilder {
     build_orbinit_relative(mu, chaser_trans, chaser_rot)
 }
 
+// ── Single-vehicle NED full-state initialization (RUN_3822) ─────────────────
+//
+// RUN_3822 (`full_NedState_ned_struct`, `TARGET_ELLIPTICAL_NED`) initializes a
+// single PAD_39A vehicle's full state (Pos_Vel_Att_Rate) in the local NED frame
+// at a fixed ground point — no reference body. The point is geodetic
+// (elliptical/ellipsoid) at lat 28.6082°, lon −80.6040°, alt 3.0 m
+// (`Modified_data/PAD_39A/full_NedState_ned_struct.py`), the body sits
+// `[0, 0, 10]` m below it (NED z = Down) at rest in NED, and the attitude is the
+// Pitch_Yaw_Roll Euler triple `[0, 0, 0]` deg (body aligned with local NED).
+// Because the NED frame rotates with the Earth, the body's *inertial* velocity
+// is `ω_earth × r` and its *inertial* angular velocity recovers `ω_earth`, even
+// though the NED-frame-relative velocity and rate are zero.
+
+/// PAD_39A mass properties (`Modified_data/PAD_39A/mass.py`, `set_PAD_39A_mass`):
+/// `mass = 1.0` kg, CG at the structure origin (`position = [0, 0, 0]`),
+/// identity inertia (`diag(1, 1, 1)` kg·m²), `inertia_spec = Body`, and an
+/// identity `pt_orientation` (`StructToBody`). The structure frame therefore
+/// coincides with the body / composite_body frame (no offset, no rotation), so
+/// `body_frame_id = "structure"` maps to the composite-body frame the CSV logs
+/// without any struct↔body transform. JEOD *source* initial conditions
+/// (permitted by the computational-independence rule).
+fn pad_39a_mass_properties() -> astrodyn::MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(1.0, 0.0, 0.0),
+        DVec3::new(0.0, 1.0, 0.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    astrodyn::MassProperties::with_inertia(1.0, inertia, DVec3::ZERO)
+}
+
+/// RUN_3822: PAD_39A single-vehicle full state (Pos_Vel_Att_Rate) in the local
+/// NED frame at a geodetic ground point (`DynBodyInitNedState`,
+/// `altlatlong_type = elliptical`, no reference body).
+///
+/// The geodetic reference point (lat 28.6082°, lon −80.6040°, alt 3.0 m) and the
+/// `[0, 0, 10]` m NED offset / identity attitude / zero NED rate come from
+/// `Modified_data/PAD_39A/full_NedState_ned_struct.py`. `BodyAction::InitFullNed`
+/// builds the inertial→NED frame for the ground point (NED axes from the
+/// geodetic lat/lon, the frame stationary wrt pfix but carrying Earth's
+/// `ω_planet` rate wrt inertial through the pfix→inertial composition), then
+/// composes the body's NED-frame offset / attitude / rate up to inertial via
+/// `RefFrameState::incr_left`. The inertial→pfix rotation is the SIM_orbinit
+/// epoch matrix [`t_inertial_pfix_at_epoch`]; Earth's polar radius and rotation
+/// rate are `EARTH.r_pol()` / `EARTH.omega`.
+///
+/// The attitude is the Pitch_Yaw_Roll (JEOD `Pitch_Yaw_Roll` =
+/// `EulerSequence::YZX`) Euler triple `[0, 0, 0]` deg, so the NED→body
+/// quaternion is identity — but the body's *inertial* attitude is the
+/// non-trivial inertial→NED rotation at 28.6°N / −80.6°E, and its *inertial*
+/// angular velocity recovers `ω_earth`.
+fn build_run_3822(_init: &InitialConditions) -> SimulationBuilder {
+    let mu = load_mu_earth();
+
+    // Geodetic reference point (deg→rad), ellipsoidal lat/lon.
+    let geodetic = astrodyn::GeodeticState {
+        latitude: Angle::new::<degree>(28.6082).get::<uom::si::angle::radian>(),
+        longitude: Angle::new::<degree>(-80.6040).get::<uom::si::angle::radian>(),
+        altitude: 3.0,
+    };
+
+    // NED→body attitude: Pitch_Yaw_Roll (YZX) Euler [0, 0, 0] deg → identity.
+    let angles = [
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+        Angle::new::<degree>(0.0),
+    ];
+    let q_ned_body = compute_quaternion_from_euler_angles_typed(angles, EulerSequence::YZX).inner();
+
+    let action = BodyAction::InitFullNed {
+        geodetic,
+        // NED offset: [North, East, Down] = [0, 0, 10] m.
+        ned_position: DVec3::new(0.0, 0.0, 10.0),
+        ned_velocity: DVec3::ZERO,
+        q_ned_body,
+        ang_vel_ned_to_body: DVec3::ZERO,
+        r_equatorial: EARTH.shape.r_eq(),
+        r_polar: EARTH.shape.r_pol(),
+        t_eci_pcpf: t_inertial_pfix_at_epoch(),
+        // pfix-frame angular velocity (JEOD `planet_rnp.cc` stores
+        // `ang_vel_this = [0, 0, planet_omega]` about the pfix z-axis), the
+        // same convention `iss_ned_frame_state` uses for RUN_0681.
+        omega_planet: DVec3::new(0.0, 0.0, EARTH.omega),
+    };
+    let trans = action
+        .apply_translational()
+        .expect("InitFullNed must yield Some(TranslationalState)");
+    let rot = action
+        .apply_rotational()
+        .expect("InitFullNed must yield Some(RotationalState)");
+
+    let mut sb = build_orbinit_docker(mu, trans);
+    sb.bodies[0].rot = Some(super::typed_helpers::rot_typed(&rot));
+    sb.bodies[0].mass = Some(super::typed_helpers::mass_typed(&pad_39a_mass_properties()));
+    sb
+}
+
 /// Recipes opt out of every runner-vs-JEOD tolerance group because they
 /// pair with [`CsvReference::SyntheticTimes`]; the tier3 sibling asserts
 /// against the JEOD-logged t=0 row directly, and the parity trait drives
@@ -1958,6 +2054,23 @@ pub fn run_0681() -> VerificationCase {
     VerificationCase {
         name: "tier3_orbinit_docker_run_0681",
         scenario: build_run_0681,
+        reference: CsvReference::SyntheticTimes {
+            dt: DT_S,
+            num_steps: NUM_STEPS,
+        },
+        duration: Time::new::<second>(0.0),
+        tolerances: synthetic_tolerances(),
+        extras: None,
+        pre_step: None,
+    }
+}
+
+/// RUN_3822: PAD_39A single vehicle, full state in the local NED frame at a
+/// geodetic ground point.
+pub fn run_3822() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_orbinit_docker_run_3822",
+        scenario: build_run_3822,
         reference: CsvReference::SyntheticTimes {
             dt: DT_S,
             num_steps: NUM_STEPS,
