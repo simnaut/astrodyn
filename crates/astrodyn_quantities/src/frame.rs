@@ -111,6 +111,8 @@ planet_marker!(Earth, "Earth");
 planet_marker!(Moon, "Moon");
 planet_marker!(Sun, "Sun");
 planet_marker!(Mars, "Mars");
+planet_marker!(Jupiter, "Jupiter");
+planet_marker!(Saturn, "Saturn");
 
 /// Phantom marker for "this entity's own planet" — used by ECS adapters
 /// whose per-entity components carry `PlanetFixed<P>` phantoms but whose

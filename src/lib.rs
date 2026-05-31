@@ -168,7 +168,7 @@ pub use interactions::{
 };
 pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
-pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
+pub use planet_config::{PlanetConfig, EARTH, JUPITER, MARS, MOON, SATURN, SUN};
 pub use rotation_model::RotationModel;
 pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
 pub use source_frames::SourceFrameIds;
@@ -339,8 +339,9 @@ pub use astrodyn_quantities::diagnostics::CompatibleVehiclePair;
 pub use astrodyn_quantities::dims::GravParam;
 pub use astrodyn_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use astrodyn_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, MassNode, Moon, Ned, Planet,
-    PlanetFixed, PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Jupiter, Lvlh, Mars, MassNode, Moon, Ned,
+    Planet, PlanetFixed, PlanetInertial, RootInertial, Saturn, SelfPlanet, SelfRef,
+    StructuralFrame, Sun, Vehicle,
 };
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so

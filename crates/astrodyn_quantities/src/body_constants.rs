@@ -76,3 +76,35 @@ pub const MARS_FLAT_COEFF: f64 = 0.005186;
 
 /// Mars polar radius (m), derived as `MARS_R_EQ * (1 - MARS_FLAT_COEFF)`.
 pub const MARS_R_POL: f64 = MARS_R_EQ * (1.0 - MARS_FLAT_COEFF);
+
+// ── Jupiter ────────────────────────────────────────────────────────────
+
+/// Jupiter gravitational parameter (m³/s²) — JEOD
+/// `gravity/data/src/jupiter_spherical.cc:42`.
+pub const JUPITER_MU: f64 = 1.267_312_29e17;
+
+/// Jupiter equatorial (1-bar) radius (m) — JEOD `planet/data/src/jupiter.cc:37`.
+pub const JUPITER_R_EQ: f64 = 1000.0 * 71_492.0;
+
+/// Jupiter flattening coefficient — JEOD `planet/data/src/jupiter.cc:36`.
+pub const JUPITER_FLAT_COEFF: f64 = 0.06487;
+
+/// Jupiter polar radius (m), derived as `JUPITER_R_EQ * (1 - JUPITER_FLAT_COEFF)`.
+pub const JUPITER_R_POL: f64 = JUPITER_R_EQ * (1.0 - JUPITER_FLAT_COEFF);
+
+// ── Saturn ─────────────────────────────────────────────────────────────
+
+/// Saturn gravitational parameter (m³/s²) — JEOD
+/// `ephemerides/verif/SIM_prop_planet/data/src/saturn_spherical_gravity.cc:36`.
+pub const SATURN_MU: f64 = 3.793_118_7e16;
+
+/// Saturn equatorial (1-bar) radius (m) — JEOD
+/// `ephemerides/verif/SIM_prop_planet/data/src/saturn_planet.cc:36`.
+pub const SATURN_R_EQ: f64 = 1000.0 * 60_268.0;
+
+/// Saturn flattening coefficient — JEOD
+/// `ephemerides/verif/SIM_prop_planet/data/src/saturn_planet.cc:35`.
+pub const SATURN_FLAT_COEFF: f64 = 0.09796;
+
+/// Saturn polar radius (m), derived as `SATURN_R_EQ * (1 - SATURN_FLAT_COEFF)`.
+pub const SATURN_R_POL: f64 = SATURN_R_EQ * (1.0 - SATURN_FLAT_COEFF);
