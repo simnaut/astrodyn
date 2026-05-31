@@ -342,6 +342,12 @@ jobs:
         # those flaky. The job catches "I broke the bench harness"
         # regressions cheaply.
         #
+        # `--noplot` disables criterion's HTML/plot report generation.
+        # The smoke job only needs build/run/exit-0, and the plot renderer
+        # (plotters PDF/KDE) panics on certain degenerate sample
+        # distributions that --quick's ~10 samples can produce — a flake
+        # unrelated to the code under test. See #654.
+        #
         # `--workspace -- --quick` doesn't work because cargo also
         # invokes the default cargo-test bench harness on every lib /
         # bin target, and those reject criterion's `--quick` flag. We
@@ -350,7 +356,7 @@ jobs:
         run: |
           cargo bench -p astrodyn_gravity --bench accumulate \
                       -p astrodyn_gravity --bench integration \
-                      -p astrodyn_verif_jeod --bench step -- --quick
+                      -p astrodyn_verif_jeod --bench step -- --quick --noplot
 
   perf-baseline-track:
     name: Perf baseline (main-only)
