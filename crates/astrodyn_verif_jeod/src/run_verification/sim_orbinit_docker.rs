@@ -1020,7 +1020,7 @@ fn pad_39a_geodetic() -> astrodyn::GeodeticState {
 /// PAD_39A full-NED initialization action (`DynBodyInitNedState`,
 /// `set_items = Pos_Vel_Att_Rate`, elliptical), shared by RUN_3822 and the
 /// RUN_4681 NED-frame construction. The body sits `[0, 0, 10]` m Down from the
-/// geodetic point, aligned with the local NED frame (Pitch_Yaw_Roll [0,0,0]),
+/// geodetic point, aligned with the local NED frame (Pitch_Yaw_Roll `[0,0,0]`),
 /// at rest in NED (`Modified_data/PAD_39A/full_NedState_ned_struct.py`).
 fn pad_39a_full_ned_action() -> BodyAction {
     let angles = [
@@ -1258,12 +1258,15 @@ fn iss_attach_t_struct_point() -> DMat3 {
     )
 }
 
-/// Convert a deg/s 3-vector to a rad/s `DVec3` (uom-checked, no lossy literal).
+/// Convert a deg/s 3-vector to a rad/s `DVec3` (uom-checked angular-velocity
+/// conversion, no lossy literal).
 fn deg_per_s_to_rad(v: DVec3) -> DVec3 {
+    use uom::si::angular_velocity::{degree_per_second, radian_per_second};
+    use uom::si::f64::AngularVelocity;
     DVec3::new(
-        Angle::new::<degree>(v.x).get::<uom::si::angle::radian>(),
-        Angle::new::<degree>(v.y).get::<uom::si::angle::radian>(),
-        Angle::new::<degree>(v.z).get::<uom::si::angle::radian>(),
+        AngularVelocity::new::<degree_per_second>(v.x).get::<radian_per_second>(),
+        AngularVelocity::new::<degree_per_second>(v.y).get::<radian_per_second>(),
+        AngularVelocity::new::<degree_per_second>(v.z).get::<radian_per_second>(),
     )
 }
 
