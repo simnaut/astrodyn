@@ -67,7 +67,15 @@ pub enum OrbitalElementSet {
 /// matches JEOD's per-action semantics: `MassBodyInit` only writes
 /// mass properties, `DynBodyInitTransState` only writes translational
 /// state, etc.
+/// `#[non_exhaustive]`: this enum is an internal initialization-recipe
+/// dispatch type whose roadmap is to grow one variant per ported JEOD
+/// body-action kind. It is `pub` only for the Bevy adapter and tests —
+/// the user-facing API is the typestate `VehicleBuilder` / `VehicleConfig`,
+/// not raw `BodyAction` construction. Marking it non-exhaustive makes
+/// that expected additive growth a non-breaking change, so porting the
+/// next body-action kind no longer trips a public-API stability fence.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum BodyAction {
     /// Replace the subject's mass properties.
     ///
@@ -202,7 +210,7 @@ pub enum BodyAction {
     /// is resolved by the caller (which already holds the target
     /// vehicle's state) and passed as `reference_frame`; the offset is
     /// composed up to the inertial frame via
-    /// [`astrodyn_dynamics::body_init::incr_left`], including the
+    /// [`astrodyn_frames::RefFrameState::incr_left`], including the
     /// reference frame's `ω × r` velocity term.
     InitTransRelativeFrame {
         /// Reference frame `B`'s state wrt the inertial frame (origin
@@ -223,7 +231,7 @@ pub enum BodyAction {
     /// (`DynBodyInitLvlhState` with `set_items = Pos_Vel_Att_Rate` and
     /// `ref_body_name` set). Both substates are composed up to the
     /// inertial frame via
-    /// [`astrodyn_dynamics::body_init::incr_left`]:
+    /// [`astrodyn_frames::RefFrameState::incr_left`]:
     /// translation including the `ω × r` velocity term, attitude via
     /// `Q_A:C = Q_B:C · Q_A:B`, and rate via
     /// `w_A:C = T_B:C · w_A:B + w_B:C`.
