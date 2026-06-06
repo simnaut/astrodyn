@@ -572,6 +572,8 @@ impl Simulation {
                     .left_quat_to_transformation();
                 node.state.rot.ang_vel_this = body_rot.ang_vel_body.raw_si();
             }
+            self.frame_tree
+                .set_epoch(body_frame_id, Some(self.time.tdb()));
         }
     }
 }
