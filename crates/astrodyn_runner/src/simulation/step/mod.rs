@@ -25,7 +25,7 @@
 
 use glam::DVec3;
 
-use astrodyn::{FrameId, IntegOrigin, Vec3Ext};
+use astrodyn::{FrameId, IntegOrigin};
 
 use super::Simulation;
 use crate::error::StepError;
@@ -87,14 +87,18 @@ impl Simulation {
     /// origin in root-relative coordinates and the runner's root is
     /// inertial by construction.
     pub fn frame_origin_typed(&self, frame_id: FrameId) -> IntegOrigin {
-        let (pos, vel) = astrodyn::frame_orchestration::frame_origin(
+        // Routed through the CHECKED typed helper (issue #662): the root
+        // node's stamped identity is verified against `RootInertial` on
+        // every per-step call, so the production path exercises the
+        // identity check rather than asserting it by convention.
+        let (pos, vel) = astrodyn::frame_orchestration::frame_origin_typed::<astrodyn::RootInertial>(
             &self.frame_tree,
             self.root_frame_id,
             frame_id,
         );
         IntegOrigin {
-            position: pos.m_at::<astrodyn::RootInertial>(),
-            velocity: vel.m_per_s_at::<astrodyn::RootInertial>(),
+            position: pos,
+            velocity: vel,
         }
     }
 
