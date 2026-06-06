@@ -232,7 +232,7 @@ Our port's time scales are hardcoded fields on `SimulationTime` (crates/astrodyn
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
 | RF.01 | `compute_relative_state` requires same tree | fatal | runtime | structural (`crates/astrodyn_frames/src/frame_tree.rs` — one tree per `FrameTree`; both `FrameId` arguments are indices into the same arena, so same-tree is guaranteed by type) |
-| RF.02 | `compute_state_wrt_pred` requires valid predecessor | fatal | runtime | structural (`crates/astrodyn_frames/src/frame_tree.rs` — `parent()`/`get()` bounds-check `FrameId`; invalid ids panic) |
+| RF.02 | `compute_state_wrt_pred` requires valid predecessor | fatal | runtime | enforced (`crates/astrodyn_frames/src/frame_tree.rs` — `parent()`/`get()` bounds-check `FrameId` (invalid ids panic); `get_state_typed`/`add_child_typed` additionally cross-check the stored parent/child `FrameUid` against the requested frame markers, rejecting non-mintable markers, unstamped nodes, root reads, and identity mismatches at runtime) |
 | RF.03 | Quaternion normalized after every composition | structural | consistency | structural (normalized in `incr_right`, `negate`, and integration) |
 | RF.04 | T_parent_this recomputed after quaternion composition | structural | consistency | structural (T derived from normalized Q in both `incr_right` and `negate`) |
 | RF.05 | `ang_vel_products` recomputed after angular velocity change | structural | consistency | n/a (we don't cache products) |

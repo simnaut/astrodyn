@@ -28,17 +28,30 @@ pub struct FrameNode {
     pub kind: RefFrameKind,
     /// State relative to parent. Identity for root frames.
     pub state: RefFrameState,
-    /// Runtime frame identity. `None` for nodes created via the untyped
-    /// [`FrameTree::add_root`] / [`FrameTree::add_child`] path (unstamped —
-    /// no identity is synthesized); `Some` once stamped via a typed
-    /// constructor, [`FrameTree::add_child_uid`], or
-    /// [`FrameTree::import_subtree`]. The untyped path is a migration
-    /// scaffold: issue #662 stamps all production sites and issue #664
-    /// makes this field required.
-    pub uid: Option<FrameUid>,
+    /// Runtime frame identity. Private: mutating it directly would desync
+    /// the tree's identity index (`find`/`resolve`) — read via
+    /// [`FrameNode::uid`]; stamping happens only through the typed
+    /// constructors, [`FrameTree::add_child_uid`], or
+    /// [`FrameTree::import_subtree`].
+    uid: Option<FrameUid>,
     /// Frame epoch (TDB seconds): the time-validity of `state`. `None`
     /// until stamped (per-step stamping lands with issue #662).
     pub epoch: Option<SecondsSince<TDB>>,
+}
+
+impl FrameNode {
+    /// Runtime frame identity: `None` for nodes created via the untyped
+    /// [`FrameTree::add_root`] / [`FrameTree::add_child`] path (unstamped —
+    /// no identity is synthesized); `Some` once stamped via a typed
+    /// constructor, [`FrameTree::add_child_uid`], or
+    /// [`FrameTree::import_subtree`]. Read-only: the field is private so a
+    /// caller cannot desync the tree's identity index through
+    /// [`FrameTree::get_mut`]. The untyped path is a migration scaffold:
+    /// issue #662 stamps all production sites and issue #664 makes the
+    /// identity required.
+    pub fn uid(&self) -> Option<&FrameUid> {
+        self.uid.as_ref()
+    }
 }
 
 /// Integrity violations reported by [`FrameTree::validate`] /
@@ -274,6 +287,13 @@ impl FrameTree {
             "add_child_typed: parent_id {parent_id} out of range (have {} frames)",
             self.nodes.len()
         );
+        assert!(
+            matches!(P::DESCRIPTOR.mint, MintPolicy::Stable),
+            "add_child_typed: parent marker `{}` is not mintable (a runtime-resolved \
+             wildcard or IntegrationFrame) and can never name a stamped parent \
+             identity. Resolve the concrete parent frame type and use that instead.",
+            core::any::type_name::<P>()
+        );
         // JEOD_INV: RF.02 — the typed state's parent marker must name the
         // parent node's stamped identity (valid predecessor).
         let parent_uid = self.nodes[parent_id].uid.as_ref().unwrap_or_else(|| {
@@ -340,6 +360,11 @@ impl FrameTree {
     /// Set (or clear) a node's frame epoch. Groundwork for per-step
     /// stamping (issue #662); not called on the hot path here.
     pub fn set_epoch(&mut self, id: FrameId, epoch: Option<SecondsSince<TDB>>) {
+        assert!(
+            id < self.nodes.len(),
+            "set_epoch: frame id {id} out of range (have {} frames)",
+            self.nodes.len()
+        );
         self.nodes[id].epoch = epoch;
     }
 
@@ -550,7 +575,7 @@ impl FrameTree {
                 ""
             };
             panic!(
-                "compute_relative_state: frames {} and {} do not share a common \
+                "find_common_ancestor: frames {} and {} do not share a common \
                  ancestor (roots {} and {}).{suggest}",
                 self.display_id(a),
                 self.display_id(b),
@@ -636,9 +661,13 @@ impl FrameTree {
                 }
             }
             // Unit-norm drift (all nodes — state integrity is
-            // identity-independent). Tolerance check, not bit-equality.
+            // identity-independent). Tolerance check, not bit-equality; the
+            // explicit NaN arm exists because NaN compares false to every
+            // threshold and would otherwise pass silently.
             let norm = node.state.rot.q_parent_this.norm();
-            if (norm - 1.0).abs() > NormalizedQuat::<ScalarFirst, LeftTransform>::DEFAULT_TOLERANCE
+            if norm.is_nan()
+                || (norm - 1.0).abs()
+                    > NormalizedQuat::<ScalarFirst, LeftTransform>::DEFAULT_TOLERANCE
             {
                 return Err(FrameTreeError::UnitNormDrift { id, norm });
             }
@@ -1956,6 +1985,8 @@ mod identity_tests {
 
     #[test]
     #[should_panic(expected = "predecessor identity mismatch")]
+    // JEOD_INV: RF.02 — negative test: a typed read whose parent marker does
+    // not name the stored predecessor identity must panic.
     fn get_state_typed_parent_mismatch_panics() {
         let (tree, _root, ecef) = stamped_tree();
         let _: RefFrameStateTyped<PlanetInertial<Earth>, Ecef> = tree.get_state_typed(ecef);
@@ -2146,6 +2177,72 @@ mod identity_tests {
             tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_state(), None);
         // Grafting the root under its own descendant must be rejected.
         tree.graft(root, child, RefFrameState::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "is not mintable")]
+    fn add_child_typed_non_mintable_parent_panics() {
+        let (mut tree, _root, ecef) = stamped_tree();
+        let _ = tree.add_child_typed::<IntegrationFrame, Ecef>(
+            ecef,
+            "child".into(),
+            RefFrameStateTyped::from_untyped_unchecked(&RefFrameState::default()),
+            None,
+        );
+    }
+
+    #[test]
+    fn validate_duplicate_uid_err() {
+        // White-box: corrupt a node's identity directly (the field is
+        // private precisely so public callers cannot do this) to exercise
+        // the load-path duplicate check.
+        let (mut tree, _root, ecef) = stamped_tree();
+        tree.nodes[ecef].uid = Some(FrameUid::of::<RootInertial>());
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::DuplicateUid(_))
+        ));
+    }
+
+    #[test]
+    fn validate_non_inertial_root_err() {
+        // White-box: stamp a root with a non-root-eligible class to
+        // exercise the load-path guard (constructors reject this case).
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        tree.nodes[root].uid = Some(FrameUid::of::<Ecef>());
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::NonInertialRoot { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_nan_quat_norm_err() {
+        // A NaN norm must be rejected, not silently passed (NaN compares
+        // false to every threshold).
+        let mut tree = FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        let mut state = RefFrameState::default();
+        state.rot.q_parent_this = JeodQuat::from_array([f64::NAN, 0.0, 0.0, 0.0]);
+        tree.add_child_uid(
+            root,
+            FrameUid::of::<PlanetInertial<Earth>>(),
+            "nan".into(),
+            state,
+            None,
+        );
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::UnitNormDrift { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn set_epoch_out_of_range_panics() {
+        let mut tree = FrameTree::new();
+        tree.set_epoch(0, None);
     }
 
     // -- epoch ---------------------------------------------------------------------
