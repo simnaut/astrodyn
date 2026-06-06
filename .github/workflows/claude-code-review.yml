@@ -1,0 +1,54 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.rs"
+    #   - "crates/**/*.rs"
+
+# Cancel superseded review runs on rapid-fire pushes — a review of a stale
+# commit is pure waste, and the new run reviews the new head anyway.
+concurrency:
+  group: claude-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    # Skip PRs from forks: repository secrets (CLAUDE_CODE_OAUTH_TOKEN) aren't available
+    # to fork PRs, so the action would only produce noisy failures.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # post review findings as inline comments
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          # Allowlist the inline-comment MCP tool (+ gh/read tools) so the review can post
+          # findings as INLINE PR comments instead of only a top-level summary — without it
+          # the action can't attach line comments and falls back to one big comment
+          # (anthropics/claude-code-action docs/solutions.md). We deliberately keep the
+          # plugin's quality filters intact (its >=80 confidence bar and the default
+          # classify_inline_comments=true, which drops probe/test comments): precision over
+          # volume, no bar-lowering. Depth/criteria come from Opus + the repo CLAUDE.md.
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: >-
+            --model claude-opus-4-8
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
+          # or https://code.claude.com/docs/en/cli-reference for available options
