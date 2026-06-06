@@ -130,6 +130,27 @@ pub enum FrameRole {
     Custom(Box<str>),
 }
 
+impl FrameRole {
+    /// `true` iff this owned role equals the borrowed `role`
+    /// variant-for-variant (string contents compared for `Custom`).
+    /// Zero-allocation sibling of `FrameRole::from(role) == *self`.
+    pub fn matches_static(&self, role: FrameRoleStatic) -> bool {
+        match (self, role) {
+            (FrameRole::Primary, FrameRoleStatic::Primary)
+            | (FrameRole::AltInertial, FrameRoleStatic::AltInertial)
+            | (FrameRole::AltPfix, FrameRoleStatic::AltPfix)
+            | (FrameRole::CoreBody, FrameRoleStatic::CoreBody)
+            | (FrameRole::CompositeBody, FrameRoleStatic::CompositeBody)
+            | (FrameRole::Structure, FrameRoleStatic::Structure)
+            | (FrameRole::VehiclePoint, FrameRoleStatic::VehiclePoint)
+            | (FrameRole::Lvlh, FrameRoleStatic::Lvlh)
+            | (FrameRole::Ned, FrameRoleStatic::Ned) => true,
+            (FrameRole::Custom(owned), FrameRoleStatic::Custom(expected)) => &**owned == expected,
+            _ => false,
+        }
+    }
+}
+
 impl From<FrameRoleStatic> for FrameRole {
     fn from(r: FrameRoleStatic) -> Self {
         match r {
@@ -340,49 +361,63 @@ impl FrameUid {
     ///
     /// Returns `false` — never panics — when `F` is not mintable (a TS.01
     /// wildcard or `IntegrationFrame`): a non-mintable type is never equal
-    /// to any concrete identity. Groundwork for the checked typed recovery
-    /// of issue #661 (PR-2).
+    /// to any concrete identity. Zero-allocation: compares structurally
+    /// against `F::DESCRIPTOR` instead of minting a throwaway uid.
+    /// Groundwork for the checked typed recovery of issue #661 (PR-2).
     pub fn is<F: Frame>(&self) -> bool {
-        match F::DESCRIPTOR.mint {
-            MintPolicy::Stable => *self == FrameUid::of::<F>(),
-            MintPolicy::Wildcard | MintPolicy::PerBodyIntegration => false,
+        let d = F::DESCRIPTOR;
+        if !matches!(d.mint, MintPolicy::Stable) {
+            return false;
         }
+        self.namespace == Namespace::LOCAL
+            && self.class == d.class
+            && self.role.matches_static(d.role)
+            && match (&self.tag, d.tag) {
+                (Tag::Named(name), Some(expected)) => &**name == expected,
+                (Tag::None, None) => true,
+                _ => false,
+            }
     }
 }
 
 impl fmt::Display for FrameUid {
-    /// Dotted display names aligned with the existing frame-tree naming
-    /// vocabulary (`"Earth.inertial"`, `"Earth.pfix"`,
-    /// `"Iss.composite_body"`; see `src/source_frames.rs`). Non-`LOCAL`
-    /// namespaces are prefixed `nsN:`. The tag's casing is preserved
-    /// verbatim — `Display` is a faithful projection of the structured
-    /// fields, not a styler.
+    /// Dotted display names for diagnostics, aligned with the frame-tree
+    /// naming vocabulary used by the `astrodyn` orchestration layer
+    /// (`"Earth.inertial"`, `"Earth.pfix"`, `"Iss.composite_body"`).
+    ///
+    /// The suffix is derived from the **role** — verbatim for every
+    /// non-`Primary` role (`Custom` roles print their own string) — with
+    /// `Primary` falling back to a class-conventional suffix. The tag's
+    /// casing is preserved, and non-`LOCAL` namespaces are prefixed `nsN:`.
+    /// Display strings are for humans; identity comparison always uses the
+    /// structured fields, never this rendering.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.namespace != Namespace::LOCAL {
             write!(f, "ns{}:", self.namespace.0)?;
         }
-        // Custom roles name their own suffix verbatim.
-        if let FrameRole::Custom(role) = &self.role {
-            return match &self.tag {
-                Tag::Named(name) => write!(f, "{name}.{role}"),
-                Tag::None => write!(f, "{role}"),
-            };
-        }
-        let suffix = match (self.class, &self.role) {
-            (FrameClass::PlanetFixed, FrameRole::AltPfix) => "pfix.alt",
-            (FrameClass::PlanetFixed, _) => "pfix",
-            (
+        // Role-first: every distinct role keeps a distinct suffix, so a
+        // rendered uid never misstates its role (FrameUid::external can
+        // construct any class/role combination).
+        let suffix: &str = match &self.role {
+            FrameRole::Custom(role) => role,
+            FrameRole::AltInertial => "inertial.alt",
+            FrameRole::AltPfix => "pfix.alt",
+            FrameRole::CoreBody => "core_body",
+            FrameRole::CompositeBody => "composite_body",
+            FrameRole::Structure => "structural",
+            FrameRole::VehiclePoint => "point",
+            FrameRole::Lvlh => "lvlh",
+            FrameRole::Ned => "ned",
+            FrameRole::Primary => match self.class {
                 FrameClass::RootInertial
                 | FrameClass::PlanetInertial
-                | FrameClass::BarycenterInertial,
-                _,
-            ) => "inertial",
-            (FrameClass::Topocentric, _) => "topo",
-            (FrameClass::Body, FrameRole::Structure) => "structural",
-            (FrameClass::Body, _) => "composite_body",
-            (FrameClass::OrbitRelative, FrameRole::Ned) => "ned",
-            (FrameClass::OrbitRelative, _) => "lvlh",
-            (FrameClass::External, _) => "external",
+                | FrameClass::BarycenterInertial => "inertial",
+                FrameClass::PlanetFixed => "pfix",
+                FrameClass::Topocentric => "topo",
+                FrameClass::Body => "body",
+                FrameClass::OrbitRelative => "orbit_relative",
+                FrameClass::External => "external",
+            },
         };
         match &self.tag {
             Tag::Named(name) => write!(f, "{name}.{suffix}"),

@@ -85,8 +85,7 @@ pub trait Planet: PlanetSealed + Send + Sync + 'static {
     /// `true` iff this tag is a runtime-resolved storage-boundary wildcard
     /// (`SelfPlanet`) rather than a concrete planet. Defaulted `false` so
     /// `define_planet!` call sites and the built-in markers need no change;
-    /// only the wildcard overrides it. Drives the
-    /// [`MintPolicy`](crate::frame_descriptor::MintPolicy) of frames
+    /// only the wildcard overrides it. Drives the [`MintPolicy`] of frames
     /// parameterized by this tag.
     const IS_WILDCARD: bool = false;
 }
@@ -115,8 +114,7 @@ pub trait Vehicle: VehicleSealed + Send + Sync + 'static {
     /// (`SelfRef`) rather than a concrete vehicle. Defaulted `false` so
     /// `define_vehicle!` call sites, the built-in markers, and `TestVehicle`
     /// need no change; only the wildcard overrides it. Drives the
-    /// [`MintPolicy`](crate::frame_descriptor::MintPolicy) of frames
-    /// parameterized by this tag.
+    /// [`MintPolicy`] of frames parameterized by this tag.
     const IS_WILDCARD: bool = false;
 }
 

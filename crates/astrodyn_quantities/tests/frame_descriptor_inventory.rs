@@ -164,3 +164,45 @@ fn display_matches_dotted_convention() {
         "Earth.topo"
     );
 }
+
+#[test]
+fn display_is_role_faithful_for_external_combinations() {
+    use astrodyn_quantities::{FrameClass, FrameRole, Namespace, Tag};
+    // FrameUid::external can construct any class/role combination; the
+    // rendered suffix must reflect the actual role, never a collapsed
+    // class-conventional guess.
+    let core = FrameUid::external(
+        Namespace(1),
+        FrameClass::Body,
+        FrameRole::CoreBody,
+        Tag::Named("probe".into()),
+    );
+    assert_eq!(core.to_string(), "ns1:probe.core_body");
+    let orbit_primary = FrameUid::external(
+        Namespace(1),
+        FrameClass::OrbitRelative,
+        FrameRole::Primary,
+        Tag::Named("probe".into()),
+    );
+    assert_eq!(orbit_primary.to_string(), "ns1:probe.orbit_relative");
+}
+
+#[test]
+fn is_predicate_agrees_with_minted_equality() {
+    // The zero-allocation structural path in `FrameUid::is` must agree
+    // with the mint-then-compare definition for every Stable entry.
+    for (label, mint, uid) in inventory() {
+        if mint != MintPolicy::Stable {
+            continue;
+        }
+        let uid = uid.expect("Stable entries carry a minted uid");
+        assert!(
+            uid.is::<RootInertial>() == (uid == FrameUid::of::<RootInertial>()),
+            "`is` and minted equality disagree for `{label}` vs RootInertial"
+        );
+    }
+    // And positively: each minted uid matches its own type via `is`.
+    assert!(FrameUid::of::<PlanetFixed<Earth>>().is::<PlanetFixed<Earth>>());
+    assert!(!FrameUid::of::<PlanetFixed<Earth>>().is::<PlanetFixed<Moon>>());
+    assert!(!FrameUid::of::<PlanetFixed<Earth>>().is::<Ecef>());
+}
