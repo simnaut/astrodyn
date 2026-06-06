@@ -53,6 +53,7 @@ pub fn mars_orbit() -> SimulationBuilder {
     };
 
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("mars-orbiter")
         .with_translational(trans)
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()

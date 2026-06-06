@@ -252,7 +252,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-9")
     };
     sim.add_body(body);
 
@@ -406,7 +406,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-8")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -541,7 +541,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-7")
     });
 
     sim.validate().unwrap();
@@ -671,7 +671,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-6")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -745,7 +745,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
             euler_sequence: Some(sequence),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-5")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -827,7 +827,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
             lvlh: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-4")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -946,7 +946,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-3")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -1021,7 +1021,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
             orbital_elements_source: Some(earth_idx),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-2")
     });
     sim.validate().unwrap();
     sim.step().expect("step failed");
@@ -1146,7 +1146,7 @@ fn bevy_parity_derived_state_orbelem() {
             orbital_elements_source: Some(earth_idx),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -1225,7 +1225,7 @@ fn bevy_parity_derived_state_solar_beta() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-derived-state-0")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

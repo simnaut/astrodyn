@@ -105,6 +105,7 @@ pub fn earth_moon_rosetta(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Sim
 
     let (pos, vel) = initial_state.unwrap_or((INIT_POS, INIT_VEL));
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("earth-moon-rosetta-0")
         .with_translational(astrodyn::typed_bridge::trans_raw_to_root(
             &TranslationalState {
                 position: pos,

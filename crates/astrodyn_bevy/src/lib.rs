@@ -1299,6 +1299,7 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
 /// app.add_systems(Startup, |mut commands: Commands| {
 ///     let earth = commands.spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH)).id();
 ///     let cfg = VehicleBuilder::new()
+///         .vehicle_named("iss")
 ///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 ///         .three_dof_point_mass(vehicle::iss_mass())
 ///         .rk4()

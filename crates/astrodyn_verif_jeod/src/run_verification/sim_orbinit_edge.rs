@@ -78,7 +78,7 @@ fn build_orbinit_edge(mu_earth: f64, body: TranslationalState) -> SimulationBuil
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-orbinit-edge-0")
     });
     sb
 }

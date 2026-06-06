@@ -30,6 +30,7 @@ pub fn iss_leo() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 60.0);
     let earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("iss")
         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
@@ -76,6 +77,7 @@ pub fn iss_leo_drag() -> SimulationBuilder {
         MassProperties::with_inertia(420_000.0, glam::DMat3::IDENTITY * 1.0e6, glam::DVec3::ZERO);
 
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("iss")
         .from_orbital_elements(
             orbital_elements::leo_400km_circular_iss_inclination(),
             constants::mu_ggm05c(),

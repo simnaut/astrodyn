@@ -105,7 +105,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-highfidelity-3")
     });
 
     sim.validate().unwrap();
@@ -223,7 +223,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-highfidelity-2")
     });
 
     sim.validate().unwrap();
@@ -281,7 +281,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-highfidelity-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -361,7 +361,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-highfidelity-0")
     });
     sim.validate().unwrap();
     sim.step_n(n_steps).expect("step_n failed");

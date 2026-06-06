@@ -45,6 +45,13 @@ use astrodyn::{
 };
 use astrodyn_runner::{Simulation, SimulationBuilderExt};
 
+/// Synthetic gravity-source markers: these tests anchor bodies to
+/// non-planet sources, which (per issue #662's strict identity rule)
+/// require `define_planet!`-minted markers and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(Ssb);
+}
+
 const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
 const MU_BARYCENTER: f64 = 0.0; // SSB-as-central placeholder: no mass at root
 
@@ -172,7 +179,7 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("integ-frame-translation-invariance-0")
     };
 
     cfg.integ_source = integ_source;
@@ -219,7 +226,7 @@ fn build_root_setup() -> Simulation {
 fn build_offset_setup() -> Simulation {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, DT);
-    let _ssb = sb.add_source("SSB", ssb_barycenter());
+    let _ssb = sb.add_source_typed::<tags::Ssb>("SSB", ssb_barycenter());
     let earth = sb.add_source("Earth", earth_at_offset(MU_EARTH));
     let sun = sb.add_source("Sun", sun_source(SSB_TO_EARTH_OFFSET + SUN_FROM_EARTH));
     sb = sb.atmosphere(atmosphere_config(), earth).sun(sun);

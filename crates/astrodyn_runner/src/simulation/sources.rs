@@ -5,13 +5,14 @@
 //! `set_source_state`, `source_pfix_rotation`, `source_tidal_config_mut`,
 //! `source_delta_c20`.
 
+use astrodyn::FrameUid;
 use glam::DVec3;
 
 use astrodyn::{
     set_source_position as sim_set_source_position, set_source_state as sim_set_source_state,
     source_pfix_rotation as sim_source_pfix_rotation, source_position as sim_source_position,
-    FrameId, FrameTree, GravitySourceEntry, JeodQuat, RefFrameKind, RefFrameRot, RefFrameState,
-    RefFrameTrans, RotationModel, SourceFrameIds,
+    FrameId, FrameTree, GravitySourceEntry, JeodQuat, RefFrameRot, RefFrameState, RefFrameTrans,
+    RotationModel, SourceFrameIds,
 };
 
 use super::types::GravityData;
@@ -29,6 +30,72 @@ impl Simulation {
     /// If the source has a rotation model, a planet-fixed child frame is also
     /// created under the source's inertial frame.
     pub fn add_source(&mut self, name: impl Into<String>, entry: GravitySourceEntry) -> usize {
+        let name = name.into();
+        match name.as_str() {
+            "Earth" => self.add_source_typed::<astrodyn::Earth>(name, entry),
+            "Moon" => self.add_source_typed::<astrodyn::Moon>(name, entry),
+            "Sun" => self.add_source_typed::<astrodyn::Sun>(name, entry),
+            "Mars" => self.add_source_typed::<astrodyn::Mars>(name, entry),
+            "Jupiter" => self.add_source_typed::<astrodyn::Jupiter>(name, entry),
+            "Saturn" => self.add_source_typed::<astrodyn::Saturn>(name, entry),
+            other => panic!(
+                "add_source: unknown gravity-source name {other:?} — the string-dispatch \
+                 add_source only knows the six sealed planets (Earth, Moon, Sun, Mars, \
+                 Jupiter, Saturn). For any other body, call add_source_typed::<P>(name, \
+                 entry) with a Planet marker defined via define_planet! so the source \
+                 frames get real stamped identities."
+            ),
+        }
+    }
+
+    /// Typed sibling of [`Self::add_source`]: the source's frame identities
+    /// are derived from the compile-time planet marker `P`
+    /// (`FrameUid::of::<PlanetInertial<P>>()` for the inertial child,
+    /// `FrameUid::of::<PlanetFixed<P>>()` for the optional planet-fixed
+    /// child). Use this directly for planets minted downstream via
+    /// `define_planet!`; the string-dispatch `add_source` routes the six
+    /// built-in planets here.
+    ///
+    /// The `name` argument labels the frame nodes for diagnostics and
+    /// `find_by_name`; the stamped identity comes from `P`, not from
+    /// `name`. Passing a name that disagrees with `P::NAME` is allowed
+    /// (the label is cosmetic) but discouraged. `marker_only` sources
+    /// flow through the same path and are stamped identically.
+    ///
+    /// # Panics
+    /// - a second central source, or a central source with non-zero
+    ///   position (pre-existing invariants);
+    /// - a duplicate source identity: registering the same planet twice
+    ///   trips the frame tree's duplicate-identity rejection.
+    pub fn add_source_typed<P: astrodyn::Planet>(
+        &mut self,
+        name: impl Into<String>,
+        entry: GravitySourceEntry,
+    ) -> usize {
+        self.add_source_with_uids(
+            name,
+            entry,
+            FrameUid::of::<astrodyn::PlanetInertial<P>>(),
+            FrameUid::of::<astrodyn::PlanetFixed<P>>(),
+        )
+    }
+
+    /// Value-level core of source registration: the caller supplies the
+    /// minted identities for the inertial and (optional) planet-fixed
+    /// frames. [`Self::add_source_typed`] mints them from a planet marker;
+    /// the `SimulationBuilder` path carries pre-minted identities as
+    /// configuration data — identity travels as a value through config,
+    /// exactly like body identity (issue #662).
+    ///
+    /// The `pfix_uid` is registered only when the source actually creates
+    /// a planet-fixed frame (rotation model or explicit transform).
+    pub fn add_source_with_uids(
+        &mut self,
+        name: impl Into<String>,
+        entry: GravitySourceEntry,
+        inertial_uid: FrameUid,
+        pfix_uid: FrameUid,
+    ) -> usize {
         let idx = self.gravity_data.len();
         let name = name.into();
 
@@ -63,10 +130,10 @@ impl Simulation {
             );
         }
         let inertial_name = format!("{name}.inertial");
-        let inertial_id = self.frame_tree.add_child(
+        let inertial_id = self.frame_tree.add_child_uid(
             self.root_frame_id,
+            inertial_uid,
             inertial_name,
-            RefFrameKind::Inertial,
             RefFrameState {
                 trans: RefFrameTrans {
                     // RefFrameTrans is the runtime arena's untyped storage —
@@ -83,6 +150,7 @@ impl Simulation {
                 // composition fast-paths during frame-tree walks.
                 rot: RefFrameRot::default(),
             },
+            Some(self.time.tdb()),
         );
 
         // Create a planet-fixed child when the source has a rotation model or
@@ -100,14 +168,15 @@ impl Simulation {
                 } else {
                     RefFrameRot::default()
                 };
-                Some(self.frame_tree.add_child(
+                Some(self.frame_tree.add_child_uid(
                     inertial_id,
+                    pfix_uid,
                     pfix_name,
-                    RefFrameKind::PlanetFixed,
                     RefFrameState {
                         trans: RefFrameTrans::default(),
                         rot,
                     },
+                    Some(self.time.tdb()),
                 ))
             } else {
                 None

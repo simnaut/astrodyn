@@ -140,7 +140,7 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-solar-beta-2")
     });
     sb
 }
@@ -280,7 +280,7 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-solar-beta-1")
     });
     sb
 }
@@ -370,7 +370,7 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-solar-beta-0")
     });
     sb
 }

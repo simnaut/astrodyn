@@ -411,6 +411,12 @@ impl Simulation {
 
 #[cfg(test)]
 mod tests {
+    /// Synthetic gravity-source markers (issue #662 strict identity).
+    mod tags {
+        astrodyn::define_planet!(Offset);
+        astrodyn::define_planet!(Origin);
+    }
+
     use crate::SimulationBuilderExt;
     use astrodyn::typed_bridge::{mass_raw_to_self_ref, rot_raw_to_self_ref, trans_raw_to_typed};
     use astrodyn::{
@@ -495,7 +501,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-child")
         });
 
         let _ = sim.add_body_to_tree(child_idx, "child");
@@ -643,7 +649,7 @@ mod tests {
         let mut sim = Simulation::new(time, dt);
         // Add a benign root-frame source (mu=0, central) so the parent
         // body has a typed integ frame at root.
-        let _root_src = sim.add_source(
+        let _root_src = sim.add_source_typed::<tags::Origin>(
             "Origin",
             GravitySourceEntry {
                 source: GravitySource {
@@ -664,7 +670,7 @@ mod tests {
         // Add a non-central source whose inertial frame is offset
         // from root. We keep `mu=0` so the source applies no gravity
         // — the chain we test is kinematic-only, not gravitational.
-        let offset_src = sim.add_source(
+        let offset_src = sim.add_source_typed::<tags::Offset>(
             "Offset",
             GravitySourceEntry {
                 source: GravitySource {
@@ -704,7 +710,7 @@ mod tests {
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             // integ_source: None ⇒ root-frame integration.
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-9")
         });
 
         // Child integrates in the offset source's inertial frame.
@@ -750,7 +756,7 @@ mod tests {
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
             integ_source: Some(offset_src),
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-8")
         });
 
         sim.add_body_to_tree(parent_idx, "parent");
@@ -884,7 +890,7 @@ mod tests {
             rot: None,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-7")
         });
         sim.add_body_to_tree(parent_idx, "parent");
         sim.add_body_to_tree(child_idx, "child");
@@ -908,7 +914,7 @@ mod tests {
             rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-6")
         });
         sim.add_body_to_tree(child_idx, "child");
         sim.attach(child_idx, 0, DVec3::ZERO, DMat3::IDENTITY);
@@ -980,7 +986,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-5")
         });
 
         // Child appendage with derivative-class flat-plate SRP.
@@ -1023,7 +1029,7 @@ mod tests {
                 integration_order: ThermalIntegrationOrder::DerivativeRk4,
                 ..Default::default()
             })),
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-4")
         });
 
         // Build the chain and mark the child kinematic.
@@ -1095,14 +1101,14 @@ mod tests {
             rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-3")
         });
         let leaf_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState::default()),
             rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(2.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-2")
         });
         sim.add_body_to_tree(root_idx, "root");
         sim.add_body_to_tree(mid_idx, "mid");
@@ -1172,7 +1178,7 @@ mod tests {
             rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-1")
         });
         sim.add_body_to_tree(body_b_idx, "body_b");
 
@@ -1184,7 +1190,7 @@ mod tests {
             rot: Some(rot_raw_to_self_ref(&(RotationalState::default()))),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("kinematic-0")
         });
         sim.add_body_to_tree(body_c_idx, "body_c");
         sim.attach(body_c_idx, body_b_idx, link_offset, DMat3::IDENTITY);

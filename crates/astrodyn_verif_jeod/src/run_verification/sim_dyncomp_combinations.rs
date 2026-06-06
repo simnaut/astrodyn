@@ -192,7 +192,7 @@ fn build_kepler_sim(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         external_force: Force::<RootInertial>::from_raw_si(external_force),
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-combinations-3")
     });
     sb
 }
@@ -231,7 +231,7 @@ fn build_kepler_6dof_sim(
         external_torque: Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
             external_torque,
         ),
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-combinations-2")
     });
     sb
 }
@@ -358,7 +358,7 @@ fn build_point_mass_plus_thirdbody_conservation(_init: &InitialConditions) -> Si
                 GravityControl::new_third_body(moon),
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-combinations-1")
     });
     sb
 }
@@ -446,7 +446,7 @@ fn build_drag_point_mass_monotonic_decay(_init: &InitialConditions) -> Simulatio
             constant_density: Some(TEST3_DENSITY),
             ..Default::default()
         }),
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-combinations-0")
     });
     sb
 }

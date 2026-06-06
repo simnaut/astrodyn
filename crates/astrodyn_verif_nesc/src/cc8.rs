@@ -167,6 +167,7 @@ pub fn cc8_builder() -> SimulationBuilder {
     // 6. Body. `nesc_apollo_lm()` returns the published mass + inertia
     // tensor (incl. off-diagonal) + CoM offset.
     let vehicle_cfg = VehicleBuilder::new()
+        .vehicle_named("cc8-0")
         .with_translational(trans)
         .sixdof(rot, vehicle::nesc_apollo_lm())
         .rk4()

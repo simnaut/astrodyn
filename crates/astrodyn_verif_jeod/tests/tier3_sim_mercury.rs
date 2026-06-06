@@ -87,7 +87,7 @@ fn propagate_mercury_periapses(
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-mercury-2")
     });
 
     sim.validate().unwrap();
@@ -286,7 +286,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(sun_n, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-mercury-1")
     });
     sim_n.validate().unwrap();
     let steps = (total_time / dt) as usize;
@@ -317,7 +317,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
         gravity_controls: GravityControls {
             controls: vec![ctrl],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-mercury-0")
     });
     sim_r.validate().unwrap();
     sim_r.step_n(steps).expect("step_n failed");

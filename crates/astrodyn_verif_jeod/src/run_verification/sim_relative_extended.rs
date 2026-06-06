@@ -121,7 +121,7 @@ fn build_relative_extended(
             lvlh: lvlh_chief,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-relative-extended-1")
     });
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&trans_deputy),
@@ -129,7 +129,7 @@ fn build_relative_extended(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         derived: DerivedStateConfig::default(),
-        ..Default::default()
+        ..VehicleConfig::named("sim-relative-extended-0")
     });
     sb
 }

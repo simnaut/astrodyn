@@ -84,6 +84,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-0")
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -148,6 +149,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .insert(SourceInertialPositionC::default());
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-1")
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -293,6 +295,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-2")
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -302,6 +305,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         ))
         .build();
     let cfg_earth = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-3")
         .with_translational(TranslationalStateTyped::<RootInertial> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
             velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
@@ -447,6 +451,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .id();
 
     let cfg_mars = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-4")
         .with_translational(body_state_initial())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -456,6 +461,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         ))
         .build();
     let cfg_earth = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-5")
         .with_translational(TranslationalStateTyped::<RootInertial> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
             velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
@@ -614,6 +620,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     // the Mars `Add` message is the only misconfiguration on this
     // tick.
     let cfg_earth = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-6")
         .with_translational(TranslationalStateTyped::<RootInertial> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
             velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),
@@ -681,6 +688,7 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
         ))
         .id();
     let cfg_earth = VehicleBuilder::new()
+        .vehicle_named("body-action-planet-generic-contract-7")
         .with_translational(TranslationalStateTyped::<RootInertial> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>(),
             velocity: DVec3::new(0.0, 7000.0, 0.0).m_per_s_at::<RootInertial>(),

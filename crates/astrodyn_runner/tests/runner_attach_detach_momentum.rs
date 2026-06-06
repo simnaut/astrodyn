@@ -50,6 +50,14 @@ use glam::{DMat3, DVec3};
 use uom::si::f64::Mass;
 use uom::si::mass::kilogram;
 
+/// Synthetic gravity-source markers: these tests anchor bodies to
+/// non-planet sources, which (per issue #662's strict identity rule)
+/// require `define_planet!`-minted markers and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(InertialAnchor);
+    astrodyn::define_planet!(Ssb);
+}
+
 // allowed: typed↔raw kernel-boundary helpers used in test scaffolding
 // (issue #397).
 fn trans_typed(t: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
@@ -101,7 +109,7 @@ fn build_pair(
     // Inertial-only environment: no gravity sources contributing
     // acceleration. We still need at least one source frame for the
     // pipeline to be valid.
-    let inertial = sim.add_source(
+    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -133,7 +141,7 @@ fn build_pair(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-8")
     });
     let child_idx = sim.add_body(VehicleConfig {
         trans: trans_typed(&child_trans),
@@ -146,7 +154,7 @@ fn build_pair(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-7")
     });
 
     let parent_id = sim.add_body_to_tree(parent_idx, "Parent");
@@ -626,7 +634,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
 
-    let inertial = sim.add_source(
+    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -656,7 +664,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-6")
     });
     let b_idx = sim.add_body(VehicleConfig {
         trans: trans_typed(&b_trans),
@@ -669,7 +677,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-5")
     });
     let c_idx = sim.add_body(VehicleConfig {
         trans: trans_typed(&c_trans),
@@ -682,7 +690,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-4")
     });
 
     let _a_id = sim.add_body_to_tree(a_idx, "A");
@@ -844,7 +852,7 @@ fn runner_detach_lifts_through_integ_origin() {
 
     // Root = SSB barycenter (mu=0 placeholder); Earth is a non-central
     // child at SSB_TO_EARTH so `IntegOrigin{Earth} != 0`.
-    let _ssb = sb.add_source(
+    let _ssb = sb.add_source_typed::<tags::Ssb>(
         "SSB",
         GravitySourceEntry {
             source: GravitySource {
@@ -890,7 +898,7 @@ fn runner_detach_lifts_through_integ_origin() {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         integ_source: Some(earth),
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-3")
     });
     let child_idx = sb.add_body(VehicleConfig {
         trans: trans_typed(&child_trans),
@@ -901,7 +909,7 @@ fn runner_detach_lifts_through_integ_origin() {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         integ_source: Some(earth),
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-2")
     });
     let mut sim = sb.build().expect("non-root-integ pair builds");
 
@@ -1029,7 +1037,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
 
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, 1.0);
-    let _inertial = sb.add_source(
+    let _inertial = sb.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -1058,7 +1066,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-1")
     });
     let child_idx = sb.add_body(VehicleConfig {
         trans: trans_typed(&child_trans),
@@ -1071,7 +1079,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("runner-attach-detach-momentum-0")
     });
     sb.register_in_mass_tree(parent_idx, "Parent");
     sb.register_in_mass_tree(child_idx, "Child");

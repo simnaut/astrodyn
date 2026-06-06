@@ -162,7 +162,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
             ..Default::default()
         })),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-srp-basic-0")
     });
 
     sim.validate().unwrap();

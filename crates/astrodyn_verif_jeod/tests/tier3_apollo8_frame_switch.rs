@@ -194,7 +194,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         } else {
             vec![]
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-apollo8-frame-switch-0")
     });
 
     sim.validate().expect("validation failed");

@@ -132,7 +132,7 @@ fn pipeline_earth_lighting_smoke() {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("pipeline-earth-lighting-0")
     });
 
     sim.validate().unwrap();

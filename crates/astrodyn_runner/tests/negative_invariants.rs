@@ -19,6 +19,13 @@ use glam::DVec3;
 use uom::si::f64::Mass;
 use uom::si::mass::kilogram;
 
+/// Synthetic gravity-source markers: these tests anchor bodies to
+/// non-planet sources, which (per issue #662's strict identity rule)
+/// require `define_planet!`-minted markers and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(InertialAnchor);
+}
+
 fn trans_typed(t: &TranslationalState) -> TranslationalStateTyped<RootInertial> {
     TranslationalStateTyped::<RootInertial> {
         // allowed: typed↔raw kernel-boundary helpers used in test scaffolding
@@ -53,7 +60,7 @@ fn mass_typed(mp: &SimMassProperties) -> MassPropertiesTyped<SelfRef> {
 fn build_two_body_sim() -> (Simulation, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let inertial = sim.add_source(
+    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -80,7 +87,7 @@ fn build_two_body_sim() -> (Simulation, usize) {
         quaternion: JeodQuat::identity(),
         ang_vel_body: DVec3::ZERO,
     };
-    let make_body = || VehicleConfig {
+    let make_body = |name: &str| VehicleConfig {
         trans: trans_typed(&body_trans),
         rot: Some(rot_typed(&body_rot)),
         mass: Some(mass_typed(&mp)),
@@ -91,11 +98,123 @@ fn build_two_body_sim() -> (Simulation, usize) {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named(name)
     };
-    let a = sim.add_body(make_body());
-    let _b = sim.add_body(make_body());
+    let a = sim.add_body(make_body("body-a"));
+    let _b = sim.add_body(make_body("body-b"));
     (sim, a)
+}
+
+// Issue #662 / RFS-401 — every body's frame identity is mission-supplied
+// and unique within a simulation. Two bodies built from
+// `VehicleConfig::named("chaser")` mint the same `FrameUid`; the frame
+// tree rejects the second registration at the point of introduction
+// rather than letting two distinct bodies silently share an identity.
+#[test]
+#[should_panic(expected = "duplicate frame identity")]
+fn duplicate_body_identity_panics() {
+    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
+    let mut sim = Simulation::new(time, 1.0);
+    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+        "InertialAnchor",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: Position::<RootInertial>::zero(),
+            velocity: Velocity::<RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: astrodyn_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+            marker_only: false,
+        },
+    );
+    let make_body = || VehicleConfig {
+        trans: trans_typed(&TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        }),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(
+                inertial,
+                GravityGradient::Skip,
+            )],
+        },
+        ..VehicleConfig::named("chaser")
+    };
+    sim.add_body(make_body());
+    sim.add_body(make_body()); // same name → same FrameUid → panic
+}
+
+// Issue #662 / RFS-401 — source identities are unique too: registering
+// the same planet twice mints the same `FrameUid::of::<PlanetInertial<P>>()`
+// and trips the frame tree's duplicate-identity rejection. The second
+// entry is non-central so the (older) single-central-source assert cannot
+// fire first — this pins the *identity* check specifically.
+#[test]
+#[should_panic(expected = "duplicate frame identity")]
+fn duplicate_source_identity_panics() {
+    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
+    let mut sim = Simulation::new(time, 1.0);
+    let entry = |central: bool, position: Position<RootInertial>| GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position,
+        velocity: Velocity::<RootInertial>::zero(),
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: astrodyn_runner::RotationModel::default(),
+        tidal_config: None,
+        planet_omega: 0.0,
+        central,
+        marker_only: false,
+    };
+    sim.add_source("Earth", entry(true, Position::<RootInertial>::zero()));
+    sim.add_source(
+        "Earth",
+        entry(
+            false,
+            // allowed: typed↔raw kernel-boundary helpers used in test scaffolding
+            Position::<RootInertial>::from_raw_si(DVec3::new(1.0e9, 0.0, 0.0)),
+        ),
+    );
+}
+
+// Issue #662 — the string-dispatch `add_source` is a closed set: the six
+// sealed planets. Any other name must come through `add_source_typed`
+// with a `define_planet!` marker so the source frames carry real stamped
+// identities; a silent fallback would mint an unstamped (or
+// name-collision-prone) frame.
+#[test]
+#[should_panic(expected = "unknown gravity-source name")]
+fn unknown_source_name_panics() {
+    let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
+    let mut sim = Simulation::new(time, 1.0);
+    sim.add_source(
+        "Pluto",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: Position::<RootInertial>::zero(),
+            velocity: Velocity::<RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: astrodyn_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+            marker_only: false,
+        },
+    );
 }
 
 // JEOD_INV: IN.30 — contact pair bodies must be distinct (JEOD

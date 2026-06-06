@@ -68,7 +68,7 @@ fn leo_body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Ve
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("central-source-integ-frame-0")
     };
     cfg.integ_source = integ_source;
     cfg.derived.orbital_elements_source = Some(gravity_source_idx);

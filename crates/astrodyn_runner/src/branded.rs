@@ -29,6 +29,7 @@
 //!     // the matching `'sim` lifetime so it cannot escape this closure.
 //!     let earth_idx = sim.add_source("Earth", earth::point_mass());
 //!     let cfg = VehicleBuilder::new()
+//!         .vehicle_named("iss")
 //!         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!         .three_dof_point_mass(vehicle::iss_mass())
 //!         .rk4()
@@ -363,6 +364,7 @@ impl Simulation {
     /// let r = Simulation::run(time, 60.0, |mut sim| {
     ///     let earth_idx = sim.add_source("Earth", earth::point_mass());
     ///     let cfg = VehicleBuilder::new()
+    ///         .vehicle_named("iss")
     ///         .from_orbital_elements(
     ///             orbital_elements::iss(),
     ///             earth::point_mass().source.mu.m3_per_s2(),

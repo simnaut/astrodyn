@@ -31,6 +31,7 @@ impl Simulation {
             sun_source,
             moon_source,
             sources,
+            source_uids,
             source_ephem_bodies,
             bodies,
             mass_tree_names,
@@ -46,7 +47,14 @@ impl Simulation {
         sim.moon_source = moon_source;
 
         for (i, (name, source)) in sources.into_iter().enumerate() {
-            sim.add_source(name, source);
+            match source_uids.get(i).cloned().flatten() {
+                Some((inertial_uid, pfix_uid)) => {
+                    sim.add_source_with_uids(name, source, inertial_uid, pfix_uid);
+                }
+                None => {
+                    sim.add_source(name, source);
+                }
+            }
             if let Some(Some((target, observer))) = source_ephem_bodies.get(i) {
                 sim.set_source_ephemeris(i, *target, *observer);
             }

@@ -266,7 +266,7 @@ fn build_srp(
             source_idx: earth,
             radius: EARTH.shadow_radius,
         }),
-        ..Default::default()
+        ..VehicleConfig::named("sim-srp-2")
     });
     sb
 }
@@ -558,7 +558,7 @@ fn parity_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient_mode)],
         },
         compute_gravity_gradient: gradient,
-        ..Default::default()
+        ..VehicleConfig::named("sim-srp-1")
     }
 }
 
@@ -664,7 +664,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-srp-0")
     };
     // Override translational ICs to match the hand-rolled scenario
     // (GEO-radius circular orbit, not LEO-ISS).

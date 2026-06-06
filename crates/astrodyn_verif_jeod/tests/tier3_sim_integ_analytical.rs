@@ -97,7 +97,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-integ-analytical-0")
     });
 
     sim.validate().unwrap();

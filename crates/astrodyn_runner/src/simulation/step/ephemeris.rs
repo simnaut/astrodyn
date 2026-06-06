@@ -58,6 +58,8 @@ impl Simulation {
         // configurations without any ephemeris source from paying for
         // an unused conversion.
         let tdb_jd = self.time.tdb_julian_date();
+        // Frame-epoch stamp for every node this stage writes (RFS-603).
+        let frame_epoch = Some(self.time.tdb());
         let mut tdb_epoch: Option<astrodyn::Epoch> = None;
         for (i, grav) in self.gravity_data.iter_mut().enumerate() {
             match grav.rotation_model {
@@ -73,6 +75,7 @@ impl Simulation {
                             rotation,
                             grav.planet_omega,
                         );
+                        self.frame_tree.set_epoch(pfix_id, frame_epoch);
                     }
                 }
                 RotationModel::MarsIAU => {
@@ -87,6 +90,7 @@ impl Simulation {
                             rotation,
                             grav.planet_omega,
                         );
+                        self.frame_tree.set_epoch(pfix_id, frame_epoch);
                     }
                 }
                 RotationModel::MoonIAU => {
@@ -101,6 +105,7 @@ impl Simulation {
                             rotation,
                             grav.planet_omega,
                         );
+                        self.frame_tree.set_epoch(pfix_id, frame_epoch);
                     }
                 }
                 RotationModel::MoonDE421 => {
@@ -120,6 +125,7 @@ impl Simulation {
                             rotation,
                             grav.planet_omega,
                         );
+                        self.frame_tree.set_epoch(pfix_id, frame_epoch);
                     }
                 }
             }
@@ -171,6 +177,7 @@ impl Simulation {
                     let node = self.frame_tree.get_mut(fid);
                     node.state.trans.position = pos;
                     node.state.trans.velocity = vel;
+                    self.frame_tree.set_epoch(fid, Some(self.time.tdb()));
                     // Also update gravity_data velocity for relativistic corrections.
                     self.gravity_data[i].velocity = vel;
                 }

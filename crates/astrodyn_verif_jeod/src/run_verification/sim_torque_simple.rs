@@ -225,7 +225,7 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
             ],
         },
         compute_gravity_gradient: cfg.earth_gradient,
-        ..Default::default()
+        ..VehicleConfig::named("sim-torque-simple-0")
     });
 
     sb

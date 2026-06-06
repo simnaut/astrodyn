@@ -98,6 +98,7 @@ fn setup(mut commands: Commands) {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("iss")
         .from_orbital_elements(orbital_elements::iss(), mu)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()

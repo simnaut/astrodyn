@@ -154,7 +154,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-lighting-2")
     });
     sim.validate().unwrap();
     sim.step().expect("step failed");
@@ -366,7 +366,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-lighting-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -569,7 +569,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-lighting-0")
     });
     sim.validate().unwrap();
     sim.step().expect("step failed");

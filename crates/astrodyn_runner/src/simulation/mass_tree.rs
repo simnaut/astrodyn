@@ -1819,17 +1819,17 @@ mod tests {
         // not numerical correctness, so opting in to the JEOD-faithful path
         // (#485 C1) keeps the test focus on its actual subject.
         let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
-        let make_cfg = |trans: TranslationalState| VehicleConfig {
+        let make_cfg = |name: &str, trans: TranslationalState| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named(name)
         };
-        let body_a = sim.add_body(make_cfg(trans_a));
-        let body_b = sim.add_body(make_cfg(trans_b));
+        let body_a = sim.add_body(make_cfg("body-a", trans_a));
+        let body_b = sim.add_body(make_cfg("body-b", trans_b));
 
         // Register both in the mass tree so we can attach later.
         let id_a = sim.add_body_to_tree(body_a, "BodyA");
@@ -1928,20 +1928,23 @@ mod tests {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
-        let make = |trans: TranslationalState| VehicleConfig {
+        let make = |name: &str, trans: TranslationalState| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named(name)
         };
-        let body_a = sim.add_body(make(trans));
-        let body_b = sim.add_body(make(TranslationalState {
-            position: trans.position + DVec3::new(0.0, 1.0, 0.0),
-            velocity: trans.velocity,
-        }));
+        let body_a = sim.add_body(make("body-a", trans));
+        let body_b = sim.add_body(make(
+            "body-b",
+            TranslationalState {
+                position: trans.position + DVec3::new(0.0, 1.0, 0.0),
+                velocity: trans.velocity,
+            },
+        ));
         sim.add_body_to_tree(body_a, "BodyA");
         sim.add_body_to_tree(body_b, "BodyB");
 
@@ -2006,17 +2009,17 @@ mod tests {
             },
         );
 
-        let make_cfg = |trans: TranslationalState| VehicleConfig {
+        let make_cfg = |name: &str, trans: TranslationalState| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named(name)
         };
-        let body_a = sim.add_body(make_cfg(trans_a));
-        let body_b = sim.add_body(make_cfg(trans_b));
+        let body_a = sim.add_body(make_cfg("body-a", trans_a));
+        let body_b = sim.add_body(make_cfg("body-b", trans_b));
         sim.add_body_to_tree(body_a, "BodyA");
         sim.add_body_to_tree(body_b, "BodyB");
 
@@ -2097,20 +2100,23 @@ mod tests {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
-        let make = |trans: TranslationalState| VehicleConfig {
+        let make = |name: &str, trans: TranslationalState| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named(name)
         };
-        let body_a = sim.add_body(make(trans));
-        let body_b = sim.add_body(make(TranslationalState {
-            position: trans.position + DVec3::new(0.0, 1.0, 0.0),
-            velocity: trans.velocity,
-        }));
+        let body_a = sim.add_body(make("body-a", trans));
+        let body_b = sim.add_body(make(
+            "body-b",
+            TranslationalState {
+                position: trans.position + DVec3::new(0.0, 1.0, 0.0),
+                velocity: trans.velocity,
+            },
+        ));
         sim.add_body_to_tree(body_a, "BodyA");
         sim.add_body_to_tree(body_b, "BodyB");
 
@@ -2182,19 +2188,19 @@ mod tests {
             position: DVec3::new(9e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 8000.0, 0.0),
         };
-        let make_cfg = || VehicleConfig {
+        let make_cfg = |name: &str| VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&trans),
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named(name)
         };
-        let top = sim.add_body(make_cfg());
-        let middle = sim.add_body(make_cfg());
-        let leaf = sim.add_body(make_cfg());
-        let new_attachee = sim.add_body(make_cfg());
+        let top = sim.add_body(make_cfg("top"));
+        let middle = sim.add_body(make_cfg("middle"));
+        let leaf = sim.add_body(make_cfg("leaf"));
+        let new_attachee = sim.add_body(make_cfg("new-attachee"));
         sim.add_body_to_tree(top, "Top");
         sim.add_body_to_tree(middle, "Middle");
         sim.add_body_to_tree(leaf, "Leaf");
@@ -2328,7 +2334,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-8")
         });
         let cm_id = sim.add_body_to_tree(cm, "cm");
 
@@ -2515,7 +2521,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-7")
         });
 
         let cm_id = sim.add_body_to_tree(cm_idx, "cm");
@@ -2860,7 +2866,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-6")
         });
         let cm_id = sim.add_body_to_tree(body_idx, "cm");
 
@@ -2948,7 +2954,7 @@ mod tests {
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
             },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-5")
         });
         let cm_id = sim.add_body_to_tree(body_idx, "cm");
 
@@ -3023,7 +3029,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-4")
         });
         sim.add_body_to_tree(parent_idx, "parent");
         sim.add_body_to_tree(child_idx, "child");
@@ -3103,7 +3109,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-3")
         });
         sim.add_body_to_tree(parent_idx, "parent");
         let child_id = sim.add_body_to_tree(child_idx, "child");
@@ -3192,7 +3198,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(100.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-2")
         });
         let intermediate_idx = sim.add_body(VehicleConfig {
             trans: trans_raw_to_typed::<RootInertial>(&TranslationalState {
@@ -3207,7 +3213,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(50.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-1")
         });
         // 3-DOF body — no `rot` field.
         let three_dof_idx = sim.add_body(VehicleConfig {
@@ -3218,7 +3224,7 @@ mod tests {
             rot: None,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(10.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            ..Default::default()
+            ..VehicleConfig::named("mass-tree-0")
         });
 
         sim.add_body_to_tree(parent_a_idx, "parent_a");

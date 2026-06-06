@@ -200,7 +200,7 @@ fn run_integ_test(
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-lsode-0")
     });
 
     sim.validate().unwrap();

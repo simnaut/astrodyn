@@ -96,6 +96,7 @@ fn in_09_panics_on_solar_beta_without_sun_marker() {
     // (per `crates/astrodyn_bevy/src/lib.rs::spawn_bevy_inner` —
     // see the `derived.solar_beta` row in the rustdoc enumeration).
     let cfg = VehicleBuilder::new()
+        .vehicle_named("in-09-solar-beta-requires-sun-marker-0")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()

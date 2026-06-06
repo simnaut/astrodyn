@@ -111,7 +111,7 @@ fn build_kinematic_propagation(_init: &InitialConditions) -> SimulationBuilder {
         mass: Some(super::typed_helpers::mass_typed(&parent_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("sim-kinematic-propagation-1")
     });
     let child_idx = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&child_initial_trans()),
@@ -119,7 +119,7 @@ fn build_kinematic_propagation(_init: &InitialConditions) -> SimulationBuilder {
         mass: Some(super::typed_helpers::mass_typed(&child_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("sim-kinematic-propagation-0")
     });
     sb.register_in_mass_tree(parent_idx, "parent");
     sb.register_in_mass_tree(child_idx, "child");

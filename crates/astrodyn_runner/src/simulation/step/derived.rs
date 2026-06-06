@@ -142,6 +142,12 @@ impl Simulation {
 
 #[cfg(test)]
 mod tests {
+    /// Synthetic gravity-source markers (issue #662 strict identity).
+    mod tags {
+        astrodyn::define_planet!(Far);
+        astrodyn::define_planet!(Origin);
+    }
+
     use crate::Simulation;
     use astrodyn::JeodQuat;
     use astrodyn::{
@@ -175,7 +181,7 @@ mod tests {
         let dt = 0.1;
         let time = SimulationTime::at_j2000(default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
-        let origin_src = sim.add_source(
+        let origin_src = sim.add_source_typed::<tags::Origin>(
             "Origin",
             GravitySourceEntry {
                 source: GravitySource {
@@ -196,7 +202,7 @@ mod tests {
         // Source 1: 1e9 m offset in +X. Marked non-central so the body's
         // gravity_controls flip on switch (mirrors realistic frame-switch
         // wiring; the test does not depend on the flip).
-        let far_src = sim.add_source(
+        let far_src = sim.add_source_typed::<tags::Far>(
             "Far",
             GravitySourceEntry {
                 source: GravitySource {
@@ -294,7 +300,7 @@ mod tests {
                 solar_beta: true,
                 ..Default::default()
             },
-            ..Default::default()
+            ..VehicleConfig::named("derived-veh")
         });
 
         sim.step().expect("step() must succeed");

@@ -156,7 +156,7 @@ fn build_lsode_scenario(initial_state: TranslationalState) -> SimulationBuilder 
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-lsode-0")
     });
     b
 }

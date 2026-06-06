@@ -88,7 +88,7 @@ fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
             orbital_elements_source: Some(earth),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-derived-state-4")
     });
     sb
 }
@@ -143,7 +143,7 @@ fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
             lvlh: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-derived-state-3")
     });
     sb
 }
@@ -249,7 +249,7 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
             }),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-derived-state-2")
     });
     sb
 }
@@ -412,7 +412,7 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
             euler_sequence: Some(EulerSequence::XYZ),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-derived-state-1")
     });
     sb
 }
@@ -455,7 +455,7 @@ fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
             euler_sequence: Some(EulerSequence::XYZ),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-derived-state-0")
     });
     sb
 }

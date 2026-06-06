@@ -156,7 +156,7 @@ fn run_simulation_steps() -> SixDofState {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-1")
     });
 
     sim.validate().unwrap();
@@ -296,7 +296,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-0")
     });
 
     sim.validate().unwrap();

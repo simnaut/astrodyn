@@ -749,7 +749,7 @@ mod tests {
                     GravityGradient::Skip,
                 )],
             },
-            ..Default::default()
+            ..VehicleConfig::named("scenario-1")
         });
         b
     }
@@ -871,7 +871,7 @@ mod tests {
                     GravityGradient::Skip,
                 )],
             },
-            ..Default::default()
+            ..VehicleConfig::named("scenario-0")
         });
         let handles = b
             .populate_app::<astrodyn::Earth>(&mut app)

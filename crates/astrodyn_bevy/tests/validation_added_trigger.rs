@@ -50,6 +50,7 @@ fn build_app() -> (App, Entity) {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("validation-added-trigger-0")
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
@@ -93,6 +94,7 @@ fn validation_fires_for_body_added_after_startup() {
 
     let earth_mu = earth::point_mass().source.mu;
     let bogus_cfg = VehicleBuilder::new()
+        .vehicle_named("validation-added-trigger-1")
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()

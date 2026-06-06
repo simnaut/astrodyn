@@ -126,13 +126,20 @@ fn analytical_tolerances() -> Tolerances {
     }
 }
 
+/// Synthetic gravity-source marker for the empty-space root: not one of
+/// the six sealed planets, so (per issue #662's strict identity rule) it
+/// requires a `define_planet!`-minted marker and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(CentralPoint);
+}
+
 /// A negligible gravity source kept in the frame tree but not
 /// referenced by any body. `Simulation` requires a root frame; using
 /// `central: true` with `mu = 0.0` gives us the frame without any
 /// gravitational effect. Mirrors the pre-recipe tier3 file's
 /// `add_dummy_central_source` helper exactly.
 fn add_dummy_central_source(sb: &mut SimulationBuilder) {
-    sb.add_source(
+    sb.add_source_typed::<tags::CentralPoint>(
         "central_point",
         GravitySourceEntry {
             source: GravitySource {
@@ -174,7 +181,7 @@ fn build_free_body_3dof(dt: f64, external_force: DVec3) -> SimulationBuilder {
         ))),
         gravity_controls: GravityControls { controls: vec![] },
         external_force: Force::<RootInertial>::from_raw_si(external_force),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-2")
     });
     sb
 }
@@ -210,7 +217,7 @@ fn build_free_body_6dof(
         external_torque: Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
             external_torque,
         ),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-1")
     });
     sb
 }
@@ -508,7 +515,7 @@ fn build_force_struct_pre_step(_init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         t_struct_body: t_struct_body_nontrivial(),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-0")
     });
     sb
 }

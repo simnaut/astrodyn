@@ -205,7 +205,7 @@ fn add_standard_body(
         )),
         gravity_controls: controls,
         drag,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-time-reversal-1")
     })
 }
 
@@ -672,7 +672,7 @@ fn tier3_sim_time_reversal_run9d() {
                 gravity_controls: GravityControls {
                     controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
                 },
-                ..Default::default()
+                ..VehicleConfig::named("tier3-sim-time-reversal-0")
             })
         },
         |sim, body, interval_start, _end| {

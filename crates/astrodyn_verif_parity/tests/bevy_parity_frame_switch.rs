@@ -246,7 +246,7 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
             switch_distance: SWITCH_RADIUS,
             active: true,
         }],
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-frame-switch-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -417,7 +417,7 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
             switch_distance: departure_threshold,
             active: true,
         }],
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-frame-switch-0")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

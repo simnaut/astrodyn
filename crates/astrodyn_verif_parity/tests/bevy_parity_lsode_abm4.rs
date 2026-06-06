@@ -155,7 +155,7 @@ fn build_abm4_scenario(initial_state: TranslationalState) -> SimulationBuilder {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-lsode-abm4-0")
     });
     b
 }

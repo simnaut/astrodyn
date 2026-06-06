@@ -47,16 +47,16 @@ pub fn frame_origin(
 /// Typed sibling of [`frame_origin`] returning the frame's position and
 /// velocity already wrapped as `Position<F>` / `Velocity<F>`. The frame
 /// marker `F` is the **root frame's** marker (the result expresses the
-/// query frame's origin in root-relative coordinates) — caller asserts
-/// the root is `F`. For the Bevy adapter and `astrodyn_runner` today, the
-/// root is by construction inertial, so callers pass `F = Inertial`.
+/// query frame's origin in root-relative coordinates).
 ///
-/// **Caller-asserts boundary (transitional):** this helper does not check
-/// `F` against the root node's stamped identity, because the production
-/// hosts create their frame nodes via the untyped path (`uid: None`) until
-/// issue #662 stamps them. Once production identities are stamped, this
-/// becomes a checked lookup like `FrameTree::get_state_typed` — checking
-/// today would panic on every per-step call.
+/// **Checked lookup**: the root node's stamped identity is verified
+/// against `F` — a wrong marker fails loudly instead of silently
+/// mislabeling the result's coordinate basis.
+///
+/// # Panics
+/// - the root node is unstamped (build the tree via the stamped
+///   constructors);
+/// - the root's stored identity does not match `F`.
 ///
 /// Phase C5 of issue #71: lets consumers compute the integration-frame
 /// origin without re-lifting raw `DVec3` through `from_raw_si` at the
@@ -66,6 +66,19 @@ pub fn frame_origin_typed<F: Frame>(
     root_frame_id: FrameId,
     frame_id: FrameId,
 ) -> (Position<F>, Velocity<F>) {
+    // JEOD_INV: RF.02 — the result is expressed in the root's frame, so
+    // the requested marker must name the root node's stamped identity.
+    let root_uid = frame_tree.get(root_frame_id).uid().unwrap_or_else(|| {
+        panic!(
+            "frame_origin_typed: root frame {root_frame_id} is unstamped — cannot verify it is `{}`. Build the tree via add_root_typed / add_child_uid so the root carries an identity.",
+            core::any::type_name::<F>()
+        )
+    });
+    assert!(
+        root_uid.is::<F>(),
+        "frame_origin_typed: root frame {root_frame_id} has stored identity `{root_uid}`, but the requested marker is `{}` — the result is expressed in the root's frame, so F must name the root's identity.",
+        core::any::type_name::<F>()
+    );
     let (pos_raw, vel_raw) = frame_origin(frame_tree, root_frame_id, frame_id);
     (
         Position::<F>::from_raw_si(pos_raw),
@@ -74,24 +87,62 @@ pub fn frame_origin_typed<F: Frame>(
 }
 
 /// Typed sibling of [`FrameTree::compute_relative_state`] returning a
-/// [`RefFrameStateTyped<From, To>`]. The caller asserts the supplied
-/// frame IDs correspond to frames whose markers are `From` and `To` —
-/// the arena is heterogeneous and stores untyped `RefFrameState` per
-/// node, so this is a `from_untyped_unchecked` boundary lift.
+/// [`RefFrameStateTyped<From, To>`].
 ///
-/// **Caller-asserts boundary (transitional):** the markers are not checked
-/// against the nodes' stamped identities, because the production hosts
-/// create their frame nodes via the untyped path (`uid: None`) until issue
-/// #662 stamps them. Once production identities are stamped, this becomes
-/// a checked lookup like `FrameTree::get_state_typed` — checking today
-/// would panic on every per-step call.
+/// **Checked lookup**: both endpoints' stamped identities are verified
+/// against the requested markers — a wrong marker fails loudly instead of
+/// silently mislabeling physics.
+///
+/// # Panics
+/// - `From` or `To` is non-mintable (a storage-boundary wildcard or
+///   `IntegrationFrame`) — such a marker can never name a stored identity;
+/// - either endpoint is unstamped;
+/// - either endpoint's stored identity does not match its marker.
 ///
 /// Phase C5 of issue #71.
+// JEOD_INV: RF.02 — checked typed recovery at the orchestration boundary:
+// both endpoints' stored identities must equal the requested markers.
 pub fn compute_relative_state_typed<From: Frame, To: Frame>(
     frame_tree: &FrameTree,
     from: FrameId,
     to: FrameId,
 ) -> RefFrameStateTyped<From, To> {
+    use astrodyn_quantities::frame_descriptor::MintPolicy;
+    let check = |id: FrameId, marker: &str, name: &str, mint: MintPolicy, is_match: bool| {
+        assert!(
+            matches!(mint, MintPolicy::Stable),
+            "compute_relative_state_typed: {marker} marker `{name}` is not mintable (a runtime-resolved wildcard or IntegrationFrame) and can never name a stored identity. Resolve the concrete frame type and request that.",
+        );
+        assert!(
+            is_match,
+            "compute_relative_state_typed: frame {id} has stored identity `{}`, but the requested {marker} marker is `{name}` — identity mismatch.",
+            frame_tree
+                .get(id)
+                .uid()
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| "<unstamped>".into()),
+        );
+    };
+    let stamped = |id: FrameId, marker: &str, name: &str| {
+        frame_tree.get(id).uid().unwrap_or_else(|| {
+            panic!(
+                "compute_relative_state_typed: frame {id} (`{}`) is unstamped — cannot verify it is the {marker} marker `{name}`. Stamp its identity via the typed constructors or add_child_uid.",
+                frame_tree.get(id).name
+            )
+        })
+    };
+    let from_name = core::any::type_name::<From>();
+    let to_name = core::any::type_name::<To>();
+    let from_uid = stamped(from, "From", from_name);
+    check(
+        from,
+        "From",
+        from_name,
+        From::DESCRIPTOR.mint,
+        from_uid.is::<From>(),
+    );
+    let to_uid = stamped(to, "To", to_name);
+    check(to, "To", to_name, To::DESCRIPTOR.mint, to_uid.is::<To>());
     let untyped = frame_tree.compute_relative_state(from, to);
     RefFrameStateTyped::<From, To>::from_untyped_unchecked(&untyped)
 }
@@ -105,7 +156,7 @@ mod tests {
     #[test]
     fn frame_origin_typed_matches_untyped() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root_typed::<RootInertial>("root".into());
         let child = tree.add_child(
             root,
             "child".into(),
@@ -129,7 +180,7 @@ mod tests {
     #[test]
     fn frame_origin_typed_root_is_zero() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root_typed::<RootInertial>("root".into());
         let (typed_pos, typed_vel) = frame_origin_typed::<RootInertial>(&tree, root, root);
         assert_eq!(typed_pos.raw_si(), DVec3::ZERO);
         assert_eq!(typed_vel.raw_si(), DVec3::ZERO);
@@ -137,12 +188,13 @@ mod tests {
 
     #[test]
     fn compute_relative_state_typed_matches_untyped() {
+        use astrodyn_quantities::frame_descriptor::FrameUid;
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let child = tree.add_child(
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        let child = tree.add_child_uid(
             root,
+            FrameUid::of::<Ecef>(),
             "ecef".into(),
-            RefFrameKind::PlanetFixed,
             RefFrameState {
                 trans: RefFrameTrans {
                     position: DVec3::new(1.0, 2.0, 3.0),
@@ -150,6 +202,7 @@ mod tests {
                 },
                 rot: RefFrameRot::default(),
             },
+            None,
         );
 
         let untyped = tree.compute_relative_state(root, child);

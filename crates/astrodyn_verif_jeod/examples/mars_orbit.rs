@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         velocity: INIT_VEL,
     };
     let dawn = VehicleBuilder::new()
+        .vehicle_named("mars-orbiter")
         .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(&trans))
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()

@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use glam::DMat3;
 
 use astrodyn::atmosphere::AtmosphereConfig;
-use astrodyn::{FrameId, FrameTree, MassBodyId, RefFrameKind, SimulationTime, SourceFrameIds};
+use astrodyn::{FrameId, FrameTree, MassBodyId, SimulationTime, SourceFrameIds};
 
 use crate::simulation::types::{GravityData, SimBody};
 
@@ -292,7 +292,8 @@ impl Simulation {
     /// distinct children of root by [`Self::add_source`].
     pub fn new(time: SimulationTime, dt: f64) -> Self {
         let mut frame_tree = FrameTree::new();
-        let root_frame_id = frame_tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root_frame_id = frame_tree.add_root_typed::<astrodyn::RootInertial>("root".into());
+        frame_tree.set_epoch(root_frame_id, Some(time.tdb()));
         Self {
             time,
             bodies: Vec::new(),

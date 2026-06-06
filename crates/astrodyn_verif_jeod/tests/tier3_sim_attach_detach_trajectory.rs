@@ -285,7 +285,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh1_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-attach-detach-trajectory-2")
     });
     let v2 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_initial_trans()),
@@ -295,7 +295,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh2_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-attach-detach-trajectory-1")
     });
     let v3 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_initial_trans()),
@@ -305,7 +305,7 @@ fn build_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(veh3_mass()))),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-attach-detach-trajectory-0")
     });
     sim.add_body_to_tree(v1, "veh1");
     sim.add_body_to_tree(v2, "veh2");

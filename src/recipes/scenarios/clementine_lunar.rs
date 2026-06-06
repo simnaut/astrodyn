@@ -69,6 +69,7 @@ pub fn clementine_lunar() -> SimulationBuilder {
     };
 
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("clementine")
         .with_translational(trans)
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()

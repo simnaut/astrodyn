@@ -870,11 +870,14 @@ impl Simulation {
             }
         }
 
-        // Sync body positions back to frame tree after integration.
+        // Sync body positions back to frame tree after integration,
+        // stamping each node's frame epoch with the step's end time.
+        let frame_epoch = Some(self.time.tdb());
         for body in &self.bodies {
             let node = self.frame_tree.get_mut(body.body_frame_id);
             node.state.trans.position = body.trans.position.raw_si();
             node.state.trans.velocity = body.trans.velocity.raw_si();
+            self.frame_tree.set_epoch(body.body_frame_id, frame_epoch);
         }
 
         // ── 8b. Frame switch (body actions) ──

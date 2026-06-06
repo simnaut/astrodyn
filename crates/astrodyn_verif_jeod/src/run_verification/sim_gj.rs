@@ -93,7 +93,7 @@ fn build_gj_scenario(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-gj-0")
     });
     b
 }

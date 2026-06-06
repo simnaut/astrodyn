@@ -195,7 +195,7 @@ fn run_gj_bootstrap_parity(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-gj-0")
     });
     sim.validate().unwrap();
     sim.step_n(n_steps).expect("step_n failed");
