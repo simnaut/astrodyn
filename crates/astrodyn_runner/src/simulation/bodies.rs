@@ -17,8 +17,8 @@ use astrodyn::typed_bridge::{
 };
 use astrodyn::{
     evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
-    MassBodyId, MassPointState, MassProperties, MassPropertiesTyped, Phase, Position, RefFrameKind,
-    RefFrameRot, RefFrameState, RefFrameTrans, SelfRef, VehicleConfig, Velocity,
+    MassBodyId, MassPointState, MassProperties, MassPropertiesTyped, Phase, Position, RefFrameRot,
+    RefFrameState, RefFrameTrans, SelfRef, VehicleConfig, Velocity,
 };
 
 use super::types::{
@@ -276,11 +276,42 @@ impl Simulation {
             })
             .unwrap_or(self.root_frame_id);
 
-        // Create body frame in tree under the integration frame.
-        let body_frame_id = self.frame_tree.add_child(
+        // RFS-303: the resolved integration frame's identity is asserted,
+        // not assumed — it must be stamped (sources/root always are) and
+        // its class must be eligible to host integration.
+        let integ_uid = self
+            .frame_tree
+            .get(integ_frame_id)
+            .uid()
+            .unwrap_or_else(|| {
+                panic!(
+                    "add_body: body {idx}'s integration frame {integ_frame_id} is \
+                     unstamped — every integration frame must carry a minted identity \
+                     before a body integrates in it. Sources are stamped by \
+                     add_source/add_source_typed and the root by Simulation::new; \
+                     register the integ_source before adding the body."
+                )
+            })
+            .clone();
+        // JEOD_INV: RF.10 — a body may only integrate in a root- or
+        // planet-inertial frame; integrating in a rotating frame without
+        // fictitious-force treatment is silently wrong physics.
+        assert!(
+            integ_uid.class.may_be_root_or_integ(),
+            "add_body: body {idx}'s integration frame has identity `{integ_uid}` \
+             (class {:?}), which is not eligible to host integration (only \
+             RootInertial / PlanetInertial / BarycenterInertial classes are). Set \
+             VehicleConfig::integ_source to a planet's inertial source, or leave it \
+             None to integrate in the root frame.",
+            integ_uid.class
+        );
+
+        // Create body frame in tree under the integration frame, stamped
+        // with the mission-supplied identity carried by the config.
+        let body_frame_id = self.frame_tree.add_child_uid(
             integ_frame_id,
+            config.frame_uid.clone(),
             format!("body_{idx}.integ"),
-            RefFrameKind::Body,
             RefFrameState {
                 trans: RefFrameTrans {
                     // VehicleConfig::trans is typed `<RootInertial>`; the
@@ -291,11 +322,28 @@ impl Simulation {
                 },
                 rot: RefFrameRot::default(),
             },
+            Some(self.time.tdb()),
         );
 
         self.bodies
             .push(SimBody::from_config(config, integ_frame_id, body_frame_id));
         idx
+    }
+
+    /// The resolved identity of `body_idx`'s integration frame —
+    /// `RootInertial` or a `PlanetInertial<P>`, never the
+    /// `IntegrationFrame` marker (RF.10: the marker resolves per body;
+    /// the runner publishes the resolution).
+    pub fn body_integ_frame_uid(&self, body_idx: usize) -> &astrodyn::FrameUid {
+        assert!(
+            body_idx < self.bodies.len(),
+            "body_integ_frame_uid: body index {body_idx} out of range ({} bodies)",
+            self.bodies.len()
+        );
+        self.frame_tree
+            .get(self.bodies[body_idx].integ_frame_id)
+            .uid()
+            .expect("integration frames are stamped at add_body (RFS-303)")
     }
 
     // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only
