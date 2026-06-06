@@ -174,6 +174,7 @@ pub mod diagnostics;
 pub mod dims;
 pub mod ext;
 pub mod frame;
+pub mod frame_descriptor;
 pub mod frame_transform;
 pub mod guard_macros;
 pub mod harmonic;
@@ -191,6 +192,10 @@ pub use body_attitude::BodyAttitude;
 pub use cartesian_state::CartesianState;
 pub use dims::*;
 pub use frame::*;
+pub use frame_descriptor::{
+    FrameClass, FrameDescriptorStatic, FrameRole, FrameRoleStatic, FrameUid, MintPolicy, Namespace,
+    Tag,
+};
 pub use frame_transform::*;
 pub use integ_origin::IntegOrigin;
 pub use qty3::*;

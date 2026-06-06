@@ -25,6 +25,9 @@
 use core::marker::PhantomData;
 
 use crate::derive_utils::{impl_clone_phantom, impl_copy_phantom};
+use crate::frame_descriptor::{
+    mint_for_param, FrameClass, FrameDescriptorStatic, FrameRoleStatic, MintPolicy,
+};
 use crate::sealed::{FrameSealed, PlanetSealed, VehicleSealed};
 
 /// Compile-time reference frame tag.
@@ -52,6 +55,14 @@ use crate::sealed::{FrameSealed, PlanetSealed, VehicleSealed};
 pub trait Frame: FrameSealed + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
+
+    /// Runtime identity descriptor for this frame kind: class, role,
+    /// instance tag, and mint policy. Lowered to an owned
+    /// [`FrameUid`](crate::frame_descriptor::FrameUid) via
+    /// [`FrameUid::of`](crate::frame_descriptor::FrameUid::of). For
+    /// parameterized frames the tag and mint policy are composed from the
+    /// `Planet`/`Vehicle` tag's `NAME` and `IS_WILDCARD` consts.
+    const DESCRIPTOR: FrameDescriptorStatic;
 }
 
 /// Compile-time planet tag used to parameterize planet-fixed frames.
@@ -70,6 +81,14 @@ pub trait Frame: FrameSealed + 'static {
 pub trait Planet: PlanetSealed + Send + Sync + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
+
+    /// `true` iff this tag is a runtime-resolved storage-boundary wildcard
+    /// (`SelfPlanet`) rather than a concrete planet. Defaulted `false` so
+    /// `define_planet!` call sites and the built-in markers need no change;
+    /// only the wildcard overrides it. Drives the
+    /// [`MintPolicy`](crate::frame_descriptor::MintPolicy) of frames
+    /// parameterized by this tag.
+    const IS_WILDCARD: bool = false;
 }
 
 /// Compile-time vehicle tag used to parameterize vehicle-relative frames.
@@ -91,6 +110,14 @@ pub trait Planet: PlanetSealed + Send + Sync + 'static {
 pub trait Vehicle: VehicleSealed + Send + Sync + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
+
+    /// `true` iff this tag is a runtime-resolved storage-boundary wildcard
+    /// (`SelfRef`) rather than a concrete vehicle. Defaulted `false` so
+    /// `define_vehicle!` call sites, the built-in markers, and `TestVehicle`
+    /// need no change; only the wildcard overrides it. Drives the
+    /// [`MintPolicy`](crate::frame_descriptor::MintPolicy) of frames
+    /// parameterized by this tag.
+    const IS_WILDCARD: bool = false;
 }
 
 // --- Planet markers -----------------------------------------------------------
@@ -134,6 +161,9 @@ pub struct SelfPlanet;
 impl PlanetSealed for SelfPlanet {}
 impl Planet for SelfPlanet {
     const NAME: &'static str = "SelfPlanet";
+    // JEOD_INV: TS.01 — the wildcard flag marks frames parameterized by this
+    // tag as unmintable runtime identities (FrameUid::of refuses them).
+    const IS_WILDCARD: bool = true;
 }
 
 // --- Frame markers ------------------------------------------------------------
@@ -161,6 +191,12 @@ pub struct RootInertial;
 impl FrameSealed for RootInertial {}
 impl Frame for RootInertial {
     const NAME: &'static str = "RootInertial";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::RootInertial,
+        role: FrameRoleStatic::Primary,
+        tag: None,
+        mint: MintPolicy::Stable,
+    };
 }
 
 /// A particular planet's inertial (non-rotating, J2000-aligned) frame,
@@ -191,6 +227,12 @@ pub struct PlanetInertial<P: Planet>(PhantomData<P>);
 impl<P: Planet> FrameSealed for PlanetInertial<P> {}
 impl<P: Planet> Frame for PlanetInertial<P> {
     const NAME: &'static str = "PlanetInertial";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::PlanetInertial,
+        role: FrameRoleStatic::Primary,
+        tag: Some(P::NAME),
+        mint: mint_for_param(P::IS_WILDCARD),
+    };
 }
 
 /// Earth-centered Earth-fixed frame (ITRF-like). Rotates with Earth.
@@ -199,6 +241,16 @@ pub struct Ecef;
 impl FrameSealed for Ecef {}
 impl Frame for Ecef {
     const NAME: &'static str = "Ecef";
+    // Role `AltPfix` (not `Primary`) keeps this descriptor distinct from
+    // `PlanetFixed<Earth>` — identity injectivity across the sealed set.
+    // `Ecef` is the test-only legacy ITRF-like marker; production code uses
+    // `PlanetFixed<Earth>` exclusively.
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::PlanetFixed,
+        role: FrameRoleStatic::AltPfix,
+        tag: Some("Earth"),
+        mint: MintPolicy::Stable,
+    };
 }
 
 /// A body's integration frame — a non-rotating quasi-inertial frame whose
@@ -231,6 +283,17 @@ pub struct IntegrationFrame;
 impl FrameSealed for IntegrationFrame {}
 impl Frame for IntegrationFrame {
     const NAME: &'static str = "IntegrationFrame";
+    // JEOD_INV: RF.10 — IntegrationFrame is a real, kind-distinct frame that
+    // resolves per body to RootInertial or PlanetInertial<P>; `mint:
+    // PerBodyIntegration` makes FrameUid::of refuse it and direct callers to
+    // the resolved frame. The `class` here is advisory-only (the common
+    // resolution target) and is never lowered into a FrameUid.
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::PlanetInertial,
+        role: FrameRoleStatic::Primary,
+        tag: None,
+        mint: MintPolicy::PerBodyIntegration,
+    };
 }
 
 /// Mass-tree wildcard inertial-flavor frame for kinematic-propagation
@@ -277,6 +340,16 @@ pub struct MassNode;
 impl FrameSealed for MassNode {}
 impl Frame for MassNode {
     const NAME: &'static str = "MassNode";
+    // JEOD_INV: TS.01 — MassNode is the kinematic-propagation
+    // storage-boundary wildcard; `mint: Wildcard` makes FrameUid::of refuse
+    // it. The `class` is advisory-only (MassNode carries inertial-flavor
+    // scratch state) and is never lowered into a FrameUid.
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::RootInertial,
+        role: FrameRoleStatic::Primary,
+        tag: None,
+        mint: MintPolicy::Wildcard,
+    };
 }
 
 // NOTE on `NAME`: each frame's `NAME` const identifies the *frame kind*
@@ -297,6 +370,12 @@ impl_copy_phantom!([P: Planet] PlanetFixed[P]);
 impl<P: Planet> FrameSealed for PlanetFixed<P> {}
 impl<P: Planet> Frame for PlanetFixed<P> {
     const NAME: &'static str = "PlanetFixed";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::PlanetFixed,
+        role: FrameRoleStatic::Primary,
+        tag: Some(P::NAME),
+        mint: mint_for_param(P::IS_WILDCARD),
+    };
 }
 
 /// Site-anchored topocentric (ENU) frame on planet `P`.
@@ -319,6 +398,12 @@ impl_copy_phantom!([P: Planet] Topocentric[P]);
 impl<P: Planet> FrameSealed for Topocentric<P> {}
 impl<P: Planet> Frame for Topocentric<P> {
     const NAME: &'static str = "Topocentric";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::Topocentric,
+        role: FrameRoleStatic::Primary,
+        tag: Some(P::NAME),
+        mint: mint_for_param(P::IS_WILDCARD),
+    };
 }
 
 /// Body (CoM-centered) frame of vehicle `V`. Rotates with the vehicle.
@@ -327,6 +412,12 @@ pub struct BodyFrame<V: Vehicle>(PhantomData<V>);
 impl<V: Vehicle> FrameSealed for BodyFrame<V> {}
 impl<V: Vehicle> Frame for BodyFrame<V> {
     const NAME: &'static str = "BodyFrame";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::Body,
+        role: FrameRoleStatic::CompositeBody,
+        tag: Some(V::NAME),
+        mint: mint_for_param(V::IS_WILDCARD),
+    };
 }
 
 /// Structural (geometric-origin) frame of vehicle `V`. Rotates with vehicle.
@@ -335,6 +426,12 @@ pub struct StructuralFrame<V: Vehicle>(PhantomData<V>);
 impl<V: Vehicle> FrameSealed for StructuralFrame<V> {}
 impl<V: Vehicle> Frame for StructuralFrame<V> {
     const NAME: &'static str = "StructuralFrame";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::Body,
+        role: FrameRoleStatic::Structure,
+        tag: Some(V::NAME),
+        mint: mint_for_param(V::IS_WILDCARD),
+    };
 }
 
 /// Local Vertical / Local Horizontal frame relative to chief vehicle `Chief`.
@@ -345,6 +442,12 @@ pub struct Lvlh<Chief: Vehicle>(PhantomData<Chief>);
 impl<C: Vehicle> FrameSealed for Lvlh<C> {}
 impl<C: Vehicle> Frame for Lvlh<C> {
     const NAME: &'static str = "Lvlh";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::OrbitRelative,
+        role: FrameRoleStatic::Lvlh,
+        tag: Some(C::NAME),
+        mint: mint_for_param(C::IS_WILDCARD),
+    };
 }
 
 /// North-East-Down topocentric frame relative to chief vehicle `Chief`.
@@ -353,6 +456,12 @@ pub struct Ned<Chief: Vehicle>(PhantomData<Chief>);
 impl<C: Vehicle> FrameSealed for Ned<C> {}
 impl<C: Vehicle> Frame for Ned<C> {
     const NAME: &'static str = "Ned";
+    const DESCRIPTOR: FrameDescriptorStatic = FrameDescriptorStatic {
+        class: FrameClass::OrbitRelative,
+        role: FrameRoleStatic::Ned,
+        tag: Some(C::NAME),
+        mint: mint_for_param(C::IS_WILDCARD),
+    };
 }
 
 // --- Self-referential vehicle marker ----------------------------------------
@@ -389,6 +498,9 @@ pub struct SelfRef;
 impl VehicleSealed for SelfRef {}
 impl Vehicle for SelfRef {
     const NAME: &'static str = "SelfRef";
+    // JEOD_INV: TS.01 — the wildcard flag marks frames parameterized by this
+    // tag as unmintable runtime identities (FrameUid::of refuses them).
+    const IS_WILDCARD: bool = true;
 }
 
 // --- Test-only vehicle marker ------------------------------------------------
