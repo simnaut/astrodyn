@@ -281,7 +281,7 @@ pub use astrodyn_interactions::{
 // `Simulation` state container.
 pub use astrodyn_frames::{
     compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameStorage,
-    FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
+    FrameTree, FrameTreeError, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
 };
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that
@@ -344,6 +344,11 @@ pub use astrodyn_quantities::frame::{
     Planet, PlanetFixed, PlanetInertial, RootInertial, Saturn, SelfPlanet, SelfRef,
     StructuralFrame, Sun, Topocentric, Vehicle,
 };
+// Runtime frame-identity vocabulary (issue #659/#661): value-level frame
+// identity for the runtime layer. `FrameUid::of::<F>()` derives identity
+// from the compile-time markers above; `Namespace`/`Tag`/`FrameRole` carry
+// multi-source and producer-defined identity.
+pub use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `astrodyn` don't need a direct

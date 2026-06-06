@@ -69,7 +69,7 @@ pub mod rotation_moon;
 pub use frame_storage::{
     common_ancestor, compose_to_ancestor, compute_relative_state, FrameStorage,
 };
-pub use frame_tree::{FrameId, FrameNode, FrameTree};
+pub use frame_tree::{FrameId, FrameNode, FrameTree, FrameTreeError};
 pub use orchestration::{
     compute_relative_state_typed, frame_origin, frame_origin_typed, sync_pfix_rotation,
 };

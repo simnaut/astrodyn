@@ -51,6 +51,13 @@ pub fn frame_origin(
 /// the root is `F`. For the Bevy adapter and `astrodyn_runner` today, the
 /// root is by construction inertial, so callers pass `F = Inertial`.
 ///
+/// **Caller-asserts boundary (transitional):** this helper does not check
+/// `F` against the root node's stamped identity, because the production
+/// hosts create their frame nodes via the untyped path (`uid: None`) until
+/// issue #662 stamps them. Once production identities are stamped, this
+/// becomes a checked lookup like `FrameTree::get_state_typed` — checking
+/// today would panic on every per-step call.
+///
 /// Phase C5 of issue #71: lets consumers compute the integration-frame
 /// origin without re-lifting raw `DVec3` through `from_raw_si` at the
 /// hot-path boundary.
@@ -71,6 +78,13 @@ pub fn frame_origin_typed<F: Frame>(
 /// frame IDs correspond to frames whose markers are `From` and `To` —
 /// the arena is heterogeneous and stores untyped `RefFrameState` per
 /// node, so this is a `from_untyped_unchecked` boundary lift.
+///
+/// **Caller-asserts boundary (transitional):** the markers are not checked
+/// against the nodes' stamped identities, because the production hosts
+/// create their frame nodes via the untyped path (`uid: None`) until issue
+/// #662 stamps them. Once production identities are stamped, this becomes
+/// a checked lookup like `FrameTree::get_state_typed` — checking today
+/// would panic on every per-step call.
 ///
 /// Phase C5 of issue #71.
 pub fn compute_relative_state_typed<From: Frame, To: Frame>(

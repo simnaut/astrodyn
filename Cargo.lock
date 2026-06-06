@@ -256,6 +256,7 @@ dependencies = [
  "astrodyn_time",
  "glam 0.30.10",
  "proptest",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
