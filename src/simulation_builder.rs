@@ -19,6 +19,7 @@
 //! materialize the builder without extra accessors. Pre-release status
 //! (#58) makes that exposure acceptable; Phase 10 may re-encapsulate.
 
+use astrodyn_quantities::frame_descriptor::FrameUid;
 use glam::{DMat3, DVec3};
 
 use crate::atmosphere::AtmosphereConfig;
@@ -64,6 +65,12 @@ pub struct SimulationBuilder {
     pub moon_source: Option<usize>,
     /// Gravity sources keyed by name in declaration order.
     pub sources: Vec<(String, GravitySourceEntry)>,
+    /// Pre-minted frame identities `(inertial, pfix)` per source; index
+    /// matches [`Self::sources`]. `Some` for sources added via
+    /// [`Self::add_source_typed`] (identity travels as configuration
+    /// data); `None` falls back to the runner's sealed-planet name
+    /// dispatch at materialization.
+    pub source_uids: Vec<Option<(FrameUid, FrameUid)>>,
     /// Per-source `(body, parent)` ephemeris bodies; index matches
     /// [`Self::sources`]. `None` for sources that do not move via DE4xx.
     pub source_ephem_bodies: Vec<Option<(EphemerisBody, EphemerisBody)>>,
@@ -89,6 +96,7 @@ impl SimulationBuilder {
             sun_source: None,
             moon_source: None,
             sources: Vec::new(),
+            source_uids: Vec::new(),
             source_ephem_bodies: Vec::new(),
             bodies: Vec::new(),
             mass_tree_names: Vec::new(),
@@ -147,8 +155,29 @@ impl SimulationBuilder {
     /// Add a gravity source with a name for the frame tree. Returns its index.
     pub fn add_source(&mut self, name: impl Into<String>, entry: GravitySourceEntry) -> usize {
         let idx = self.sources.len();
+        self.source_uids.push(None);
         self.sources.push((name.into(), entry));
         self.source_ephem_bodies.push(None);
+        idx
+    }
+
+    /// Typed sibling of [`Self::add_source`]: mints the source's frame
+    /// identities from the planet marker `P` and carries them as
+    /// configuration data to the consumer (the runner's
+    /// `add_source_with_uids`, or the Bevy adapter in issue #664). Use for
+    /// planets minted downstream via `define_planet!`; the six built-in
+    /// planets may use the plain `add_source` name dispatch.
+    pub fn add_source_typed<P: astrodyn_quantities::frame::Planet>(
+        &mut self,
+        name: impl Into<String>,
+        entry: GravitySourceEntry,
+    ) -> usize {
+        let idx = self.sources.len();
+        self.source_uids.push(Some((
+            FrameUid::of::<astrodyn_quantities::frame::PlanetInertial<P>>(),
+            FrameUid::of::<astrodyn_quantities::frame::PlanetFixed<P>>(),
+        )));
+        self.sources.push((name.into(), entry));
         idx
     }
 

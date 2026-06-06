@@ -20,6 +20,7 @@ use astrodyn_interactions::DragConfig;
 use astrodyn_dynamics::state::TranslationalStateTyped;
 use astrodyn_dynamics::{MassPropertiesTyped, RotationalStateTyped};
 use astrodyn_quantities::frame::{RootInertial, SelfRef};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 // ── Frame switching ─────────────────────────────────────────────────────
 
@@ -154,6 +155,15 @@ pub struct DerivedStateConfig {
 /// results are read back via the adapter's own output view (the
 /// standalone runner exposes one; the Bevy adapter reads components).
 pub struct VehicleConfig {
+    /// Mission-supplied runtime identity for this vehicle's composite-body
+    /// frame. **Required — no default**: a defaulted identity would be
+    /// identity-by-accident and would let two bodies silently collide.
+    /// Construct configs via [`VehicleConfig::for_vehicle`] (typed,
+    /// `FrameUid::of::<BodyFrame<V>>()`), [`VehicleConfig::named`]
+    /// (mission-named value identity), [`VehicleConfig::for_uid`], or the
+    /// `VehicleBuilder` identity stage (`.vehicle::<V>()` /
+    /// `.vehicle_named(..)`).
+    pub frame_uid: FrameUid,
     // ── Initial state ──
     /// Translational state in the root-inertial frame, typed
     /// end-to-end. The runner re-tags as `<IntegrationFrame>` at
@@ -235,9 +245,14 @@ pub struct VehicleConfig {
     pub frame_switches: Vec<FrameSwitchConfig>,
 }
 
-impl Default for VehicleConfig {
-    fn default() -> Self {
+impl VehicleConfig {
+    /// Base constructor carrying a caller-supplied frame identity; every
+    /// other field takes its neutral default. The identity-bearing
+    /// replacement for the removed `impl Default` (a defaulted identity
+    /// would be identity-by-accident).
+    pub fn for_uid(frame_uid: FrameUid) -> Self {
         Self {
+            frame_uid,
             trans: TranslationalStateTyped::<RootInertial>::default(),
             rot: None,
             mass: None,
@@ -258,5 +273,18 @@ impl Default for VehicleConfig {
             integ_source: None,
             frame_switches: Vec::new(),
         }
+    }
+
+    /// Typed base constructor: identity derived from the compile-time
+    /// vehicle marker (`FrameUid::of::<BodyFrame<V>>()`, namespace LOCAL).
+    pub fn for_vehicle<V: astrodyn_quantities::frame::Vehicle>() -> Self {
+        Self::for_uid(FrameUid::of::<astrodyn_quantities::frame::BodyFrame<V>>())
+    }
+
+    /// Named base constructor: mission-named value identity in
+    /// [`crate::MISSION_NAMED_NS`] via the shared
+    /// [`crate::named_body_frame_uid`] mint.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self::for_uid(crate::named_body_frame_uid(&name.into()))
     }
 }

@@ -31,6 +31,7 @@
 //! use astrodyn_quantities::ext::F64Ext;
 //!
 //! let cfg = VehicleBuilder::new()
+//!     .vehicle_named("iss")
 //!     // `orbital_elements::iss()` returns `OrbitalElements<Earth>` and
 //!     // `constants::mu_ggm05c()` returns `GravParam<Earth>` — sharing
 //!     // the planet phantom is what `from_orbital_elements` requires.
@@ -41,6 +42,7 @@
 //! assert!(cfg.mass.is_some());
 //! ```
 
+use astrodyn_quantities::frame_descriptor::FrameUid;
 use core::marker::PhantomData;
 
 use glam::DMat3;
@@ -76,17 +78,23 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Marker trait for the four states of the typestate
+/// Marker trait for the five states of the typestate
 /// [`VehicleBuilder`]. Sealed downstream — implementors are limited to
-/// [`NeedsState`], [`NeedsMass`], [`HasIntegrator`], [`Ready`].
+/// [`NeedsIdentity`], [`NeedsState`], [`NeedsMass`], [`HasIntegrator`],
+/// [`Ready`].
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid `VehicleBuilder` state. Use \
-        `NeedsState`, `NeedsMass`, `HasIntegrator`, or `Ready`.",
+        `NeedsIdentity`, `NeedsState`, `NeedsMass`, `HasIntegrator`, or `Ready`.",
     label = "not a `BuildState`"
 )]
 pub trait BuildState: sealed::Sealed {}
 
-/// Stage 0: nothing configured yet. Call
+/// Stage 0: no identity yet. Every vehicle requires a mission-supplied
+/// frame identity (JEOD heritage: `DynBody` registration requires a
+/// name). Call [`VehicleBuilder::vehicle`] (typed marker) or
+/// [`VehicleBuilder::vehicle_named`] (mission-named value) to advance.
+pub struct NeedsIdentity;
+/// Stage 1: identity set, no state yet. Call
 /// [`VehicleBuilder::with_translational`] or
 /// [`VehicleBuilder::from_orbital_elements`] to advance.
 pub struct NeedsState;
@@ -103,22 +111,25 @@ pub struct HasIntegrator;
 /// can be added; [`VehicleBuilder::build`] is available.
 pub struct Ready;
 
+impl sealed::Sealed for NeedsIdentity {}
 impl sealed::Sealed for NeedsState {}
 impl sealed::Sealed for NeedsMass {}
 impl sealed::Sealed for HasIntegrator {}
 impl sealed::Sealed for Ready {}
+impl BuildState for NeedsIdentity {}
 impl BuildState for NeedsState {}
 impl BuildState for NeedsMass {}
 impl BuildState for HasIntegrator {}
 impl BuildState for Ready {}
 
 /// Typestate vehicle builder. The `S: BuildState` parameter advances
-/// through [`NeedsState`] → [`NeedsMass`] → [`HasIntegrator`] →
-/// [`Ready`] as required configuration is supplied. Methods that
-/// require a particular state are only in-scope for that state's
-/// `impl` block, so missing-step calls are compile errors.
+/// through [`NeedsIdentity`] → [`NeedsState`] → [`NeedsMass`] →
+/// [`HasIntegrator`] → [`Ready`] as required configuration is supplied.
+/// Methods that require a particular state are only in-scope for that
+/// state's `impl` block, so missing-step calls are compile errors.
 ///
-/// The order is `with_translational`/`from_orbital_elements` →
+/// The order is `vehicle`/`vehicle_named` →
+/// `with_translational`/`from_orbital_elements` →
 /// `three_dof_point_mass`/`sixdof` →
 /// `rk4`/`rkf45`/`gauss_jackson`/`with_integrator` → `build`. See
 /// module-level docs for examples.
@@ -129,7 +140,8 @@ impl BuildState for Ready {}
 /// compile-time gating from Phase 5. `build()` returns the full
 /// [`VehicleConfig`] (the type that goes into `SimulationBuilder::add_body`
 /// and through `Simulation`).
-pub struct VehicleBuilder<S: BuildState = NeedsState> {
+pub struct VehicleBuilder<S: BuildState = NeedsIdentity> {
+    frame_uid: Option<FrameUid>,
     trans: Option<TranslationalStateTyped<RootInertial>>,
     rot: Option<RotationalStateTyped<SelfRef>>,
     mass: Option<MassPropertiesTyped<SelfRef>>,
@@ -150,15 +162,16 @@ pub struct VehicleBuilder<S: BuildState = NeedsState> {
     _state: PhantomData<S>,
 }
 
-impl Default for VehicleBuilder<NeedsState> {
+impl Default for VehicleBuilder<NeedsIdentity> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl<S: BuildState> VehicleBuilder<S> {
-    fn empty() -> VehicleBuilder<NeedsState> {
+    fn empty() -> VehicleBuilder<NeedsIdentity> {
         VehicleBuilder {
+            frame_uid: None,
             trans: None,
             rot: None,
             mass: None,
@@ -182,6 +195,7 @@ impl<S: BuildState> VehicleBuilder<S> {
 
     fn transition<T: BuildState>(self) -> VehicleBuilder<T> {
         VehicleBuilder {
+            frame_uid: self.frame_uid,
             trans: self.trans,
             rot: self.rot,
             mass: self.mass,
@@ -202,14 +216,37 @@ impl<S: BuildState> VehicleBuilder<S> {
     }
 }
 
-impl VehicleBuilder<NeedsState> {
-    /// Create a fresh builder. The compiler will require
-    /// `.with_translational(...)` or `.from_orbital_elements(...)`
+impl VehicleBuilder<NeedsIdentity> {
+    /// Create a fresh builder. The compiler requires an identity
+    /// (`.vehicle::<V>()` or `.vehicle_named(..)`) first, then
+    /// `.with_translational(...)` / `.from_orbital_elements(...)`,
     /// before any mass / integrator method becomes available.
     pub fn new() -> Self {
         Self::empty()
     }
 
+    /// Supply the vehicle's identity from a compile-time `Vehicle`
+    /// marker: `FrameUid::of::<BodyFrame<V>>()` (namespace `LOCAL`).
+    /// For mission code with `define_vehicle!` tags.
+    pub fn vehicle<V: astrodyn_quantities::frame::Vehicle>(mut self) -> VehicleBuilder<NeedsState> {
+        self.frame_uid = Some(FrameUid::of::<astrodyn_quantities::frame::BodyFrame<V>>());
+        self.transition()
+    }
+
+    /// Supply the vehicle's identity as a mission-named value (the
+    /// shared [`crate::named_body_frame_uid`] mint in
+    /// [`crate::MISSION_NAMED_NS`]). The value form exists because
+    /// vehicles are an open, instance-scoped set — loops mint
+    /// per-iteration *values*, which no compile-time tag can do. Names
+    /// must be distinct within one simulation (duplicates fail loudly at
+    /// registration).
+    pub fn vehicle_named(mut self, name: impl Into<String>) -> VehicleBuilder<NeedsState> {
+        self.frame_uid = Some(crate::named_body_frame_uid(&name.into()));
+        self.transition()
+    }
+}
+
+impl VehicleBuilder<NeedsState> {
     /// Set the initial translational state (typed).
     pub fn with_translational(
         mut self,
@@ -513,6 +550,9 @@ impl VehicleBuilder<Ready> {
     /// advanced to [`Ready`].
     pub fn build(self) -> VehicleConfig {
         VehicleConfig {
+            frame_uid: self
+                .frame_uid
+                .expect("typestate guarantees vehicle identity"),
             trans: self
                 .trans
                 .expect("typestate guarantees translational state"),
@@ -565,6 +605,7 @@ mod tests {
     #[test]
     fn three_dof_happy_path() {
         let cfg = VehicleBuilder::new()
+            .vehicle_named("test-veh-2")
             .with_translational(iss_trans())
             .three_dof_point_mass(420_000.0.kg())
             .rk4()
@@ -592,6 +633,7 @@ mod tests {
         let inertia = DMat3::IDENTITY * 100.0;
         let mass = MassProperties::with_inertia(420_000.0, inertia, DVec3::ZERO);
         let cfg = VehicleBuilder::new()
+            .vehicle_named("test-veh-3")
             .with_translational(iss_trans())
             .sixdof(rot, mass)
             .rk4()
@@ -614,6 +656,7 @@ mod tests {
         use astrodyn_interactions::DragConfig;
         use astrodyn_quantities::aliases::{Position, Velocity};
         let cfg = VehicleBuilder::new()
+            .vehicle_named("test-veh-4")
             .with_translational(TranslationalStateTyped::<RootInertial> {
                 position: Position::<RootInertial>::from_raw_si(DVec3::new(7_000_000.0, 0.0, 0.0)),
                 velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 7_500.0, 0.0)),
@@ -645,6 +688,7 @@ mod tests {
     #[test]
     fn builder_accepts_source_handle_and_bare_usize_interchangeably() {
         let typed = VehicleBuilder::new()
+            .vehicle_named("test-veh-5")
             .with_translational(iss_trans())
             .three_dof_point_mass(420_000.0.kg())
             .rk4()
@@ -654,6 +698,7 @@ mod tests {
             .geodetic(SourceHandle::central(), &crate::EARTH)
             .build();
         let untyped = VehicleBuilder::new()
+            .vehicle_named("test-veh-6")
             .with_translational(iss_trans())
             .three_dof_point_mass(420_000.0.kg())
             .rk4()

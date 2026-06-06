@@ -66,6 +66,7 @@
 //!
 //! let mu = earth::point_mass().source.mu.m3_per_s2();
 //! let cfg = VehicleBuilder::new()
+//!     .vehicle_named("iss")
 //!     .from_orbital_elements(orbital_elements::iss(), mu)
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
@@ -88,6 +89,7 @@ pub mod attach;
 pub mod body_action;
 pub mod derived;
 pub mod forces;
+pub mod frame_identity;
 pub mod frame_orchestration;
 pub mod gravity;
 pub mod integrable;
@@ -350,6 +352,7 @@ pub use astrodyn_quantities::frame::{
 // multi-source and producer-defined identity.
 pub use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
+pub use frame_identity::{named_body_frame_uid, MISSION_NAMED_NS};
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `astrodyn` don't need a direct
 // `astrodyn_quantities` line in their `Cargo.toml`. The macro body resolves

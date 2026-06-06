@@ -41,6 +41,7 @@ fn iss_trans() -> TranslationalStateTyped<RootInertial> {
 #[test]
 fn three_dof_rk4_round_trip() {
     let cfg: VehicleConfig = VehicleBuilder::new()
+        .vehicle_named("vehicle-builder-typestate-0")
         .with_translational(iss_trans())
         .three_dof_point_mass(420_000.0.kg())
         .rk4()
@@ -71,6 +72,7 @@ fn six_dof_rkf45_with_options() {
         ..Default::default()
     };
     let cfg = VehicleBuilder::new()
+        .vehicle_named("vehicle-builder-typestate-1")
         .with_translational(iss_trans())
         .sixdof(rot, mass)
         .rkf45()
@@ -89,6 +91,7 @@ fn six_dof_rkf45_with_options() {
 #[test]
 fn gauss_jackson_integrator_selection() {
     let cfg = VehicleBuilder::new()
+        .vehicle_named("vehicle-builder-typestate-2")
         .with_translational(iss_trans())
         .three_dof_point_mass(1_000.0.kg())
         .gauss_jackson(GaussJacksonConfig::default())
@@ -109,6 +112,7 @@ fn from_orbital_elements_round_trip() {
         .expect("ISS-class state has well-defined orbital elements");
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("vehicle-builder-typestate-3")
         .from_orbital_elements(oe.clone(), earth_mu)
         .three_dof_point_mass(420_000.0.kg())
         .rk4()
