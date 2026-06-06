@@ -66,6 +66,34 @@ pub enum FrameClass {
     External,
 }
 
+impl FrameClass {
+    /// `true` iff a frame of this class may legitimately serve as a tree
+    /// root or as a per-body integration frame — the non-rotating,
+    /// inertial-flavor classes. Integrating in a rotating frame without the
+    /// corresponding fictitious-force treatment is silently wrong physics,
+    /// so `FrameTree` rejects non-eligible roots at construction and
+    /// `validate()` flags them on load.
+    pub const fn may_be_root_or_integ(self) -> bool {
+        matches!(
+            self,
+            FrameClass::RootInertial | FrameClass::PlanetInertial | FrameClass::BarycenterInertial
+        )
+    }
+
+    /// `true` iff frames of this class carry a non-zero angular velocity
+    /// relative to their parent by construction (co-rotating or
+    /// orbit-derived). Deliberately `false` for `Body` (a body frame may
+    /// hold any angular velocity) and `External` (opaque semantics) — the
+    /// classification-vs-state integrity check only fires where zero
+    /// angular velocity is structurally guaranteed by the class.
+    pub const fn is_rotating(self) -> bool {
+        matches!(
+            self,
+            FrameClass::PlanetFixed | FrameClass::Topocentric | FrameClass::OrbitRelative
+        )
+    }
+}
+
 /// Orthogonal *role* within a [`FrameClass`] — borrowed (`'static`) form
 /// used by const descriptors.
 ///
@@ -422,6 +450,61 @@ impl fmt::Display for FrameUid {
         match &self.tag {
             Tag::Named(name) => write!(f, "{name}.{suffix}"),
             Tag::None => write!(f, "{suffix}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod class_predicate_tests {
+    use super::FrameClass;
+
+    #[test]
+    fn root_or_integ_eligibility_covers_exactly_the_inertial_classes() {
+        let eligible = [
+            FrameClass::RootInertial,
+            FrameClass::PlanetInertial,
+            FrameClass::BarycenterInertial,
+        ];
+        let ineligible = [
+            FrameClass::PlanetFixed,
+            FrameClass::Topocentric,
+            FrameClass::Body,
+            FrameClass::OrbitRelative,
+            FrameClass::External,
+        ];
+        for c in eligible {
+            assert!(c.may_be_root_or_integ(), "{c:?} should be root-eligible");
+        }
+        for c in ineligible {
+            assert!(
+                !c.may_be_root_or_integ(),
+                "{c:?} should not be root-eligible"
+            );
+        }
+    }
+
+    #[test]
+    fn is_rotating_covers_exactly_the_structurally_rotating_classes() {
+        let rotating = [
+            FrameClass::PlanetFixed,
+            FrameClass::Topocentric,
+            FrameClass::OrbitRelative,
+        ];
+        let non_rotating = [
+            FrameClass::RootInertial,
+            FrameClass::PlanetInertial,
+            FrameClass::BarycenterInertial,
+            // Body and External may carry any angular velocity — the class
+            // does not structurally guarantee zero, so is_rotating is false
+            // and the class-vs-state check skips them.
+            FrameClass::Body,
+            FrameClass::External,
+        ];
+        for c in rotating {
+            assert!(c.is_rotating(), "{c:?} should be classified rotating");
+        }
+        for c in non_rotating {
+            assert!(!c.is_rotating(), "{c:?} should not be classified rotating");
         }
     }
 }

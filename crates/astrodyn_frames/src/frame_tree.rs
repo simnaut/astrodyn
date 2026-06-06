@@ -7,8 +7,14 @@
 //!
 //! This module is pure Rust with zero Bevy dependency.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::ref_frame_state::{RefFrameKind, RefFrameState, RefFrameStateTyped};
 use astrodyn_quantities::frame::Frame;
+use astrodyn_quantities::frame_descriptor::{FrameClass, FrameUid, MintPolicy, Namespace};
+use astrodyn_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
+use astrodyn_quantities::time_scale::{SecondsSince, TDB};
+use glam::DVec3;
 
 /// Handle into the [`FrameTree`] arena.
 pub type FrameId = usize;
@@ -22,16 +28,95 @@ pub struct FrameNode {
     pub kind: RefFrameKind,
     /// State relative to parent. Identity for root frames.
     pub state: RefFrameState,
+    /// Runtime frame identity. `None` for nodes created via the untyped
+    /// [`FrameTree::add_root`] / [`FrameTree::add_child`] path (unstamped —
+    /// no identity is synthesized); `Some` once stamped via a typed
+    /// constructor, [`FrameTree::add_child_uid`], or
+    /// [`FrameTree::import_subtree`]. The untyped path is a migration
+    /// scaffold: issue #662 stamps all production sites and issue #664
+    /// makes this field required.
+    pub uid: Option<FrameUid>,
+    /// Frame epoch (TDB seconds): the time-validity of `state`. `None`
+    /// until stamped (per-step stamping lands with issue #662).
+    pub epoch: Option<SecondsSince<TDB>>,
+}
+
+/// Integrity violations reported by [`FrameTree::validate`] /
+/// [`FrameTree::validate_forest`].
+///
+/// Identity-dependent checks skip unstamped (`uid: None`) nodes — they have
+/// no identity to contradict. `Cycle` and `UnresolvedParent` are structurally
+/// unreachable through this module's construction API and exist as the belt
+/// for future bulk-load paths (issue #663).
+#[derive(Debug, thiserror::Error)]
+pub enum FrameTreeError {
+    /// A parent walk from this frame exceeded the node count — the
+    /// parent links contain a cycle.
+    #[error("frame tree contains a cycle reachable from frame {0}")]
+    Cycle(FrameId),
+    /// The same stamped identity appears on more than one node.
+    #[error("duplicate frame identity `{0}` appears on more than one node")]
+    DuplicateUid(FrameUid),
+    /// A frame names a parent id that is not a valid node.
+    #[error("frame {0} names parent {1}, which is not a valid node")]
+    UnresolvedParent(FrameId, FrameId),
+    /// More than one root in a tree validated with the strict
+    /// [`FrameTree::validate`] (use [`FrameTree::validate_forest`] for the
+    /// legitimate post-import, pre-graft state).
+    #[error(
+        "tree has multiple roots {0:?}; expected a single root \
+         (use validate_forest to allow a forest)"
+    )]
+    MultiRoot(Vec<FrameId>),
+    /// A stamped root's class is not root-eligible
+    /// ([`FrameClass::may_be_root_or_integ`]).
+    #[error(
+        "stamped root frame {id} has class {class:?}, which cannot root a tree \
+         (only inertial-flavor classes may be a root or integration frame)"
+    )]
+    NonInertialRoot {
+        /// The offending root frame.
+        id: FrameId,
+        /// Its stamped class.
+        class: FrameClass,
+    },
+    /// A stamped node whose class structurally guarantees zero angular
+    /// velocity carries a non-zero `ang_vel_this`.
+    #[error(
+        "stamped frame {id} has non-rotating class {class:?} but a non-zero \
+         angular velocity — classification contradicts state"
+    )]
+    ClassStateContradiction {
+        /// The offending frame.
+        id: FrameId,
+        /// Its stamped class.
+        class: FrameClass,
+    },
+    /// A node's rotation quaternion has drifted from unit norm beyond
+    /// `NormalizedQuat::DEFAULT_TOLERANCE` (a missed renormalization
+    /// upstream, or corrupt loaded data).
+    #[error("frame {id} quaternion norm {norm} drifted beyond unit tolerance")]
+    UnitNormDrift {
+        /// The offending frame.
+        id: FrameId,
+        /// The drifted norm.
+        norm: f64,
+    },
 }
 
 /// Arena-based frame tree. Portable (no ECS dependency).
 ///
 /// Frames are stored in a flat `Vec`; parent/child relationships are tracked
-/// with parallel vectors of `Option<FrameId>` and `Vec<FrameId>`.
+/// with parallel vectors of `Option<FrameId>` and `Vec<FrameId>`. Stamped
+/// frame identities are indexed for [`FrameTree::find`] /
+/// [`FrameTree::resolve`].
 pub struct FrameTree {
     nodes: Vec<FrameNode>,
     parent: Vec<Option<FrameId>>,
     children: Vec<Vec<FrameId>>,
+    /// Identity → arena-id index, maintained by the stamped constructors
+    /// and [`FrameTree::import_subtree`]. Unstamped nodes are absent.
+    uid_index: HashMap<FrameUid, FrameId>,
 }
 
 impl FrameTree {
@@ -41,25 +126,71 @@ impl FrameTree {
             nodes: Vec::new(),
             parent: Vec::new(),
             children: Vec::new(),
+            uid_index: HashMap::new(),
         }
     }
 
     // -- construction -------------------------------------------------------
 
-    /// Add a root frame (no parent). State is identity.
+    /// Add a root frame (no parent). State is identity. The node is
+    /// **unstamped** (`uid: None`) — prefer [`Self::add_root_typed`] for a
+    /// frame with a runtime identity. This untyped path is removed once all
+    /// construction sites are stamped (issue #664).
     pub fn add_root(&mut self, name: String, kind: RefFrameKind) -> FrameId {
         let id = self.nodes.len();
         self.nodes.push(FrameNode {
             name,
             kind,
             state: RefFrameState::default(),
+            uid: None,
+            epoch: None,
         });
         self.parent.push(None);
         self.children.push(Vec::new());
         id
     }
 
-    /// Add a child frame with the given state relative to its parent.
+    /// Add a stamped root frame whose identity is `FrameUid::of::<F>()`.
+    /// State is identity.
+    ///
+    /// # Panics
+    /// - `F`'s class is not root-eligible
+    ///   ([`FrameClass::may_be_root_or_integ`]): integrating in (or rooting
+    ///   on) a rotating frame is silently wrong physics, rejected at the
+    ///   point of introduction.
+    /// - `F` is non-mintable (a storage-boundary wildcard or
+    ///   `IntegrationFrame`): `FrameUid::of` panics with the mint-policy
+    ///   diagnostic.
+    /// - the minted identity is already registered in this tree.
+    pub fn add_root_typed<F: Frame>(&mut self, name: String) -> FrameId {
+        let uid = FrameUid::of::<F>();
+        assert!(
+            uid.class.may_be_root_or_integ(),
+            "add_root_typed: frame `{}` has class {:?}, which cannot root a tree \
+             (only RootInertial / PlanetInertial / BarycenterInertial classes may \
+             be a root or integration frame). Add it as a child via add_child_typed.",
+            F::NAME,
+            uid.class
+        );
+        let id = self.nodes.len();
+        self.nodes.push(FrameNode {
+            name,
+            kind: RefFrameKind::Inertial,
+            state: RefFrameState::default(),
+            uid: Some(uid.clone()),
+            epoch: None,
+        });
+        self.parent.push(None);
+        self.children.push(Vec::new());
+        self.register_uid(uid, id);
+        id
+    }
+
+    /// Add a child frame with the given state relative to its parent. The
+    /// node is **unstamped** (`uid: None`) — prefer [`Self::add_child_typed`]
+    /// or [`Self::add_child_uid`] for a frame with a runtime identity. This
+    /// untyped path is removed once all construction sites are stamped
+    /// (issue #664).
     ///
     /// # Panics
     /// Panics if `parent_id` does not refer to an existing frame.
@@ -76,43 +207,235 @@ impl FrameTree {
             self.nodes.len()
         );
         let id = self.nodes.len();
-        self.nodes.push(FrameNode { name, kind, state });
+        self.nodes.push(FrameNode {
+            name,
+            kind,
+            state,
+            uid: None,
+            epoch: None,
+        });
         self.parent.push(Some(parent_id));
         self.children.push(Vec::new());
         self.children[parent_id].push(id);
         id
     }
 
-    /// Typed sibling of [`Self::add_child`] taking a frame-tagged
-    /// [`RefFrameStateTyped<P, C>`]. The arena's storage stays
-    /// untyped — heterogeneous parent/child frames preclude a single
-    /// generic instantiation across a `Vec<FrameNode>` — so the typed
-    /// state is converted via [`RefFrameStateTyped::to_untyped`] at the
-    /// boundary. The numeric values are preserved exactly.
+    /// Register a stamped identity in the lookup index, rejecting
+    /// duplicates at the point of introduction.
+    fn register_uid(&mut self, uid: FrameUid, id: FrameId) {
+        if let Some(&existing) = self.uid_index.get(&uid) {
+            panic!(
+                "FrameTree: duplicate frame identity `{uid}` — already registered at \
+                 frame {existing}, cannot register it again at frame {id}. Each \
+                 FrameUid maps to exactly one node. If these are genuinely distinct \
+                 frames, mint distinct identities (different tag or role), or import \
+                 the foreign tree under a non-LOCAL namespace via import_subtree."
+            );
+        }
+        self.uid_index.insert(uid, id);
+    }
+
+    /// Map a stamped class onto the legacy [`RefFrameKind`] discriminant.
+    /// The field is removed in issue #664; nothing branches on it — this
+    /// keeps the stopgap value honest in the meantime.
+    fn kind_for_class(class: FrameClass) -> RefFrameKind {
+        if matches!(class, FrameClass::Body) {
+            RefFrameKind::Body
+        } else if class.is_rotating() {
+            RefFrameKind::PlanetFixed
+        } else {
+            RefFrameKind::Inertial
+        }
+    }
+
+    /// Typed sibling of [`Self::add_child`]: stamps the child with
+    /// `FrameUid::of::<C>()` (no hand-supplied kind — the runtime identity
+    /// is derived from the compile-time marker) and checks the typed
+    /// state's parent marker `P` against the parent node's stamped
+    /// identity. The arena's storage stays untyped — the typed state is
+    /// converted via [`RefFrameStateTyped::to_untyped`] at the boundary;
+    /// numeric values are preserved exactly.
     ///
-    /// `kind` is supplied separately because the runtime kind
-    /// discriminant is not derivable from the compile-time frame
-    /// markers in `astrodyn_quantities::frame` without a workspace-wide
-    /// trait extension.
+    /// # Panics
+    /// - `parent_id` out of range.
+    /// - the parent node is unstamped (created via the untyped path).
+    /// - the parent's stamped identity is not `FrameUid::of::<P>()`.
+    /// - `C` is non-mintable (`FrameUid::of` panics).
+    /// - the child identity is already registered in this tree.
     pub fn add_child_typed<P: Frame, C: Frame>(
         &mut self,
         parent_id: FrameId,
         name: String,
-        kind: RefFrameKind,
         state: RefFrameStateTyped<P, C>,
+        epoch: Option<SecondsSince<TDB>>,
     ) -> FrameId {
-        self.add_child(parent_id, name, kind, state.to_untyped())
+        assert!(
+            parent_id < self.nodes.len(),
+            "add_child_typed: parent_id {parent_id} out of range (have {} frames)",
+            self.nodes.len()
+        );
+        // JEOD_INV: RF.02 — the typed state's parent marker must name the
+        // parent node's stamped identity (valid predecessor).
+        let parent_uid = self.nodes[parent_id].uid.as_ref().unwrap_or_else(|| {
+            panic!(
+                "add_child_typed: parent frame {parent_id} (`{}`) is unstamped — it \
+                 was created via the untyped add_root/add_child path and has no \
+                 identity to check `{}` against. Stamp the parent via \
+                 add_root_typed / add_child_typed / add_child_uid, or use add_child \
+                 for an unstamped child.",
+                self.nodes[parent_id].name,
+                core::any::type_name::<P>()
+            )
+        });
+        assert!(
+            parent_uid.is::<P>(),
+            "add_child_typed: parent frame {parent_id} has identity `{parent_uid}`, \
+             which is not `{}` — the typed state's parent marker P must match the \
+             frame it is parented to.",
+            core::any::type_name::<P>()
+        );
+        let child_uid = FrameUid::of::<C>();
+        self.add_child_uid(parent_id, child_uid, name, state.to_untyped(), epoch)
     }
 
-    /// Read the state at `id` as a typed [`RefFrameStateTyped<P, C>`].
+    /// Add a child stamped with a caller-supplied identity — the flexible
+    /// primitive for dynamically-resolved identities (a host that knows the
+    /// planet only at runtime) and producer-defined runtime frames.
     ///
-    /// **The caller asserts** the parent and child frame markers match
-    /// the runtime kind of the stored frame — there is no compile- or
-    /// run-time check. Used at the typed-API boundary in `astrodyn_dynamics`
-    /// and `astrodyn`. The wrapped quaternion is checked against the
-    /// `NormalizedQuat::DEFAULT_TOLERANCE`; a missed renormalization
-    /// upstream surfaces immediately.
+    /// No namespace restriction: `LOCAL` identities minted via
+    /// `FrameUid::of` are accepted (the LOCAL reservation is enforced at
+    /// uid construction by `FrameUid::external`, not here).
+    ///
+    /// # Panics
+    /// - `parent_id` out of range.
+    /// - the identity is already registered in this tree.
+    pub fn add_child_uid(
+        &mut self,
+        parent_id: FrameId,
+        uid: FrameUid,
+        name: String,
+        state: RefFrameState,
+        epoch: Option<SecondsSince<TDB>>,
+    ) -> FrameId {
+        assert!(
+            parent_id < self.nodes.len(),
+            "add_child_uid: parent_id {parent_id} out of range (have {} frames)",
+            self.nodes.len()
+        );
+        let id = self.nodes.len();
+        self.nodes.push(FrameNode {
+            name,
+            kind: Self::kind_for_class(uid.class),
+            state,
+            uid: Some(uid.clone()),
+            epoch,
+        });
+        self.parent.push(Some(parent_id));
+        self.children.push(Vec::new());
+        self.children[parent_id].push(id);
+        self.register_uid(uid, id);
+        id
+    }
+
+    /// Set (or clear) a node's frame epoch. Groundwork for per-step
+    /// stamping (issue #662); not called on the hot path here.
+    pub fn set_epoch(&mut self, id: FrameId, epoch: Option<SecondsSince<TDB>>) {
+        self.nodes[id].epoch = epoch;
+    }
+
+    /// Speculative identity lookup: the arena id of `uid`, or `None` —
+    /// an observable miss the caller can surface or recover from.
+    pub fn find(&self, uid: &FrameUid) -> Option<FrameId> {
+        self.uid_index.get(uid).copied()
+    }
+
+    /// Load-bearing identity lookup: the arena id of `uid`.
+    ///
+    /// # Panics
+    /// Panics naming the identity if it is not registered in this tree —
+    /// a missing load-bearing frame is a misconfiguration, never silently
+    /// substituted.
+    pub fn resolve(&self, uid: &FrameUid) -> FrameId {
+        self.uid_index.get(uid).copied().unwrap_or_else(|| {
+            panic!(
+                "FrameTree::resolve: no frame with identity `{uid}` in this tree \
+                 ({} frames, {} stamped). Stamp the frame via a typed constructor, \
+                 add_child_uid, or import_subtree before resolving it.",
+                self.nodes.len(),
+                self.uid_index.len()
+            )
+        })
+    }
+
+    /// Read the state at `id` as a typed [`RefFrameStateTyped<P, C>`],
+    /// **checked against the stored identities**: the node's stamped uid
+    /// must be `FrameUid::of::<C>()` and its parent's stamped uid must be
+    /// `FrameUid::of::<P>()`. Replaces the former caller-asserts boundary —
+    /// a wrong marker now fails loudly instead of silently mislabeling
+    /// physics. The wrapped quaternion is additionally checked against
+    /// `NormalizedQuat::DEFAULT_TOLERANCE` by the underlying lift.
+    ///
+    /// # Panics
+    /// - `P` or `C` is non-mintable (a storage-boundary wildcard or
+    ///   `IntegrationFrame`) — such a marker can never name a stored
+    ///   identity; request the concrete frame type.
+    /// - the node (or its parent) is unstamped.
+    /// - the node is a root (it has no predecessor state to read).
+    /// - the stored child or parent identity does not match the markers.
+    // JEOD_INV: RF.02 — checked typed recovery: stored child identity must
+    // equal of::<C>() and the parent node's identity must equal of::<P>()
+    // (valid predecessor); unstamped or root nodes are rejected loudly.
     pub fn get_state_typed<P: Frame, C: Frame>(&self, id: FrameId) -> RefFrameStateTyped<P, C> {
+        assert!(
+            matches!(C::DESCRIPTOR.mint, MintPolicy::Stable),
+            "get_state_typed: child marker `{}` is not mintable (a runtime-resolved \
+             wildcard or IntegrationFrame) and can never name a stored identity. \
+             Resolve the concrete frame type and request that instead.",
+            core::any::type_name::<C>()
+        );
+        assert!(
+            matches!(P::DESCRIPTOR.mint, MintPolicy::Stable),
+            "get_state_typed: parent marker `{}` is not mintable (a runtime-resolved \
+             wildcard or IntegrationFrame) and can never name a stored identity. \
+             Resolve the concrete frame type and request that instead.",
+            core::any::type_name::<P>()
+        );
+        let node_uid = self.nodes[id].uid.as_ref().unwrap_or_else(|| {
+            panic!(
+                "get_state_typed: frame {id} (`{}`) is unstamped — it was created \
+                 via the untyped path; stamp its identity via add_child_typed / \
+                 add_child_uid before reading it as a typed state.",
+                self.nodes[id].name
+            )
+        });
+        assert!(
+            node_uid.is::<C>(),
+            "get_state_typed: frame {id} has stored identity `{node_uid}`, but the \
+             requested child marker is `{}` — identity mismatch.",
+            core::any::type_name::<C>()
+        );
+        let parent_id = self.parent[id].unwrap_or_else(|| {
+            panic!(
+                "get_state_typed: frame {id} (`{node_uid}`) is a root (no parent), \
+                 but a parent marker `{}` was requested — a root has no predecessor \
+                 state to read.",
+                core::any::type_name::<P>()
+            )
+        });
+        let parent_uid = self.nodes[parent_id].uid.as_ref().unwrap_or_else(|| {
+            panic!(
+                "get_state_typed: parent of frame {id} (frame {parent_id}, `{}`) is \
+                 unstamped; cannot verify it is `{}`.",
+                self.nodes[parent_id].name,
+                core::any::type_name::<P>()
+            )
+        });
+        assert!(
+            parent_uid.is::<P>(),
+            "get_state_typed: parent of frame {id} has identity `{parent_uid}`, but \
+             the requested parent marker is `{}` — predecessor identity mismatch.",
+            core::any::type_name::<P>()
+        );
         RefFrameStateTyped::<P, C>::from_untyped_unchecked(&self.nodes[id].state)
     }
 
@@ -192,13 +515,206 @@ impl FrameTree {
         Some(ca)
     }
 
+    /// Identity-or-name rendering of a frame for diagnostics.
+    fn display_id(&self, id: FrameId) -> String {
+        match &self.nodes[id].uid {
+            Some(uid) => format!("`{uid}` (frame {id})"),
+            None => format!("`{}` (frame {id}, unstamped)", self.nodes[id].name),
+        }
+    }
+
+    /// Walk to the root of `id`'s tree.
+    fn root_of(&self, mut id: FrameId) -> FrameId {
+        while let Some(p) = self.parent[id] {
+            id = p;
+        }
+        id
+    }
+
     /// Find the common ancestor of two frames.
     ///
     /// Convenience wrapper around `common_ancestor` that panics if the frames
-    /// do not share a common root. Prefer `common_ancestor` in new code.
+    /// do not share a common root, naming both endpoints and both roots —
+    /// an undeclared cross-source relationship is never silently answered.
+    /// Prefer `common_ancestor` in new code.
     pub fn find_common_ancestor(&self, a: FrameId, b: FrameId) -> FrameId {
-        self.common_ancestor(a, b)
-            .expect("frames do not share a common ancestor")
+        self.common_ancestor(a, b).unwrap_or_else(|| {
+            let (ra, rb) = (self.root_of(a), self.root_of(b));
+            let ns = |id: FrameId| self.nodes[id].uid.as_ref().map(|u| u.namespace);
+            let suggest = if ns(ra) != ns(rb) {
+                " The two frames live under roots in different namespaces; if they \
+                 belong in one tree, declare the relationship explicitly by \
+                 attaching one root under the other with FrameTree::graft before \
+                 querying relative state."
+            } else {
+                ""
+            };
+            panic!(
+                "compute_relative_state: frames {} and {} do not share a common \
+                 ancestor (roots {} and {}).{suggest}",
+                self.display_id(a),
+                self.display_id(b),
+                self.display_id(ra),
+                self.display_id(rb)
+            )
+        })
+    }
+
+    // -- integrity ------------------------------------------------------------
+
+    /// Validate the tree's structural and identity integrity, requiring a
+    /// **single root** (the production invariant). Use
+    /// [`Self::validate_forest`] for the legitimate multi-root state
+    /// between [`Self::import_subtree`] and [`Self::graft`].
+    ///
+    /// Identity checks skip unstamped nodes; see [`FrameTreeError`] for the
+    /// rejected conditions.
+    pub fn validate(&self) -> Result<(), FrameTreeError> {
+        let roots = self.validate_common()?;
+        if roots.len() > 1 {
+            return Err(FrameTreeError::MultiRoot(roots));
+        }
+        Ok(())
+    }
+
+    /// [`Self::validate`] minus the single-root requirement — a forest of
+    /// disconnected roots (e.g. freshly imported, not yet grafted) passes.
+    pub fn validate_forest(&self) -> Result<(), FrameTreeError> {
+        self.validate_common().map(|_| ())
+    }
+
+    /// Shared validation pass; returns the root set on success.
+    fn validate_common(&self) -> Result<Vec<FrameId>, FrameTreeError> {
+        let len = self.nodes.len();
+        let mut roots = Vec::new();
+        let mut seen_uids: HashSet<&FrameUid> = HashSet::new();
+        for id in 0..len {
+            // Parent link resolution (belt: structurally impossible via this
+            // module's construction API; reachable via future load paths).
+            if let Some(p) = self.parent[id] {
+                if p >= len {
+                    return Err(FrameTreeError::UnresolvedParent(id, p));
+                }
+            } else {
+                roots.push(id);
+            }
+            // Cycle detection: a parent walk longer than the node count
+            // cannot terminate (belt, as above).
+            let mut current = id;
+            let mut hops = 0usize;
+            while let Some(p) = self.parent[current] {
+                if p >= len {
+                    return Err(FrameTreeError::UnresolvedParent(current, p));
+                }
+                current = p;
+                hops += 1;
+                if hops > len {
+                    return Err(FrameTreeError::Cycle(id));
+                }
+            }
+            let node = &self.nodes[id];
+            // Identity checks (stamped nodes only — unstamped nodes have no
+            // identity to contradict).
+            if let Some(uid) = &node.uid {
+                if !seen_uids.insert(uid) {
+                    return Err(FrameTreeError::DuplicateUid(uid.clone()));
+                }
+                if self.parent[id].is_none() && !uid.class.may_be_root_or_integ() {
+                    return Err(FrameTreeError::NonInertialRoot {
+                        id,
+                        class: uid.class,
+                    });
+                }
+                if !uid.class.is_rotating()
+                    && !matches!(uid.class, FrameClass::Body | FrameClass::External)
+                    && node.state.rot.ang_vel_this != DVec3::ZERO
+                {
+                    return Err(FrameTreeError::ClassStateContradiction {
+                        id,
+                        class: uid.class,
+                    });
+                }
+            }
+            // Unit-norm drift (all nodes — state integrity is
+            // identity-independent). Tolerance check, not bit-equality.
+            let norm = node.state.rot.q_parent_this.norm();
+            if (norm - 1.0).abs() > NormalizedQuat::<ScalarFirst, LeftTransform>::DEFAULT_TOLERANCE
+            {
+                return Err(FrameTreeError::UnitNormDrift { id, norm });
+            }
+        }
+        Ok(roots)
+    }
+
+    // -- multi-source composition ----------------------------------------------
+
+    /// Deep-copy `other`'s entire forest into this tree, re-stamping every
+    /// stamped identity into namespace `ns` (unstamped nodes stay
+    /// unstamped). Returns `(old_id, new_id)` pairs in `other`'s insertion
+    /// order so callers holding foreign ids can locate the imported nodes
+    /// (e.g. to [`Self::graft`] an imported root).
+    ///
+    /// # Panics
+    /// - `ns == Namespace::LOCAL`: LOCAL is reserved for type-derived
+    ///   identities — a foreign tree must not be able to impersonate them.
+    /// - a re-stamped identity collides with one already registered here
+    ///   (e.g. two imports into the same namespace).
+    pub fn import_subtree(&mut self, other: &FrameTree, ns: Namespace) -> Vec<(FrameId, FrameId)> {
+        assert!(
+            ns != Namespace::LOCAL,
+            "import_subtree: Namespace::LOCAL is reserved for type-derived \
+             identities (FrameUid::of). Import foreign trees into a \
+             host-allocated non-LOCAL namespace."
+        );
+        let base = self.nodes.len();
+        let mut map = Vec::with_capacity(other.nodes.len());
+        for (old, node) in other.nodes.iter().enumerate() {
+            let new = base + old;
+            let new_uid = node.uid.clone().map(|u| u.with_namespace(ns));
+            self.nodes.push(FrameNode {
+                name: node.name.clone(),
+                kind: node.kind,
+                state: node.state,
+                uid: new_uid.clone(),
+                epoch: node.epoch,
+            });
+            self.parent.push(other.parent[old].map(|p| base + p));
+            self.children
+                .push(other.children[old].iter().map(|&c| base + c).collect());
+            if let Some(u) = new_uid {
+                self.register_uid(u, new);
+            }
+            map.push((old, new));
+        }
+        map
+    }
+
+    /// Attach root `root_id` under `new_parent` with the caller-supplied
+    /// relative state — the **explicit declaration** of a cross-source
+    /// relationship. Unlike [`Self::reparent`] (which recomputes state from
+    /// an existing same-tree relationship), a freshly imported root has no
+    /// prior relationship to this tree: the supplied `state` *is* the
+    /// host's declared physical claim about where the foreign root sits.
+    ///
+    /// # Panics
+    /// - `root_id` is not a root (already has a parent).
+    /// - `new_parent` is a descendant of `root_id` (would create a cycle).
+    pub fn graft(&mut self, root_id: FrameId, new_parent: FrameId, state: RefFrameState) {
+        assert!(
+            self.parent[root_id].is_none(),
+            "graft: frame {} is not a root (it has parent {:?}); only roots may be \
+             grafted — use reparent for frames already related to this tree.",
+            root_id,
+            self.parent[root_id]
+        );
+        assert!(
+            !self.is_descendant_of(new_parent, root_id),
+            "graft: new_parent {new_parent} is a descendant of {root_id} — grafting \
+             would create a cycle."
+        );
+        self.parent[root_id] = Some(new_parent);
+        self.children[new_parent].push(root_id);
+        self.nodes[root_id].state = state;
     }
 
     /// Path from `descendant` up to `ancestor` (inclusive of both endpoints).
@@ -1273,7 +1789,7 @@ mod tests {
         use astrodyn_quantities::frame::{Ecef, RootInertial};
 
         let mut tree = FrameTree::new();
-        let root = tree.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root = tree.add_root_typed::<RootInertial>("inertial".into());
 
         let untyped = make_state(
             0.5,
@@ -1283,7 +1799,7 @@ mod tests {
         );
         let typed_in = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&untyped);
 
-        let child = tree.add_child_typed(root, "ecef".into(), RefFrameKind::PlanetFixed, typed_in);
+        let child = tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_in, None);
 
         // Read back via the typed accessor and assert the underlying
         // raw_si values match the original untyped input bit-identically.
@@ -1304,7 +1820,7 @@ mod tests {
         let mut tree_a = FrameTree::new();
         let root_a = tree_a.add_root("inertial".into(), RefFrameKind::Inertial);
         let mut tree_b = FrameTree::new();
-        let root_b = tree_b.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root_b = tree_b.add_root_typed::<RootInertial>("inertial".into());
 
         let untyped = make_state(
             FRAC_PI_2,
@@ -1315,8 +1831,336 @@ mod tests {
         let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&untyped);
 
         let id_a = tree_a.add_child(root_a, "a".into(), RefFrameKind::PlanetFixed, untyped);
-        let id_b = tree_b.add_child_typed(root_b, "b".into(), RefFrameKind::PlanetFixed, typed);
+        let id_b = tree_b.add_child_typed::<RootInertial, Ecef>(root_b, "b".into(), typed, None);
 
         assert_eq!(tree_a.get(id_a).state, tree_b.get(id_b).state);
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    //! Issue #661: identity stamping, checked typed recovery, integrity
+    //! validation, and multi-source composition. Uses concrete built-in
+    //! markers only (no TS.01 wildcard tokens).
+
+    use super::*;
+    use crate::ref_frame_state::{RefFrameRot, RefFrameTrans};
+    use astrodyn_math::JeodQuat;
+    use astrodyn_quantities::frame::{Earth, Ecef, IntegrationFrame, PlanetInertial, RootInertial};
+    use astrodyn_quantities::frame_descriptor::{FrameUid, Namespace};
+    use glam::DVec3;
+
+    /// A well-formed typed RootInertial → Ecef state for stamping tests.
+    fn typed_state() -> RefFrameStateTyped<RootInertial, Ecef> {
+        let q = JeodQuat::left_quat_from_eigen_rotation(0.3, DVec3::Z);
+        let t = q.left_quat_to_transformation();
+        RefFrameStateTyped::from_untyped_unchecked(&RefFrameState {
+            trans: RefFrameTrans {
+                position: DVec3::new(1.0e6, 2.0e6, 3.0e6),
+                velocity: DVec3::new(10.0, 20.0, 30.0),
+            },
+            rot: RefFrameRot {
+                q_parent_this: q,
+                t_parent_this: t,
+                ang_vel_this: DVec3::new(0.0, 0.0, 7.292e-5),
+            },
+        })
+    }
+
+    fn stamped_tree() -> (FrameTree, FrameId, FrameId) {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        let ecef =
+            tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_state(), None);
+        (tree, root, ecef)
+    }
+
+    // -- stamped construction -------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "cannot root a tree")]
+    fn add_root_typed_non_inertial_class_panics() {
+        let mut tree = FrameTree::new();
+        let _ = tree.add_root_typed::<Ecef>("ecef-root".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "is unstamped")]
+    fn add_child_typed_parent_unstamped_panics() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let _ =
+            tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_state(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "must match the frame it is parented to")]
+    fn add_child_typed_parent_uid_mismatch_panics() {
+        let (mut tree, _root, ecef) = stamped_tree();
+        // Parent marker says RootInertial, but `ecef` is stamped Ecef.
+        let _ = tree.add_child_typed::<RootInertial, PlanetInertial<Earth>>(
+            ecef,
+            "child".into(),
+            RefFrameStateTyped::from_untyped_unchecked(&RefFrameState::default()),
+            None,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate frame identity")]
+    fn duplicate_uid_panics() {
+        let (mut tree, root, _ecef) = stamped_tree();
+        let _ =
+            tree.add_child_typed::<RootInertial, Ecef>(root, "ecef2".into(), typed_state(), None);
+    }
+
+    // -- identity lookup -------------------------------------------------------
+
+    #[test]
+    fn find_and_resolve_round_trip() {
+        let (tree, root, ecef) = stamped_tree();
+        assert_eq!(tree.find(&FrameUid::of::<RootInertial>()), Some(root));
+        assert_eq!(tree.resolve(&FrameUid::of::<Ecef>()), ecef);
+        assert_eq!(tree.find(&FrameUid::of::<PlanetInertial<Earth>>()), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "no frame with identity")]
+    fn resolve_missing_panics() {
+        let (tree, _, _) = stamped_tree();
+        let _ = tree.resolve(&FrameUid::of::<PlanetInertial<Earth>>());
+    }
+
+    // -- checked typed recovery -------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "is unstamped")]
+    fn get_state_typed_unstamped_panics() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let child = tree.add_child(
+            root,
+            "child".into(),
+            RefFrameKind::PlanetFixed,
+            RefFrameState::default(),
+        );
+        let _: RefFrameStateTyped<RootInertial, Ecef> = tree.get_state_typed(child);
+    }
+
+    #[test]
+    #[should_panic(expected = "identity mismatch")]
+    fn get_state_typed_child_mismatch_panics() {
+        let (tree, _root, ecef) = stamped_tree();
+        let _: RefFrameStateTyped<RootInertial, PlanetInertial<Earth>> = tree.get_state_typed(ecef);
+    }
+
+    #[test]
+    #[should_panic(expected = "predecessor identity mismatch")]
+    fn get_state_typed_parent_mismatch_panics() {
+        let (tree, _root, ecef) = stamped_tree();
+        let _: RefFrameStateTyped<PlanetInertial<Earth>, Ecef> = tree.get_state_typed(ecef);
+    }
+
+    #[test]
+    #[should_panic(expected = "is a root (no parent)")]
+    fn get_state_typed_root_panics() {
+        let (tree, root, _ecef) = stamped_tree();
+        let _: RefFrameStateTyped<RootInertial, RootInertial> = tree.get_state_typed(root);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not mintable")]
+    fn get_state_typed_non_mintable_child_panics() {
+        let (tree, _root, ecef) = stamped_tree();
+        let _: RefFrameStateTyped<RootInertial, IntegrationFrame> = tree.get_state_typed(ecef);
+    }
+
+    // -- validate ---------------------------------------------------------------
+
+    #[test]
+    fn validate_single_root_stamped_tree_ok() {
+        let (tree, _, _) = stamped_tree();
+        tree.validate().expect("stamped single-root tree validates");
+    }
+
+    #[test]
+    fn validate_skips_unstamped_nodes() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        tree.add_child(
+            root,
+            "child".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        tree.validate()
+            .expect("unstamped tree has no identities to contradict");
+    }
+
+    #[test]
+    fn validate_multi_root_err_forest_ok() {
+        let mut tree = FrameTree::new();
+        let _a = tree.add_root_typed::<RootInertial>("a".into());
+        let _b = tree.add_root("b".into(), RefFrameKind::Inertial);
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::MultiRoot(roots)) if roots.len() == 2
+        ));
+        tree.validate_forest()
+            .expect("forest validation permits multiple roots");
+    }
+
+    #[test]
+    fn validate_class_state_contradiction_err() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        // A PlanetInertial-classed (non-rotating) identity carrying a
+        // non-zero angular velocity contradicts its classification.
+        let mut state = RefFrameState::default();
+        state.rot.ang_vel_this = DVec3::new(0.0, 0.0, 7.292e-5);
+        tree.add_child_uid(
+            root,
+            FrameUid::of::<PlanetInertial<Earth>>(),
+            "earth-inertial".into(),
+            state,
+            None,
+        );
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::ClassStateContradiction { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_unit_norm_drift_err() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        // add_child_uid takes raw RefFrameState, so it can store a drifted
+        // quaternion — exactly the hole validate() exists to catch.
+        let mut state = RefFrameState::default();
+        state.rot.q_parent_this = JeodQuat::from_array([1.1, 0.0, 0.0, 0.0]);
+        tree.add_child_uid(
+            root,
+            FrameUid::of::<PlanetInertial<Earth>>(),
+            "drifted".into(),
+            state,
+            None,
+        );
+        assert!(matches!(
+            tree.validate(),
+            Err(FrameTreeError::UnitNormDrift { .. })
+        ));
+    }
+
+    // -- multi-source composition -------------------------------------------------
+
+    #[test]
+    fn import_subtree_restamps_and_maps() {
+        let (mut local, _root, _ecef) = stamped_tree();
+        let (foreign, f_root, f_ecef) = stamped_tree();
+
+        let map = local.import_subtree(&foreign, Namespace(7));
+        assert_eq!(map.len(), 2);
+        let (old_root, new_root) = map[0];
+        assert_eq!(old_root, f_root);
+
+        // Imported identities live in namespace 7 — no collision with the
+        // local LOCAL-namespace identities, and resolvable by re-stamped uid.
+        let imported_ecef = local.resolve(&FrameUid::of::<Ecef>().with_namespace(Namespace(7)));
+        assert_eq!(imported_ecef, map[1].1);
+        assert_eq!(f_ecef, map[1].0);
+
+        // Local identities are untouched.
+        assert!(local.find(&FrameUid::of::<Ecef>()).is_some());
+        // The import arrives as a disconnected root (forest until grafted).
+        assert!(local.parent(new_root).is_none());
+        local
+            .validate_forest()
+            .expect("post-import forest validates");
+        assert!(matches!(
+            local.validate(),
+            Err(FrameTreeError::MultiRoot(_))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "reserved for type-derived")]
+    fn import_subtree_local_namespace_panics() {
+        let (mut local, _, _) = stamped_tree();
+        let (foreign, _, _) = stamped_tree();
+        let _ = local.import_subtree(&foreign, Namespace::LOCAL);
+    }
+
+    #[test]
+    #[should_panic(expected = "do not share a common ancestor")]
+    fn ungrafted_cross_source_query_fails_loudly() {
+        let (mut local, _root, ecef) = stamped_tree();
+        let (foreign, _, _) = stamped_tree();
+        let map = local.import_subtree(&foreign, Namespace(7));
+        let imported_ecef = map[1].1;
+        let _ = local.compute_relative_state(ecef, imported_ecef);
+    }
+
+    #[test]
+    #[should_panic(expected = "different namespaces")]
+    fn ungrafted_cross_namespace_query_suggests_graft() {
+        let (mut local, _root, ecef) = stamped_tree();
+        let (foreign, _, _) = stamped_tree();
+        let map = local.import_subtree(&foreign, Namespace(7));
+        let _ = local.compute_relative_state(ecef, map[1].1);
+    }
+
+    #[test]
+    fn graft_then_relative_state_succeeds() {
+        let (mut local, root, ecef) = stamped_tree();
+        let (foreign, _, _) = stamped_tree();
+        let map = local.import_subtree(&foreign, Namespace(7));
+        let (_, imported_root) = map[0];
+        let (_, imported_ecef) = map[1];
+
+        // Declare the relationship: the foreign root sits at +x 1 km from
+        // our root (the host's physical claim).
+        let mut graft_state = RefFrameState::default();
+        graft_state.trans.position = DVec3::new(1000.0, 0.0, 0.0);
+        local.graft(imported_root, root, graft_state);
+
+        local.validate().expect("grafted tree is single-root again");
+        // The previously-unanswerable cross-source query now has a path.
+        let rel = local.compute_relative_state(ecef, imported_ecef);
+        assert!(rel.trans.position.is_finite());
+    }
+
+    #[test]
+    #[should_panic(expected = "only roots may be grafted")]
+    fn graft_non_root_panics() {
+        let (mut tree, root, ecef) = stamped_tree();
+        tree.graft(ecef, root, RefFrameState::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "would create a cycle")]
+    fn graft_cycle_panics() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        let child =
+            tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_state(), None);
+        // Grafting the root under its own descendant must be rejected.
+        tree.graft(root, child, RefFrameState::default());
+    }
+
+    // -- epoch ---------------------------------------------------------------------
+
+    #[test]
+    fn epoch_defaults_none_and_set_epoch_round_trips() {
+        let (mut tree, _root, ecef) = stamped_tree();
+        assert!(tree.get(ecef).epoch.is_none());
+        let stamp = SecondsSince::<TDB>::from_seconds(123.456);
+        tree.set_epoch(ecef, Some(stamp));
+        let got = tree.get(ecef).epoch.expect("epoch was just set");
+        // Bit-exact seconds comparison (SecondsSince<TDB> itself has no
+        // PartialEq — the TDB marker doesn't derive it).
+        assert_eq!(got.as_seconds().to_bits(), stamp.as_seconds().to_bits());
+        tree.set_epoch(ecef, None);
+        assert!(tree.get(ecef).epoch.is_none());
     }
 }
