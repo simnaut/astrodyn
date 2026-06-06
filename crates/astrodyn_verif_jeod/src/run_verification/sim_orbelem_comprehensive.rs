@@ -101,7 +101,7 @@ fn build_orbelem_comprehensive(mu_earth: f64, body: TranslationalState) -> Simul
             orbital_elements_source: Some(earth),
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-orbelem-comprehensive-0")
     });
     sb
 }

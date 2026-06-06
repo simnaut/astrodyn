@@ -107,6 +107,7 @@ fn spawn_bevy_wires_orbital_elements() {
     let (mut app, earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-0")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
@@ -165,6 +166,7 @@ fn spawn_bevy_wires_euler_angles() {
     let (mut app, earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-1")
         .with_translational(iss_trans())
         .sixdof(iss_rot(), iss_mass())
         .rk4()
@@ -218,6 +220,7 @@ fn spawn_bevy_wires_lvlh() {
     let (mut app, earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-2")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
@@ -261,6 +264,7 @@ fn spawn_bevy_wires_geodetic() {
     let (mut app, earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-3")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
@@ -325,6 +329,7 @@ fn spawn_bevy_wires_solar_beta() {
     ));
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-4")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
@@ -382,6 +387,7 @@ fn spawn_bevy_wires_earth_lighting() {
     ));
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-derived-state-5")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()

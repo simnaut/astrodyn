@@ -138,7 +138,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             albedo: 0.0,
             diffuse: 0.5,
         }),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-shadow-2a-0")
     });
 
     sim.validate().unwrap();

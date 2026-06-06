@@ -132,7 +132,7 @@ fn build_solar_beta_extended(
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-solar-beta-extended-0")
     });
     sb
 }

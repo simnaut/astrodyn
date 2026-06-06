@@ -38,6 +38,7 @@ fn setup_iss(mut commands: Commands) {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("app-ext-0")
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()

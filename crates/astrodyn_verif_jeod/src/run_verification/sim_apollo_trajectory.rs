@@ -397,7 +397,7 @@ pub fn apollo_trajectory_builder() -> ApolloBuilderHandles {
                 GravityControl::new_third_body(sun),
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-apollo-trajectory-0")
     });
 
     // Register cm in the mass tree under the canonical name "cm" so the

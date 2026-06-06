@@ -202,7 +202,7 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-7")
     });
 
     let id2 = sim.add_body(VehicleConfig {
@@ -219,7 +219,7 @@ fn make_two_body_sim(mass: f64, inertia_diag: DVec3) -> Simulation {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-6")
     });
     assert_eq!(id1, 0);
     assert_eq!(id2, 1);
@@ -857,7 +857,7 @@ fn tier3_contact_line_side_to_side() {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-5")
     });
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
@@ -873,7 +873,7 @@ fn tier3_contact_line_side_to_side() {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-4")
     });
     sim.validate().unwrap();
 
@@ -963,7 +963,7 @@ fn tier3_contact_point_off_center() {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-3")
     });
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {
@@ -979,7 +979,7 @@ fn tier3_contact_point_off_center() {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-2")
     });
     sim.validate().unwrap();
 
@@ -1336,7 +1336,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: earth_grav.clone(),
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-1")
     });
 
     // veh2 — point sphere 10 m radially outward from veh1.
@@ -1354,7 +1354,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass_props))),
         gravity_controls: earth_grav,
         compute_gravity_gradient: false,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-contact-0")
     });
     assert_eq!(veh1, 0);
     assert_eq!(veh2, 1);

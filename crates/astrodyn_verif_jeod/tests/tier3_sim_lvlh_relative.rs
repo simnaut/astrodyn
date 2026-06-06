@@ -81,7 +81,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
             position: init.ref_pos,
             velocity: init.ref_vel,
         }),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-lvlh-relative-1")
     });
 
     // Body 1: subject vehicle
@@ -90,7 +90,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
             position: init.subj_pos,
             velocity: init.subj_vel,
         }),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-lvlh-relative-0")
     });
 
     sim.validate().unwrap();

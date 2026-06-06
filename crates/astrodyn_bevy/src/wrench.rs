@@ -1312,6 +1312,7 @@ mod tests {
         // Parent: a 3-DOF point-mass orbital body at ISS-like
         // initial conditions, integrated under spherical gravity.
         let parent_cfg = VehicleBuilder::new()
+            .vehicle_named("wrench-0")
             .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
             .three_dof_point_mass(vehicle::iss_mass())
             .with_integrator(IntegratorType::Rk4)

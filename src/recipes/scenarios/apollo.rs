@@ -78,6 +78,7 @@ pub fn apollo_translunar() -> SimulationBuilder {
     };
 
     let csm = VehicleBuilder::new()
+        .vehicle_named("apollo-csm")
         .with_translational(csm_state)
         .three_dof_point_mass(vehicle::apollo_csm_mass())
         .rk4()

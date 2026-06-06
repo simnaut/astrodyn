@@ -174,7 +174,7 @@ fn build_free_body_3dof(dt: f64, external_force: DVec3) -> SimulationBuilder {
         ))),
         gravity_controls: GravityControls { controls: vec![] },
         external_force: Force::<RootInertial>::from_raw_si(external_force),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-2")
     });
     sb
 }
@@ -210,7 +210,7 @@ fn build_free_body_6dof(
         external_torque: Torque::<astrodyn::BodyFrame<astrodyn::SelfRef>>::from_raw_si(
             external_torque,
         ),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-1")
     });
     sb
 }
@@ -508,7 +508,7 @@ fn build_force_struct_pre_step(_init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls { controls: vec![] },
         compute_gravity_gradient: false,
         t_struct_body: t_struct_body_nontrivial(),
-        ..Default::default()
+        ..VehicleConfig::named("sim-force-torque-response-0")
     });
     sb
 }

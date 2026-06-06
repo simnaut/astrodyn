@@ -118,7 +118,7 @@ fn build_orbinit_roundtrip(dt: f64, body: TranslationalState) -> SimulationBuild
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-orbinit-roundtrip-0")
     });
     sb
 }

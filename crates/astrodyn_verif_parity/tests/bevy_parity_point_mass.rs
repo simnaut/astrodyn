@@ -116,7 +116,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-7")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -270,7 +270,7 @@ fn bevy_parity_point_mass_orbinit_cross_consistency() {
                     GravityGradient::Skip,
                 )],
             },
-            ..Default::default()
+            ..VehicleConfig::named("bevy-parity-point-mass-6")
         });
         sim.validate().unwrap();
         sim.step().expect("step failed");
@@ -347,7 +347,7 @@ fn bevy_parity_point_mass_time_reversal_round_trip() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-5")
     });
     sim.validate().unwrap();
 
@@ -406,7 +406,7 @@ fn bevy_parity_point_mass_relative_state_consistency() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-4")
     });
 
     let mut trans_b = iss_trans().to_untyped();
@@ -423,7 +423,7 @@ fn bevy_parity_point_mass_relative_state_consistency() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-3")
     });
 
     sim.validate().unwrap();
@@ -552,7 +552,7 @@ fn bevy_parity_point_mass_mars_rotation_dispatch() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(mars, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-2")
     });
 
     sim.validate().unwrap();
@@ -629,7 +629,7 @@ fn bevy_parity_point_mass_multi_source_rotation() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-1")
     });
 
     sim.validate().unwrap();
@@ -738,7 +738,7 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
                 GravityGradient::Compute,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-point-mass-0")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

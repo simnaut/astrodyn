@@ -118,6 +118,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 /// `differential` flags on the gravity controls to match.
 fn earth_then_moon_config() -> VehicleConfig {
     VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-0")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -155,6 +156,7 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
 
     // Build a config that integrates in Moon (source index 1).
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-1")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -236,6 +238,7 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
     // *presence* of `IntegSourceC` (or relying on `Without<IntegSourceC>`)
     // see the same shape as a manually-spawned root-integrated vehicle.
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-2")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -269,6 +272,7 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-3")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -301,6 +305,7 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-4")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
@@ -326,6 +331,7 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("spawn-bevy-integ-source-and-frame-switches-5")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()

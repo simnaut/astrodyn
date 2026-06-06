@@ -196,7 +196,7 @@ fn apollo8_builder(enable_switch: bool) -> SimulationBuilder {
         } else {
             vec![]
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-apollo8-frame-switch-0")
     });
     sb
 }

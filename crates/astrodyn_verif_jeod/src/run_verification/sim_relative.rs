@@ -78,7 +78,7 @@ fn build_two_body(
         } else {
             None
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-relative-1")
     });
     b.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&trans_b),
@@ -92,7 +92,7 @@ fn build_two_body(
         } else {
             None
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-relative-0")
     });
     b
 }

@@ -61,7 +61,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-polar-motion-0")
     });
     sb
 }

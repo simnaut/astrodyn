@@ -223,7 +223,7 @@ fn build_tide(init: &InitialConditions, split_gravity: bool) -> SimulationBuilde
             },
         },
         compute_gravity_gradient: true,
-        ..Default::default()
+        ..VehicleConfig::named("sim-tide-verif-0")
     });
     sb
 }

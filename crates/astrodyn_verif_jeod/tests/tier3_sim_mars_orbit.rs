@@ -153,7 +153,7 @@ fn tier3_simulation_mars_dawn() {
                 GravityControl::new_third_body(sun),
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-mars-orbit-1")
     });
 
     sim.validate().unwrap();
@@ -287,7 +287,7 @@ fn build_phobos_sim(init_pos: DVec3, init_vel: DVec3) -> Simulation {
                 GravityControl::new_third_body(sun),
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-mars-orbit-0")
     });
     sim.validate().unwrap();
     sim

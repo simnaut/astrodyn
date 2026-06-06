@@ -211,7 +211,7 @@ fn bevy_parity_gravity_torque_external_torque_per_body() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-gravity-torque-2")
     });
     sim.validate().unwrap();
 
@@ -289,7 +289,7 @@ fn run_gravity_torque_parity(
             )],
         },
         compute_gravity_gradient: true,
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-gravity-torque-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -396,7 +396,7 @@ fn run_external_parity(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-gravity-torque-0")
     });
     sim.validate().unwrap();
 

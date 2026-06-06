@@ -98,7 +98,7 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
             integration_order: order,
             ..Default::default()
         })),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-srp-rk4-thermal-0")
     });
 
     sim.validate().unwrap();

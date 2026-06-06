@@ -241,7 +241,7 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
             ],
         },
         integ_source: Some(moon_idx),
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-integ-source-4")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -370,7 +370,7 @@ fn bevy_parity_integ_source_moving_moon_matches_simulation() {
             ],
         },
         integ_source: Some(moon_idx),
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-integ-source-3")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -481,7 +481,7 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-integ-source-2")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -672,7 +672,7 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-integ-source-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -907,7 +907,7 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
             t_pow4_cached: vec![init_temp.powi(4); 1],
             ..Default::default()
         })),
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-integ-source-0")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

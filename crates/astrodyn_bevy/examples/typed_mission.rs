@@ -28,12 +28,20 @@ use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
 use astrodyn::{F64Ext, GravityControl, GravityGradient, SourceHandle, VehicleBuilder};
+
+/// The mission's vehicle marker: the builder's `.vehicle::<Iss>()` stage
+/// derives the frame identity `FrameUid::of::<BodyFrame<Iss>>()` from it
+/// (issue #662).
+mod tags {
+    astrodyn::define_vehicle!(Iss);
+}
 use astrodyn_bevy::{
     AstrodynAppExt, AstrodynSet, GravityAccelerationC, GravitySourceC, SourceInertialPositionC,
     TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
 };
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
+use tags::Iss;
 
 #[derive(Resource)]
 struct StepCounter(usize);
@@ -113,6 +121,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // typed builder, lift `mu` into a typed `GravParam`.
     let mu_typed = earth_mu_raw.m3_per_s2();
     let cfg = VehicleBuilder::new()
+        .vehicle::<Iss>()
         .from_orbital_elements(orbital_elements::iss(), mu_typed)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()

@@ -130,7 +130,7 @@ fn build_attach_detach_trajectory(_init: &InitialConditions) -> SimulationBuilde
         mass: Some(super::typed_helpers::mass_typed(&veh1_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("sim-attach-detach-trajectory-2")
     });
     let v2 = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&veh2_trans()),
@@ -138,7 +138,7 @@ fn build_attach_detach_trajectory(_init: &InitialConditions) -> SimulationBuilde
         mass: Some(super::typed_helpers::mass_typed(&veh2_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("sim-attach-detach-trajectory-1")
     });
     let v3 = sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&veh3_trans()),
@@ -146,7 +146,7 @@ fn build_attach_detach_trajectory(_init: &InitialConditions) -> SimulationBuilde
         mass: Some(super::typed_helpers::mass_typed(&veh3_mass())),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("sim-attach-detach-trajectory-0")
     });
     sb.register_in_mass_tree(v1, "veh1");
     sb.register_in_mass_tree(v2, "veh2");

@@ -87,7 +87,7 @@ fn build_lvlh_extended(mu_earth: f64, dt: f64, body: TranslationalState) -> Simu
             lvlh: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-lvlh-extended-0")
     });
     sb
 }

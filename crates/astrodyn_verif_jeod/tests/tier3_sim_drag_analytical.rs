@@ -117,7 +117,7 @@ fn make_drag_sim(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-drag-analytical-1")
     });
 
     sim.validate().unwrap();
@@ -576,7 +576,7 @@ fn make_drag_sim_with_wind(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-drag-analytical-0")
     });
 
     sim.validate().unwrap();

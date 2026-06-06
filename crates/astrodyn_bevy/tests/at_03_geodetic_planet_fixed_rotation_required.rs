@@ -96,6 +96,7 @@ fn at_03_panics_on_geodetic_planet_without_planet_fixed_rotation() {
     // `planet` field at the first source entity passed to
     // `spawn_bevy`.
     let cfg = VehicleBuilder::new()
+        .vehicle_named("at-03-geodetic-planet-fixed-rotation-required-0")
         .with_translational(iss_trans())
         .three_dof_point_mass(iss_mass_kg())
         .rk4()

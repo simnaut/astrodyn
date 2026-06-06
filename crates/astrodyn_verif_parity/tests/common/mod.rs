@@ -245,7 +245,7 @@ pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient_mode)],
         },
         compute_gravity_gradient: gradient,
-        ..Default::default()
+        ..VehicleConfig::named("mod-0")
     }
 }
 

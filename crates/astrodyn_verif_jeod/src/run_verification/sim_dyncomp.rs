@@ -98,7 +98,7 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-13")
     });
     sb
 }
@@ -149,7 +149,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-12")
     });
     sb
 }
@@ -302,7 +302,7 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-11")
     });
     sb
 }
@@ -494,7 +494,7 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
                 earth_gradient,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-10")
     });
     sb
 }
@@ -633,7 +633,7 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
                 GravityControl::new_third_body(moon),
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-9")
     });
     sb
 }
@@ -783,7 +783,7 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
                 moon_control,
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-8")
     });
     BattinScenario {
         builder: sb,
@@ -954,7 +954,7 @@ fn build_run7(
             ],
         },
         drag,
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-7")
     });
     sb
 }
@@ -1089,7 +1089,7 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
                 GravityGradient::Compute,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-6")
     });
     sb
 }
@@ -1183,7 +1183,7 @@ fn build_run6_drag(
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
         drag: Some(drag_config),
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-5")
     });
     sb
 }
@@ -1300,7 +1300,7 @@ fn build_run6_maneuver(init: &InitialConditions, case: &'static str) -> Simulati
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-4")
     });
     sb
 }
@@ -1450,7 +1450,7 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
             )],
         },
         compute_gravity_gradient: true,
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-3")
     });
     sb
 }
@@ -1585,7 +1585,7 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
                 GravityGradient::Compute,
             )],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-2")
     });
     sb
 }
@@ -1656,7 +1656,7 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
             ..Default::default()
         }),
         t_struct_body,
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-1")
     });
     sb
 }
@@ -1804,7 +1804,7 @@ fn build_run9_scenario(init: &InitialConditions, case: &'static str) -> Simulati
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-dyncomp-0")
     });
     sb
 }

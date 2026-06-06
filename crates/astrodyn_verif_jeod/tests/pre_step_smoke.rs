@@ -133,7 +133,7 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("pre-step-smoke-0")
     });
     sb
 }

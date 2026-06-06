@@ -51,6 +51,14 @@ use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 use std::time::Duration;
 
+/// Synthetic gravity-source markers: these tests anchor bodies to
+/// non-planet sources, which (per issue #662's strict identity rule)
+/// require `define_planet!`-minted markers and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(InertialAnchor);
+    astrodyn::define_planet!(Ssb);
+}
+
 /// Build a Bevy app with two free-flying bodies registered in a shared
 /// `MassTreeR`, both carrying full 6-DOF state. No gravity sources —
 /// the bodies are inertial coasters so attach/detach math is the only
@@ -2455,7 +2463,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
     // evaluation between snapshot and writeback contributes nothing.
     let time = RunnerSimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let inertial = sim.add_source(
+    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -2484,7 +2492,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-3")
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&child_trans),
@@ -2497,7 +2505,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
                 GravityGradient::Skip,
             )],
         },
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-2")
     });
     sim.add_body_to_tree(parent_idx, "Parent");
     sim.add_body_to_tree(child_idx, "Child");
@@ -2870,7 +2878,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     // the equivalent of `IntegSourceC` here.
     let time = RunnerSimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let _ssb = sim.add_source(
+    let _ssb = sim.add_source_typed::<tags::Ssb>(
         "SSB",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -2936,7 +2944,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             )],
         },
         integ_source: Some(runner_source_a),
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-1")
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&child_trans),
@@ -2950,7 +2958,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             )],
         },
         integ_source: Some(runner_source_b),
-        ..Default::default()
+        ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-0")
     });
     sim.add_body_to_tree(parent_idx, "Parent");
     sim.add_body_to_tree(child_idx, "Child");

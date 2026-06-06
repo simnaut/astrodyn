@@ -126,7 +126,7 @@ fn build_orbinit_families(dt: f64, body: TranslationalState) -> SimulationBuilde
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-orbinit-families-0")
     });
     sb
 }

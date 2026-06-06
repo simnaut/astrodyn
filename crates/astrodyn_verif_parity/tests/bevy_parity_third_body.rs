@@ -101,7 +101,7 @@ fn bevy_parity_third_body_solar_beta_equ() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-6")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -194,7 +194,7 @@ fn bevy_parity_third_body_solar_beta_obliquity() {
             solar_beta: true,
             ..Default::default()
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-5")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -388,7 +388,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         gravity_controls: GravityControls {
             controls: sim_controls,
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-4")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -582,7 +582,7 @@ fn bevy_parity_third_body_mars_dawn() {
                 sim_sun_ctrl,
             ],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-3")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -662,7 +662,7 @@ fn bevy_parity_third_body_mercury_relativistic() {
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-2")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -765,7 +765,7 @@ fn bevy_parity_third_body_relativistic_moving_source() {
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-1")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
@@ -940,7 +940,7 @@ fn bevy_parity_third_body_earth_moon_clem() {
             albedo,
             diffuse,
         }),
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-third-body-0")
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

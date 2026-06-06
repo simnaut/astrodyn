@@ -42,6 +42,7 @@ pub fn mercury_relativistic() -> SimulationBuilder {
     ctrl.relativistic = true;
 
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("mercury-probe")
         .with_translational(trans)
         .three_dof_point_mass(uom::si::f64::Mass::new::<uom::si::mass::kilogram>(3.301e23))
         .rk4()

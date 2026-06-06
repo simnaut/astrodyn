@@ -170,7 +170,7 @@ fn build_drag_6dof(
             constant_density: Some(DENSITY),
             ..Default::default()
         }),
-        ..Default::default()
+        ..VehicleConfig::named("sim-drag-6dof-0")
     });
     sb
 }

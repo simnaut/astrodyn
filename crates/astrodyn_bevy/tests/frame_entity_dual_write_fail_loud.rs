@@ -84,6 +84,7 @@ fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
         .id();
 
     let cfg = VehicleBuilder::new()
+        .vehicle_named("frame-entity-dual-write-fail-loud-0")
         .with_translational(initial_trans())
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()

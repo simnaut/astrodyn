@@ -53,7 +53,7 @@ fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("sim-planetary-0")
     });
     sb
 }

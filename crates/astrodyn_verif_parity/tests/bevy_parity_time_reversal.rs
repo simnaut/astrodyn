@@ -210,7 +210,7 @@ fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
         },
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-time-reversal-0")
     });
     sb
 }

@@ -108,6 +108,7 @@ fn build_ref_attach(_init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), DT_S);
     let _earth_idx = sb.add_source("Earth", earth::point_mass());
     let vehicle = VehicleBuilder::new()
+        .vehicle_named("sim-ref-attach-0")
         .with_translational(astrodyn::typed_bridge::trans_raw_to_typed(
             &TranslationalState { position, velocity },
         ))

@@ -235,7 +235,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(veh1_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-chained-attach-event-2")
     });
     let v2 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh2_trans()),
@@ -243,7 +243,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(veh2_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-chained-attach-event-1")
     });
     let v3 = sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&veh3_trans()),
@@ -251,7 +251,7 @@ fn build_runner_sim() -> (Simulation, usize, usize, usize) {
         mass: Some(veh3_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
-        ..Default::default()
+        ..VehicleConfig::named("bevy-parity-chained-attach-event-0")
     });
     sim.add_body_to_tree(v1, "veh1");
     sim.add_body_to_tree(v2, "veh2");

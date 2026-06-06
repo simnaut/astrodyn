@@ -361,7 +361,7 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
             ..Default::default()
         }),
         compute_gravity_gradient: true,
-        ..Default::default()
+        ..VehicleConfig::named("tier3-sim-dyncomp-run-attach-to-ref-frame-0")
     });
 
     // Materialise the SimulationBuilder into the runtime Simulation.
