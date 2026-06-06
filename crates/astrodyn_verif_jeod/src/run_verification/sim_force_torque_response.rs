@@ -126,13 +126,20 @@ fn analytical_tolerances() -> Tolerances {
     }
 }
 
+/// Synthetic gravity-source marker for the empty-space root: not one of
+/// the six sealed planets, so (per issue #662's strict identity rule) it
+/// requires a `define_planet!`-minted marker and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(CentralPoint);
+}
+
 /// A negligible gravity source kept in the frame tree but not
 /// referenced by any body. `Simulation` requires a root frame; using
 /// `central: true` with `mu = 0.0` gives us the frame without any
 /// gravitational effect. Mirrors the pre-recipe tier3 file's
 /// `add_dummy_central_source` helper exactly.
 fn add_dummy_central_source(sb: &mut SimulationBuilder) {
-    sb.add_source(
+    sb.add_source_typed::<tags::CentralPoint>(
         "central_point",
         GravitySourceEntry {
             source: GravitySource {

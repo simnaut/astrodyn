@@ -149,11 +149,18 @@ fn load_contact_csv(path: &Path) -> Vec<ContactRecord> {
 
 // ── Simulation harness ──────────────────────────────────────────────
 
+/// Synthetic gravity-source marker for the empty-space root: not one of
+/// the six sealed planets, so (per issue #662's strict identity rule) it
+/// requires a `define_planet!`-minted marker and `add_source_typed`.
+mod tags {
+    astrodyn::define_planet!(Space);
+}
+
 /// Add an inertial-only gravity "source" with mu=0 so the Simulation has a
 /// root frame. Matches JEOD's `EphemerisMode_EmptySpace` which provides the
 /// Space.inertial root frame with no gravitational body.
 fn add_empty_space_root(sim: &mut Simulation) {
-    sim.add_source(
+    sim.add_source_typed::<tags::Space>(
         "Space",
         GravitySourceEntry {
             source: GravitySource {

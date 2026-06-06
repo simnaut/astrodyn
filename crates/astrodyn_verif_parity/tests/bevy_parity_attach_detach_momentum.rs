@@ -57,6 +57,8 @@ use std::time::Duration;
 mod tags {
     astrodyn::define_planet!(InertialAnchor);
     astrodyn::define_planet!(Ssb);
+    astrodyn::define_planet!(SourceA);
+    astrodyn::define_planet!(SourceB);
 }
 
 /// Build a Bevy app with two free-flying bodies registered in a shared
@@ -2896,7 +2898,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             marker_only: false,
         },
     );
-    let runner_source_a = sim.add_source(
+    let runner_source_a = sim.add_source_typed::<tags::SourceA>(
         "SourceA",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -2914,7 +2916,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             marker_only: false,
         },
     );
-    let runner_source_b = sim.add_source(
+    let runner_source_b = sim.add_source_typed::<tags::SourceB>(
         "SourceB",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {

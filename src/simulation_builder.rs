@@ -178,6 +178,7 @@ impl SimulationBuilder {
             FrameUid::of::<astrodyn_quantities::frame::PlanetFixed<P>>(),
         )));
         self.sources.push((name.into(), entry));
+        self.source_ephem_bodies.push(None);
         idx
     }
 
@@ -328,5 +329,58 @@ impl SimulationBuilder {
             t_parent_child,
         });
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GravityModel, GravitySource};
+
+    mod tags {
+        crate::define_planet!(BuilderTestPlanet);
+    }
+
+    fn entry() -> GravitySourceEntry {
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: astrodyn_quantities::aliases::Position::zero(),
+            velocity: astrodyn_quantities::aliases::Velocity::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: crate::RotationModel::None,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+            marker_only: false,
+        }
+    }
+
+    /// `sources`, `source_uids`, and `source_ephem_bodies` are parallel
+    /// vectors consumed positionally by both the runner's `from_builder`
+    /// and the Bevy adapter's `populate_app` — every registration path
+    /// must push to all three. A missed push desyncs the indices and
+    /// fails the consumer's length assert (or worse, mis-wires ephemeris
+    /// updates to the wrong source).
+    #[test]
+    fn source_registration_keeps_parallel_vecs_in_sync() {
+        let time = crate::SimulationTime::at_j2000(crate::default_leap_second_table());
+        let mut sb = SimulationBuilder::new(time, 1.0);
+        sb.add_source("Earth", entry());
+        sb.add_source_typed::<tags::BuilderTestPlanet>("BuilderTestPlanet", entry());
+        assert_eq!(sb.sources.len(), 2);
+        assert_eq!(sb.source_uids.len(), 2);
+        assert_eq!(sb.source_ephem_bodies.len(), 2);
+        assert!(
+            sb.source_uids[0].is_none(),
+            "name-dispatch path carries no uid"
+        );
+        assert!(
+            sb.source_uids[1].is_some(),
+            "typed path carries minted uids"
+        );
     }
 }
