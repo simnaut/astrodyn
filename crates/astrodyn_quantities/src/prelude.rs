@@ -12,6 +12,7 @@ pub use crate::frame::{
     Planet, PlanetFixed, PlanetInertial, RootInertial, Saturn, SelfPlanet, SelfRef,
     StructuralFrame, Sun, Topocentric, Vehicle,
 };
+pub use crate::frame_descriptor::{FrameClass, FrameUid};
 pub use crate::frame_transform::FrameTransform;
 pub use crate::integ_origin::IntegOrigin;
 pub use crate::qty3::Qty3;
