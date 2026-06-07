@@ -14,7 +14,9 @@ rust-version.workspace = true
 [dependencies]
 astrodyn = { path = "../..", version = "0.2.0" }
 astrodyn_bevy = { path = "../astrodyn_bevy", version = "0.2.0" }
-astrodyn_runner = { path = "../astrodyn_runner", version = "0.2.0" }
+# `frame-doc` (issue #663): bevy_parity_frame_doc pins the runner's
+# snapshot/restore cycle as invisible to cross-backend parity.
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.2.0", features = ["frame-doc"] }
 astrodyn_verif_jeod = { path = "../astrodyn_verif_jeod", version = "0.2.0" }
 astrodyn_verif_nesc = { path = "../astrodyn_verif_nesc", version = "0.2.0" }
 bevy = { workspace = true }

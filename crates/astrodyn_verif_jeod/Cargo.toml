@@ -25,7 +25,11 @@ bench = false
 
 [dependencies]
 astrodyn = { path = "../..", version = "0.2.0" }
-astrodyn_runner = { path = "../astrodyn_runner", version = "0.2.0" }
+# `frame-doc` (issue #663): the tier3_frame_doc serialize/reload/continue
+# tests exercise the runner's frame-document export/apply surface; enabling
+# the feature here keeps those tests compiling under a plain
+# `cargo nextest run --workspace` (cargo feature unification).
+astrodyn_runner = { path = "../astrodyn_runner", version = "0.2.0", features = ["frame-doc"] }
 astrodyn_verif_jeod_fixtures = { path = "../astrodyn_verif_jeod_fixtures", version = "0.2.0" }
 glam = { workspace = true }
 log = { workspace = true }
