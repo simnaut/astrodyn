@@ -126,10 +126,9 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
     let body = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-frame-attach-non-root-integ-source-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-frame-attach-non-root-integ-source-b1",
+            )),
             Name::new("Lunar"),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(body_mass()),
@@ -278,7 +277,3 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
          root frame, integ frame at rest in root): got {body_vel:?}"
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

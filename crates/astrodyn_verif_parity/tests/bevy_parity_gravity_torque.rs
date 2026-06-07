@@ -46,10 +46,9 @@ fn bevy_parity_gravity_torque_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-gravity-torque-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-gravity-torque-b1",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -262,10 +261,9 @@ fn run_gravity_torque_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-gravity-torque-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-gravity-torque-b2",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             RotationalStateC::from(rot),
             MassPropertiesC::from(iss_mass()),
@@ -379,10 +377,9 @@ fn run_external_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-gravity-torque-b3-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-gravity-torque-b3",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(rot),
             MassPropertiesC::from(iss_mass()),
@@ -494,7 +491,3 @@ fn bevy_parity_gravity_torque_run9d_force_torque_rate() {
         }
     });
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

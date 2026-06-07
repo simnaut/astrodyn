@@ -318,9 +318,12 @@ fn spawn_body(
 ) -> Entity {
     app.world_mut()
         .spawn((
+            // Identity derived from the helper's per-call `name`: three
+            // vehicles spawn through this one helper in a single App, so
+            // the label must vary per call — deterministically, via the
+            // caller-supplied name rather than a counter.
             astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-chained-attach-event-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                "bevy-parity-chained-attach-event-{name}"
             ))),
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
@@ -648,7 +651,3 @@ fn fire_bevy_attach(app: &mut App, child: Entity, parent: Entity, offset: DVec3,
             t_parent_child: astrodyn::FrameTransform::from_matrix(t_pc),
         });
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

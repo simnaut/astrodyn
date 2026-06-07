@@ -59,10 +59,9 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-highfidelity-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-highfidelity-b1",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
@@ -184,10 +183,9 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-highfidelity-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-highfidelity-b2",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC(astrodyn::DynamicsConfig {
                 translational_dynamics: true,
@@ -265,10 +263,9 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-highfidelity-b3-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-highfidelity-b3",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -349,10 +346,9 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-highfidelity-b4-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-highfidelity-b4",
+            )),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(gj_trans),
             GravityControlsC(GravityControls {
@@ -446,7 +442,3 @@ fn bevy_parity_highfidelity_gj_dt1() {
         1000,
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -116,10 +116,9 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-frame-switch-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-frame-switch-b1",
+            )),
             Name::new("EarthToMoon"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -362,10 +361,9 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-frame-switch-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-frame-switch-b2",
+            )),
             Name::new("EarthDeparture"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -488,7 +486,3 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         );
     }
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

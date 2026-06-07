@@ -163,10 +163,7 @@ fn run_gj_bootstrap_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-gj-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-gj-b1")),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             GravityControlsC(GravityControls {
@@ -251,7 +248,3 @@ fn bevy_parity_gj_bootstrap_tsf() {
         1000,
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -209,7 +209,7 @@ fn build_bevy_app() -> (App, Entity, ApolloTopology) {
     let mut mass_id_to_entity: std::collections::HashMap<MassBodyId, Entity> =
         std::collections::HashMap::new();
     mass_id_to_entity.insert(topology.cm, cm_entity);
-    for &mass_id in &tree_only {
+    for (i, &mass_id) in tree_only.iter().enumerate() {
         let core = {
             let tree_r = app.world().resource::<MassTreeR>();
             tree_r.0.get(mass_id).core_properties
@@ -217,9 +217,11 @@ fn build_bevy_app() -> (App, Entity, ApolloTopology) {
         let entity = app
             .world_mut()
             .spawn((
+                // One spawn per tree node in a single App: the label must
+                // vary per iteration — deterministically, via the loop
+                // index rather than a counter.
                 astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                    "bevy-parity-apollo-trajectory-b1-{}",
-                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    "bevy-parity-apollo-trajectory-b1-{i}"
                 ))),
                 MassBodyIdC(mass_id),
                 MassPropertiesC(typed_bridge::mass_raw_to_self_ref(&core)),
@@ -536,7 +538,3 @@ fn bevy_parity_apollo_trajectory() {
         }
     }
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

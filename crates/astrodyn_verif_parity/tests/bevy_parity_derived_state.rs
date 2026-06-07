@@ -60,10 +60,9 @@ fn bevy_parity_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b1",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -211,10 +210,9 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b2",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
@@ -357,10 +355,9 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b3-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b3",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(ecc_trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -523,10 +520,9 @@ fn bevy_parity_derived_state_polar_geodetic() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b4-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b4",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(polar_trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
@@ -663,10 +659,9 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b5-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b5",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -767,10 +762,9 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b6-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b6",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -864,10 +858,9 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b7-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b7",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -964,10 +957,9 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b8-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b8",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
@@ -1069,10 +1061,9 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b9-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b9",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -1204,10 +1195,9 @@ fn bevy_parity_derived_state_orbelem() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b10-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b10",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -1287,10 +1277,9 @@ fn bevy_parity_derived_state_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-derived-state-b11-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-derived-state-b11",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -1341,7 +1330,3 @@ fn bevy_parity_derived_state_solar_beta() {
     assert_bits_eq("Bevy vs Sim", "solar_beta", bevy_beta, sim_beta);
     println!("  Bevy vs Sim solar beta: bit-identical");
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

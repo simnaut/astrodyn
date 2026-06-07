@@ -94,10 +94,9 @@ fn build_test_app() -> (App, Entity, Entity) {
     let body = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-context-attach-to-frame-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-context-attach-to-frame-b1",
+            )),
             Name::new("body"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
             RotationalStateC::from(RotationalStateTyped::<SelfRef>::default()),
@@ -249,7 +248,3 @@ fn attach_to_frame_pfix_routes_to_pfix_frame_entity() {
     assert_eq!(attached.offset, captured_offset);
     assert_eq!(attached.t_parent_body, captured_rot);
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

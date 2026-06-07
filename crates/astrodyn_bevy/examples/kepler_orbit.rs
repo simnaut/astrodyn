@@ -160,10 +160,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     };
 
     commands.spawn((
-        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-            "kepler-orbit-b1-{}",
-            NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))),
+        // The vehicle's frame identity: a fixed, self-describing,
+        // mission-supplied name — this is the pattern mission code
+        // should copy (issue #662; the shared mint lives in
+        // `astrodyn::named_body_frame_uid`).
+        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("kepler-orbit-sat")),
         Name::new("Satellite"),
         TranslationalStateC::<astrodyn::Earth>::point_mass(
             trans_planet.position,
@@ -225,7 +226,3 @@ fn print_state(
         }
     }
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

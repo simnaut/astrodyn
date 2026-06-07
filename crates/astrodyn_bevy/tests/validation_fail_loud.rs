@@ -136,10 +136,7 @@ fn validate_jeod_invariants_should_panic_on_rotational_without_mass() {
         .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
         .id();
     app.world_mut().spawn((
-        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-            "validation-fail-loud-b1-{}",
-            NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))),
+        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("validation-fail-loud-b1")),
         Name::new("MisconfiguredSixDof"),
         TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<PlanetInertial<Earth>>(),
@@ -190,10 +187,7 @@ fn validate_jeod_invariants_panics_on_rotational_without_mass() {
     // is present (default) so `RotationalWithoutRotState` is *not*
     // raised, narrowing the failure set to one entry.
     app.world_mut().spawn((
-        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-            "validation-fail-loud-b2-{}",
-            NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))),
+        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("validation-fail-loud-b2")),
         Name::new("MisconfiguredSixDof"),
         TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
             position: DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<PlanetInertial<Earth>>(),
@@ -254,10 +248,7 @@ fn validate_jeod_invariants_warns_on_uninitialized_translational_state() {
         .id();
 
     app.world_mut().spawn((
-        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-            "validation-fail-loud-b3-{}",
-            NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))),
+        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("validation-fail-loud-b3")),
         Name::new("ZeroState"),
         TranslationalStateC::<Earth>(TranslationalStateTyped::<PlanetInertial<Earth>> {
             position: DVec3::ZERO.m_at::<PlanetInertial<Earth>>(),
@@ -311,7 +302,3 @@ fn validate_jeod_invariants_warns_on_uninitialized_translational_state() {
         );
     }
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

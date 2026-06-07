@@ -175,10 +175,9 @@ fn build_app() -> (App, Entity) {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-body-action-lifecycle-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-body-action-lifecycle-b1",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
             RotationalStateC::from(
                 astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
@@ -508,10 +507,9 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-body-action-lifecycle-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-body-action-lifecycle-b2",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
             RotationalStateC::from(
                 astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
@@ -684,10 +682,9 @@ fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history()
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-body-action-lifecycle-b3-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-body-action-lifecycle-b3",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
             RotationalStateC::from(
                 astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
@@ -863,10 +860,9 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-body-action-lifecycle-b4-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-body-action-lifecycle-b4",
+            )),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(iss_typical_state()),
             RotationalStateC::from(
                 astrodyn::typed_bridge::rot_raw_to_typed::<astrodyn::SelfRef>(
@@ -975,7 +971,3 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
          re-pushed it onto `BodyActionsR.pending`."
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
