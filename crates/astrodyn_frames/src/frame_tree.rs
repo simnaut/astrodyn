@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ref_frame_state::{RefFrameKind, RefFrameState, RefFrameStateTyped};
+use crate::ref_frame_state::{RefFrameState, RefFrameStateTyped};
 use astrodyn_quantities::frame::Frame;
 use astrodyn_quantities::frame_descriptor::{FrameClass, FrameUid, MintPolicy, Namespace};
 use astrodyn_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
@@ -22,35 +22,31 @@ pub type FrameId = usize;
 /// A node in the frame tree.
 #[derive(Debug, Clone)]
 pub struct FrameNode {
-    /// Human-readable name (e.g., "Earth.inertial", "ISS.composite_body").
+    /// Human-readable name — **diagnostics only** (e.g., "Earth.inertial",
+    /// "ISS.composite_body"). Identity lives in [`FrameNode::uid`]; no
+    /// production logic keys on names (issue #664).
     pub name: String,
-    /// Kind of reference frame.
-    pub kind: RefFrameKind,
     /// State relative to parent. Identity for root frames.
     pub state: RefFrameState,
-    /// Runtime frame identity. Private: mutating it directly would desync
-    /// the tree's identity index (`find`/`resolve`) — read via
+    /// Runtime frame identity — **required** since issue #664: every
+    /// construction path mints one. Private: mutating it directly would
+    /// desync the tree's identity index (`find`/`resolve`) — read via
     /// [`FrameNode::uid`]; stamping happens only through the typed
     /// constructors, [`FrameTree::add_child_uid`], or
     /// [`FrameTree::import_subtree`].
-    uid: Option<FrameUid>,
+    uid: FrameUid,
     /// Frame epoch (TDB seconds): the time-validity of `state`. `None`
-    /// until stamped (per-step stamping lands with issue #662).
+    /// until the host's per-step stamping writes it (issue #662).
     pub epoch: Option<SecondsSince<TDB>>,
 }
 
 impl FrameNode {
-    /// Runtime frame identity: `None` for nodes created via the untyped
-    /// [`FrameTree::add_root`] / [`FrameTree::add_child`] path (unstamped —
-    /// no identity is synthesized); `Some` once stamped via a typed
-    /// constructor, [`FrameTree::add_child_uid`], or
-    /// [`FrameTree::import_subtree`]. Read-only: the field is private so a
-    /// caller cannot desync the tree's identity index through
-    /// [`FrameTree::get_mut`]. The untyped path is a migration scaffold:
-    /// issue #662 stamps all production sites and issue #664 makes the
-    /// identity required.
-    pub fn uid(&self) -> Option<&FrameUid> {
-        self.uid.as_ref()
+    /// Runtime frame identity. Required at construction (issue #664) — a
+    /// node without a minted identity is unrepresentable. Read-only: the
+    /// field is private so a caller cannot desync the tree's identity
+    /// index through [`FrameTree::get_mut`].
+    pub fn uid(&self) -> &FrameUid {
+        &self.uid
     }
 }
 
@@ -146,24 +142,10 @@ impl FrameTree {
     }
 
     // -- construction -------------------------------------------------------
-
-    /// Add a root frame (no parent). State is identity. The node is
-    /// **unstamped** (`uid: None`) — prefer [`Self::add_root_typed`] for a
-    /// frame with a runtime identity. This untyped path is removed once all
-    /// construction sites are stamped (issue #664).
-    pub fn add_root(&mut self, name: String, kind: RefFrameKind) -> FrameId {
-        let id = self.nodes.len();
-        self.nodes.push(FrameNode {
-            name,
-            kind,
-            state: RefFrameState::default(),
-            uid: None,
-            epoch: None,
-        });
-        self.parent.push(None);
-        self.children.push(Vec::new());
-        id
-    }
+    //
+    // Every constructor mints a required identity (issue #664): the
+    // untyped `add_root(name, kind)` / `add_child(...)` scaffold from the
+    // pre-#662 migration window is gone, along with `RefFrameKind`.
 
     /// Add a stamped root frame whose identity is `FrameUid::of::<F>()`.
     /// State is identity.
@@ -179,6 +161,8 @@ impl FrameTree {
     /// - the minted identity is already registered in this tree.
     pub fn add_root_typed<F: Frame>(&mut self, name: String) -> FrameId {
         let uid = FrameUid::of::<F>();
+        // JEOD_INV: RF.15 — only inertial-flavor classes may root a tree;
+        // rooting on a rotating/body class is rejected at construction.
         assert!(
             uid.class.may_be_root_or_integ(),
             "add_root_typed: frame `{}` has class {:?}, which cannot root a tree \
@@ -190,9 +174,8 @@ impl FrameTree {
         let id = self.nodes.len();
         self.nodes.push(FrameNode {
             name,
-            kind: RefFrameKind::Inertial,
             state: RefFrameState::default(),
-            uid: Some(uid.clone()),
+            uid: uid.clone(),
             epoch: None,
         });
         self.parent.push(None);
@@ -215,6 +198,8 @@ impl FrameTree {
     ///   `validate()`'s `NonInertialRoot`).
     /// - the identity is already registered in this tree.
     pub fn add_root_uid(&mut self, uid: FrameUid, name: String) -> FrameId {
+        // JEOD_INV: RF.15 — only inertial-flavor classes may root a tree;
+        // rooting on a rotating/body class is rejected at construction.
         assert!(
             uid.class.may_be_root_or_integ(),
             "add_root_uid: identity `{uid}` has class {:?}, which cannot root a \
@@ -226,9 +211,8 @@ impl FrameTree {
         let id = self.nodes.len();
         self.nodes.push(FrameNode {
             name,
-            kind: Self::kind_for_class(uid.class),
             state: RefFrameState::default(),
-            uid: Some(uid.clone()),
+            uid: uid.clone(),
             epoch: None,
         });
         self.parent.push(None);
@@ -237,42 +221,11 @@ impl FrameTree {
         id
     }
 
-    /// Add a child frame with the given state relative to its parent. The
-    /// node is **unstamped** (`uid: None`) — prefer [`Self::add_child_typed`]
-    /// or [`Self::add_child_uid`] for a frame with a runtime identity. This
-    /// untyped path is removed once all construction sites are stamped
-    /// (issue #664).
-    ///
-    /// # Panics
-    /// Panics if `parent_id` does not refer to an existing frame.
-    pub fn add_child(
-        &mut self,
-        parent_id: FrameId,
-        name: String,
-        kind: RefFrameKind,
-        state: RefFrameState,
-    ) -> FrameId {
-        assert!(
-            parent_id < self.nodes.len(),
-            "parent_id {parent_id} out of range (have {} frames)",
-            self.nodes.len()
-        );
-        let id = self.nodes.len();
-        self.nodes.push(FrameNode {
-            name,
-            kind,
-            state,
-            uid: None,
-            epoch: None,
-        });
-        self.parent.push(Some(parent_id));
-        self.children.push(Vec::new());
-        self.children[parent_id].push(id);
-        id
-    }
-
     /// Register a stamped identity in the lookup index, rejecting
     /// duplicates at the point of introduction.
+    // JEOD_INV: RF.14 — every frame identity maps to exactly one node; a
+    // duplicate registration is rejected loudly at the point of
+    // introduction, never silently aliased.
     fn register_uid(&mut self, uid: FrameUid, id: FrameId) {
         if let Some(&existing) = self.uid_index.get(&uid) {
             panic!(
@@ -286,20 +239,7 @@ impl FrameTree {
         self.uid_index.insert(uid, id);
     }
 
-    /// Map a stamped class onto the legacy [`RefFrameKind`] discriminant.
-    /// The field is removed in issue #664; nothing branches on it — this
-    /// keeps the stopgap value honest in the meantime.
-    fn kind_for_class(class: FrameClass) -> RefFrameKind {
-        if matches!(class, FrameClass::Body) {
-            RefFrameKind::Body
-        } else if class.is_rotating() {
-            RefFrameKind::PlanetFixed
-        } else {
-            RefFrameKind::Inertial
-        }
-    }
-
-    /// Typed sibling of [`Self::add_child`]: stamps the child with
+    /// Typed child constructor: stamps the child with
     /// `FrameUid::of::<C>()` (no hand-supplied kind — the runtime identity
     /// is derived from the compile-time marker) and checks the typed
     /// state's parent marker `P` against the parent node's stamped
@@ -334,17 +274,7 @@ impl FrameTree {
         );
         // JEOD_INV: RF.02 — the typed state's parent marker must name the
         // parent node's stamped identity (valid predecessor).
-        let parent_uid = self.nodes[parent_id].uid.as_ref().unwrap_or_else(|| {
-            panic!(
-                "add_child_typed: parent frame {parent_id} (`{}`) is unstamped — it \
-                 was created via the untyped add_root/add_child path and has no \
-                 identity to check `{}` against. Stamp the parent via \
-                 add_root_typed / add_child_typed / add_child_uid, or use add_child \
-                 for an unstamped child.",
-                self.nodes[parent_id].name,
-                core::any::type_name::<P>()
-            )
-        });
+        let parent_uid = &self.nodes[parent_id].uid;
         assert!(
             parent_uid.is::<P>(),
             "add_child_typed: parent frame {parent_id} has identity `{parent_uid}`, \
@@ -383,9 +313,8 @@ impl FrameTree {
         let id = self.nodes.len();
         self.nodes.push(FrameNode {
             name,
-            kind: Self::kind_for_class(uid.class),
             state,
-            uid: Some(uid.clone()),
+            uid: uid.clone(),
             epoch,
         });
         self.parent.push(Some(parent_id));
@@ -463,14 +392,7 @@ impl FrameTree {
              Resolve the concrete frame type and request that instead.",
             core::any::type_name::<P>()
         );
-        let node_uid = self.nodes[id].uid.as_ref().unwrap_or_else(|| {
-            panic!(
-                "get_state_typed: frame {id} (`{}`) is unstamped — it was created \
-                 via the untyped path; stamp its identity via add_child_typed / \
-                 add_child_uid before reading it as a typed state.",
-                self.nodes[id].name
-            )
-        });
+        let node_uid = &self.nodes[id].uid;
         assert!(
             node_uid.is::<C>(),
             "get_state_typed: frame {id} has stored identity `{node_uid}`, but the \
@@ -485,14 +407,7 @@ impl FrameTree {
                 core::any::type_name::<P>()
             )
         });
-        let parent_uid = self.nodes[parent_id].uid.as_ref().unwrap_or_else(|| {
-            panic!(
-                "get_state_typed: parent of frame {id} (frame {parent_id}, `{}`) is \
-                 unstamped; cannot verify it is `{}`.",
-                self.nodes[parent_id].name,
-                core::any::type_name::<P>()
-            )
-        });
+        let parent_uid = &self.nodes[parent_id].uid;
         assert!(
             parent_uid.is::<P>(),
             "get_state_typed: parent of frame {id} has identity `{parent_uid}`, but \
@@ -578,12 +493,9 @@ impl FrameTree {
         Some(ca)
     }
 
-    /// Identity-or-name rendering of a frame for diagnostics.
+    /// Identity rendering of a frame for diagnostics.
     fn display_id(&self, id: FrameId) -> String {
-        match &self.nodes[id].uid {
-            Some(uid) => format!("`{uid}` (frame {id})"),
-            None => format!("`{}` (frame {id}, unstamped)", self.nodes[id].name),
-        }
+        format!("`{}` (frame {id})", self.nodes[id].uid)
     }
 
     /// Walk to the root of `id`'s tree.
@@ -603,7 +515,7 @@ impl FrameTree {
     pub fn find_common_ancestor(&self, a: FrameId, b: FrameId) -> FrameId {
         self.common_ancestor(a, b).unwrap_or_else(|| {
             let (ra, rb) = (self.root_of(a), self.root_of(b));
-            let ns = |id: FrameId| self.nodes[id].uid.as_ref().map(|u| u.namespace);
+            let ns = |id: FrameId| self.nodes[id].uid.namespace;
             let suggest = if ns(ra) != ns(rb) {
                 " The two frames live under roots in different namespaces; if they \
                  belong in one tree, declare the relationship explicitly by \
@@ -628,10 +540,8 @@ impl FrameTree {
     /// Validate the tree's structural and identity integrity, requiring a
     /// **single root** (the production invariant). Use
     /// [`Self::validate_forest`] for the legitimate multi-root state
-    /// between [`Self::import_subtree`] and [`Self::graft`].
-    ///
-    /// Identity checks skip unstamped nodes; see [`FrameTreeError`] for the
-    /// rejected conditions.
+    /// between [`Self::import_subtree`] and [`Self::graft`]. See
+    /// [`FrameTreeError`] for the rejected conditions.
     pub fn validate(&self) -> Result<(), FrameTreeError> {
         let roots = self.validate_common()?;
         if roots.len() > 1 {
@@ -676,27 +586,30 @@ impl FrameTree {
                 }
             }
             let node = &self.nodes[id];
-            // Identity checks (stamped nodes only — unstamped nodes have no
-            // identity to contradict).
-            if let Some(uid) = &node.uid {
-                if !seen_uids.insert(uid) {
-                    return Err(FrameTreeError::DuplicateUid(uid.clone()));
-                }
-                if self.parent[id].is_none() && !uid.class.may_be_root_or_integ() {
-                    return Err(FrameTreeError::NonInertialRoot {
-                        id,
-                        class: uid.class,
-                    });
-                }
-                if !uid.class.is_rotating()
-                    && !matches!(uid.class, FrameClass::Body | FrameClass::External)
-                    && node.state.rot.ang_vel_this != DVec3::ZERO
-                {
-                    return Err(FrameTreeError::ClassStateContradiction {
-                        id,
-                        class: uid.class,
-                    });
-                }
+            // Identity checks — every node carries a required identity
+            // (issue #664), so these run unconditionally.
+            let uid = &node.uid;
+            // JEOD_INV: RF.14 — bulk-load belt for the identity-uniqueness
+            // invariant register_uid enforces at construction.
+            if !seen_uids.insert(uid) {
+                return Err(FrameTreeError::DuplicateUid(uid.clone()));
+            }
+            // JEOD_INV: RF.15 — bulk-load belt for the root-class
+            // eligibility the constructors enforce.
+            if self.parent[id].is_none() && !uid.class.may_be_root_or_integ() {
+                return Err(FrameTreeError::NonInertialRoot {
+                    id,
+                    class: uid.class,
+                });
+            }
+            if !uid.class.is_rotating()
+                && !matches!(uid.class, FrameClass::Body | FrameClass::External)
+                && node.state.rot.ang_vel_this != DVec3::ZERO
+            {
+                return Err(FrameTreeError::ClassStateContradiction {
+                    id,
+                    class: uid.class,
+                });
             }
             // Unit-norm drift (all nodes — state integrity is
             // identity-independent). Tolerance check, not bit-equality; the
@@ -716,10 +629,9 @@ impl FrameTree {
     // -- multi-source composition ----------------------------------------------
 
     /// Deep-copy `other`'s entire forest into this tree, re-stamping every
-    /// stamped identity into namespace `ns` (unstamped nodes stay
-    /// unstamped). Returns `(old_id, new_id)` pairs in `other`'s insertion
-    /// order so callers holding foreign ids can locate the imported nodes
-    /// (e.g. to [`Self::graft`] an imported root).
+    /// identity into namespace `ns`. Returns `(old_id, new_id)` pairs in
+    /// `other`'s insertion order so callers holding foreign ids can locate
+    /// the imported nodes (e.g. to [`Self::graft`] an imported root).
     ///
     /// # Panics
     /// - `ns == Namespace::LOCAL`: LOCAL is reserved for type-derived
@@ -737,10 +649,9 @@ impl FrameTree {
         let mut map = Vec::with_capacity(other.nodes.len());
         for (old, node) in other.nodes.iter().enumerate() {
             let new = base + old;
-            let new_uid = node.uid.clone().map(|u| u.with_namespace(ns));
+            let new_uid = node.uid.clone().with_namespace(ns);
             self.nodes.push(FrameNode {
                 name: node.name.clone(),
-                kind: node.kind,
                 state: node.state,
                 uid: new_uid.clone(),
                 epoch: node.epoch,
@@ -748,9 +659,7 @@ impl FrameTree {
             self.parent.push(other.parent[old].map(|p| base + p));
             self.children
                 .push(other.children[old].iter().map(|&c| base + c).collect());
-            if let Some(u) = new_uid {
-                self.register_uid(u, new);
-            }
+            self.register_uid(new_uid, new);
             map.push((old, new));
         }
         map
@@ -848,7 +757,10 @@ impl FrameTree {
 
     // -- lookup --------------------------------------------------------------
 
-    /// Find a frame by name. Returns the first match, or `None`.
+    /// Find a frame by its diagnostic name. Returns the first match, or
+    /// `None`. **Debug convenience only** (issue #664): names are
+    /// non-unique diagnostic labels — production logic addresses frames
+    /// by identity via [`Self::find`] / [`Self::resolve`].
     pub fn find_by_name(&self, name: &str) -> Option<FrameId> {
         self.nodes.iter().position(|n| n.name == name)
     }
@@ -985,10 +897,45 @@ mod tests {
     use crate::ref_frame_state::{RefFrameRot, RefFrameTrans};
     use astrodyn_math::test_utils::{approx_eq_mat3, approx_eq_vec3};
     use astrodyn_math::JeodQuat;
+    use astrodyn_quantities::frame_descriptor::{FrameRole, Tag};
     use glam::{DMat3, DVec3};
     use std::f64::consts::FRAC_PI_2;
 
     const TOL: f64 = 1e-12;
+
+    /// Mint a fresh, unique external identity — identity is required at
+    /// construction (issue #664), and these structural tests don't care
+    /// which one a node carries, only that nodes are distinct.
+    fn ext_uid(class: FrameClass) -> FrameUid {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        FrameUid::external(
+            Namespace(2),
+            class,
+            FrameRole::Primary,
+            Tag::Named(format!("t{n}").into()),
+        )
+    }
+
+    /// Test-local stand-in for the removed untyped root constructor: a
+    /// root with a fresh (root-eligible) external identity.
+    fn add_root(tree: &mut FrameTree, name: String) -> FrameId {
+        tree.add_root_uid(ext_uid(FrameClass::PlanetInertial), name)
+    }
+
+    /// Test-local stand-in for the removed untyped child constructor: a
+    /// child with a fresh external identity (`External` class — exempt
+    /// from the class/state contradiction check, since these synthetic
+    /// frames carry arbitrary rotation state).
+    fn add_child(
+        tree: &mut FrameTree,
+        parent: FrameId,
+        name: String,
+        state: RefFrameState,
+    ) -> FrameId {
+        tree.add_child_uid(parent, ext_uid(FrameClass::External), name, state, None)
+    }
 
     /// Helper: create a RefFrameState with a rotation about Z axis and a position offset.
     fn make_state(angle_z: f64, pos: DVec3, vel: DVec3, ang_vel: DVec3) -> RefFrameState {
@@ -1013,7 +960,7 @@ mod tests {
     #[test]
     fn single_root() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         assert!(tree.parent(root).is_none(), "root should have no parent");
         assert!(
@@ -1023,7 +970,7 @@ mod tests {
 
         let node = tree.get(root);
         assert_eq!(node.name, "root");
-        assert_eq!(node.kind, RefFrameKind::Inertial);
+        assert_eq!(node.uid().class, FrameClass::PlanetInertial);
         assert_eq!(node.state.trans.position, DVec3::ZERO);
         assert_eq!(node.state.trans.velocity, DVec3::ZERO);
         assert_eq!(node.state.rot.t_parent_this, DMat3::IDENTITY);
@@ -1036,7 +983,7 @@ mod tests {
     #[test]
     fn parent_child_links() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let child_state = make_state(
             0.5,
@@ -1044,7 +991,7 @@ mod tests {
             DVec3::new(100.0, 200.0, 300.0),
             DVec3::new(0.01, 0.02, 0.03),
         );
-        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+        let child = add_child(&mut tree, root, "child".into(), child_state);
 
         assert_eq!(tree.parent(child), Some(root));
         assert_eq!(tree.children(root), &[child]);
@@ -1068,7 +1015,7 @@ mod tests {
     #[test]
     fn relative_state_to_self() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let child_state = make_state(
             1.0,
@@ -1076,7 +1023,7 @@ mod tests {
             DVec3::new(7000.0, 0.0, 0.0),
             DVec3::new(0.0, 0.0, 0.001),
         );
-        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+        let child = add_child(&mut tree, root, "child".into(), child_state);
 
         let rel = tree.compute_relative_state(child, child);
 
@@ -1106,7 +1053,7 @@ mod tests {
     #[test]
     fn relative_state_parent_child() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let child_state = make_state(
             0.5,
@@ -1114,7 +1061,7 @@ mod tests {
             DVec3::new(100.0, 200.0, 300.0),
             DVec3::new(0.01, 0.02, 0.03),
         );
-        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+        let child = add_child(&mut tree, root, "child".into(), child_state);
 
         // relative state from root to child = child's state relative to root
         let rel = tree.compute_relative_state(root, child);
@@ -1151,7 +1098,7 @@ mod tests {
     #[test]
     fn relative_state_child_parent() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let child_state = make_state(
             0.5,
@@ -1159,7 +1106,7 @@ mod tests {
             DVec3::new(100.0, 200.0, 300.0),
             DVec3::new(0.01, 0.02, 0.03),
         );
-        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+        let child = add_child(&mut tree, root, "child".into(), child_state);
 
         let rel = tree.compute_relative_state(child, root);
         let expected = RefFrameState::negate(&child_state);
@@ -1193,7 +1140,7 @@ mod tests {
     #[test]
     fn three_level_tree() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let state_a = make_state(
             FRAC_PI_2,
@@ -1201,7 +1148,7 @@ mod tests {
             DVec3::new(10.0, 0.0, 0.0),
             DVec3::ZERO,
         );
-        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+        let a = add_child(&mut tree, root, "A".into(), state_a);
 
         let state_b = make_state(
             0.0,
@@ -1209,7 +1156,7 @@ mod tests {
             DVec3::new(5.0, 0.0, 0.0),
             DVec3::ZERO,
         );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, state_b);
+        let b = add_child(&mut tree, a, "B".into(), state_b);
 
         let rel = tree.compute_relative_state(root, b);
 
@@ -1244,7 +1191,7 @@ mod tests {
     #[test]
     fn sibling_relative_state() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         let state_a = make_state(
             0.3,
@@ -1252,7 +1199,7 @@ mod tests {
             DVec3::new(100.0, 0.0, 0.0),
             DVec3::new(0.0, 0.0, 0.01),
         );
-        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+        let a = add_child(&mut tree, root, "A".into(), state_a);
 
         let state_b = make_state(
             -0.7,
@@ -1260,7 +1207,7 @@ mod tests {
             DVec3::new(0.0, 200.0, 0.0),
             DVec3::new(0.0, 0.0, 0.02),
         );
-        let b = tree.add_child(root, "B".into(), RefFrameKind::Body, state_b);
+        let b = add_child(&mut tree, root, "B".into(), state_b);
 
         // Relative state from A to B should be:
         //   negate(root -> A) composed with (root -> B)
@@ -1304,7 +1251,7 @@ mod tests {
     #[test]
     fn four_level_tree_relative_state_precision() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         // Use moderate values to avoid floating-point precision loss
         // from large position magnitudes.
@@ -1314,7 +1261,7 @@ mod tests {
             DVec3::new(1.0, 2.0, 0.5),
             DVec3::new(0.001, 0.002, 0.003),
         );
-        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+        let a = add_child(&mut tree, root, "A".into(), state_a);
 
         let state_b = make_state(
             -0.7,
@@ -1322,7 +1269,7 @@ mod tests {
             DVec3::new(0.5, -0.3, 0.8),
             DVec3::new(-0.001, 0.001, 0.002),
         );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, state_b);
+        let b = add_child(&mut tree, a, "B".into(), state_b);
 
         let state_c = make_state(
             1.2,
@@ -1330,7 +1277,7 @@ mod tests {
             DVec3::new(-0.2, 0.4, 0.1),
             DVec3::new(0.003, -0.002, 0.001),
         );
-        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, state_c);
+        let c = add_child(&mut tree, b, "C".into(), state_c);
 
         let state_d = make_state(
             -0.4,
@@ -1338,7 +1285,7 @@ mod tests {
             DVec3::new(0.1, 0.1, -0.05),
             DVec3::new(0.0005, 0.0005, -0.001),
         );
-        let d = tree.add_child(c, "D".into(), RefFrameKind::Body, state_d);
+        let d = add_child(&mut tree, c, "D".into(), state_d);
 
         // Sibling branch: root -> E
         let state_e = make_state(
@@ -1347,7 +1294,7 @@ mod tests {
             DVec3::new(-0.6, 0.9, 0.3),
             DVec3::new(0.002, -0.001, 0.004),
         );
-        let e = tree.add_child(root, "E".into(), RefFrameKind::Body, state_e);
+        let e = add_child(&mut tree, root, "E".into(), state_e);
 
         // 4-level composition accumulates ~6e-14 position error from
         // floating-point arithmetic. We therefore use a 1e-13 tolerance for
@@ -1490,11 +1437,11 @@ mod tests {
     #[test]
     fn find_by_name() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("Earth.inertial".into(), RefFrameKind::Inertial);
-        let moon = tree.add_child(
+        let root = add_root(&mut tree, "Earth.inertial".into());
+        let moon = add_child(
+            &mut tree,
             root,
             "Moon.inertial".into(),
-            RefFrameKind::Inertial,
             RefFrameState::default(),
         );
 
@@ -1509,20 +1456,10 @@ mod tests {
     #[test]
     fn is_descendant_of() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
-        let c = tree.add_child(
-            root,
-            "C".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, a, "B".into(), RefFrameState::default());
+        let c = add_child(&mut tree, root, "C".into(), RefFrameState::default());
 
         assert!(tree.is_descendant_of(b, root));
         assert!(tree.is_descendant_of(b, a));
@@ -1539,7 +1476,7 @@ mod tests {
     #[test]
     fn reparent_preserves_absolute_state() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
 
         // Two children of root with distinct states.
         let state_a = make_state(
@@ -1548,7 +1485,7 @@ mod tests {
             DVec3::new(10.0, 0.0, 0.0),
             DVec3::new(0.0, 0.0, 0.01),
         );
-        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+        let a = add_child(&mut tree, root, "A".into(), state_a);
 
         let state_b = make_state(
             -0.5,
@@ -1556,7 +1493,7 @@ mod tests {
             DVec3::new(0.0, 20.0, 0.0),
             DVec3::new(0.0, 0.0, 0.02),
         );
-        let b = tree.add_child(root, "B".into(), RefFrameKind::Body, state_b);
+        let b = add_child(&mut tree, root, "B".into(), state_b);
 
         // Child of B.
         let state_c = make_state(
@@ -1565,7 +1502,7 @@ mod tests {
             DVec3::new(1.0, 1.0, 0.0),
             DVec3::new(0.001, 0.0, 0.0),
         );
-        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, state_c);
+        let c = add_child(&mut tree, b, "C".into(), state_c);
 
         // Record absolute state of C before reparent (root -> C).
         let abs_before = tree.compute_relative_state(root, c);
@@ -1621,14 +1558,9 @@ mod tests {
     #[should_panic(expected = "would create a cycle")]
     fn reparent_cycle_panics() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, a, "B".into(), RefFrameState::default());
 
         // Try to reparent A under its own descendant B — should panic.
         tree.reparent(a, b);
@@ -1641,13 +1573,8 @@ mod tests {
     #[should_panic(expected = "cannot reparent root frames")]
     fn reparent_root_panics() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
 
         // Try to reparent the root — should panic.
         tree.reparent(root, a);
@@ -1659,20 +1586,15 @@ mod tests {
     #[test]
     fn common_ancestor_same_frame() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
         assert_eq!(tree.common_ancestor(root, root), Some(root));
     }
 
     #[test]
     fn common_ancestor_parent_child() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let child = tree.add_child(
-            root,
-            "child".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let child = add_child(&mut tree, root, "child".into(), RefFrameState::default());
         assert_eq!(tree.common_ancestor(root, child), Some(root));
         assert_eq!(tree.common_ancestor(child, root), Some(root));
     }
@@ -1680,27 +1602,17 @@ mod tests {
     #[test]
     fn common_ancestor_siblings() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(
-            root,
-            "B".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, root, "B".into(), RefFrameState::default());
         assert_eq!(tree.common_ancestor(a, b), Some(root));
     }
 
     #[test]
     fn common_ancestor_unrelated_trees() {
         let mut tree = FrameTree::new();
-        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
-        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        let root_a = add_root(&mut tree, "root_a".into());
+        let root_b = add_root(&mut tree, "root_b".into());
         assert_eq!(tree.common_ancestor(root_a, root_b), None);
     }
 
@@ -1714,23 +1626,13 @@ mod tests {
         //     │   └── E
         //     └── F
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
-        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
-        let d = tree.add_child(c, "D".into(), RefFrameKind::Body, RefFrameState::default());
-        let e = tree.add_child(a, "E".into(), RefFrameKind::Body, RefFrameState::default());
-        let f = tree.add_child(
-            root,
-            "F".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, a, "B".into(), RefFrameState::default());
+        let c = add_child(&mut tree, b, "C".into(), RefFrameState::default());
+        let d = add_child(&mut tree, c, "D".into(), RefFrameState::default());
+        let e = add_child(&mut tree, a, "E".into(), RefFrameState::default());
+        let f = add_child(&mut tree, root, "F".into(), RefFrameState::default());
 
         assert_eq!(tree.common_ancestor(d, e), Some(a));
         assert_eq!(tree.common_ancestor(d, f), Some(root));
@@ -1744,15 +1646,10 @@ mod tests {
     #[test]
     fn depth_computation() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
-        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, a, "B".into(), RefFrameState::default());
+        let c = add_child(&mut tree, b, "C".into(), RefFrameState::default());
 
         assert_eq!(tree.depth(root), 0);
         assert_eq!(tree.depth(a), 1);
@@ -1766,15 +1663,10 @@ mod tests {
     #[test]
     fn path_to_ancestor_basic() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
-        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, a, "B".into(), RefFrameState::default());
+        let c = add_child(&mut tree, b, "C".into(), RefFrameState::default());
 
         assert_eq!(tree.path_to_ancestor(c, root), Some(vec![c, b, a, root]));
         assert_eq!(tree.path_to_ancestor(c, a), Some(vec![c, b, a]));
@@ -1784,19 +1676,9 @@ mod tests {
     #[test]
     fn path_to_ancestor_not_an_ancestor() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
-            root,
-            "A".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        let b = tree.add_child(
-            root,
-            "B".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(&mut tree, root, "A".into(), RefFrameState::default());
+        let b = add_child(&mut tree, root, "B".into(), RefFrameState::default());
 
         // A is not an ancestor of B (they are siblings).
         assert_eq!(tree.path_to_ancestor(b, a), None);
@@ -1808,22 +1690,22 @@ mod tests {
     #[test]
     fn try_compute_relative_state_returns_none_for_disconnected() {
         let mut tree = FrameTree::new();
-        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
-        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        let root_a = add_root(&mut tree, "root_a".into());
+        let root_b = add_root(&mut tree, "root_b".into());
         assert!(tree.try_compute_relative_state(root_a, root_b).is_none());
     }
 
     #[test]
     fn try_compute_relative_state_matches_panicking_variant() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = add_root(&mut tree, "root".into());
         let child_state = make_state(
             0.3,
             DVec3::new(1e6, 2e6, 3e6),
             DVec3::new(100.0, 200.0, 300.0),
             DVec3::ZERO,
         );
-        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+        let child = add_child(&mut tree, root, "child".into(), child_state);
 
         let panicking = tree.compute_relative_state(root, child);
         let non_panicking = tree
@@ -1885,7 +1767,7 @@ mod tests {
         use astrodyn_quantities::frame::{Ecef, RootInertial};
 
         let mut tree_a = FrameTree::new();
-        let root_a = tree_a.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root_a = add_root(&mut tree_a, "inertial".into());
         let mut tree_b = FrameTree::new();
         let root_b = tree_b.add_root_typed::<RootInertial>("inertial".into());
 
@@ -1897,7 +1779,7 @@ mod tests {
         );
         let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&untyped);
 
-        let id_a = tree_a.add_child(root_a, "a".into(), RefFrameKind::PlanetFixed, untyped);
+        let id_a = add_child(&mut tree_a, root_a, "a".into(), untyped);
         let id_b = tree_b.add_child_typed::<RootInertial, Ecef>(root_b, "b".into(), typed, None);
 
         assert_eq!(tree_a.get(id_a).state, tree_b.get(id_b).state);
@@ -1945,6 +1827,8 @@ mod identity_tests {
     // -- stamped construction -------------------------------------------------
 
     #[test]
+    // JEOD_INV: RF.15 — negative test: a non-inertial class must not root
+    // a tree via the typed constructor.
     #[should_panic(expected = "cannot root a tree")]
     fn add_root_typed_non_inertial_class_panics() {
         let mut tree = FrameTree::new();
@@ -1965,11 +1849,13 @@ mod identity_tests {
         let root = tree.add_root_uid(uid.clone(), "foreign-root".into());
         assert_eq!(tree.find(&uid), Some(root));
         assert_eq!(tree.parent(root), None);
-        assert_eq!(tree.get(root).uid(), Some(&uid));
+        assert_eq!(tree.get(root).uid(), &uid);
         tree.validate().expect("single stamped inertial root");
     }
 
     #[test]
+    // JEOD_INV: RF.15 — negative test: a non-inertial class must not root
+    // a tree via the value-level constructor.
     #[should_panic(expected = "cannot root a tree")]
     fn add_root_uid_non_inertial_class_panics() {
         let mut tree = FrameTree::new();
@@ -1983,6 +1869,8 @@ mod identity_tests {
     }
 
     #[test]
+    // JEOD_INV: RF.14 — negative test: a duplicate identity registration
+    // must be rejected at the point of introduction.
     #[should_panic(expected = "duplicate frame identity")]
     fn add_root_uid_duplicate_panics() {
         let mut tree = FrameTree::new();
@@ -1990,14 +1878,9 @@ mod identity_tests {
         let _ = tree.add_root_uid(FrameUid::of::<RootInertial>(), "root2".into());
     }
 
-    #[test]
-    #[should_panic(expected = "is unstamped")]
-    fn add_child_typed_parent_unstamped_panics() {
-        let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let _ =
-            tree.add_child_typed::<RootInertial, Ecef>(root, "ecef".into(), typed_state(), None);
-    }
+    // `add_child_typed_parent_unstamped_panics` was deleted in issue
+    // #664: identity is required at construction, so an unstamped parent
+    // is unrepresentable and the panic arm it exercised no longer exists.
 
     #[test]
     #[should_panic(expected = "must match the frame it is parented to")]
@@ -2013,6 +1896,8 @@ mod identity_tests {
     }
 
     #[test]
+    // JEOD_INV: RF.14 — negative test: minting the same typed identity
+    // twice in one tree must be rejected.
     #[should_panic(expected = "duplicate frame identity")]
     fn duplicate_uid_panics() {
         let (mut tree, root, _ecef) = stamped_tree();
@@ -2038,20 +1923,8 @@ mod identity_tests {
     }
 
     // -- checked typed recovery -------------------------------------------------
-
-    #[test]
-    #[should_panic(expected = "is unstamped")]
-    fn get_state_typed_unstamped_panics() {
-        let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let child = tree.add_child(
-            root,
-            "child".into(),
-            RefFrameKind::PlanetFixed,
-            RefFrameState::default(),
-        );
-        let _: RefFrameStateTyped<RootInertial, Ecef> = tree.get_state_typed(child);
-    }
+    // (`get_state_typed_unstamped_panics` was deleted in issue #664:
+    // unstamped nodes are unrepresentable.)
 
     #[test]
     #[should_panic(expected = "identity mismatch")]
@@ -2091,25 +1964,23 @@ mod identity_tests {
         tree.validate().expect("stamped single-root tree validates");
     }
 
-    #[test]
-    fn validate_skips_unstamped_nodes() {
-        let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        tree.add_child(
-            root,
-            "child".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
-        tree.validate()
-            .expect("unstamped tree has no identities to contradict");
-    }
+    // (`validate_skips_unstamped_nodes` was deleted in issue #664: every
+    // node carries a required identity, so the identity checks run
+    // unconditionally.)
 
     #[test]
     fn validate_multi_root_err_forest_ok() {
         let mut tree = FrameTree::new();
         let _a = tree.add_root_typed::<RootInertial>("a".into());
-        let _b = tree.add_root("b".into(), RefFrameKind::Inertial);
+        let _b = tree.add_root_uid(
+            FrameUid::external(
+                Namespace(3),
+                FrameClass::PlanetInertial,
+                astrodyn_quantities::frame_descriptor::FrameRole::Primary,
+                astrodyn_quantities::frame_descriptor::Tag::Named("b".into()),
+            ),
+            "b".into(),
+        );
         assert!(matches!(
             tree.validate(),
             Err(FrameTreeError::MultiRoot(roots)) if roots.len() == 2
@@ -2274,7 +2145,7 @@ mod identity_tests {
         // private precisely so public callers cannot do this) to exercise
         // the load-path duplicate check.
         let (mut tree, _root, ecef) = stamped_tree();
-        tree.nodes[ecef].uid = Some(FrameUid::of::<RootInertial>());
+        tree.nodes[ecef].uid = FrameUid::of::<RootInertial>();
         assert!(matches!(
             tree.validate(),
             Err(FrameTreeError::DuplicateUid(_))
@@ -2286,8 +2157,8 @@ mod identity_tests {
         // White-box: stamp a root with a non-root-eligible class to
         // exercise the load-path guard (constructors reject this case).
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        tree.nodes[root].uid = Some(FrameUid::of::<Ecef>());
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        tree.nodes[root].uid = FrameUid::of::<Ecef>();
         assert!(matches!(
             tree.validate(),
             Err(FrameTreeError::NonInertialRoot { .. })

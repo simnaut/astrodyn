@@ -159,16 +159,45 @@ impl FrameStorage for FrameTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ref_frame_state::{RefFrameKind, RefFrameRot, RefFrameTrans};
+    use crate::ref_frame_state::{RefFrameRot, RefFrameTrans};
+    use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
     use glam::DVec3;
+
+    /// Mint a fresh, unique external identity (identity is required at
+    /// construction, issue #664); these structural tests only need nodes
+    /// to be distinct.
+    fn ext_uid(class: FrameClass) -> FrameUid {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        FrameUid::external(
+            Namespace(2),
+            class,
+            FrameRole::Primary,
+            Tag::Named(format!("fs{n}").into()),
+        )
+    }
+
+    fn add_root(tree: &mut FrameTree, name: String) -> FrameId {
+        tree.add_root_uid(ext_uid(FrameClass::PlanetInertial), name)
+    }
+
+    fn add_child(
+        tree: &mut FrameTree,
+        parent: FrameId,
+        name: String,
+        state: RefFrameState,
+    ) -> FrameId {
+        tree.add_child_uid(parent, ext_uid(FrameClass::External), name, state, None)
+    }
 
     fn build_tree() -> (FrameTree, FrameId, FrameId, FrameId) {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let a = tree.add_child(
+        let root = add_root(&mut tree, "root".into());
+        let a = add_child(
+            &mut tree,
             root,
             "A".into(),
-            RefFrameKind::Body,
             RefFrameState {
                 trans: RefFrameTrans {
                     position: DVec3::new(1.0e6, 2.0e6, 3.0e6),
@@ -177,10 +206,10 @@ mod tests {
                 rot: RefFrameRot::default(),
             },
         );
-        let b = tree.add_child(
+        let b = add_child(
+            &mut tree,
             a,
             "B".into(),
-            RefFrameKind::Body,
             RefFrameState {
                 trans: RefFrameTrans {
                     position: DVec3::new(100.0, 200.0, 300.0),
@@ -211,12 +240,7 @@ mod tests {
         let (tree, root, a, b) = build_tree();
         // Sibling-of-A under root, to make common_ancestor non-trivial.
         let mut tree = tree;
-        let _c = tree.add_child(
-            root,
-            "C".into(),
-            RefFrameKind::Body,
-            RefFrameState::default(),
-        );
+        let _c = add_child(&mut tree, root, "C".into(), RefFrameState::default());
         assert_eq!(common_ancestor(&tree, b, a), Some(a));
         assert_eq!(common_ancestor(&tree, b, root), Some(root));
         assert_eq!(common_ancestor(&tree, a, b), Some(a));

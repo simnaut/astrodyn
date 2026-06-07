@@ -54,8 +54,6 @@ pub fn frame_origin(
 /// mislabeling the result's coordinate basis.
 ///
 /// # Panics
-/// - the root node is unstamped (build the tree via the stamped
-///   constructors);
 /// - the root's stored identity does not match `F`.
 ///
 /// Phase C5 of issue #71: lets consumers compute the integration-frame
@@ -68,12 +66,7 @@ pub fn frame_origin_typed<F: Frame>(
 ) -> (Position<F>, Velocity<F>) {
     // JEOD_INV: RF.02 — the result is expressed in the root's frame, so
     // the requested marker must name the root node's stamped identity.
-    let root_uid = frame_tree.get(root_frame_id).uid().unwrap_or_else(|| {
-        panic!(
-            "frame_origin_typed: root frame {root_frame_id} is unstamped — cannot verify it is `{}`. Build the tree via add_root_typed / add_child_uid so the root carries an identity.",
-            core::any::type_name::<F>()
-        )
-    });
+    let root_uid = frame_tree.get(root_frame_id).uid();
     assert!(
         root_uid.is::<F>(),
         "frame_origin_typed: root frame {root_frame_id} has stored identity `{root_uid}`, but the requested marker is `{}` — the result is expressed in the root's frame, so F must name the root's identity.",
@@ -96,7 +89,6 @@ pub fn frame_origin_typed<F: Frame>(
 /// # Panics
 /// - `From` or `To` is non-mintable (a storage-boundary wildcard or
 ///   `IntegrationFrame`) — such a marker can never name a stored identity;
-/// - either endpoint is unstamped;
 /// - either endpoint's stored identity does not match its marker.
 ///
 /// Phase C5 of issue #71.
@@ -116,33 +108,25 @@ pub fn compute_relative_state_typed<From: Frame, To: Frame>(
         assert!(
             is_match,
             "compute_relative_state_typed: frame {id} has stored identity `{}`, but the requested {marker} marker is `{name}` — identity mismatch.",
-            frame_tree
-                .get(id)
-                .uid()
-                .map(|u| u.to_string())
-                .unwrap_or_else(|| "<unstamped>".into()),
+            frame_tree.get(id).uid(),
         );
-    };
-    let stamped = |id: FrameId, marker: &str, name: &str| {
-        frame_tree.get(id).uid().unwrap_or_else(|| {
-            panic!(
-                "compute_relative_state_typed: frame {id} (`{}`) is unstamped — cannot verify it is the {marker} marker `{name}`. Stamp its identity via the typed constructors or add_child_uid.",
-                frame_tree.get(id).name
-            )
-        })
     };
     let from_name = core::any::type_name::<From>();
     let to_name = core::any::type_name::<To>();
-    let from_uid = stamped(from, "From", from_name);
     check(
         from,
         "From",
         from_name,
         From::DESCRIPTOR.mint,
-        from_uid.is::<From>(),
+        frame_tree.get(from).uid().is::<From>(),
     );
-    let to_uid = stamped(to, "To", to_name);
-    check(to, "To", to_name, To::DESCRIPTOR.mint, to_uid.is::<To>());
+    check(
+        to,
+        "To",
+        to_name,
+        To::DESCRIPTOR.mint,
+        frame_tree.get(to).uid().is::<To>(),
+    );
     let untyped = frame_tree.compute_relative_state(from, to);
     RefFrameStateTyped::<From, To>::from_untyped_unchecked(&untyped)
 }
@@ -150,17 +134,18 @@ pub fn compute_relative_state_typed<From: Frame, To: Frame>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
+    use crate::{RefFrameRot, RefFrameState, RefFrameTrans};
     use astrodyn_quantities::frame::{Ecef, RootInertial};
+    use astrodyn_quantities::frame_descriptor::FrameUid;
 
     #[test]
     fn frame_origin_typed_matches_untyped() {
         let mut tree = FrameTree::new();
         let root = tree.add_root_typed::<RootInertial>("root".into());
-        let child = tree.add_child(
+        let child = tree.add_child_uid(
             root,
+            FrameUid::of::<Ecef>(),
             "child".into(),
-            RefFrameKind::Inertial,
             RefFrameState {
                 trans: RefFrameTrans {
                     position: DVec3::new(1.0e7, 2.0e7, 3.0e7),
@@ -168,6 +153,7 @@ mod tests {
                 },
                 rot: RefFrameRot::default(),
             },
+            None,
         );
 
         let (untyped_pos, untyped_vel) = frame_origin(&tree, root, child);
@@ -188,7 +174,6 @@ mod tests {
 
     #[test]
     fn compute_relative_state_typed_matches_untyped() {
-        use astrodyn_quantities::frame_descriptor::FrameUid;
         let mut tree = FrameTree::new();
         let root = tree.add_root_typed::<RootInertial>("root".into());
         let child = tree.add_child_uid(
