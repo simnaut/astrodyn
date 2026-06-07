@@ -172,12 +172,17 @@ fn tier3_frame_doc_leo_rnp_continue() {
     let doc = sim_b1.export_frame_document();
 
     // The document must carry both canonicity regimes and the origin
-    // taxonomy this scenario produces.
-    let pfix = doc
-        .records
-        .iter()
-        .find(|r| r.name == "Earth.pfix")
-        .expect("pfix record");
+    // taxonomy this scenario produces. Records are looked up by
+    // IDENTITY, never by name — names are diagnostics-only (#664).
+    let find_by_uid = |uid: &astrodyn::FrameUid| {
+        doc.records
+            .iter()
+            .find(|r| &doc.uids[r.uid_index as usize] == uid)
+    };
+    let pfix = find_by_uid(&astrodyn::FrameUid::of::<
+        astrodyn::PlanetFixed<astrodyn::Earth>,
+    >())
+    .expect("pfix record");
     assert!(
         matches!(pfix.rotation, CanonicalRotation::Matrix(_)),
         "pfix node is matrix-canonical (sync_pfix_rotation)"
@@ -186,11 +191,8 @@ fn tier3_frame_doc_leo_rnp_continue() {
         matches!(&pfix.origin, Origin::Derived { model } if model == "EarthRNP"),
         "pfix state is a rotation-model evaluation"
     );
-    let body_rec = doc
-        .records
-        .iter()
-        .find(|r| r.name.starts_with("body_"))
-        .expect("body record");
+    let body_rec =
+        find_by_uid(&astrodyn::named_body_frame_uid("frame-doc-leo")).expect("body record");
     assert!(
         matches!(body_rec.rotation, CanonicalRotation::Quat(_)),
         "body node is quaternion-canonical (RF.04)"

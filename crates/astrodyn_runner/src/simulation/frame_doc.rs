@@ -192,13 +192,10 @@ impl Simulation {
             // each record's declared parent; a mismatch is a loud
             // inconsistency, never a silent reinterpretation (and apply
             // never reparents).
-            let actual_parent = self.frame_tree.parent(fid).map(|pid| {
-                self.frame_tree
-                    .get(pid)
-                    .uid()
-                    .expect("production nodes are stamped (issue #662)")
-                    .clone()
-            });
+            let actual_parent = self
+                .frame_tree
+                .parent(fid)
+                .map(|pid| self.frame_tree.get(pid).uid().clone());
             let declared_parent: Option<FrameUid> =
                 rec.parent.map(|p| doc.uids[p as usize].clone());
             assert!(
