@@ -94,9 +94,10 @@ jobs:
       - name: Build feature-gated frame-doc docs (deny warnings)
         # `cargo doc --workspace` builds with default features, so the
         # non-default `frame-doc` modules (`astrodyn::frame_doc_io`, the
-        # runner's document export/apply) are cfg'd out of the pass above.
-        # Build them explicitly so their rustdoc is `-D warnings`-checked.
-        run: cargo doc -p astrodyn -p astrodyn_runner --features astrodyn/frame-doc,astrodyn_runner/frame-doc --no-deps --document-private-items --quiet
+        # runner's and the Bevy adapter's document export/apply) are cfg'd
+        # out of the pass above. Build them explicitly so their rustdoc is
+        # `-D warnings`-checked.
+        run: cargo doc -p astrodyn -p astrodyn_runner -p astrodyn_bevy --features astrodyn/frame-doc,astrodyn_runner/frame-doc,astrodyn_bevy/frame-doc --no-deps --document-private-items --quiet
         env:
           RUSTDOCFLAGS: -D warnings
       - name: Run workspace doctests
