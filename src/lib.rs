@@ -89,6 +89,13 @@ pub mod attach;
 pub mod body_action;
 pub mod derived;
 pub mod forces;
+// Frame-document exchange layer (issue #663). Non-default feature so the
+// production graph stays serde-free; hosts that persist/replay frame
+// state opt in with `features = ["frame-doc"]`.
+#[cfg(feature = "frame-doc")]
+pub use astrodyn_frame_doc as frame_doc;
+#[cfg(feature = "frame-doc")]
+pub mod frame_doc_io;
 pub mod frame_identity;
 pub mod frame_orchestration;
 pub mod gravity;
