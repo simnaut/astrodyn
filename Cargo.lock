@@ -185,6 +185,7 @@ dependencies = [
  "astrodyn_atmosphere",
  "astrodyn_dynamics",
  "astrodyn_ephemeris",
+ "astrodyn_frame_doc",
  "astrodyn_frames",
  "astrodyn_gravity",
  "astrodyn_interactions",
@@ -195,6 +196,7 @@ dependencies = [
  "glam 0.30.10",
  "log",
  "sha2",
+ "thiserror 2.0.18",
  "uom",
 ]
 
@@ -245,6 +247,17 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "ureq",
+]
+
+[[package]]
+name = "astrodyn_frame_doc"
+version = "0.2.0"
+dependencies = [
+ "astrodyn_quantities",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

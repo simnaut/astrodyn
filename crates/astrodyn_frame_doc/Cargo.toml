@@ -1,0 +1,32 @@
+[package]
+name = "astrodyn_frame_doc"
+description = "Frame-document schema for astrodyn — self-describing serialization of reference-frame trees (snapshot + replay series) carrying identity, topology, origin, and epoch per record"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Identity vocabulary only (FrameUid + its components). `astrodyn_quantities`
+# is the type-facade layer (no physics algorithms); its `serde` feature gates
+# the derives on `FrameUid`/`Namespace`/`FrameClass`/`FrameRole`/`Tag` that
+# this crate's wire types embed. A document consumer therefore links the
+# identity vocabulary and serde — never the physics crates (RFS-602).
+astrodyn_quantities = { path = "../astrodyn_quantities", version = "0.2.0", features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+# `float_roundtrip` is LOAD-BEARING for RFS-601: serde_json's default float
+# *parsing* is best-effort and loses the last ULP for extreme exponents
+# (e.g. 2.3317768703756083e-231 parses one bit off), even though its
+# *printing* is shortest-round-trip. The crate's full-entropy proptest
+# (`any_finite_f64_round_trips_bit_exact`) fails within one case batch if
+# this feature is dropped. Cost: ~2x slower float parsing — irrelevant for
+# document loads.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true
