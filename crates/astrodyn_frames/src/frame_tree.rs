@@ -59,8 +59,10 @@ impl FrameNode {
 ///
 /// Identity-dependent checks skip unstamped (`uid: None`) nodes — they have
 /// no identity to contradict. `Cycle` and `UnresolvedParent` are structurally
-/// unreachable through this module's construction API and exist as the belt
-/// for future bulk-load paths (issue #663).
+/// unreachable through this module's construction API; the issue #663
+/// frame-document loader (`astrodyn::frame_doc_io`) is the bulk-load path
+/// they exist for — its load errors mirror this vocabulary and it runs
+/// [`FrameTree::validate_forest`] as the post-build belt.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameTreeError {
     /// A parent walk from this frame exceeded the node count — the
@@ -189,6 +191,42 @@ impl FrameTree {
         self.nodes.push(FrameNode {
             name,
             kind: RefFrameKind::Inertial,
+            state: RefFrameState::default(),
+            uid: Some(uid.clone()),
+            epoch: None,
+        });
+        self.parent.push(None);
+        self.children.push(Vec::new());
+        self.register_uid(uid, id);
+        id
+    }
+
+    /// Add a stamped root frame whose identity the caller supplies as a
+    /// value — the root-level sibling of [`Self::add_child_uid`], for
+    /// hosts (and the issue #663 document loader) that resolve the root's
+    /// identity at runtime rather than from a compile-time marker. State
+    /// is identity.
+    ///
+    /// # Panics
+    /// - `uid.class` is not root-eligible
+    ///   ([`FrameClass::may_be_root_or_integ`]): integrating in (or rooting
+    ///   on) a rotating frame is silently wrong physics, rejected at the
+    ///   point of introduction (matching [`Self::add_root_typed`] and
+    ///   `validate()`'s `NonInertialRoot`).
+    /// - the identity is already registered in this tree.
+    pub fn add_root_uid(&mut self, uid: FrameUid, name: String) -> FrameId {
+        assert!(
+            uid.class.may_be_root_or_integ(),
+            "add_root_uid: identity `{uid}` has class {:?}, which cannot root a \
+             tree (only RootInertial / PlanetInertial / BarycenterInertial \
+             classes may be a root or integration frame). Add it as a child \
+             via add_child_uid.",
+            uid.class
+        );
+        let id = self.nodes.len();
+        self.nodes.push(FrameNode {
+            name,
+            kind: Self::kind_for_class(uid.class),
             state: RefFrameState::default(),
             uid: Some(uid.clone()),
             epoch: None,
@@ -1876,7 +1914,7 @@ mod identity_tests {
     use crate::ref_frame_state::{RefFrameRot, RefFrameTrans};
     use astrodyn_math::JeodQuat;
     use astrodyn_quantities::frame::{Earth, Ecef, IntegrationFrame, PlanetInertial, RootInertial};
-    use astrodyn_quantities::frame_descriptor::{FrameUid, Namespace};
+    use astrodyn_quantities::frame_descriptor::{FrameRole, FrameUid, Namespace, Tag};
     use glam::DVec3;
 
     /// A well-formed typed RootInertial → Ecef state for stamping tests.
@@ -1911,6 +1949,45 @@ mod identity_tests {
     fn add_root_typed_non_inertial_class_panics() {
         let mut tree = FrameTree::new();
         let _ = tree.add_root_typed::<Ecef>("ecef-root".into());
+    }
+
+    #[test]
+    fn add_root_uid_stamps_and_indexes() {
+        // The value-level root mint (issue #663 document loader): the
+        // supplied identity is stamped and find-able, parent is None.
+        let mut tree = FrameTree::new();
+        let uid = FrameUid::external(
+            Namespace(3),
+            FrameClass::PlanetInertial,
+            FrameRole::Primary,
+            Tag::Named("Foreign".into()),
+        );
+        let root = tree.add_root_uid(uid.clone(), "foreign-root".into());
+        assert_eq!(tree.find(&uid), Some(root));
+        assert_eq!(tree.parent(root), None);
+        assert_eq!(tree.get(root).uid(), Some(&uid));
+        tree.validate().expect("single stamped inertial root");
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot root a tree")]
+    fn add_root_uid_non_inertial_class_panics() {
+        let mut tree = FrameTree::new();
+        let uid = FrameUid::external(
+            Namespace(3),
+            FrameClass::PlanetFixed,
+            FrameRole::Primary,
+            Tag::Named("Foreign".into()),
+        );
+        let _ = tree.add_root_uid(uid, "pfix-root".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate frame identity")]
+    fn add_root_uid_duplicate_panics() {
+        let mut tree = FrameTree::new();
+        let _ = tree.add_root_uid(FrameUid::of::<RootInertial>(), "root".into());
+        let _ = tree.add_root_uid(FrameUid::of::<RootInertial>(), "root2".into());
     }
 
     #[test]

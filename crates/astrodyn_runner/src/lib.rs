@@ -57,3 +57,6 @@ pub use simulation::{
 
 #[cfg(feature = "phase_timing")]
 pub use simulation::PhaseTimings;
+
+#[cfg(feature = "frame-doc")]
+pub use simulation::FrameSeriesRecorder;

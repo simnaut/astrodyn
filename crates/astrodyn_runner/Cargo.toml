@@ -35,6 +35,12 @@ uom = { workspace = true }
 # `Simulation::phase_timings_summary()`.
 phase_timing = []
 
+# Frame-document exchange (issue #663): `Simulation::export_frame_document`
+# / `apply_frame_document` / `FrameSeriesRecorder`. Off by default — same
+# serde-free-production rationale as the gateway's `frame-doc` feature,
+# which this forwards to.
+frame-doc = ["astrodyn/frame-doc"]
+
 [[example]]
 name = "batch_propagation"
 path = "examples/batch_propagation.rs"
