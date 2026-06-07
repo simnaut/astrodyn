@@ -16,6 +16,12 @@ pub mod body_mutator;
 pub mod bundles;
 pub mod components;
 pub mod frame_attach_system;
+// Frame-document exchange (issue #664): the ECS mirror of the runner's
+// export/apply. Non-default feature so the production graph stays
+// serde-free; identity itself (FrameUidC & friends) is core and
+// unconditional.
+#[cfg(feature = "frame-doc")]
+pub mod frame_doc;
 pub mod frame_param;
 pub mod kinematic_propagation;
 pub mod mass_tree;
@@ -233,6 +239,10 @@ impl Plugin for AstrodynPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
+        // Identity index for the ECS frame store (issue #664): FrameUid →
+        // frame Entity, maintained by index/deindex systems in the
+        // registration slots; duplicate identities panic (RF.14).
+        app.init_resource::<systems::FrameUidIndexR>();
         // `IntegrationDtR` is the mandatory bit-exact f64 source of
         // pipeline `dt`; see the type's doc. The plugin does not
         // install it — callers must, either through one of the
@@ -265,11 +275,17 @@ impl Plugin for AstrodynPlugin {
         // a diagnostic that names the broken assumption and tells the
         // caller how to fix it.
         if !app.world().contains_resource::<RootFrameEntityR>() {
+            let root_epoch =
+                components::FrameEpochC(app.world().resource::<SimulationTimeR>().tdb());
             let root_frame_entity = app
                 .world_mut()
                 .spawn((
                     Name::new("root.frame"),
                     components::InertialFrameMarker,
+                    // The root's runtime identity (issue #664): the same
+                    // `RootInertial` mint the runner's root node carries.
+                    components::FrameUidC(astrodyn::FrameUid::of::<astrodyn::RootInertial>()),
+                    root_epoch,
                     components::FrameTransC::default(),
                     components::FrameRotC::default(),
                     components::FrameAngVelC::default(),
@@ -319,6 +335,27 @@ impl Plugin for AstrodynPlugin {
                  consumers read these directly from the root entity. Insert all \
                  three (each with `Default::default()` for an inertial root), or \
                  let AstrodynPlugin spawn the root frame.",
+            );
+            let root_uid = app
+                .world()
+                .entity(root_frame_entity)
+                .get::<components::FrameUidC>()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "AstrodynPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                         has no FrameUidC — every frame entity carries a required identity \
+                         (issue #664). Insert \
+                         FrameUidC(astrodyn::FrameUid::of::<astrodyn::RootInertial>()) on the \
+                         root frame entity, or let AstrodynPlugin spawn the root frame."
+                    )
+                });
+            assert!(
+                root_uid.0 == astrodyn::FrameUid::of::<astrodyn::RootInertial>(),
+                "AstrodynPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) carries \
+                 identity `{}`, not the root identity \
+                 `FrameUid::of::<RootInertial>()` — typed consumers assume the root's \
+                 stamped identity is RootInertial.",
+                root_uid.0
             );
         }
 
@@ -401,10 +438,11 @@ impl Plugin for AstrodynPlugin {
         app.add_systems(
             Startup,
             (
-                systems::register_source_frames_system::<astrodyn::Earth>
-                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                // Planet-agnostic since #664 (identity travels as a value);
+                // registered once here, NOT per planet.
+                systems::register_source_frames_system,
                 systems::register_pfix_frames_system::<astrodyn::Earth>
-                    .after(systems::register_source_frames_system::<astrodyn::Earth>)
+                    .after(systems::register_source_frames_system)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_body_frames_system::<astrodyn::Earth>
                     .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
@@ -414,6 +452,14 @@ impl Plugin for AstrodynPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                // Identity index maintenance (issue #664, RF.14): index
+                // newly-stamped frame entities (the explicit ordering
+                // gives Bevy a sync point so this pass sees the frame
+                // entities the registration chain just spawned) and
+                // drop retired ones.
+                systems::index_frame_uids_system
+                    .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                systems::deindex_frame_uids_system.before(systems::index_frame_uids_system),
                 // Body-action systems are intentionally NOT registered
                 // in `Startup`. Bevy gives every system instance an
                 // independent `Local<MessageCursor<BodyActionEvent>>`
@@ -470,16 +516,21 @@ impl Plugin for AstrodynPlugin {
         app.add_systems(
             PreUpdate,
             (
-                systems::register_source_frames_system::<astrodyn::Earth>
-                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                // Planet-agnostic since #664 (identity travels as a value);
+                // registered once here, NOT per planet.
+                systems::register_source_frames_system,
                 systems::register_pfix_frames_system::<astrodyn::Earth>
-                    .after(systems::register_source_frames_system::<astrodyn::Earth>)
+                    .after(systems::register_source_frames_system)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::register_body_frames_system::<astrodyn::Earth>
                     .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                // Identity index maintenance (issue #664, RF.14).
+                systems::index_frame_uids_system
+                    .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                systems::deindex_frame_uids_system.before(systems::index_frame_uids_system),
             ),
         );
         // ECS frame-entity cleanup on owner despawn: the registration
@@ -493,6 +544,17 @@ impl Plugin for AstrodynPlugin {
         app.add_observer(systems::on_retired_pfix_frame_entity_despawn);
         app.add_observer(systems::on_frame_entity_despawn);
         app.add_observer(systems::on_source_pfix_frame_entity_despawn);
+        // Identity index maintenance (issue #664, RF.14) — separate
+        // add_systems call to stay within Bevy's tuple size limit.
+        app.add_systems(
+            FixedUpdate,
+            (
+                systems::index_frame_uids_system
+                    .after(systems::register_body_frames_system::<astrodyn::Earth>)
+                    .before(AstrodynSet::EphemerisUpdate),
+                systems::deindex_frame_uids_system.before(systems::index_frame_uids_system),
+            ),
+        );
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
@@ -501,20 +563,26 @@ impl Plugin for AstrodynPlugin {
                 systems::time_advance_system.in_set(AstrodynSet::TimeUpdate),
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
-                systems::register_source_frames_system::<astrodyn::Earth>
-                    .before(AstrodynSet::EphemerisUpdate)
-                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                // Planet-agnostic since #664; registered once, not per planet.
+                // `.before(TimeUpdate)`: registration stamps FrameEpochC from
+                // SimulationTimeR (read), which time_advance_system writes.
+                // Stamping BEFORE the advance makes a between-tick
+                // registration carry the previous tick's time — exactly the
+                // runner's between-step registration semantics (and a
+                // first-tick registration carries t=0, matching the runner's
+                // pre-step add_source/add_body stamps bit-for-bit).
+                systems::register_source_frames_system.before(AstrodynSet::TimeUpdate),
                 // Late-attached `PlanetFixedRotationC` → pfix child node
                 // (see `register_pfix_frames_system` doc).
                 systems::register_pfix_frames_system::<astrodyn::Earth>
-                    .after(systems::register_source_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate)
+                    .before(AstrodynSet::TimeUpdate)
+                    .after(systems::register_source_frames_system)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Catch dynamically-spawned bodies (after source registration so
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system::<astrodyn::Earth>
+                    .before(AstrodynSet::TimeUpdate)
                     .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Late-acquired / late-lost `MassPropertiesC` →
                 // insert / remove `MassPointRef` for bodies that have
@@ -1081,9 +1149,8 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     app.add_systems(
         Startup,
         (
-            systems::register_source_frames_system::<P>.in_set(PerPlanetSet::of::<P>()),
             systems::register_pfix_frames_system::<P>
-                .after(systems::register_source_frames_system::<P>)
+                .after(systems::register_source_frames_system)
                 .in_set(PerPlanetSet::of::<P>()),
             systems::register_body_frames_system::<P>
                 .after(systems::register_pfix_frames_system::<P>)
@@ -1093,9 +1160,8 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     app.add_systems(
         PreUpdate,
         (
-            systems::register_source_frames_system::<P>.in_set(PerPlanetSet::of::<P>()),
             systems::register_pfix_frames_system::<P>
-                .after(systems::register_source_frames_system::<P>)
+                .after(systems::register_source_frames_system)
                 .in_set(PerPlanetSet::of::<P>()),
             // `.before(sync_body_mass_point_ref_system)` mirrors the
             // Earth-block's `.after(register_body_frames_system::<Earth>)`
@@ -1114,19 +1180,19 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     app.add_systems(
         FixedUpdate,
         (
-            systems::register_source_frames_system::<P>
-                .before(AstrodynSet::EphemerisUpdate)
-                .in_set(PerPlanetSet::of::<P>()),
+            // `.before(TimeUpdate)`: see the Earth block — registration
+            // stamps FrameEpochC at the pre-advance time, mirroring the
+            // runner's between-step registration semantics.
             systems::register_pfix_frames_system::<P>
-                .after(systems::register_source_frames_system::<P>)
-                .before(AstrodynSet::EphemerisUpdate)
+                .before(AstrodynSet::TimeUpdate)
+                .after(systems::register_source_frames_system)
                 .in_set(PerPlanetSet::of::<P>()),
             // `.before(sync_body_mass_point_ref_system)` — see the
             // PreUpdate block above for the rationale. #562 Option B fix.
             systems::register_body_frames_system::<P>
+                .before(AstrodynSet::TimeUpdate)
                 .after(systems::register_pfix_frames_system::<P>)
                 .before(systems::sync_body_mass_point_ref_system)
-                .before(AstrodynSet::EphemerisUpdate)
                 .in_set(PerPlanetSet::of::<P>()),
             // Per-planet validator instantiation. Mirrors the schedule
             // slot of the Earth registration in `AstrodynPlugin::build`:
@@ -1450,6 +1516,11 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             // production-path typed→typed `From` impl on the C component
             // (kept post-#397).
             components::TranslationalStateC::<P>::from(self.trans),
+            // The config-carried frame identity (required since #662)
+            // travels onto the body entity; `register_body_frames_system`
+            // copies it to the spawned body-frame entity (issue #664), so
+            // the runner and the Bevy adapter stamp the same value.
+            components::FrameUidC(self.frame_uid.clone()),
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
             components::IntegratorTypeC(self.integrator),

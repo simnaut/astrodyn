@@ -17,12 +17,11 @@
 //! bridge — the loader never auto-connects trees, so un-grafted
 //! cross-namespace queries keep failing loudly.
 //!
-//! ## Unstamped nodes
+//! ## Identity
 //!
-//! [`export_tree`] **panics** on an unstamped node. Production trees are
-//! fully stamped after issue #662; an unstamped node at export time is a
-//! construction-path bug, and inventing an identity for it on the wire
-//! would be silent misattribution.
+//! Every frame node carries a required minted identity (issue #664), so
+//! every exported record names a real `FrameUid` by construction — there
+//! is no unstamped case to reject or invent identity for.
 
 use astrodyn_frame_doc::{
     CanonicalRotation, DocError, DocHeader, FrameDocument, FrameRecord, FrameUid, Origin,
@@ -101,7 +100,6 @@ pub enum LoadError {
 /// [`CanonicalRotation::Quat`].
 ///
 /// # Panics
-/// - any node is unstamped (`uid() == None`) — see the module docs;
 /// - the resulting document fails validation (non-finite state is the
 ///   practical case: broken upstream physics must not be laundered into
 ///   "data").
@@ -118,14 +116,9 @@ pub fn export_tree(
     // (never the arena index) on the wire.
     for id in 0..tree.len() {
         let node = tree.get(id);
-        let uid = node.uid().unwrap_or_else(|| {
-            panic!(
-                "export_tree: frame {id} (`{}`) is unstamped — production trees are \
-                 fully stamped (issue #662); refusing to serialize a node without an \
-                 identity. Stamp it via the typed constructors or add_child_uid.",
-                node.name
-            )
-        });
+        // Identity is required at construction (issue #664) — every node
+        // serializes with a real minted identity by construction.
+        let uid = node.uid();
         uids.push(uid.clone());
         let parent = tree.parent(id).map(|pid| {
             u32::try_from(pid)
@@ -458,16 +451,9 @@ mod tests {
         }
     }
 
-    #[test]
-    #[should_panic(expected = "is unstamped")]
-    fn export_unstamped_node_panics() {
-        let mut tree = FrameTree::new();
-        let _ = tree.add_root(
-            "legacy-root".into(),
-            astrodyn_frames::RefFrameKind::Inertial,
-        );
-        let _ = export(&tree);
-    }
+    // (`export_unstamped_node_panics` was deleted in issue #664: identity
+    // is required at construction, so an unstamped node is
+    // unrepresentable and the export panic arm it exercised is gone.)
 
     #[test]
     fn load_rejects_dangling_parent() {

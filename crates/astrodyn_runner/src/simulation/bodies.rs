@@ -277,22 +277,9 @@ impl Simulation {
             .unwrap_or(self.root_frame_id);
 
         // RFS-303: the resolved integration frame's identity is asserted,
-        // not assumed — it must be stamped (sources/root always are) and
-        // its class must be eligible to host integration.
-        let integ_uid = self
-            .frame_tree
-            .get(integ_frame_id)
-            .uid()
-            .unwrap_or_else(|| {
-                panic!(
-                    "add_body: body {idx}'s integration frame {integ_frame_id} is \
-                     unstamped — every integration frame must carry a minted identity \
-                     before a body integrates in it. Sources are stamped by \
-                     add_source/add_source_typed and the root by Simulation::new; \
-                     register the integ_source before adding the body."
-                )
-            })
-            .clone();
+        // not assumed — identity is required at construction (issue #664),
+        // so only the class-eligibility half needs a runtime check.
+        let integ_uid = self.frame_tree.get(integ_frame_id).uid().clone();
         // JEOD_INV: RF.10 — a body may only integrate in a root- or
         // planet-inertial frame; integrating in a rotating frame without
         // fictitious-force treatment is silently wrong physics.
@@ -343,7 +330,6 @@ impl Simulation {
         self.frame_tree
             .get(self.bodies[body_idx].integ_frame_id)
             .uid()
-            .expect("integration frames are stamped at add_body (RFS-303)")
     }
 
     // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only

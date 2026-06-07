@@ -16,9 +16,13 @@
 //!   parent pointers, which keeps lookups cache-friendly and avoids the
 //!   pointer chasing of JEOD's intrusive linked lists.
 //! - [`RefFrameState`], [`RefFrameStateTyped`], [`RefFrameTrans`],
-//!   [`RefFrameRot`], [`RefFrameKind`] — the per-node state structs
-//!   (re-exported from [`ref_frame_state`]). Quaternions are JEOD-convention
-//!   scalar-first, left-transformation, matching `astrodyn_math::JeodQuat`.
+//!   [`RefFrameRot`] — the per-node state structs (re-exported from
+//!   [`ref_frame_state`]). Quaternions are JEOD-convention scalar-first,
+//!   left-transformation, matching `astrodyn_math::JeodQuat`. Every node
+//!   carries a required runtime identity
+//!   (`astrodyn_quantities::frame_descriptor::FrameUid`) whose
+//!   `FrameClass` is the runtime taxonomy (issue #664 removed the legacy
+//!   3-variant `RefFrameKind`).
 //!
 //! ## Earth / Mars / Moon rotation
 //!
@@ -34,22 +38,26 @@
 //! ## Example
 //!
 //! Build a minimal frame tree with one root inertial frame and a
-//! planet-fixed child, then look up a frame's state:
+//! planet-fixed child — every node carries a minted identity:
 //!
 //! ```
-//! use astrodyn_frames::{FrameTree, RefFrameKind, RefFrameState};
+//! use astrodyn_frames::{FrameTree, RefFrameState};
+//! use astrodyn_quantities::frame::{Ecef, RootInertial};
+//! use astrodyn_quantities::frame_descriptor::FrameUid;
 //!
 //! let mut tree = FrameTree::new();
-//! let root = tree.add_root("J2000".to_string(), RefFrameKind::Inertial);
-//! let _ecef = tree.add_child(
+//! let root = tree.add_root_typed::<RootInertial>("J2000".to_string());
+//! let _ecef = tree.add_child_uid(
 //!     root,
+//!     FrameUid::of::<Ecef>(),
 //!     "ECEF".to_string(),
-//!     RefFrameKind::PlanetFixed,
 //!     RefFrameState::default(),
+//!     None,
 //! );
 //!
-//! // Both frames live in the arena.
+//! // Both frames live in the arena, addressable by identity.
 //! assert_eq!(tree.len(), 2);
+//! assert_eq!(tree.find(&FrameUid::of::<Ecef>()), Some(_ecef));
 //! ```
 
 #![forbid(unsafe_code)]

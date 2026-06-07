@@ -79,7 +79,15 @@ fn bevy_parity_source_mutation_source_mutator_set_state_matches_runner() {
     // below confirms the component was inserted.
     let moon_entity = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
     // Force the Startup schedule to run once so register_source_frames_system fires.
     app.world_mut().run_schedule(Startup);

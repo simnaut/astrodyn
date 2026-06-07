@@ -121,6 +121,9 @@ fn astrodyn_plugin_preserves_valid_preseeded_root_frame_entity() {
         .spawn((
             Name::new("mission_owned_root"),
             InertialFrameMarker,
+            // A valid pre-seeded root carries the required root identity
+            // (issue #664) — the plugin asserts it.
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<astrodyn::RootInertial>()),
             FrameTransC::default(),
             FrameRotC::default(),
             FrameAngVelC::default(),

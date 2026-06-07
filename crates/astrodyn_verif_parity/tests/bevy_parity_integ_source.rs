@@ -147,7 +147,15 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -157,6 +165,10 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-integ-source-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Lunar"),
             TranslationalStateC::<astrodyn::Moon>::from_untyped(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -284,12 +296,24 @@ fn bevy_parity_integ_source_moving_moon_matches_simulation() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-integ-source-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Lunar"),
             TranslationalStateC::<astrodyn::Moon>::from_untyped(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -401,6 +425,9 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
     let earth = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             astrodyn_bevy::components::GravitySourceC(GravitySource {
                 mu: EARTH.shape.mu,
@@ -418,6 +445,10 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-integ-source-b3-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             RotationalStateC::from(initial_rot()),
@@ -558,7 +589,15 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -588,6 +627,10 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-integ-source-b4-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Lunar"),
             TranslationalStateC::<astrodyn::Moon>::from_untyped(lunar_tilted),
             RotationalStateC::from(initial_rot()),
@@ -771,7 +814,15 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .insert(SourceInertialVelocityC::default())
         .id();
     // Sun carries `TranslationalStateC<Earth>` (validation requires
@@ -796,6 +847,10 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-integ-source-b5-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Lunar-SRP"),
             TranslationalStateC::<astrodyn::Moon>::from_untyped(lunar_tilted),
             RotationalStateC::from(initial_rot()),
@@ -932,3 +987,7 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
     );
     let _ = bevy_torque;
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

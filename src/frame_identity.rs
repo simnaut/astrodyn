@@ -46,6 +46,61 @@ pub fn named_body_frame_uid(name: &str) -> FrameUid {
     )
 }
 
+/// The planet-fixed sibling of a gravity source's **inertial-frame**
+/// identity: same namespace, role, and tag, with the class swapped to
+/// [`FrameClass::PlanetFixed`]. The single shared derivation both hosts
+/// use when a source's pfix frame is created from its carried inertial
+/// identity (issue #664: the Bevy adapter's frame-registration systems
+/// derive the pfix identity from the source entity's `FrameUidC`), so
+/// the inertial↔pfix pairing cannot drift between hosts.
+///
+/// For type-derived identities this provably equals the typed mint:
+/// `pfix_sibling_uid(&FrameUid::of::<PlanetInertial<P>>()) ==
+/// FrameUid::of::<PlanetFixed<P>>()` for every sealed planet (both are
+/// `{LOCAL, class, Primary, Named(P::NAME)}` differing only in class) —
+/// pinned by this module's tests.
+pub fn pfix_sibling_uid(inertial: &FrameUid) -> FrameUid {
+    assert!(
+        inertial.class == FrameClass::PlanetInertial,
+        "pfix_sibling_uid: identity `{inertial}` has class {:?}, not \
+         PlanetInertial — only a planet's inertial-frame identity has a \
+         planet-fixed sibling.",
+        inertial.class
+    );
+    FrameUid {
+        namespace: inertial.namespace,
+        class: FrameClass::PlanetFixed,
+        role: inertial.role.clone(),
+        tag: inertial.tag.clone(),
+    }
+}
+
+/// Resolve a sealed built-in planet's **inertial-frame** identity from
+/// its name, or `None` for any other name. The single string-dispatch
+/// table shared by every host's name-keyed source registration (the
+/// runner's `add_source`, the Bevy adapter's `spawn_source`) — a
+/// per-host copy of this match could drift and mint *different
+/// identities for the same source name across backends*, the exact
+/// failure class value identity exists to kill.
+///
+/// Unknown names return `None` so each host can fail loudly with its
+/// own registration-path guidance (`add_source_typed::<P>` vs
+/// `SimulationBuilder::add_source_typed`). The pfix sibling, where the
+/// source rotates, is [`pfix_sibling_uid`] of the returned identity —
+/// pinned equal to the typed mint for all six planets.
+pub fn sealed_planet_inertial_uid(name: &str) -> Option<FrameUid> {
+    use astrodyn_quantities::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
+    Some(match name {
+        "Earth" => FrameUid::of::<PlanetInertial<Earth>>(),
+        "Moon" => FrameUid::of::<PlanetInertial<Moon>>(),
+        "Sun" => FrameUid::of::<PlanetInertial<Sun>>(),
+        "Mars" => FrameUid::of::<PlanetInertial<Mars>>(),
+        "Jupiter" => FrameUid::of::<PlanetInertial<Jupiter>>(),
+        "Saturn" => FrameUid::of::<PlanetInertial<Saturn>>(),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,6 +119,46 @@ mod tests {
         assert_ne!(named, typed);
         assert_eq!(named.namespace, MISSION_NAMED_NS);
         assert!(!named.is::<BodyFrame<IdentityTestVehicle>>());
+    }
+
+    #[test]
+    fn pfix_sibling_matches_typed_mint_for_every_sealed_planet() {
+        use astrodyn_quantities::frame::{
+            Earth, Jupiter, Mars, Moon, PlanetFixed, PlanetInertial, Saturn, Sun,
+        };
+        macro_rules! check {
+            ($($p:ty),+) => {$(
+                assert_eq!(
+                    pfix_sibling_uid(&FrameUid::of::<PlanetInertial<$p>>()),
+                    FrameUid::of::<PlanetFixed<$p>>(),
+                    "pfix sibling derivation must equal the typed mint",
+                );
+            )+};
+        }
+        check!(Earth, Moon, Sun, Mars, Jupiter, Saturn);
+    }
+
+    #[test]
+    #[should_panic(expected = "not PlanetInertial")]
+    fn pfix_sibling_rejects_non_inertial_input() {
+        let _ = pfix_sibling_uid(&named_body_frame_uid("iss"));
+    }
+
+    #[test]
+    fn sealed_planet_dispatch_matches_typed_mint() {
+        use astrodyn_quantities::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
+        macro_rules! check {
+            ($($p:ty),+) => {$(
+                assert_eq!(
+                    sealed_planet_inertial_uid(<$p as astrodyn_quantities::frame::Planet>::NAME),
+                    Some(FrameUid::of::<PlanetInertial<$p>>()),
+                    "name dispatch must equal the typed mint",
+                );
+            )+};
+        }
+        check!(Earth, Moon, Sun, Mars, Jupiter, Saturn);
+        assert_eq!(sealed_planet_inertial_uid("Pluto"), None);
+        assert_eq!(sealed_planet_inertial_uid("earth"), None, "case-sensitive");
     }
 
     #[test]

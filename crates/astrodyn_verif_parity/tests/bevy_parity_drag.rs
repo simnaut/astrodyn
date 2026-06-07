@@ -50,6 +50,9 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
@@ -74,6 +77,10 @@ fn bevy_parity_drag_atmosphere_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-drag-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -163,6 +170,9 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
@@ -187,6 +197,10 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-drag-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -266,6 +280,9 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
@@ -289,6 +306,10 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-drag-b3-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -365,6 +386,9 @@ fn bevy_parity_drag_met_run5a() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
@@ -388,6 +412,10 @@ fn bevy_parity_drag_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-drag-b4-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -479,6 +507,9 @@ fn bevy_parity_drag_run6b() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
@@ -502,6 +533,10 @@ fn bevy_parity_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-drag-b5-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -559,3 +594,7 @@ fn bevy_parity_drag_run6b() {
     };
     assert_sixdof_eq("Bevy vs Sim (drag run6b)", &bevy_state, &sim_state);
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

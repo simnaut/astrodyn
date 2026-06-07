@@ -84,6 +84,10 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-lighting-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: veh_pos,
                 velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -301,6 +305,10 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-lighting-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -449,7 +457,15 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
     let sun_entity = app
         .world_mut()
         .spawn((
-            PlanetBundle::<astrodyn::Earth>::point_mass("Sun", &astrodyn::SUN),
+            PlanetBundle::<astrodyn::Earth> {
+                // Identity = the source's own planet (issue #664); the
+                // bundle's <Earth> only tags component storage (the sim's
+                // central-planet convention, see SunBundle).
+                uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                ..PlanetBundle::<astrodyn::Earth>::point_mass("Sun", &astrodyn::SUN)
+            },
             SunMarker,
         ))
         .id();
@@ -460,7 +476,15 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
     let moon_entity = app
         .world_mut()
         .spawn((
-            PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON),
+            PlanetBundle::<astrodyn::Earth> {
+                // Identity = the source's own planet (issue #664); the
+                // bundle's <Earth> only tags component storage (the sim's
+                // central-planet convention, see SunBundle).
+                uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
+                ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+            },
             MoonMarker,
         ))
         .id();
@@ -485,6 +509,10 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-lighting-b3-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: body_moon_rel_pos,
                 velocity: body_moon_rel_vel,
@@ -585,3 +613,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
         sim_lighting,
     );
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

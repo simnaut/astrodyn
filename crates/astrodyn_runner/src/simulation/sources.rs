@@ -31,21 +31,22 @@ impl Simulation {
     /// created under the source's inertial frame.
     pub fn add_source(&mut self, name: impl Into<String>, entry: GravitySourceEntry) -> usize {
         let name = name.into();
-        match name.as_str() {
-            "Earth" => self.add_source_typed::<astrodyn::Earth>(name, entry),
-            "Moon" => self.add_source_typed::<astrodyn::Moon>(name, entry),
-            "Sun" => self.add_source_typed::<astrodyn::Sun>(name, entry),
-            "Mars" => self.add_source_typed::<astrodyn::Mars>(name, entry),
-            "Jupiter" => self.add_source_typed::<astrodyn::Jupiter>(name, entry),
-            "Saturn" => self.add_source_typed::<astrodyn::Saturn>(name, entry),
-            other => panic!(
-                "add_source: unknown gravity-source name {other:?} — the string-dispatch \
+        // The name→identity table is shared code
+        // (`astrodyn::sealed_planet_inertial_uid`), not a per-host match —
+        // a drifted copy would mint different identities for the same
+        // source name across backends. The pfix sibling derivation is
+        // pinned equal to the typed mint for all six sealed planets.
+        let inertial_uid = astrodyn::sealed_planet_inertial_uid(&name).unwrap_or_else(|| {
+            panic!(
+                "add_source: unknown gravity-source name {name:?} — the string-dispatch \
                  add_source only knows the six sealed planets (Earth, Moon, Sun, Mars, \
                  Jupiter, Saturn). For any other body, call add_source_typed::<P>(name, \
                  entry) with a Planet marker defined via define_planet! so the source \
                  frames get real stamped identities."
-            ),
-        }
+            )
+        });
+        let pfix_uid = astrodyn::pfix_sibling_uid(&inertial_uid);
+        self.add_source_with_uids(name, entry, inertial_uid, pfix_uid)
     }
 
     /// Typed sibling of [`Self::add_source`]: the source's frame identities

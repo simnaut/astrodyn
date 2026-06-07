@@ -99,8 +99,8 @@ use astrodyn::{
 };
 
 use crate::components::{
-    Abm4StateC, EphemerisBodyC, GaussJacksonStateC, GravitySourceC, LsodeStateC, MassBodyIdC,
-    MassChildOf, MoonMarker, PlanetFixedRotationC, PlanetOmegaC, RotationModelC,
+    Abm4StateC, EphemerisBodyC, FrameUidC, GaussJacksonStateC, GravitySourceC, LsodeStateC,
+    MassBodyIdC, MassChildOf, MoonMarker, PlanetFixedRotationC, PlanetOmegaC, RotationModelC,
     SourceInertialPositionC, SourceInertialVelocityC, SunMarker, TidalConfigC, TranslationalStateC,
 };
 use crate::{
@@ -312,6 +312,7 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
             sun_source,
             moon_source,
             sources,
+            source_uids,
             source_ephem_bodies,
             bodies,
             mass_tree_names,
@@ -328,7 +329,16 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
 
         for (idx, (name, entry)) in sources.into_iter().enumerate() {
             let ephem = source_ephem_bodies.get(idx).copied().flatten();
-            let entity = spawn_source::<P>(app, idx, &name, entry, sun_source, moon_source, ephem);
+            // The builder's pre-minted identity (add_source_typed path);
+            // `None` falls back to spawn_source's strict sealed-planet
+            // name dispatch, mirroring the runner's add_source (#662).
+            let uid = source_uids
+                .get(idx)
+                .cloned()
+                .flatten()
+                .map(|(inertial, _pfix)| inertial);
+            let entity =
+                spawn_source::<P>(app, idx, &name, entry, uid, sun_source, moon_source, ephem);
             source_entities.push(entity);
         }
 
@@ -553,11 +563,16 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
 /// `SimulationBuilder::source_ephem_bodies[idx]`, attached as
 /// [`EphemerisBodyC`] when `Some` so `ephemeris_update_system` rewrites
 /// the source's `SourceInertialPositionC` each tick.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "internal materialization helper mirroring GravitySourceEntry's field count; a param struct would just restate it"
+)]
 fn spawn_source<P: Planet>(
     app: &mut App,
     idx: usize,
     name: &str,
     entry: astrodyn::GravitySourceEntry,
+    uid: Option<astrodyn::FrameUid>,
     sun_source: Option<usize>,
     moon_source: Option<usize>,
     ephem: Option<(astrodyn::EphemerisBody, astrodyn::EphemerisBody)>,
@@ -605,9 +620,29 @@ fn spawn_source<P: Planet>(
         return entity_cmds.id();
     }
 
+    // The source's inertial-frame identity (issue #664): the builder's
+    // pre-minted value when supplied (add_source_typed), else the same
+    // strict sealed-planet name dispatch the runner's add_source applies
+    // (#662) — *shared code* (`astrodyn::sealed_planet_inertial_uid`),
+    // so the name→identity table cannot drift between backends; unknown
+    // names fail loudly, never minting by accident.
+    let inertial_uid = uid.unwrap_or_else(|| {
+        astrodyn::sealed_planet_inertial_uid(name).unwrap_or_else(|| {
+            panic!(
+                "spawn_source: unknown gravity-source name {name:?} — the \
+                 string-dispatch path only knows the six sealed planets (Earth, \
+                 Moon, Sun, Mars, Jupiter, Saturn). For any other body, register \
+                 it via SimulationBuilder::add_source_typed::<P>(name, entry) \
+                 with a Planet marker defined via define_planet! so the source \
+                 frame gets a real stamped identity."
+            )
+        })
+    });
+
     let mut entity_cmds = app.world_mut().spawn((
         Name::new(name.to_string()),
         GravitySourceC(source),
+        FrameUidC(inertial_uid),
         SourceInertialPositionC(position),
         // `TranslationalStateC<P>` is what the rest of the Bevy
         // pipeline reads for source kinematic state; populate it from

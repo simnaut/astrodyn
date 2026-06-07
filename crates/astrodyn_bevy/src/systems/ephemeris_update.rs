@@ -39,8 +39,15 @@ pub fn planet_fixed_rotation_system<P: Planet>(
     )>,
     mut frame_rots: Query<&mut FrameRotC>,
     mut frame_ang_vels: Query<&mut FrameAngVelC>,
+    mut frame_epochs: Query<&mut FrameEpochC>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
+    // Frame-epoch stamp for every pfix frame this system rotates
+    // (RFS-603) — mirrors the runner's `update_ephemeris` stamping the
+    // pfix node each step a rotation model runs; `RotationModel::None`
+    // sources keep their registration-time epoch, matching the runner's
+    // heterogeneous epochs for cross-backend document equality.
+    let frame_epoch = FrameEpochC(sim_time.tdb());
     // Lazy-compute Earth RNP once per system invocation when an
     // `EarthRNP` rotation-model entity is matched. Cache the
     // already-typed `FrameTransform` rather than the bare matrix so the
@@ -204,6 +211,17 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                     )
                 });
                 frame_av.0 = glam::DVec3::new(0.0, 0.0, omega_value);
+                let mut epoch = frame_epochs.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                    panic!(
+                        "planet_fixed_rotation_system: source {entity:?} has \
+                         PfixFrameEntityC({:?}) but that entity has no \
+                         FrameEpochC ({err:?}). Pfix frame entities are \
+                         stamped with FrameEpochC at registration (issue \
+                         #664); do not strip it.",
+                        pfix_fe.0
+                    )
+                });
+                *epoch = frame_epoch;
             }
         } else {
             // `RotationModel::None`: actively clear the rotation
@@ -281,7 +299,16 @@ pub fn planet_fixed_rotation_system<P: Planet>(
                 // one per source regardless of toggle-cycle count.
                 commands
                     .entity(pfix_fe.0)
-                    .insert(Name::new(format!("pfix.retired:{:?}", pfix_fe.0)));
+                    .insert(Name::new(format!("pfix.retired:{:?}", pfix_fe.0)))
+                    // A retired pfix frame is no longer a live tree node:
+                    // drop its identity (freeing the uid in
+                    // `FrameUidIndexR` via the deindex system) and its
+                    // epoch — the reuse path re-stamps both. Leaving the
+                    // identity would make the retired orphan exportable
+                    // as a phantom frame and collide with the re-minted
+                    // identity on the next toggle-back (issue #664).
+                    .remove::<FrameUidC>()
+                    .remove::<FrameEpochC>();
                 commands
                     .entity(entity)
                     .remove::<PfixFrameEntityC>()

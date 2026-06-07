@@ -65,6 +65,10 @@ fn mass_point_ref_inserted_on_body_with_mass_properties() {
     let body = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-mass-point-ref-wiring-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
             RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
@@ -116,6 +120,10 @@ fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
     let body = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-mass-point-ref-wiring-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("late_mass"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
             RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
@@ -179,6 +187,10 @@ fn mass_point_ref_removed_when_mass_lost_after_registration() {
     let body = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-mass-point-ref-wiring-b3-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("loses_mass"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
             RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
@@ -227,6 +239,10 @@ fn mass_point_ref_omitted_for_kinematic_only_body() {
     let body = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-mass-point-ref-wiring-b4-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("kinematic"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_state()),
             RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(
@@ -251,3 +267,7 @@ fn mass_point_ref_omitted_for_kinematic_only_body() {
         "MassPointRef should be absent on a body without MassPropertiesC"
     );
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

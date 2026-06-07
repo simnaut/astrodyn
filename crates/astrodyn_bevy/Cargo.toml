@@ -21,6 +21,13 @@ rust-version.workspace = true
 # additions that introduce a new ambiguity. See issue #562.
 schedule_audit = ["bevy/debug"]
 
+# Frame-document exchange (issue #664): `frame_doc::export_frame_document`
+# / `apply_frame_document` — the ECS mirror of the runner's document IO.
+# Off by default — same serde-free-production rationale as the gateway's
+# `frame-doc` feature, which this forwards to. Identity itself (`FrameUidC`,
+# `FrameUidIndexR`, `FrameEpochC`) is core and NOT behind this feature.
+frame-doc = ["astrodyn/frame-doc"]
+
 [dependencies]
 astrodyn = { path = "../..", version = "0.2.0" }
 glam = { workspace = true }

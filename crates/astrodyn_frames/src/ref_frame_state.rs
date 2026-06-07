@@ -79,38 +79,10 @@ pub struct RefFrameState {
     pub rot: RefFrameRot,
 }
 
-/// Identifier metadata for a frame-tree node — name plus the
-/// [`RefFrameKind`] discriminator.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RefFrameInfo {
-    /// Human-readable frame name (e.g., `"earth.ecef"`, `"iss.body"`).
-    pub name: String,
-    /// Discriminator marking which kind of frame this is.
-    pub kind: RefFrameKind,
-}
-
-/// Runtime kind of a reference-frame tree node. Mirrors the runtime
-/// tags JEOD uses to distinguish inertial, planet-fixed, and body
-/// frames.
-///
-/// Distinct from the type-level frame phantoms in `astrodyn_quantities`
-/// ([`RootInertial`](astrodyn_quantities::frame::RootInertial),
-/// [`PlanetInertial<P>`](astrodyn_quantities::frame::PlanetInertial), etc.)
-/// — `Inertial` here covers any non-rotating frame regardless of where it
-/// sits in the tree (root or a non-central child). It is *not* the
-/// runtime equivalent of the type-level `RootInertial`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RefFrameKind {
-    /// Any non-rotating (J2000 / ICRF) inertial frame — typically the
-    /// root of a tree, but also non-central children that still
-    /// represent a non-rotating axes triad.
-    Inertial,
-    /// Planet-fixed (ECEF / IAU body-fixed) frame rotating with its
-    /// parent body.
-    PlanetFixed,
-    /// Vehicle / body frame attached to a `DynBody` or composite.
-    Body,
-}
+// `RefFrameKind` and `RefFrameInfo` were removed in issue #664: every
+// frame node carries a required `FrameUid` whose `FrameClass` is the
+// 8-class runtime taxonomy — a 3-variant kind alongside it would be a
+// shadow taxonomy that silently loses the new distinctions.
 
 impl RefFrameState {
     /// Negate (invert) a frame state.

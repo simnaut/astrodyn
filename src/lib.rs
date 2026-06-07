@@ -290,7 +290,7 @@ pub use astrodyn_interactions::{
 // `Simulation` state container.
 pub use astrodyn_frames::{
     compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameStorage,
-    FrameTree, FrameTreeError, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans,
+    FrameTree, FrameTreeError, RefFrameRot, RefFrameState, RefFrameTrans,
 };
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that
@@ -358,8 +358,15 @@ pub use astrodyn_quantities::frame::{
 // from the compile-time markers above; `Namespace`/`Tag`/`FrameRole` carry
 // multi-source and producer-defined identity.
 pub use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
+// Typed epoch surface: `FrameNode.epoch` / `FrameTree::set_epoch` and the
+// frame-document helpers traffic in `SecondsSince<TDB>`; consumers reading
+// physics through `astrodyn` need to be able to name it (issue #664 —
+// the Bevy adapter's `FrameEpochC` carries it per frame entity).
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
-pub use frame_identity::{named_body_frame_uid, MISSION_NAMED_NS};
+pub use astrodyn_quantities::time_scale::{SecondsSince, TDB};
+pub use frame_identity::{
+    named_body_frame_uid, pfix_sibling_uid, sealed_planet_inertial_uid, MISSION_NAMED_NS,
+};
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `astrodyn` don't need a direct
 // `astrodyn_quantities` line in their `Cargo.toml`. The macro body resolves

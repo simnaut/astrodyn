@@ -750,6 +750,11 @@ pub fn propagate_frame_attached_state_post_integration_system<P: Planet>(
 
 #[cfg(test)]
 mod tests {
+    /// Per-call unique suffix for swept test-body identities (#664):
+    /// helpers spawning multiple bodies per App must mint distinct
+    /// identities.
+    static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     use super::*;
     use crate::components::{
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, KinematicChildC,
@@ -786,6 +791,10 @@ mod tests {
     fn spawn_test_body(app: &mut App) -> Entity {
         app.world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "frame-attach-system-b1-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(1.0)),
                 )),
@@ -1058,6 +1067,10 @@ mod tests {
         let parent_body = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "frame-attach-system-b2-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("frame_attached_root"),
                 MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(10.0)),
@@ -1094,6 +1107,10 @@ mod tests {
         let child_body = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "frame-attach-system-b3-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("kinematic_child"),
                 MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
                     &(MassProperties::new(5.0)),

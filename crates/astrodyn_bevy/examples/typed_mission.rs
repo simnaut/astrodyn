@@ -101,6 +101,9 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     let earth_mu_raw = earth_recipe.source.mu;
     let earth = commands
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
