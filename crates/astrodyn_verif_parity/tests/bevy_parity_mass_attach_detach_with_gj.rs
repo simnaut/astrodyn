@@ -95,10 +95,9 @@ fn build_two_body_app(
     let body_a = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-mass-attach-detach-with-gj-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-mass-attach-detach-with-gj-b1",
+            )),
             Name::new("VehicleA"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_a),
@@ -121,10 +120,9 @@ fn build_two_body_app(
     let body_b = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-mass-attach-detach-with-gj-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-mass-attach-detach-with-gj-b2",
+            )),
             Name::new("VehicleB"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans_b),
@@ -279,9 +277,13 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
         |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
             app.world_mut()
                 .spawn((
+                    // Identity derived from the helper's per-call `name`:
+                    // the chain spawns several bodies through this one
+                    // closure in a single App, so the label must vary per
+                    // call — deterministically, via the caller-supplied
+                    // name rather than a counter.
                     astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                        "bevy-parity-mass-attach-detach-with-gj-b3-{}",
-                        NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                        "bevy-parity-mass-attach-detach-with-gj-{name}"
                     ))),
                     Name::new(name.to_string()),
                     DynamicsConfigC::default(),
@@ -417,7 +419,3 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_detach_with_gj_resets_integrator(
     // No IG.37 panic on subsequent steps.
     step_bevy(&mut app, 5, sim_dt);
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -318,10 +318,9 @@ fn spawn_body(
 ) -> Entity {
     app.world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-chained-attach-event-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-chained-attach-event-b1",
+            )),
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(mass),
@@ -648,7 +647,3 @@ fn fire_bevy_attach(app: &mut App, child: Entity, parent: Entity, offset: DVec3,
             t_parent_child: astrodyn::FrameTransform::from_matrix(t_pc),
         });
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

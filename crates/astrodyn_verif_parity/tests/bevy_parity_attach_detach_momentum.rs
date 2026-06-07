@@ -94,10 +94,9 @@ fn build_two_body_world(
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b1",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -113,10 +112,9 @@ fn build_two_body_world(
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b2",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -1303,10 +1301,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b3-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b3",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -1325,10 +1322,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b4-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b4",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -1686,10 +1682,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b5-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b5",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -1708,10 +1703,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b6-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b6",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -1945,10 +1939,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b7-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b7",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -1971,10 +1964,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b8-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b8",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
@@ -2155,10 +2147,9 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
     let body_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b9-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b9",
+            )),
             Name::new("Body"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans),
@@ -2894,10 +2885,9 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b10-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b10",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -2916,10 +2906,9 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b11-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b11",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3202,10 +3191,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b12-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b12",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3227,10 +3215,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b13-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b13",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3344,10 +3331,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() 
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b14-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b14",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3363,10 +3349,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_malformed_frame_node_panics() 
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b15-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b15",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3462,10 +3447,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_pani
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b16-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b16",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3481,10 +3465,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_equal_but_illegal_parents_pani
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b17-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b17",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3606,10 +3589,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_p
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b18-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b18",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3625,10 +3607,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_stray_parent_p
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b19-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b19",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3854,10 +3835,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b20-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b20",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3873,10 +3853,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_child_of_
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b21-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b21",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -3978,10 +3957,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_ent
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b22-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b22",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -3997,10 +3975,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_body_with_no_frame_ent
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b23-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b23",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -4113,10 +4090,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b24-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b24",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -4208,10 +4184,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translati
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b25-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b25",
+            )),
             Name::new("Parent"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(parent_trans),
@@ -4227,10 +4202,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_frame_entity_without_translati
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b26-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b26",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -4372,10 +4346,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_dynamic_child_on_mass_only_par
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-detach-momentum-b27-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-detach-momentum-b27",
+            )),
             Name::new("Child"),
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(child_trans),
@@ -4508,7 +4481,3 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_mass_only_succeeds_without_jeo
          rejected by the fence despite the mass-only carve-out."
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

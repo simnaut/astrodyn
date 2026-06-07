@@ -175,10 +175,9 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
     let parent_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-non-root-integ-source-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-non-root-integ-source-b1",
+            )),
             Name::new("Parent"),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(parent_mass()),
@@ -195,10 +194,9 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, astrodyn::MassBodyId) {
     let child_entity = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-attach-non-root-integ-source-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-attach-non-root-integ-source-b2",
+            )),
             Name::new("Child"),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(child_mass()),
@@ -492,7 +490,3 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
 // The positive cross-integ-frame parity test lands together with
 // the fence's replacement (the frame-tree reparent + per-body lift
 // implementation) in the cross-integ-frame attach work.
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -78,10 +78,9 @@ fn build_app() -> (App, Entity) {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-body-action-init-lvlh-rot-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-parity-body-action-init-lvlh-rot-b1",
+            )),
             // Placeholder translational state — `InitLvlhRot` only
             // touches the rotational component; the trans state is
             // unused by the action and irrelevant to the assertion.
@@ -236,7 +235,3 @@ fn bevy_parity_body_action_init_lvlh_rot_init_lvlh_rot_lvlh_rate_frame_dispatche
     let dw = (state.ang_vel_body - expected.ang_vel_body).length();
     assert!(dw < 1e-14, "lvlh-rate-frame ang vel mismatch: dw = {dw}");
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

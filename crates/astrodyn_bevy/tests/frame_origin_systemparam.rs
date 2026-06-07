@@ -72,10 +72,9 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
     let body_e = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "frame-origin-systemparam-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "frame-origin-systemparam-b1",
+            )),
             Name::new("body"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             RotationalStateC::from(astrodyn::typed_bridge::rot_raw_to_self_ref(&(rot))),
@@ -204,7 +203,3 @@ fn after_diff_mission_code_shape_compiles() {
 
     let _id = app.world_mut().register_system(read_body_origin_in_root);
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -124,10 +124,9 @@ fn body_despawn_despawns_body_frame_entity() {
     let body = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-frame-tree-despawn-cleanup-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                "bevy-frame-tree-despawn-cleanup-b1",
+            )),
             Name::new("vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
@@ -213,7 +212,3 @@ fn rotation_none_then_source_despawn_does_not_leak_retired_pfix_entity() {
         "retired pfix entity must be despawned when its owning source despawns"
     );
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -59,10 +59,7 @@ fn bevy_parity_third_body_solar_beta_equ() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b1-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b1")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(equ_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -159,10 +156,7 @@ fn bevy_parity_third_body_solar_beta_obliquity() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b2-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b2")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(obl_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -328,10 +322,9 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     let vehicle = if sixdof {
         app.world_mut()
             .spawn((
-                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                    "bevy-parity-third-body-b3-{}",
-                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                ))),
+                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                    "bevy-parity-third-body-b3",
+                )),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
                 RotationalStateC::from(tumble_rot()),
                 MassPropertiesC::from(iss_mass()),
@@ -342,10 +335,9 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     } else {
         app.world_mut()
             .spawn((
-                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                    "bevy-parity-third-body-b4-{}",
-                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                ))),
+                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
+                    "bevy-parity-third-body-b4",
+                )),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
                 DynamicsConfigC(config),
                 GravityControlsC(GravityControls { controls }),
@@ -576,10 +568,7 @@ fn bevy_parity_third_body_mars_dawn() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b5-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b5")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(mars_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -704,10 +693,7 @@ fn bevy_parity_third_body_mercury_relativistic() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b6-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b6")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(mercury_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -811,10 +797,7 @@ fn bevy_parity_third_body_relativistic_moving_source() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b7-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b7")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(mercury_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -974,10 +957,7 @@ fn bevy_parity_third_body_earth_moon_clem() {
     let vehicle = app
         .world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                "bevy-parity-third-body-b8-{}",
-                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ))),
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid("bevy-parity-third-body-b8")),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(clem_trans),
             astrodyn_bevy::MassPropertiesC::from(mass_props),
             DynamicsConfigC::default(),
@@ -1071,7 +1051,3 @@ fn bevy_parity_third_body_earth_moon_clem() {
     assert_trans_eq("Bevy vs Sim (earth_moon_clem)", &bevy_trans, &sim_trans);
     println!("  Earth-Moon Clementine SRP: bit-identical");
 }
-
-/// Per-call unique suffix for swept test-body identities (#664): helpers
-/// spawning multiple bodies per App must mint distinct identities.
-static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
