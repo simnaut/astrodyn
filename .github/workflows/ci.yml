@@ -54,12 +54,16 @@ jobs:
     # lanes (perf-history, Tier 3 cross-val report) stay per-commit, and
     # the merged result of a docs-only PR still gets one full run.
     #
-    # Fail-open hazard: if THIS job fails (paths-filter API error), all
-    # dependents skip, skipped satisfies required checks, and the PR
-    # would be mergeable untested. Once this gate lands on main, add
-    # "Changed-paths gate" to the ruleset's required checks so a failure
-    # here blocks the merge instead. (Adding it before merge would hang
-    # every open PR on a check that doesn't exist in their runs yet.)
+    # Fail-closed: a paths-filter error (API hiccup, rate limit) must
+    # not skip CI — skipped satisfies required checks, so a gate error
+    # would otherwise leave the PR mergeable untested. The filter step
+    # is `continue-on-error` and the outputs expression treats any
+    # non-success step outcome as code=true: a broken gate runs the
+    # full matrix, never none of it. Residual corner: a runner-level
+    # failure of this JOB (not the step) still skips dependents; once
+    # this gate lands on main, add "Changed-paths gate" to the
+    # ruleset's required checks to cover that. (Adding it before merge
+    # would hang every open PR on a check absent from their runs.)
     name: Changed-paths gate
     runs-on: ubuntu-latest
     # `permissions:` replaces the default token scopes; paths-filter
@@ -68,11 +72,18 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
+      # Three clauses, in order: push-to-main always runs everything;
+      # a failed/errored filter step fails closed to code=true; an
+      # actual filter verdict is honored.
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outcome != 'success' || steps.filter.outputs.code == 'true' }}
     steps:
       - uses: dorny/paths-filter@v3
         id: filter
         if: github.event_name == 'pull_request'
+        # Fail closed (see job comment): if this step errors, the job
+        # still succeeds and the outputs expression defaults to
+        # code=true — full matrix, not zero matrix.
+        continue-on-error: true
         with:
           # 'every' is load-bearing: with the default quantifier
           # ('some'), a file matches the filter if ANY pattern matches,
