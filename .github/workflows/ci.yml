@@ -25,8 +25,88 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  changes:
+    # Docs-only gate. Every job below skips when a PR touches nothing
+    # that can affect a build, test, or guard script — e.g. a root
+    # README/CHANGELOG edit or a `.claude/` agent-config change. Before
+    # this gate, such a PR burned the full matrix (Tier 3, parity, the
+    # ~37 min earth_moon runtime-budget envelope) on prose.
+    #
+    # Job-level gating, deliberately NOT `on.pull_request.paths-ignore`:
+    # the "protect main" ruleset names seven jobs in this workflow as
+    # required status checks, and a workflow that never triggers leaves
+    # its required checks pending forever — the PR can't merge. A job
+    # skipped by an `if:` conditional reports success to branch
+    # protection, so docs-only PRs merge cleanly.
+    #
+    # `code` matches any changed file OUTSIDE the curated safe-set. The
+    # safe-set is deliberately tight — root-level prose, `.claude/**`,
+    # `.gitignore`, license texts — because several .md files are
+    # load-bearing and must keep running the full matrix:
+    #   - docs/JEOD_invariants.md — parsed by tests/invariant_coverage.rs
+    #   - crates/astrodyn_bevy/README.md — include_str!'d into rustdoc,
+    #     so its code blocks execute as doctests in `docs-enforce`
+    #   - crates/**/README.md generally — kept in the code set so a
+    #     future `#![doc = include_str!(...)]` can't silently fall
+    #     outside the gate
+    #
+    # Push-to-main short-circuits to code=true: the main-only artifact
+    # lanes (perf-history, Tier 3 cross-val report) stay per-commit, and
+    # the merged result of a docs-only PR still gets one full run.
+    #
+    # Fail-closed: a paths-filter error (API hiccup, rate limit) must
+    # not skip CI — skipped satisfies required checks, so a gate error
+    # would otherwise leave the PR mergeable untested. The filter step
+    # is `continue-on-error` and the outputs expression treats any
+    # non-success step outcome as code=true: a broken gate runs the
+    # full matrix, never none of it. Residual corner: a runner-level
+    # failure of this JOB (not the step) still skips dependents; once
+    # this gate lands on main, add "Changed-paths gate" to the
+    # ruleset's required checks to cover that. (Adding it before merge
+    # would hang every open PR on a check absent from their runs.)
+    name: Changed-paths gate
+    runs-on: ubuntu-latest
+    # `permissions:` replaces the default token scopes; paths-filter
+    # only needs the PR file listing (no checkout on pull_request
+    # events — it reads the files via the API).
+    permissions:
+      pull-requests: read
+    outputs:
+      # Three clauses, in order: push-to-main always runs everything;
+      # a failed/errored filter step fails closed to code=true; an
+      # actual filter verdict is honored.
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outcome != 'success' || steps.filter.outputs.code == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        # Fail closed (see job comment): if this step errors, the job
+        # still succeeds and the outputs expression defaults to
+        # code=true — full matrix, not zero matrix.
+        continue-on-error: true
+        with:
+          # 'every' is load-bearing: with the default quantifier
+          # ('some'), a file matches the filter if ANY pattern matches,
+          # and '**' matches everything — the '!' exclusions would be
+          # silently ignored and every PR would count as code (gate
+          # permanently open, full matrix on prose). With 'every', a
+          # file is code iff it matches '**' AND each negated pattern,
+          # i.e. iff it falls outside the safe-set. See "How to use"
+          # → predicate-quantifier in the paths-filter README.
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - '**'
+              - '!*.md'
+              - '!.claude/**'
+              - '!.gitignore'
+              - '!LICENSE-*'
+              - '!crates/*/LICENSE-*'
+
   check:
     name: Lint & Format
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -57,7 +137,8 @@ jobs:
 
   test-examples:
     name: Smoke run examples
-    needs: check
+    needs: [changes, check]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -68,6 +149,8 @@ jobs:
 
   test-quantities:
     name: Test (astrodyn_quantities)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -78,6 +161,8 @@ jobs:
 
   docs-enforce:
     name: Docs (rustdoc -D warnings + doctests)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -105,6 +190,8 @@ jobs:
 
   compile-time-budget:
     name: Compile-time budget (envelope)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -135,6 +222,8 @@ jobs:
 
   test:
     name: Test (unit + tier 2)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -158,6 +247,8 @@ jobs:
 
   test-parity-trajectory:
     name: Test (parity trajectory fast)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -261,7 +352,8 @@ jobs:
     # (Earth + Moon + Sun) registration paths. `cargo nextest`
     # exercises the unit-test App-build sites.
     name: Schedule ambiguity audit (LogLevel::Error)
-    needs: check
+    needs: [changes, check]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -278,6 +370,8 @@ jobs:
 
   test-tier3:
     name: Test (Tier 3 fast)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -339,6 +433,8 @@ jobs:
 
   perf-microbench-smoke:
     name: Perf microbench smoke
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -452,6 +548,8 @@ jobs:
 
   runtime-budget:
     name: Runtime budget (envelope)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
