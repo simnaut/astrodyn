@@ -180,7 +180,7 @@ fn build_kepler_sim(
 ) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = add_earth_point_mass(&mut sb);
+    let _earth = add_earth_point_mass(&mut sb);
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: pos,
@@ -189,7 +189,10 @@ fn build_kepler_sim(
         rot: None,
         mass: Some(super::typed_helpers::mass_typed(&MassProperties::new(mass))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         external_force: Force::<RootInertial>::from_raw_si(external_force),
         ..VehicleConfig::named("sim-dyncomp-combinations-3")
@@ -212,7 +215,7 @@ fn build_kepler_6dof_sim(
 ) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = add_earth_point_mass(&mut sb);
+    let _earth = add_earth_point_mass(&mut sb);
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: pos,
@@ -224,7 +227,10 @@ fn build_kepler_6dof_sim(
         })),
         mass: Some(super::typed_helpers::mass_typed(&mass_props)),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         compute_gravity_gradient: false,
         external_force: Force::<RootInertial>::from_raw_si(external_force),
@@ -301,8 +307,8 @@ fn build_point_mass_plus_thirdbody_conservation(_init: &InitialConditions) -> Si
     let (pos, vel) = iss_circular_state();
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, TEST2_DT_S);
-    let earth = add_earth_point_mass(&mut sb);
-    let sun = sb.add_source(
+    let _earth = add_earth_point_mass(&mut sb);
+    let _sun = sb.add_source(
         "Sun",
         GravitySourceEntry {
             source: GravitySource {
@@ -322,7 +328,7 @@ fn build_point_mass_plus_thirdbody_conservation(_init: &InitialConditions) -> Si
             marker_only: false,
         },
     );
-    let moon = sb.add_source(
+    let _moon = sb.add_source(
         "Moon",
         GravitySourceEntry {
             source: GravitySource {
@@ -353,9 +359,16 @@ fn build_point_mass_plus_thirdbody_conservation(_init: &InitialConditions) -> Si
         ))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityGradient::Skip),
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         ..VehicleConfig::named("sim-dyncomp-combinations-1")
@@ -438,7 +451,10 @@ fn build_drag_point_mass_monotonic_decay(_init: &InitialConditions) -> Simulatio
             MASS_KG,
         ))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(DragConfig {
             cd: 2.2,

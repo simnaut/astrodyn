@@ -12,6 +12,8 @@ use glam::DVec3;
 use crate::recipes::{epoch, sun};
 use crate::vehicle_builder::VehicleBuilder;
 use crate::SimulationBuilder;
+use astrodyn_quantities::frame::{PlanetInertial, Sun};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 /// Mercury orbit around the Sun with GR (Schwarzschild) corrections
 /// enabled — used to measure perihelion advance over many orbits.
@@ -27,7 +29,7 @@ use crate::SimulationBuilder;
 /// ```
 pub fn mercury_relativistic() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 100.0);
-    let sun_idx = sb.add_source("Sun", sun::point_mass());
+    let _ = sb.add_source("Sun", sun::point_mass());
 
     // Mercury at perihelion (~46 Gm from Sun, ~58.98 km/s).
     use astrodyn_dynamics::state::TranslationalStateTyped;
@@ -38,7 +40,8 @@ pub fn mercury_relativistic() -> SimulationBuilder {
         velocity: DVec3::new(0.0, 58_980.0, 0.0).m_per_s_at::<RootInertial>(),
     };
 
-    let mut ctrl = GravityControl::new_spherical(sun_idx, GravityGradient::Skip);
+    let mut ctrl =
+        GravityControl::new_spherical(FrameUid::of::<PlanetInertial<Sun>>(), GravityGradient::Skip);
     ctrl.relativistic = true;
 
     let vehicle = VehicleBuilder::new()

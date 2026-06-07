@@ -117,17 +117,17 @@ pub fn cc8_builder() -> SimulationBuilder {
     // 2. Moon (central) — GRAIL150 fixture + libration rotation. The
     // GravityControl below truncates the SH evaluation to 8×8 per the
     // case spec.
-    let moon_idx = sb.add_source("Moon", moon::grail150_with_libration());
+    let _moon_idx = sb.add_source("Moon", moon::grail150_with_libration());
 
     // 3. Earth + Sun third bodies. One call per source — the recipe
     // wires both the source entry and the per-step ephemeris update.
-    let earth_idx = sb.add_third_body_with_ephemeris(
+    let _earth_idx = sb.add_third_body_with_ephemeris(
         "Earth",
         &EARTH,
         EphemerisBody::Earth,
         EphemerisBody::Moon,
     );
-    let sun_idx =
+    let _sun_idx =
         sb.add_third_body_with_ephemeris("Sun", &SUN, EphemerisBody::Sun, EphemerisBody::Moon);
     // `moon::grail150_with_libration()` registers the Moon source with
     // `RotationModel::MoonDE421`, which queries a BPC kernel each step
@@ -172,13 +172,17 @@ pub fn cc8_builder() -> SimulationBuilder {
         .sixdof(rot, vehicle::nesc_apollo_lm())
         .rk4()
         .gravity(GravityControl::new_nonspherical(
-            moon_idx,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             8,
             8,
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(earth_idx))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Sun>,
+        >()))
         .build();
     sb.add_body(vehicle_cfg);
 

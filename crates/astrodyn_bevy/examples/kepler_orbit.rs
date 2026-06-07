@@ -118,7 +118,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // `examples/multi_body_scenario.rs`); the manual setup below is
     // kept here as the documentation of the underlying components.
     let earth_recipe = earth::point_mass();
-    let earth = commands
+    let _earth = commands
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
                 astrodyn::PlanetInertial<astrodyn::Earth>,
@@ -153,7 +153,10 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     let mass_kg = vehicle::iss_mass().get::<kilogram>();
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+        controls: vec![GravityControl::new_spherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            GravityGradient::Skip,
+        )],
     };
 
     commands.spawn((

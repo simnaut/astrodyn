@@ -96,7 +96,7 @@ pub fn earth_moon_rosetta(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Sim
     sun_source.source.mu = astrodyn::gravity_fixtures::load_sun_spherical_mu();
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth_idx = sb.add_source("Earth", earth_source);
+    let _earth_idx = sb.add_source("Earth", earth_source);
     let moon_idx = sb.add_source("Moon", moon_source);
     let sun_idx = sb.add_source("Sun", sun_source);
     sb.set_source_ephemeris(moon_idx, EphemerisBody::Moon, EphemerisBody::Earth);
@@ -117,13 +117,17 @@ pub fn earth_moon_rosetta(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Sim
         // earth_grav(2, 0): point-mass + J2 (zonal). order 0 → axially
         // symmetric, so Earth RNP about the pole does not affect it.
         .gravity(GravityControl::new_nonspherical(
-            earth_idx,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             2,
             0,
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(moon_idx))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Sun>,
+        >()))
         .cannonball_srp(SRP_CX_AREA, SRP_ALBEDO, SRP_DIFFUSE)
         .build();
     sb.add_body(vehicle);

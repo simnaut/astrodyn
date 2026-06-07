@@ -121,8 +121,12 @@ fn tier3_csr_compare_gravity_octants() {
     // integration frame: the required planet-fixed rotation is identity.
     // The source-id type is irrelevant here (evaluate takes the source
     // explicitly), so use the usize-id form the kernel tests use.
-    let control =
-        GravityControl::<usize>::new_nonspherical(0_usize, DEGREE, ORDER, GravityGradient::Skip);
+    let control = GravityControl::new_nonspherical(
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+        DEGREE,
+        ORDER,
+        GravityGradient::Skip,
+    );
     let t_inertial_pfix = DMat3::IDENTITY;
 
     let positions = expected_positions();

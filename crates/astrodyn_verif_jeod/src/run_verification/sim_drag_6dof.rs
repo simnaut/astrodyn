@@ -162,7 +162,10 @@ fn build_drag_6dof(
         rot: Some(super::typed_helpers::rot_typed(&rot)),
         mass: Some(super::typed_helpers::mass_typed(&mass_props)),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(DragConfig {
             cd: CD,

@@ -103,7 +103,7 @@ fn num_steps_for_orbits(a: f64, n_orbits: f64) -> usize {
 fn build_orbinit_families(dt: f64, body: TranslationalState) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -124,7 +124,10 @@ fn build_orbinit_families(dt: f64, body: TranslationalState) -> SimulationBuilde
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&body),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-orbinit-families-0")
     });

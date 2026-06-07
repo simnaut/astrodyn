@@ -37,13 +37,16 @@ impl Simulation {
         let gravity_data = &self.gravity_data;
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
+        // Identity → index boundary map (issue #668).
+        let uid_to_idx = &self.source_uid_to_idx;
         // Pre-#567 these closures short-circuited the position lookup when
         // `sfids.inertial == root_fid` (the central body alias). With #567
         // making every source's inertial frame structurally distinct from
         // root, the frame-tree lookup returns the same `DVec3::ZERO` for
         // the central body anyway — read directly.
         let resolve_source =
-            |_body_idx: usize, source_id: usize| -> Option<astrodyn::ResolvedSource<'_>> {
+            |_body_idx: usize, uid: &astrodyn::FrameUid| -> Option<astrodyn::ResolvedSource<'_>> {
+                let source_id = *uid_to_idx.get(uid)?;
                 let grav = gravity_data.get(source_id)?;
                 let sfids = &source_frame_ids[source_id];
                 let src_node = frame_tree.get(sfids.inertial);
@@ -59,21 +62,23 @@ impl Simulation {
                     has_delta_coeffs: grav.tidal_config.is_some(),
                 })
             };
-        let resolve_rel_source =
-            |_body_idx: usize, source_id: usize| -> Option<astrodyn::ResolvedRelativisticSource> {
-                let grav = gravity_data.get(source_id)?;
-                let sfids = &source_frame_ids[source_id];
-                let position = frame_tree.get(sfids.inertial).state.trans.position;
-                Some(astrodyn::ResolvedRelativisticSource {
-                    mu: grav.source.mu,
-                    position,
-                    // Velocity comes from gravity_data, not the tree node,
-                    // because central bodies at the root frame have zero
-                    // tree velocity but may still have a physical velocity
-                    // for relativistic corrections.
-                    velocity: grav.velocity,
-                })
-            };
+        let resolve_rel_source = |_body_idx: usize,
+                                  uid: &astrodyn::FrameUid|
+         -> Option<astrodyn::ResolvedRelativisticSource> {
+            let source_id = *uid_to_idx.get(uid)?;
+            let grav = gravity_data.get(source_id)?;
+            let sfids = &source_frame_ids[source_id];
+            let position = frame_tree.get(sfids.inertial).state.trans.position;
+            Some(astrodyn::ResolvedRelativisticSource {
+                mu: grav.source.mu,
+                position,
+                // Velocity comes from gravity_data, not the tree node,
+                // because central bodies at the root frame have zero
+                // tree velocity but may still have a physical velocity
+                // for relativistic corrections.
+                velocity: grav.velocity,
+            })
+        };
 
         // Project each `(idx, &mut SimBody)` row into the
         // `(key, inputs, store)` triple `run_gravity_stage` expects.

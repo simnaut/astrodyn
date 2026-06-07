@@ -137,7 +137,9 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
             RotationalStateC::from(initial_rot()),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
 

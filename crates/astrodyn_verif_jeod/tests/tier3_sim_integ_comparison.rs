@@ -65,7 +65,7 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(
+    let _earth = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -91,7 +91,10 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
         }),
         integrator,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("tier3-sim-integ-comparison-0")
     });

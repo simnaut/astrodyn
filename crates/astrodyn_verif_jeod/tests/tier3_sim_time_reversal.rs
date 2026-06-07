@@ -185,7 +185,7 @@ fn add_third_body(sim: &mut Simulation, name: &str, mu: f64, seed: DVec3) -> usi
 fn add_standard_body(
     sim: &mut Simulation,
     init: &ReversalRecord,
-    controls: GravityControls<usize>,
+    controls: GravityControls,
     drag: Option<DragConfig>,
 ) -> usize {
     let quat = lvlh_pitch_quat(init.position, init.velocity);
@@ -343,12 +343,15 @@ fn tier3_sim_time_reversal_run1() {
         },
         &[],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
+            let _earth = add_spherical_earth(sim, mu);
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 },
                 None,
             )
@@ -377,12 +380,15 @@ fn tier3_sim_time_reversal_run10a() {
         },
         &[],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
+            let _earth = add_spherical_earth(sim, mu);
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 },
                 None,
             )
@@ -409,12 +415,15 @@ fn tier3_sim_time_reversal_run8b() {
         },
         &[],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
+            let _earth = add_spherical_earth(sim, mu);
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 },
                 None,
             )
@@ -442,14 +451,14 @@ fn tier3_sim_time_reversal_run3a() {
         &[],
         |sim, init| {
             let sh = astrodyn::gravity_fixtures::load_gemt1();
-            let earth =
+            let _earth =
                 add_nonspherical_earth(sim, sh.mu, GravityModel::SphericalHarmonics(Box::new(sh)));
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
                     controls: vec![GravityControl::new_nonspherical(
-                        earth,
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                         4,
                         4,
                         GravityGradient::Skip,
@@ -479,14 +488,14 @@ fn tier3_sim_time_reversal_run3b() {
         &[],
         |sim, init| {
             let sh = astrodyn::gravity_fixtures::load_gemt1();
-            let earth =
+            let _earth =
                 add_nonspherical_earth(sim, sh.mu, GravityModel::SphericalHarmonics(Box::new(sh)));
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
                     controls: vec![GravityControl::new_nonspherical(
-                        earth,
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                         8,
                         8,
                         GravityGradient::Skip,
@@ -529,17 +538,24 @@ fn tier3_sim_time_reversal_run4() {
         },
         &[],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
-            let sun = add_third_body(sim, "Sun", mu_sun, DVec3::new(1.5e11, 0.0, 0.0));
-            let moon = add_third_body(sim, "Moon", mu_moon, DVec3::new(3.8e8, 0.0, 0.0));
+            let _earth = add_spherical_earth(sim, mu);
+            let _sun = add_third_body(sim, "Sun", mu_sun, DVec3::new(1.5e11, 0.0, 0.0));
+            let _moon = add_third_body(sim, "Moon", mu_moon, DVec3::new(3.8e8, 0.0, 0.0));
             add_standard_body(
                 sim,
                 init,
                 GravityControls {
                     controls: vec![
-                        GravityControl::new_spherical(earth, GravityGradient::Skip),
-                        GravityControl::new_third_body(sun),
-                        GravityControl::new_third_body(moon),
+                        GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        ),
+                        GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                            astrodyn::PlanetInertial<astrodyn::Sun>,
+                        >()),
+                        GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                            astrodyn::PlanetInertial<astrodyn::Moon>,
+                        >()),
                     ],
                 },
                 None,
@@ -583,7 +599,7 @@ fn tier3_sim_time_reversal_run6a() {
         },
         &[],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
+            let _earth = add_spherical_earth(sim, mu);
             // Co-rotating-atmosphere wind for relative velocity; the exponential
             // density model is present only to satisfy the atmosphere stage —
             // `constant_density` overrides its output (JEOD const_density_drag).
@@ -597,7 +613,10 @@ fn tier3_sim_time_reversal_run6a() {
                 sim,
                 init,
                 GravityControls {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 },
                 Some(DragConfig {
                     cd: 0.02,
@@ -638,7 +657,7 @@ fn tier3_sim_time_reversal_run9d() {
         },
         &[10000.0, 20000.0, 100000.0, 110000.0],
         |sim, init| {
-            let earth = add_spherical_earth(sim, mu);
+            let _earth = add_spherical_earth(sim, mu);
             let quat = lvlh_pitch_quat(init.position, init.velocity);
             // Body co-rotates with the LVLH frame (JEOD lvlh_init.ang_velocity
             // = 0): the LVLH frame's inertial orbit-rate, expressed in body
@@ -670,7 +689,10 @@ fn tier3_sim_time_reversal_run9d() {
                 )),
                 mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
                 gravity_controls: GravityControls {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 },
                 ..VehicleConfig::named("tier3-sim-time-reversal-0")
             })

@@ -12,12 +12,14 @@ use bevy::prelude::*;
 
 use super::state::{GravityAccelerationC, TotalForceC};
 
-/// Per-body list of gravity controls keyed by source [`Entity`]. Each
-/// control selects the model (point-mass / spherical-harmonics) and
-/// which body it represents (central, third, etc.).
+/// Per-body list of gravity controls keyed by the source's
+/// inertial-frame `FrameUid` (issue #668) — the same control expression
+/// that drives the runner. The gravity systems resolve each identity to
+/// the registered source entity per run; a miss fails loudly naming the
+/// uid.
 #[derive(Component, Debug, Clone)]
 #[require(GravityAccelerationC, TotalForceC)]
-pub struct GravityControlsC(pub GravityControls<Entity>);
+pub struct GravityControlsC(pub GravityControls);
 
 /// Gravity source attached to a planet entity (mu plus optional
 /// spherical-harmonics coefficients). Queried by gravity controls

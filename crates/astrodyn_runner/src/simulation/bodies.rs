@@ -259,20 +259,22 @@ impl Simulation {
     pub fn add_body(&mut self, config: VehicleConfig) -> usize {
         let idx = self.bodies.len();
 
-        // Resolve integration frame from source index.
+        // Resolve integration frame from the config-carried source
+        // identity (issue #668).
         let integ_frame_id = config
             .integ_source
-            .map(|src| {
-                self.source_frame_ids
-                    .get(src)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "VehicleConfig::integ_source index {src} is out of range; \
-                             {} source frame(s) configured",
-                            self.source_frame_ids.len()
-                        )
-                    })
-                    .inertial
+            .as_ref()
+            .map(|uid| {
+                let src = self.source_idx_for_uid(uid).unwrap_or_else(|| {
+                    panic!(
+                        "VehicleConfig::integ_source `{uid}` does not resolve to a \
+                         registered gravity source; {} source(s) configured. Register \
+                         the source (add_source / add_source_typed) before adding the \
+                         body, or fix the identity.",
+                        self.source_frame_ids.len()
+                    )
+                });
+                self.source_frame_ids[src].inertial
             })
             .unwrap_or(self.root_frame_id);
 

@@ -56,7 +56,7 @@ use common::*;
 fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_state() {
     let mut app = new_bevy_app(DT);
 
-    let earth = spawn_earth_source(&mut app);
+    let _earth = spawn_earth_source(&mut app);
 
     // Spawn a body with default-zero state. Gravity will be computed
     // *after* `propagate_frame_attached_state_system` sets its
@@ -83,7 +83,10 @@ fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_sta
                 // Re-use the central Earth source spawned above. The
                 // helper hands back its Entity; we rebuild the
                 // controls here so the test owns its own setup.
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             GravityAccelerationC::default(),
         ))

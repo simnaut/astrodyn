@@ -32,7 +32,7 @@ fn bevy_parity_derived_states() {
     app.add_plugins(MinimalPlugins);
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -73,10 +73,14 @@ fn bevy_parity_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             OrbitalElementsConfigC {
-                gravity_source: planet,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(
+                ),
             },
             EulerAnglesConfigC {
                 sequence: EulerSequence::ZYX,
@@ -124,7 +128,9 @@ fn bevy_parity_derived_states() {
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.derived = DerivedStateConfig {
-        orbital_elements_source: Some(earth_idx),
+        orbital_elements_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
         euler_sequence: Some(EulerSequence::ZYX),
         lvlh: true,
         solar_beta: true,
@@ -185,7 +191,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
     app.add_plugins(MinimalPlugins);
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -216,10 +222,13 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             GeodeticConfigC {
-                planet,
+                planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             },
@@ -234,7 +243,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
@@ -254,13 +263,13 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
-                source_idx: earth_idx,
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             }),
@@ -320,7 +329,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -361,10 +370,14 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             OrbitalElementsConfigC {
-                gravity_source: planet,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(
+                ),
             },
             EulerAnglesConfigC {
                 sequence: EulerSequence::XYZ,
@@ -396,7 +409,7 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
+    let _earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -416,12 +429,14 @@ fn bevy_parity_derived_state_eccentric_derived_states() {
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth_idx),
+            orbital_elements_source: Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             euler_sequence: Some(EulerSequence::XYZ),
             lvlh: true,
             solar_beta: true,
@@ -488,7 +503,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -519,10 +534,13 @@ fn bevy_parity_derived_state_polar_geodetic() {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             GeodeticConfigC {
-                planet,
+                planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             },
@@ -537,7 +555,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
@@ -557,13 +575,13 @@ fn bevy_parity_derived_state_polar_geodetic() {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&polar_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
-                source_idx: earth_idx,
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: r_sph,
                 r_pol: r_sph,
             }),
@@ -617,7 +635,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -658,7 +676,10 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             SolarBetaC::default(),
         ))
@@ -678,7 +699,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
+    let _earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -698,7 +719,7 @@ fn bevy_parity_derived_state_equatorial_solar_beta() {
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -730,7 +751,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
     let _sun = app
         .world_mut()
         .spawn((
@@ -759,7 +780,10 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             EulerAnglesConfigC { sequence },
         ))
@@ -769,14 +793,14 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let bevy_state = read_sixdof(app.world(), vehicle);
     let bevy_euler = app.world().get::<EulerAnglesC>(vehicle).unwrap().0;
 
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -835,7 +859,7 @@ fn bevy_parity_derived_state_euler_equ() {
 
 fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -847,7 +871,10 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             LvlhFrameC::default(),
         ))
@@ -857,12 +884,12 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let bevy_trans = read_trans(app.world(), vehicle);
     let bevy_lvlh = app.world().get::<LvlhFrameC>(vehicle).unwrap().0;
 
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -917,7 +944,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     let earth_shape = PlanetShape::new("Earth", MU_EARTH, r_eq, r_pol, flat_coeff);
 
     let mut app = new_bevy_app(DT);
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -948,10 +975,13 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             GeodeticConfigC {
-                planet,
+                planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             },
@@ -964,7 +994,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
 
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
@@ -984,13 +1014,13 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
-                source_idx: earth_idx,
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq,
                 r_pol,
             }),
@@ -1034,7 +1064,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     let tiny_dt = 1e-9;
 
     let mut app = new_bevy_app(tiny_dt);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -1046,10 +1076,14 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             OrbitalElementsConfigC {
-                gravity_source: planet,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(
+                ),
             },
         ))
         .id();
@@ -1062,17 +1096,19 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
         .0
         .clone();
 
-    let (mut sim, earth_idx) = new_sim_earth(tiny_dt);
+    let (mut sim, _earth_idx) = new_sim_earth(tiny_dt);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth_idx),
+            orbital_elements_source: Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             ..Default::default()
         },
         ..VehicleConfig::named("bevy-parity-derived-state-2")
@@ -1163,7 +1199,7 @@ fn bevy_parity_derived_state_orbelem() {
     };
 
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -1175,10 +1211,14 @@ fn bevy_parity_derived_state_orbelem() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             OrbitalElementsConfigC {
-                gravity_source: planet,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(
+                ),
             },
         ))
         .id();
@@ -1191,17 +1231,19 @@ fn bevy_parity_derived_state_orbelem() {
         .0
         .clone();
 
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&ecc_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
         derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth_idx),
+            orbital_elements_source: Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             ..Default::default()
         },
         ..VehicleConfig::named("bevy-parity-derived-state-1")
@@ -1229,7 +1271,7 @@ fn bevy_parity_derived_state_solar_beta() {
     };
 
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
     let _sun = app
         .world_mut()
         .spawn((
@@ -1252,7 +1294,10 @@ fn bevy_parity_derived_state_solar_beta() {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             SolarBetaC::default(),
         ))
@@ -1261,7 +1306,7 @@ fn bevy_parity_derived_state_solar_beta() {
     step_bevy(&mut app, NUM_STEPS);
     let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
 
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -1279,7 +1324,7 @@ fn bevy_parity_derived_state_solar_beta() {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&inc_trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

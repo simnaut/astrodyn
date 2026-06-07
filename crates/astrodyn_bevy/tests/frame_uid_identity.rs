@@ -212,3 +212,67 @@ fn run_fixed_ticks(app: &mut App, n: usize) {
         app.world_mut().run_schedule(bevy::app::FixedUpdate);
     }
 }
+
+/// Two same-tick `ShadowBodyRefC` declarations for one caster with
+/// AGREEING radii resolve to a single `ShadowBodyC` and both refs are
+/// consumed — the per-run declaration map makes the batch
+/// order-independent (issue #679 review).
+#[test]
+fn same_tick_shadow_declarations_agreeing_radii_resolve_once() {
+    let mut app = test_app();
+    let planet = app
+        .world_mut()
+        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
+        .id();
+    let b1 = app
+        .world_mut()
+        .spawn(astrodyn_bevy::ShadowBodyRefC {
+            source: FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+            radius: EARTH.shadow_radius,
+        })
+        .id();
+    let b2 = app
+        .world_mut()
+        .spawn(astrodyn_bevy::ShadowBodyRefC {
+            source: FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+            radius: EARTH.shadow_radius,
+        })
+        .id();
+    app.update();
+    let shadow = app
+        .world()
+        .get::<astrodyn_bevy::ShadowBodyC>(planet)
+        .expect("resolver installed ShadowBodyC on the source");
+    assert_eq!(shadow.radius.to_bits(), EARTH.shadow_radius.to_bits());
+    assert!(
+        app.world()
+            .get::<astrodyn_bevy::ShadowBodyRefC>(b1)
+            .is_none()
+            && app
+                .world()
+                .get::<astrodyn_bevy::ShadowBodyRefC>(b2)
+                .is_none(),
+        "both refs consumed"
+    );
+}
+
+/// Two same-tick declarations with DIFFERENT radii must panic — the
+/// Commands-deferred insert is invisible to later iterations of the
+/// same run, so without per-run tracking the mismatch would silently
+/// resolve to whichever body iterated last (issue #679 review).
+#[test]
+#[should_panic(expected = "must agree on its radius")]
+fn same_tick_shadow_declarations_mismatched_radii_panic() {
+    let mut app = test_app();
+    app.world_mut()
+        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH));
+    app.world_mut().spawn(astrodyn_bevy::ShadowBodyRefC {
+        source: FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+        radius: EARTH.shadow_radius,
+    });
+    app.world_mut().spawn(astrodyn_bevy::ShadowBodyRefC {
+        source: FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+        radius: EARTH.shadow_radius + 1.0,
+    });
+    app.update();
+}

@@ -16,6 +16,8 @@ use glam::DVec3;
 use crate::recipes::{constants, earth, epoch, moon, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
 use crate::SimulationBuilder;
+use astrodyn_quantities::frame::{Earth, Moon, PlanetInertial, Sun};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 /// Source index of Earth in the [`apollo_translunar`] scenario.
 pub const EARTH_IDX: usize = 0;
@@ -83,11 +85,15 @@ pub fn apollo_translunar() -> SimulationBuilder {
         .three_dof_point_mass(vehicle::apollo_csm_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            earth_idx,
+            FrameUid::of::<PlanetInertial<Earth>>(),
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(moon_idx))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(FrameUid::of::<
+            PlanetInertial<Moon>,
+        >()))
+        .gravity(GravityControl::new_third_body(FrameUid::of::<
+            PlanetInertial<Sun>,
+        >()))
         .build();
     sb.add_body(csm);
     sb

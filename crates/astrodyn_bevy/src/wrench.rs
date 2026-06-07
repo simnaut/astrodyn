@@ -1381,7 +1381,7 @@ mod tests {
         app.add_plugins(crate::AstrodynPlugin);
 
         // Earth point-mass source.
-        let earth = app
+        let _earth = app
             .world_mut()
             .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
             .id();
@@ -1394,7 +1394,7 @@ mod tests {
             .three_dof_point_mass(vehicle::iss_mass())
             .with_integrator(IntegratorType::Rk4)
             .gravity(GravityControl::new_spherical(
-                0_usize,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             ))
             .build();
@@ -1406,7 +1406,7 @@ mod tests {
             // elsewhere; localizing the `use` keeps it surgical.
             use crate::VehicleConfigBevyExt;
             let mut cmds = app.world_mut().commands();
-            let p = parent_cfg.spawn_bevy::<astrodyn::Earth>(&mut cmds, &[earth]);
+            let p = parent_cfg.spawn_bevy::<astrodyn::Earth>(&mut cmds);
             app.world_mut().flush();
             // 3-DOF parents that participate in a mass tree need an
             // explicit `RotationalStateC` so the kinematic walk can
@@ -1457,8 +1457,11 @@ mod tests {
                     position: parent_pos,
                     velocity: DVec3::ZERO,
                 }),
-                crate::GravityControlsC(astrodyn::GravityControls::<Entity> {
-                    controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                crate::GravityControlsC(astrodyn::GravityControls {
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 }),
                 crate::GravityAccelerationC::default(),
                 ExternalForceC::default(),

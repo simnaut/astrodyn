@@ -49,19 +49,20 @@ fn ephemeris_lookup_destructures_all_fields() {
 
 #[test]
 fn frame_switch_target_missing_destructures_all_fields() {
+    let missing = astrodyn::named_body_frame_uid("no-such-source");
     let err = StepError::FrameSwitchTargetMissing {
         body_idx: 3,
-        target_source: 99,
+        target: missing.clone(),
         num_sources: 4,
     };
     match err {
         StepError::FrameSwitchTargetMissing {
             body_idx,
-            target_source,
+            target,
             num_sources,
         } => {
             assert_eq!(body_idx, 3);
-            assert_eq!(target_source, 99);
+            assert_eq!(target, missing);
             assert_eq!(num_sources, 4);
         }
         StepError::EphemerisLookup { .. } => panic!("matched the wrong variant"),
@@ -72,7 +73,7 @@ fn frame_switch_target_missing_destructures_all_fields() {
 fn step_error_implements_core_error() {
     let err = StepError::FrameSwitchTargetMissing {
         body_idx: 0,
-        target_source: 0,
+        target: astrodyn::named_body_frame_uid("no-such-source"),
         num_sources: 0,
     };
     // Smoke check: the trait composition (Display + core::error::Error)

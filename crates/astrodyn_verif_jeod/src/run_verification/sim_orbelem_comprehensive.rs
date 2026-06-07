@@ -74,7 +74,7 @@ const NUM_STEPS: usize = 1;
 fn build_orbelem_comprehensive(mu_earth: f64, body: TranslationalState) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, DT_S);
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -95,10 +95,15 @@ fn build_orbelem_comprehensive(mu_earth: f64, body: TranslationalState) -> Simul
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&body),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth),
+            orbital_elements_source: Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             ..Default::default()
         },
         ..VehicleConfig::named("sim-orbelem-comprehensive-0")

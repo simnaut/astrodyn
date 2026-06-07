@@ -1794,7 +1794,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -1824,7 +1824,10 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named(name)
         };
@@ -1899,7 +1902,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -1933,7 +1936,10 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named(name)
         };
@@ -1990,7 +1996,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2014,7 +2020,10 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named(name)
         };
@@ -2077,7 +2086,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2105,7 +2114,10 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named(name)
         };
@@ -2152,7 +2164,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2193,7 +2205,10 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named(name)
         };
@@ -2296,7 +2311,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2332,7 +2347,10 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named("mass-tree-8")
         });
@@ -2488,7 +2506,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2519,7 +2537,10 @@ mod tests {
             integrator: IntegratorType::Rk4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named("mass-tree-7")
         });
@@ -2834,7 +2855,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2864,7 +2885,10 @@ mod tests {
             integrator: IntegratorType::GaussJackson(gj_cfg),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named("mass-tree-6")
         });
@@ -2928,7 +2952,7 @@ mod tests {
         let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
         let mut sim = Simulation::new(time, dt);
 
-        let earth = sim.add_source(
+        let _earth = sim.add_source(
             "Earth",
             GravitySourceEntry {
                 source: GravitySource {
@@ -2952,7 +2976,10 @@ mod tests {
             integrator: IntegratorType::Abm4,
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(1000.0)))),
             gravity_controls: GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             },
             ..VehicleConfig::named("mass-tree-5")
         });

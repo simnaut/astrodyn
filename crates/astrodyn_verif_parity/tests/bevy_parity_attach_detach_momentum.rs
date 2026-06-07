@@ -1317,7 +1317,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
             ),
             MassBodyIdC(id_a),
-            IntegSourceC(Some(source_a)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceA>,
+            >())),
         ))
         .id();
     let child_entity = app
@@ -1337,7 +1339,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_runs_combine
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
             ),
             MassBodyIdC(id_b),
-            IntegSourceC(Some(source_b)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceB>,
+            >())),
         ))
         .id();
 
@@ -1658,7 +1662,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
             }),
         ))
         .id();
-    let source_b = app
+    let _source_b = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -1696,7 +1700,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
             ),
             MassBodyIdC(id_a),
-            IntegSourceC(Some(source_a)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceA>,
+            >())),
         ))
         .id();
     let child_entity = app
@@ -1716,7 +1722,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_cross_integ_frame_rewrites_chi
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
             ),
             MassBodyIdC(id_b),
-            IntegSourceC(Some(source_b)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceB>,
+            >())),
         ))
         .id();
 
@@ -1951,7 +1959,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_post_frame_switch_same_integ_f
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
             ),
             MassBodyIdC(id_a),
-            IntegSourceC(Some(source)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >())),
         ))
         .id();
     // Child: configured root-integrated (`IntegSourceC(None)`) to
@@ -2126,7 +2136,7 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
     let id_body = tree.add_body("Body".into(), body_mass);
     app.insert_resource(MassTreeR(tree));
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -2158,7 +2168,10 @@ fn bevy_parity_attach_detach_momentum_bevy_detached_body_skips_force_pipeline() 
             ),
             MassBodyIdC(id_body),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -2519,7 +2532,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
     // evaluation between snapshot and writeback contributes nothing.
     let time = RunnerSimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+    let _inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -2544,7 +2557,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -2557,7 +2570,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_attach_detach_momentum(
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -2858,7 +2871,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             }),
         ))
         .id();
-    let source_b = app
+    let _source_b = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -2895,7 +2908,9 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
             ),
             MassBodyIdC(id_a),
-            IntegSourceC(Some(source_a)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceA>,
+            >())),
         ))
         .id();
     let child_entity = app
@@ -2915,7 +2930,9 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(child_mass)),
             ),
             MassBodyIdC(id_b),
-            IntegSourceC(Some(source_b)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<tags::SourceB>,
+            >())),
         ))
         .id();
     app.world_mut().run_schedule(Startup);
@@ -2966,7 +2983,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             marker_only: false,
         },
     );
-    let runner_source_a = sim.add_source_typed::<tags::SourceA>(
+    let _runner_source_a = sim.add_source_typed::<tags::SourceA>(
         "SourceA",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -2984,7 +3001,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
             marker_only: false,
         },
     );
-    let runner_source_b = sim.add_source_typed::<tags::SourceB>(
+    let _runner_source_b = sim.add_source_typed::<tags::SourceB>(
         "SourceB",
         RunnerGravitySourceEntry {
             source: RunnerGravitySource {
@@ -3009,11 +3026,13 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
-                runner_source_a,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::SourceA>>(),
                 GravityGradient::Skip,
             )],
         },
-        integ_source: Some(runner_source_a),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<tags::SourceA>,
+        >()),
         ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-1")
     });
     let child_idx = sim.add_body(RunnerVehicleConfig {
@@ -3023,11 +3042,13 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
         integrator: RunnerIntegratorType::Rk4,
         gravity_controls: RunnerGravityControls {
             controls: vec![RunnerGravityControl::new_spherical(
-                runner_source_b,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::SourceB>>(),
                 GravityGradient::Skip,
             )],
         },
-        integ_source: Some(runner_source_b),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<tags::SourceB>,
+        >()),
         ..astrodyn::VehicleConfig::named("bevy-parity-attach-detach-momentum-0")
     });
     sim.add_body_to_tree(parent_idx, "Parent");
@@ -3109,7 +3130,7 @@ fn bevy_parity_attach_detach_momentum_bevy_runner_parity_cross_integ_frame_attac
 /// **Root-equivalent topology must NOT panic.**
 ///
 /// `astrodyn_runner` collapses the central body's inertial frame onto the
-/// root frame, so a body with `IntegSourceC(Some(earth))` and a body
+/// root frame, so a body with `IntegSourceC(Some(astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>()))` and a body
 /// with `IntegSourceC(None)` integrate in identical coordinates. The
 /// Bevy adapter splits them topologically — `Earth.inertial` lives one
 /// level below the generic root with identity state — but they remain
@@ -3159,7 +3180,7 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
     // entity whose `FrameTransC` / `FrameRotC` / `FrameAngVelC` are
     // all identity — i.e. root-equivalent.
     let mu = 3.986004415e14_f64;
-    let source = app
+    let _source = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -3195,7 +3216,9 @@ fn bevy_parity_attach_detach_momentum_bevy_attach_root_equivalent_parents_succee
                 astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(&(parent_mass)),
             ),
             MassBodyIdC(id_a),
-            IntegSourceC(Some(source)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >())),
         ))
         .id();
     // Child integrates root-relative. After registration its body-frame

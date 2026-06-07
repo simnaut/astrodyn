@@ -162,6 +162,9 @@ impl Simulation {
         let gravity_data = &self.gravity_data;
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
+        // Identity → index boundary map (issue #668): controls reference
+        // sources by FrameUid; everything below resolves through here.
+        let uid_to_idx = &self.source_uid_to_idx;
 
         // Precompute per-body relativistic "other source" lists outside the
         // closures to avoid heap allocation at every RK4 stage.
@@ -182,17 +185,19 @@ impl Simulation {
                     .iter()
                     .filter(|c| c.relativistic)
                     .filter_map(|ctrl| {
-                        let grav = gravity_data.get(ctrl.source_name)?;
-                        let sfids = &source_frame_ids[ctrl.source_name];
+                        let src_idx = *uid_to_idx.get(&ctrl.source)?;
+                        let grav = gravity_data.get(src_idx)?;
+                        let sfids = &source_frame_ids[src_idx];
                         let src_pos = frame_tree.get(sfids.inertial).state.trans.position;
                         let src_vel = grav.velocity;
                         let other: Vec<_> = controls
                             .controls
                             .iter()
-                            .filter(|c| c.source_name != ctrl.source_name)
+                            .filter(|c| c.source != ctrl.source)
                             .filter_map(|c| {
-                                let g = gravity_data.get(c.source_name)?;
-                                let sf = &source_frame_ids[c.source_name];
+                                let i = *uid_to_idx.get(&c.source)?;
+                                let g = gravity_data.get(i)?;
+                                let sf = &source_frame_ids[i];
                                 let pos = frame_tree.get(sf.inertial).state.trans.position;
                                 Some(astrodyn::relativistic::RelativisticSource {
                                     mu: g.source.mu,
@@ -220,7 +225,7 @@ impl Simulation {
         // `&body.gravity_controls` directly (no per-step clone), while
         // the contact-coupled path can pass slices of its cloned
         // `per_body_gravity_controls` snapshot.
-        let eval_body_gravity = |controls: &GravityControls<usize>,
+        let eval_body_gravity = |controls: &GravityControls,
                                  body_idx: usize,
                                  pos: DVec3,
                                  vel: DVec3,
@@ -239,8 +244,12 @@ impl Simulation {
             // integrator's stage state; shift to root inertial here per
             // RF.10 before passing to gravity. Equivalent to today's
             // `pos + origin` arithmetic, just routed through `IntegOrigin`.
-            let mut accel =
-                accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
+            let mut accel = accumulate_gravity(
+                pos + origin,
+                controls,
+                origin,
+                |uid: &astrodyn::FrameUid| {
+                    let source_id = *uid_to_idx.get(uid)?;
                     let grav = gravity_data.get(source_id)?;
                     let sfids = &source_frame_ids[source_id];
                     let position = base_positions[source_id] + base_velocities[source_id] * sub_dt;
@@ -254,8 +263,9 @@ impl Simulation {
                         delta_c20: grav.delta_c20,
                         has_delta_coeffs: grav.tidal_config.is_some(),
                     })
-                })
-                .grav_accel;
+                },
+            )
+            .grav_accel;
             let pos_eci = pos + origin;
             let vel_eci = vel + integ_vel;
             for &(mu, src_pos, src_vel, ref other) in &per_body_rel_data[body_idx] {
@@ -724,7 +734,7 @@ impl Simulation {
                 bodies_mut.iter().map(|b| b.total_force.force).collect();
             let non_contact_torque_vec: Vec<DVec3> =
                 bodies_mut.iter().map(|b| b.total_force.torque).collect();
-            let per_body_gravity_controls: Vec<GravityControls<usize>> = bodies_mut
+            let per_body_gravity_controls: Vec<GravityControls> = bodies_mut
                 .iter()
                 .map(|b| b.gravity_controls.clone())
                 .collect();
@@ -888,13 +898,17 @@ impl Simulation {
         // The lifted helper in `astrodyn::frame_orchestration` performs the
         // distance check, reparent, state copy-out, and gravity-controls
         // flip — same logic that previously lived inline here, now shared
-        // with ECS adapters (issue #71). Phase C made the helper generic
-        // over the source-id type via a closure-based source lookup; the
-        // runner uses the default `usize` instantiation.
+        // with ECS adapters (issue #71). Switch targets are FrameUids
+        // (issue #668); the resolver below restricts valid targets to
+        // *registered sources'* inertial frames — host knowledge a bare
+        // tree lookup couldn't express.
         let inertial_fids: Vec<astrodyn::FrameId> =
             self.source_frame_ids.iter().map(|sf| sf.inertial).collect();
         let num_sources = inertial_fids.len();
         let root_frame_id = self.root_frame_id;
+        // Hoisted before the `&mut self.bodies`/`&mut self.frame_tree`
+        // borrows in the loop (immutable, disjoint field).
+        let uid_to_idx = &self.source_uid_to_idx;
         for body_idx in 0..self.bodies.len() {
             let body = &mut self.bodies[body_idx];
             // The lifted `evaluate_and_apply_frame_switch` helper takes
@@ -914,18 +928,18 @@ impl Simulation {
                 &mut raw_trans,
                 &mut body.frame_switches,
                 &mut body.gravity_controls,
-                |idx| inertial_fids.get(*idx).copied(),
+                |uid| uid_to_idx.get(uid).map(|&i| inertial_fids[i]),
                 num_sources,
                 body_idx,
             )
             .map_err(
                 |FrameSwitchTargetMissing {
                      body_idx,
-                     target_source,
+                     target,
                      num_sources,
                  }| StepError::FrameSwitchTargetMissing {
                     body_idx,
-                    target_source,
+                    target,
                     num_sources,
                 },
             )?;

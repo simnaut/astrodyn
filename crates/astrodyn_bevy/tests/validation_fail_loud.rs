@@ -131,7 +131,7 @@ fn validate_jeod_invariants_should_panic_on_rotational_without_mass() {
     // `DynBody`; our adapter recovers the same fail-loud contract at
     // the validation system boundary.
     let mut app = build_minimal_app();
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -153,7 +153,10 @@ fn validate_jeod_invariants_should_panic_on_rotational_without_mass() {
         }),
         GravityAccelerationC::default(),
         GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         }),
     ));
     app.world_mut().run_schedule(Startup);
@@ -177,7 +180,7 @@ fn validate_jeod_invariants_should_panic_on_rotational_without_mass() {
 #[test]
 fn validate_jeod_invariants_panics_on_rotational_without_mass() {
     let mut app = build_minimal_app();
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -204,7 +207,10 @@ fn validate_jeod_invariants_panics_on_rotational_without_mass() {
         }),
         GravityAccelerationC::default(),
         GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         }),
     ));
 
@@ -242,7 +248,7 @@ fn validate_jeod_invariants_panics_on_rotational_without_mass() {
 #[test]
 fn validate_jeod_invariants_warns_on_uninitialized_translational_state() {
     let mut app = build_minimal_app();
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -271,7 +277,10 @@ fn validate_jeod_invariants_warns_on_uninitialized_translational_state() {
         }),
         GravityAccelerationC::default(),
         GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         }),
     ));
 

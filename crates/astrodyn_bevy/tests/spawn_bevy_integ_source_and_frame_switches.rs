@@ -22,7 +22,7 @@
 //! 1. `spawn_bevy` translates `integ_source: Some(idx)` to
 //!    `IntegSourceC(Some(source_entities[idx]))`.
 //! 2. `spawn_bevy` translates each `FrameSwitchConfig<usize>` to
-//!    `FrameSwitchConfig<Entity>` with `target_source` retagged from the
+//!    `FrameSwitchConfig` carrying the `target` identity verbatim from the
 //!    `source_entities` table; field-by-field (sense, distance, active)
 //!    is preserved.
 //! 3. `spawn_bevy` skips `IntegSourceC` insertion when `integ_source` is
@@ -32,7 +32,7 @@
 //!    path no-switch vehicles).
 //! 5. Out-of-bounds `integ_source` panics with the "Spawn all gravity
 //!    sources before calling spawn_bevy" diagnostic.
-//! 6. Out-of-bounds `FrameSwitchConfig::target_source` panics with the
+//! 6. An unresolvable `FrameSwitchConfig::target` panics with the
 //!    same diagnostic.
 //! 7. End-to-end behavior parity: a vehicle wired via `spawn_bevy` with
 //!    `integ_source` + `frame_switches` propagates bit-identically to
@@ -123,17 +123,22 @@ fn earth_then_moon_config() -> VehicleConfig {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .gravity({
-            let mut c = GravityControl::new_spherical(1_usize, GravityGradient::Skip);
+            let mut c = GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                GravityGradient::Skip,
+            );
             c.differential = true;
             c
         })
-        .integ_source(0)
+        .integ_source(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >())
         .frame_switches(vec![FrameSwitchConfig {
-            target_source: 1,
+            target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             switch_sense: SwitchSense::OnApproach,
             switch_distance: SWITCH_RADIUS,
             active: true,
@@ -145,11 +150,11 @@ fn earth_then_moon_config() -> VehicleConfig {
 fn spawn_bevy_translates_integ_source_index_to_entity() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
-    let moon = app
+    let _moon = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth> {
             // Identity = the source's own planet (issue #664); the
@@ -169,19 +174,21 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .gravity(GravityControl::new_spherical(
-            1_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             GravityGradient::Skip,
         ))
-        .integ_source(1)
+        .integ_source(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >())
         .build();
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     // Apply queued commands so the components land on the entity.
     app.world_mut().flush();
@@ -192,20 +199,22 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
         .expect("spawn_bevy must insert IntegSourceC when integ_source is Some");
     assert_eq!(
         integ.0,
-        Some(moon),
+        Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
         "integ_source index 1 must translate to the Moon entity"
     );
 }
 
 #[test]
-fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
+fn spawn_bevy_moves_frame_switch_target_identity_verbatim() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
-    let moon = app
+    let _moon = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth> {
             // Identity = the source's own planet (issue #664); the
@@ -221,7 +230,7 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
     let cfg = earth_then_moon_config();
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     app.world_mut().flush();
 
@@ -232,8 +241,9 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
     assert_eq!(switches.0.len(), 1, "switch count must be preserved");
     let sw = &switches.0[0];
     assert_eq!(
-        sw.target_source, moon,
-        "FrameSwitchConfig::target_source index 1 must translate to the Moon entity"
+        sw.target,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+        "FrameSwitchConfig::target identity must move onto the component verbatim"
     );
     assert!(matches!(sw.switch_sense, SwitchSense::OnApproach));
     assert_eq!(sw.switch_distance, SWITCH_RADIUS);
@@ -244,7 +254,7 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
 fn spawn_bevy_omits_integ_source_component_when_default() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -259,14 +269,14 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     app.world_mut().flush();
 
@@ -282,7 +292,7 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
 fn spawn_bevy_omits_frame_switches_component_when_empty() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -293,14 +303,14 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     app.world_mut().flush();
 
@@ -311,11 +321,14 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
 }
 
 #[test]
-#[should_panic(expected = "integ_source references source index")]
-fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
+#[should_panic(expected = "no registered gravity source carries that identity")]
+fn spawn_bevy_panics_on_unresolvable_integ_source() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
+    app.add_plugins(AstrodynPlugin);
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -326,22 +339,35 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
-        .integ_source(7) // out of range — only Earth was spawned
+        // Unresolvable identity — only Earth was spawned. Post-#668 the
+        // failure fires at registration (the consuming system), not at
+        // spawn: spawn_bevy moves identities verbatim.
+        .integ_source(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >())
         .build();
 
-    let mut commands_queue = app.world_mut().commands();
-    cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth]);
+    {
+        let mut commands_queue = app.world_mut().commands();
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
+    }
+    // Drive registration so register_body_frames_system observes the
+    // unresolvable IntegSourceC identity and panics naming it.
+    app.update();
 }
 
 #[test]
-#[should_panic(expected = "FrameSwitchConfig::target_source references source index")]
-fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
+#[should_panic(expected = "does not resolve to a registered gravity source")]
+fn spawn_bevy_panics_on_unresolvable_frame_switch_target() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    let earth = app
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(IntegrationDtR(DT));
+    app.add_plugins(AstrodynPlugin);
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -352,19 +378,31 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .frame_switches(vec![FrameSwitchConfig {
-            target_source: 7, // out of range
+            // Unresolvable identity — only Earth was spawned. Post-#668
+            // the startup validator (or the switch evaluation) panics
+            // naming the identity.
+            target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             switch_sense: SwitchSense::OnApproach,
             switch_distance: SWITCH_RADIUS,
             active: true,
         }])
         .build();
 
-    let mut commands_queue = app.world_mut().commands();
-    cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth]);
+    {
+        let mut commands_queue = app.world_mut().commands();
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
+    }
+    // The unresolvable target trips the startup validator (or the
+    // switch evaluation) inside FixedUpdate — drive one fixed tick.
+    app.update();
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(std::time::Duration::from_secs_f64(DT));
+    app.world_mut().run_schedule(bevy::app::FixedUpdate);
 }
 
 /// End-to-end parity: vehicle wired through `spawn_bevy` with
@@ -382,7 +420,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -403,7 +441,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let cfg = earth_then_moon_config();
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     app.world_mut().flush();
 
@@ -414,14 +452,19 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
         .expect("IntegSourceC must be present on the spawn_bevy vehicle");
     assert_eq!(
         integ.0,
-        Some(earth),
-        "integ_source index 0 must translate to the Earth entity"
+        Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
+        "integ_source identity must move onto the component verbatim"
     );
     let switches = app
         .world()
         .get::<FrameSwitchesC>(vehicle)
         .expect("FrameSwitchesC must be present on the spawn_bevy vehicle");
-    assert_eq!(switches.0[0].target_source, moon);
+    assert_eq!(
+        switches.0[0].target,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>()
+    );
 
     // Optional sanity-check: the additional Bevy components inserted by
     // the registration systems show up after the first tick.
@@ -487,8 +530,10 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
         GravitySourceEntry::third_body(&MOON, MOON_OFFSET.m_at::<RootInertial>()),
     );
 
-    let mut sim_cfg = earth_then_moon_config();
-    sim_cfg.frame_switches[0].target_source = moon_idx;
+    let sim_cfg = earth_then_moon_config();
+    let _ = moon_idx;
+    // Identity-keyed config is host-agnostic (issue #668): the same
+    // Moon target works for both backends without re-keying.
     sim.add_body(sim_cfg);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");

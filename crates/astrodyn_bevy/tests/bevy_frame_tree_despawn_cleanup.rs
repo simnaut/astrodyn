@@ -137,7 +137,7 @@ fn body_despawn_despawns_body_frame_entity() {
                 &(MassProperties::new(1000.0)),
             )),
             DynamicsConfigC(DynamicsConfig::default()),
-            GravityControlsC(GravityControls::<Entity> {
+            GravityControlsC(GravityControls {
                 controls: Vec::new(),
             }),
         ))

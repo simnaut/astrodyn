@@ -127,6 +127,22 @@ pub struct ShadowBodyC {
     pub radius: f64,
 }
 
+/// Deferred shadow-body reference carried on a **vehicle** entity
+/// (issue #668): `spawn_bevy` only holds `Commands` and cannot resolve
+/// the shadow caster's `FrameUid` to its source entity, so it records
+/// the intent here; `resolve_shadow_body_ref_system` (registration
+/// slot) resolves the identity, inserts [`ShadowBodyC`] on the *source*
+/// entity, and removes this component. A radius that disagrees with an
+/// already-present `ShadowBodyC` on the same source panics (two bodies
+/// declaring different radii for one caster is a misconfiguration).
+#[derive(Component, Debug, Clone)]
+pub struct ShadowBodyRefC {
+    /// The shadow-casting gravity source's inertial-frame identity.
+    pub source: astrodyn::FrameUid,
+    /// Body radius (m) for conical shadow computation.
+    pub radius: f64,
+}
+
 /// Cannonball SRP configuration using JEOD's `RadiationDefaultSurface` formula.
 ///
 /// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.

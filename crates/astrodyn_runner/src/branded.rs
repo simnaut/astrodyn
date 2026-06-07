@@ -33,7 +33,7 @@
 //!         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!         .three_dof_point_mass(vehicle::iss_mass())
 //!         .rk4()
-//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityGradient::Skip))
+//!         .gravity(GravityControl::new_spherical(sim.source_uid(earth_idx).clone(), GravityGradient::Skip))
 //!         .build();
 //!     let sat = sim.add_body(cfg);
 //!     sim.body(sat).trans.position.raw_si().x
@@ -151,6 +151,13 @@ impl<'sim> BrandedSimulation<'sim> {
             raw: self.inner.add_source(name, entry),
             _brand: PhantomData,
         }
+    }
+
+    /// The inertial-frame identity of a registered source — the value
+    /// gravity controls and frame switches reference it by (issue
+    /// #668). Branded passthrough of [`Simulation::source_uid`].
+    pub fn source_uid(&self, idx: SourceIdx<'sim>) -> &astrodyn::FrameUid {
+        self.inner.source_uid(idx.raw)
     }
 
     /// Add a dynamic body. Returns a brand-typed `BodyIdx<'sim>`.
@@ -371,7 +378,7 @@ impl Simulation {
     ///         )
     ///         .three_dof_point_mass(vehicle::iss_mass())
     ///         .rk4()
-    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), GravityGradient::Skip))
+    ///         .gravity(GravityControl::new_spherical(sim.source_uid(earth_idx).clone(), GravityGradient::Skip))
     ///         .build();
     ///     let sat = sim.add_body(cfg);
     ///     sim.body(sat).trans.position.raw_si().length()

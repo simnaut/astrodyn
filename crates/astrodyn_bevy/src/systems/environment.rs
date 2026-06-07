@@ -58,6 +58,8 @@ pub fn gravity_computation_system<P: Planet>(
         Without<crate::DetachedSubtreeStateC>,
     >,
     sources: Query<(
+        Entity,
+        &FrameUidC,
         &GravitySourceC,
         Option<&PlanetFixedRotationC<P>>,
         &SourceInertialPositionC,
@@ -66,6 +68,14 @@ pub fn gravity_computation_system<P: Planet>(
         Option<&TidalConfigC>,
     )>,
 ) {
+    // Per-run identity → source-entity map (issue #668): controls
+    // reference sources by FrameUid; sources are few (≤ a handful per
+    // App), so a same-tick scan is cheap and — unlike a cached
+    // resource — can never be stale within the registration tick.
+    let source_by_uid: std::collections::HashMap<&astrodyn::FrameUid, Entity> = sources
+        .iter()
+        .map(|(entity, uid, ..)| (&uid.0, entity))
+        .collect();
     // Project each `(entity, state, controls, accel, body_frame)` row
     // from `bodies.iter_mut()` into `(entity, GravityBodyInputs,
     // store_closure)`. The closure captures the row's
@@ -98,22 +108,28 @@ pub fn gravity_computation_system<P: Planet>(
 
     astrodyn::run_gravity_stage(
         body_iter,
-        |entity, source_entity| match sources.get(source_entity) {
-            Ok((source, rot, pos, _, tidal, tidal_config)) => Some(astrodyn::ResolvedSource {
-                source: &source.0,
-                rotation: rot.map(|r| r.0.matrix_ref()),
-                position: pos.0.raw_si(),
-                delta_c20: tidal.map_or(0.0, |t| t.0.value),
-                // JEOD gates on n_deltacoeffs > 0 (tidal config
-                // present), not on whether ΔC20 component exists.
-                has_delta_coeffs: tidal_config.is_some(),
-            }),
-            Err(_) => {
+        |entity, uid: &astrodyn::FrameUid| {
+            let source_entity = *source_by_uid.get(uid).unwrap_or_else(|| {
                 panic!(
-                    "Entity {entity:?}: GravityControl references source \
-                     {source_entity:?} which does not exist or lacks \
-                     GravitySourceC + SourceInertialPositionC."
-                );
+                    "Entity {entity:?}: GravityControl references source `{uid}` \
+                     but no registered gravity source carries that identity. \
+                     Spawn the source (PlanetBundle / populate_app / explicit \
+                     FrameUidC) before stepping, or fix the control's identity."
+                )
+            });
+            match sources.get(source_entity) {
+                Ok((_, _, source, rot, pos, _, tidal, tidal_config)) => {
+                    Some(astrodyn::ResolvedSource {
+                        source: &source.0,
+                        rotation: rot.map(|r| r.0.matrix_ref()),
+                        position: pos.0.raw_si(),
+                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
+                        // JEOD gates on n_deltacoeffs > 0 (tidal config
+                        // present), not on whether ΔC20 component exists.
+                        has_delta_coeffs: tidal_config.is_some(),
+                    })
+                }
+                Err(_) => unreachable!("source_by_uid only indexes live source rows"),
             }
         },
         // Source velocity flows through the planet-agnostic
@@ -125,15 +141,19 @@ pub fn gravity_computation_system<P: Planet>(
         // zero velocity for the relativistic correction — callers who
         // want PPN to see source motion must attach
         // `SourceInertialVelocityC` explicitly.
-        |_entity, source_entity| {
-            sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                let velocity = v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO);
-                astrodyn::ResolvedRelativisticSource {
-                    mu: s.mu,
-                    position: p.0.raw_si(),
-                    velocity,
-                }
-            })
+        |_entity, uid: &astrodyn::FrameUid| {
+            let source_entity = *source_by_uid.get(uid)?;
+            sources
+                .get(source_entity)
+                .ok()
+                .map(|(_, _, s, _, p, v, _, _)| {
+                    let velocity = v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO);
+                    astrodyn::ResolvedRelativisticSource {
+                        mu: s.mu,
+                        position: p.0.raw_si(),
+                        velocity,
+                    }
+                })
         },
     );
 }

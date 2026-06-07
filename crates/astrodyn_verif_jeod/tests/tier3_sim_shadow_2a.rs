@@ -70,7 +70,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     let mut sim = Simulation::new(time, dt);
 
     // Earth at origin
-    let earth = sim.add_source(
+    let _earth = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -130,7 +130,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             &(astrodyn::MassProperties::new(1.0)),
         )),
         shadow_body: Some(ShadowBody {
-            source_idx: earth,
+            source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             radius: R_EARTH,
         }),
         srp: Some(SrpModel::Cannonball {

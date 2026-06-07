@@ -86,7 +86,7 @@ const MU_SUN: f64 = astrodyn::SUN.shape.mu;
 /// [`SimulationBuilder`] so both runtimes ingest the same shape.
 ///
 /// Returns the builder and the Moon source index (callers need it to
-/// pin the same `target_source` on the runner-side
+/// pin the same `target` identity on the runner-side
 /// `FrameSwitchConfig<usize>`).
 fn apollo8_builder(enable_switch: bool) -> SimulationBuilder {
     // DE405 lives under verif_jeod/assets/ (JEOD-parity-only, large
@@ -139,7 +139,7 @@ fn apollo8_builder(enable_switch: bool) -> SimulationBuilder {
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sb.add_source("Earth", earth_entry);
+    let _earth_idx = sb.add_source("Earth", earth_entry);
 
     let moon_idx = sb.add_source(
         "Moon",
@@ -181,14 +181,21 @@ fn apollo8_builder(enable_switch: bool) -> SimulationBuilder {
         )),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth_idx, GravityGradient::Skip),
-                GravityControl::new_third_body(sun_idx),
-                GravityControl::new_third_body(moon_idx),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         frame_switches: if enable_switch {
             vec![FrameSwitchConfig {
-                target_source: moon_idx,
+                target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
                 switch_sense: SwitchSense::OnApproach,
                 switch_distance: SWITCH_DISTANCE,
                 active: true,

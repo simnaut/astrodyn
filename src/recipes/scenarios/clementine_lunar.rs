@@ -14,6 +14,8 @@ use glam::DVec3;
 use crate::recipes::{constants, earth, epoch, moon, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
 use crate::SimulationBuilder;
+use astrodyn_quantities::frame::{Earth, Moon, PlanetInertial, Sun};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 /// Clementine probe in low lunar orbit at the 1994 mission epoch.
 ///
@@ -39,8 +41,8 @@ pub fn clementine_lunar() -> SimulationBuilder {
     // Sources: Moon (central), Earth/Sun (third-body, positions
     // overwritten each step by the ephemeris stage if mission code
     // sets one up).
-    let moon_idx = sb.add_source("Moon", moon::point_mass());
-    let earth_idx = sb.add_source(
+    let _ = sb.add_source("Moon", moon::point_mass());
+    let _ = sb.add_source(
         "Earth",
         earth::third_body(
             DVec3::new(-3.85e8, 0.0, 0.0).m_at::<astrodyn_quantities::frame::RootInertial>(),
@@ -74,13 +76,17 @@ pub fn clementine_lunar() -> SimulationBuilder {
         .three_dof_point_mass(vehicle::clementine_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            moon_idx,
+            FrameUid::of::<PlanetInertial<Moon>>(),
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(earth_idx))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(FrameUid::of::<
+            PlanetInertial<Earth>,
+        >()))
+        .gravity(GravityControl::new_third_body(FrameUid::of::<
+            PlanetInertial<Sun>,
+        >()))
         .cannonball_srp(5.0, 0.4, 0.4)
-        .shadow(moon_idx, &crate::MOON)
+        .shadow(FrameUid::of::<PlanetInertial<Moon>>(), &crate::MOON)
         .build();
     sb.add_body(vehicle);
     sb

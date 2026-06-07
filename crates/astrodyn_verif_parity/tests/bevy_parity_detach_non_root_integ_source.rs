@@ -182,7 +182,9 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
             ),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
     let child_entity = app
@@ -204,7 +206,9 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
             ),
             FrameDerivativesC::default(),
             GravityControlsC(GravityControls { controls: vec![] }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
 

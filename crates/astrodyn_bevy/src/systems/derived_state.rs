@@ -45,7 +45,7 @@ pub fn orbital_elements_system<P: Planet>(
         &OrbitalElementsConfigC,
         &mut OrbitalElementsC<P>,
     )>,
-    sources: Query<&GravitySourceC>,
+    sources: Query<(&FrameUidC, &GravitySourceC)>,
 ) {
     for (entity, state, config, mut elements) in &mut query {
         // JEOD_INV: OE.01 — surface a `gravity_source` wiring miss as
@@ -63,18 +63,20 @@ pub fn orbital_elements_system<P: Planet>(
         // bodies, so a `OrbitalElementsConfigC` inserted after the
         // body's spawn tick (or on an entity without
         // `GravityControlsC`) reaches the system unchecked.
-        let source = sources.get(config.gravity_source).unwrap_or_else(|_| {
-            panic!(
-                "{entity:?} orbital elements: \
-                 OrbitalElementsConfigC.gravity_source = {gravity_source:?} \
-                 does not resolve to a GravitySourceC component. Insert \
-                 GravitySourceC on that entity (via SourceBundle / PlanetBundle \
-                 / SunBundle / MoonBundle at spawn time), or point \
-                 gravity_source at a gravity-source entity that already has \
-                 the component.",
-                gravity_source = config.gravity_source
-            )
-        });
+        let source = sources
+            .iter()
+            .find(|(uid, _)| uid.0 == config.gravity_source)
+            .map(|(_, s)| s)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{entity:?} orbital elements: \
+                     OrbitalElementsConfigC.gravity_source = `{gravity_source}` \
+                     does not resolve to a registered gravity source. Spawn the \
+                     source (PlanetBundle / SunBundle / MoonBundle / populate_app) \
+                     with that identity, or fix the config's identity.",
+                    gravity_source = config.gravity_source
+                )
+            });
         // `OrbitalElementsC<P>` and the typed kernel result both pin
         // the planet to `P`. Mint a `GravParam<P>` from the source's
         // f64 mu at the call boundary; the caller is responsible for
@@ -193,7 +195,7 @@ pub fn geodetic_system<P: Planet>(
         &GeodeticConfigC,
         &mut GeodeticStateC,
     )>,
-    planets: Query<&PlanetFixedRotationC<P>>,
+    planets: Query<(&FrameUidC, &PlanetFixedRotationC<P>)>,
 ) {
     for (entity, state, config, mut geodetic) in &mut query {
         // JEOD_INV: AT.03 — surface a `GeodeticConfigC.planet` wiring
@@ -209,18 +211,22 @@ pub fn geodetic_system<P: Planet>(
         // at a gravity-source entity spawned without a `rotation_model`
         // (so `spawn_source` skipped the rotation insert), or at a
         // non-planet entity entirely.
-        let rot = planets.get(config.planet).unwrap_or_else(|_| {
-            panic!(
-                "{entity:?} geodetic state: \
-                 GeodeticConfigC.planet = {planet_entity:?} does not resolve \
-                 to PlanetFixedRotationC<{p}>. Spawn the planet source with a \
-                 non-`None` `rotation_model` (or hand-insert \
-                 `PlanetFixedRotationC<{p}>` on the existing planet entity) and \
-                 point GeodeticConfigC.planet at it.",
-                planet_entity = config.planet,
-                p = std::any::type_name::<P>(),
-            )
-        });
+        let rot = planets
+            .iter()
+            .find(|(uid, _)| uid.0 == config.planet)
+            .map(|(_, r)| r)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{entity:?} geodetic state: \
+                     GeodeticConfigC.planet = `{planet_uid}` does not resolve to \
+                     an entity carrying PlanetFixedRotationC<{p}>. Spawn the planet \
+                     source with that identity and a non-`None` `rotation_model` \
+                     (or hand-insert `PlanetFixedRotationC<{p}>` on it), or fix \
+                     the config's identity.",
+                    planet_uid = config.planet,
+                    p = std::any::type_name::<P>(),
+                )
+            });
         // Position is already typed `Position<PlanetInertial<P>>` —
         // matches the typed kernel's `P` directly, no relabel needed.
         // Geodetic stays in planet-inertial throughout (no integ-origin
@@ -393,20 +399,22 @@ mod tests {
     /// are enough to drive the system.
     fn spawn_vehicle_with_state(mu: f64, pos: DVec3, vel: DVec3) -> App {
         let mut app = create_minimal_test_app();
-        let source = app
-            .world_mut()
-            .spawn(GravitySourceC(GravitySource {
+        app.world_mut().spawn((
+            crate::components::FrameUidC(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
+            ),
+            GravitySourceC(GravitySource {
                 mu,
                 model: GravityModel::PointMass,
-            }))
-            .id();
+            }),
+        ));
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: pos,
                 velocity: vel,
             }),
             OrbitalElementsConfigC {
-                gravity_source: source,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
             },
             OrbitalElementsC::<Earth>::default(),
         ));
@@ -493,17 +501,16 @@ mod tests {
     /// real-world failure mode (the caller spawned a planet entity
     /// before the bundle that inserts `GravitySourceC` ran).
     #[test]
-    #[should_panic(expected = "does not resolve to a GravitySourceC component")]
+    #[should_panic(expected = "does not resolve to a registered gravity source")]
     fn orbital_gravity_source_lookup_miss_panics_with_caller_fix() {
         let mut app = create_minimal_test_app();
-        let bad_source = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
             }),
             OrbitalElementsConfigC {
-                gravity_source: bad_source,
+                gravity_source: astrodyn::named_body_frame_uid("derived-state-no-such-source"),
             },
             OrbitalElementsC::<Earth>::default(),
         ));
@@ -521,17 +528,16 @@ mod tests {
     /// misconfiguration shape.
     // JEOD_INV: AT.03 — planet-fixed rotation required for geodetic altitude
     #[test]
-    #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
+    #[should_panic(expected = "does not resolve to an entity carrying PlanetFixedRotationC")]
     fn geodetic_planet_lookup_miss_panics_with_caller_fix() {
         let mut app = create_minimal_test_app();
-        let bad_planet = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
             GeodeticConfigC {
-                planet: bad_planet,
+                planet: astrodyn::named_body_frame_uid("derived-state-no-such-source"),
                 r_eq: astrodyn::EARTH.shape.r_eq(),
                 r_pol: astrodyn::EARTH.shape.r_pol(),
             },
@@ -596,12 +602,12 @@ mod tests {
         // Planet entity carries `PlanetFixedRotationC<P>` (what
         // `spawn_source` inserts when `rotation_model != None`) but
         // *not* `PlanetC` (what `PlanetBundle::from_config` inserts).
-        let planet = app
-            .world_mut()
-            .spawn(PlanetFixedRotationC::<Earth>(FrameTransform::from_matrix(
-                glam::DMat3::IDENTITY,
-            )))
-            .id();
+        app.world_mut().spawn((
+            crate::components::FrameUidC(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
+            ),
+            PlanetFixedRotationC::<Earth>(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+        ));
         let vehicle = app
             .world_mut()
             .spawn((
@@ -610,7 +616,7 @@ mod tests {
                     velocity: DVec3::new(0.0, 7500.0, 0.0),
                 }),
                 GeodeticConfigC {
-                    planet,
+                    planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
                     r_eq: EARTH.shape.r_eq(),
                     r_pol: EARTH.shape.r_pol(),
                 },

@@ -156,7 +156,7 @@ fn build_app() -> (App, Entity) {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -196,7 +196,10 @@ fn build_app() -> (App, Entity) {
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -482,7 +485,7 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
     app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -526,7 +529,10 @@ fn bevy_parity_body_action_lifecycle_body_action_init_trans_resets_abm4_history(
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -654,7 +660,7 @@ fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history()
     app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -699,7 +705,10 @@ fn bevy_parity_body_action_lifecycle_body_action_init_mass_resets_abm4_history()
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::Abm4),
             Abm4StateC(Abm4State::new()),
@@ -835,7 +844,7 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
     app.insert_resource(IntegrationDtR(SIM_DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -875,7 +884,10 @@ fn bevy_parity_body_action_lifecycle_body_action_startup_message_applies_exactly
                 three_dof: true,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();

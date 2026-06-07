@@ -90,7 +90,10 @@ fn bevy_parity_drag_atmosphere_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -210,7 +213,10 @@ fn bevy_parity_drag_constant_density_drag_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -319,7 +325,10 @@ fn bevy_parity_drag_met_atmosphere_drag_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))
@@ -425,7 +434,10 @@ fn bevy_parity_drag_met_run5a() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             DragConfigC::from_untyped(&DragConfig {
                 cd: 2.2,
@@ -546,7 +558,10 @@ fn bevy_parity_drag_run6b() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             DragConfigC::from_untyped(&drag_config),
         ))

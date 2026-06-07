@@ -104,7 +104,7 @@ fn tier3_simulation_mars_dawn() {
     let mut sim = Simulation::new(time, 10.0);
 
     // Mars at origin with IAU rotation + MRO110B2 SH gravity
-    let mars = sim.add_source(
+    let _mars = sim.add_source(
         "Mars",
         GravitySourceEntry {
             source: GravitySource {
@@ -149,8 +149,15 @@ fn tier3_simulation_mars_dawn() {
         }),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(mars, 110, 110, GravityGradient::Skip),
-                GravityControl::new_third_body(sun),
+                GravityControl::new_nonspherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
+                    110,
+                    110,
+                    GravityGradient::Skip,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
             ],
         },
         ..VehicleConfig::named("tier3-sim-mars-orbit-1")
@@ -240,7 +247,7 @@ fn build_phobos_sim(init_pos: DVec3, init_vel: DVec3) -> Simulation {
     let sun_pos_from_mars = sun_pos_typed.raw_si();
 
     let mut sim = Simulation::new(time, 10.0);
-    let mars = sim.add_source(
+    let _mars = sim.add_source(
         "Mars",
         GravitySourceEntry {
             source: GravitySource {
@@ -283,8 +290,15 @@ fn build_phobos_sim(init_pos: DVec3, init_vel: DVec3) -> Simulation {
         }),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(mars, 8, 8, GravityGradient::Skip),
-                GravityControl::new_third_body(sun),
+                GravityControl::new_nonspherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
+                    8,
+                    8,
+                    GravityGradient::Skip,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
             ],
         },
         ..VehicleConfig::named("tier3-sim-mars-orbit-0")

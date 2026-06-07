@@ -1323,7 +1323,7 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
 
     let earth_grav = GravityControls {
         controls: vec![GravityControl::new_spherical(
-            earth_idx,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         )],
     };

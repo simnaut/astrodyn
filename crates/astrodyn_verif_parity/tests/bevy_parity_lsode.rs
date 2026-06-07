@@ -144,7 +144,7 @@ fn build_lsode_scenario(initial_state: TranslationalState) -> SimulationBuilder 
         central: true,
         marker_only: false,
     };
-    let earth_idx = b.add_source("Earth", earth);
+    let _earth_idx = b.add_source("Earth", earth);
 
     let cfg = LsodeConfig::non_stiff_adams().with_tolerances(2.3e-16, 0.0);
     b.add_body(VehicleConfig {
@@ -152,7 +152,7 @@ fn build_lsode_scenario(initial_state: TranslationalState) -> SimulationBuilder 
         integrator: IntegratorType::Lsode(cfg),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

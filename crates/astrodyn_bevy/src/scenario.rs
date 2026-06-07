@@ -59,7 +59,7 @@
 //! sources[i]                →  Entity with GravitySourceC + …
 //! source_ephem_bodies[i]    →  EphemerisBodyC on the source entity
 //! sun_source / moon_source  →  SunMarker / MoonMarker on the source entity
-//! bodies[i]                 →  cfg.spawn_bevy::<P>(commands, &source_entities)
+//! bodies[i]                 →  cfg.spawn_bevy::<P>(commands)
 //! integrator (GJ/ABM4/LSODE)→  GaussJacksonStateC / Abm4StateC / LsodeStateC inserted
 //! mass_tree_names[i]        →  pre-allocated MassBodyIdC(id) on the body
 //! mass_tree_attachments     →  MassTreeR.attach() + MassChildOf on child
@@ -441,23 +441,17 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
 
         // ── Vehicles ──
         //
-        // `VehicleConfig.shadow_body` carries a *source* index — the
-        // matching `ShadowBodyC` Bevy component lives on the source
-        // entity, not the body. The runner reads
-        // `body.shadow_body.source_idx` directly each step; the Bevy
-        // pipeline iterates entities with `ShadowBodyC` instead, so the
-        // bridge installs the marker on the named source here. We
-        // collect the (source_idx, radius) pairs as we walk `bodies`
-        // and apply them after spawning so the move into
-        // `spawn_vehicle` doesn't need to fork a per-cfg field read.
-        let mut shadow_marker_inserts: Vec<(usize, f64)> = Vec::new();
+        // `VehicleConfig.shadow_body` names a *source* by identity —
+        // `spawn_bevy` records it as a body-side `ShadowBodyRefC` and
+        // `resolve_shadow_body_ref_system` (registration slot) installs
+        // the `ShadowBodyC` marker on the resolved source entity before
+        // the SRP stage runs, with a radius-agreement assert for bodies
+        // sharing a caster. One path serves populate_app and direct
+        // spawn_bevy callers alike (issue #668).
         let mut body_entities = Vec::with_capacity(bodies.len());
         for (i, cfg) in bodies.into_iter().enumerate() {
-            if let Some(sb) = cfg.shadow_body {
-                shadow_marker_inserts.push((sb.source_idx, sb.radius));
-            }
             let integrator = cfg.integrator;
-            let entity = spawn_vehicle::<P>(app, cfg, &source_entities);
+            let entity = spawn_vehicle::<P>(app, cfg);
             // Auto-init integrator state, mirroring
             // `Simulation::validate()`'s GJ / ABM4 auto-init.
             match integrator {
@@ -483,39 +477,6 @@ impl SimulationBuilderBevyExt for SimulationBuilder {
                 app.world_mut().entity_mut(entity).insert(MassBodyIdC(id));
             }
             body_entities.push(entity);
-        }
-
-        // Per-source `ShadowBodyC` insertions collected above. The
-        // marker is idempotent — if multiple bodies name the same source
-        // their radii must agree (the runner's
-        // `body.shadow_body.radius` is per-body but the Bevy pipeline
-        // reads `ShadowBodyC.radius` per source); the assertion catches
-        // the mismatch loudly rather than silently overwriting.
-        for (source_idx, radius) in shadow_marker_inserts {
-            let source_entity = *source_entities.get(source_idx).unwrap_or_else(|| {
-                panic!(
-                    "populate_app: VehicleConfig.shadow_body.source_idx {source_idx} \
-                     out of range ({sources_len} sources)"
-                )
-            });
-            // Read any existing radius first to fail loudly on a mismatch.
-            let existing = app
-                .world()
-                .get::<crate::components::ShadowBodyC>(source_entity)
-                .map(|c| c.radius);
-            if let Some(prev) = existing {
-                assert!(
-                    prev.to_bits() == radius.to_bits(),
-                    "populate_app: source {source_idx} already has \
-                     ShadowBodyC {{ radius: {prev} }} but a later body \
-                     specifies radius {radius}; bodies sharing a shadow \
-                     body must agree on its radius."
-                );
-                continue;
-            }
-            app.world_mut()
-                .entity_mut(source_entity)
-                .insert(crate::components::ShadowBodyC { radius });
         }
 
         // ── Mass tree resource + child-edges ──
@@ -706,14 +667,10 @@ fn spawn_source<P: Planet>(
 /// [`VehicleConfigBevyExt::spawn_bevy`]. Lives in this module only to keep
 /// the `populate_app` body readable; the actual translation logic stays in
 /// `lib.rs`.
-fn spawn_vehicle<P: Planet>(
-    app: &mut App,
-    cfg: VehicleConfig,
-    source_entities: &[Entity],
-) -> Entity {
+fn spawn_vehicle<P: Planet>(app: &mut App, cfg: VehicleConfig) -> Entity {
     let entity = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<P>(&mut commands, source_entities)
+        cfg.spawn_bevy::<P>(&mut commands)
     };
     // Apply queued component insertions so subsequent post-processing
     // (e.g. `MassBodyIdC` insertion below) lands on the same entity.
@@ -774,13 +731,13 @@ mod tests {
             None,
         );
         earth.central = true;
-        let earth_idx = b.add_source("Earth", earth);
+        let _earth_idx = b.add_source("Earth", earth);
         b.add_body(VehicleConfig {
             // allowed: typed↔raw kernel boundary (#397)
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    earth_idx,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Skip,
                 )],
             },
@@ -869,7 +826,7 @@ mod tests {
             None,
         );
         earth.central = true;
-        let earth_idx = b.add_source("Earth", earth);
+        let _earth_idx = b.add_source("Earth", earth);
         // Add two third bodies so we exercise the multi-source path.
         let _sun_idx = b.add_source(
             "Sun",
@@ -902,7 +859,7 @@ mod tests {
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    earth_idx,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Skip,
                 )],
             },

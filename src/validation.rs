@@ -7,6 +7,7 @@
 
 use astrodyn_dynamics::{DynamicsConfig, MassProperties, TranslationalState};
 use astrodyn_gravity::{GravityControls, GravitySource};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 /// Validation error for a body's configuration.
 ///
@@ -43,12 +44,21 @@ pub enum ValidationError {
     },
     /// `sun_source` index is out of range for the sources table.
     SunSourceOutOfRange { index: usize, num_sources: usize },
-    /// `shadow_body` index is out of range for the sources table.
-    ShadowBodyOutOfRange { index: usize, num_sources: usize },
-    /// `geodetic_planet` source index is out of range for the sources table.
-    GeodeticPlanetOutOfRange { index: usize, num_sources: usize },
-    /// `orbital_elements_source` index is out of range for the sources table.
-    OrbitalElementsSourceOutOfRange { index: usize, num_sources: usize },
+    /// `shadow_body` source identity does not resolve to a registered source.
+    ShadowBodyUnresolved {
+        target: FrameUid,
+        num_sources: usize,
+    },
+    /// `geodetic` source identity does not resolve to a registered source.
+    GeodeticPlanetUnresolved {
+        target: FrameUid,
+        num_sources: usize,
+    },
+    /// `orbital_elements_source` identity does not resolve to a registered source.
+    OrbitalElementsSourceUnresolved {
+        target: FrameUid,
+        num_sources: usize,
+    },
     /// `atmosphere_planet_source` index is out of range for the sources table.
     AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
     /// `moon_source` index is out of range for the sources table.
@@ -71,19 +81,17 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
-    /// Frame switch `target_source` index exceeds number of gravity sources.
-    FrameSwitchTargetSourceOutOfRange {
+    /// Frame switch `target` identity does not resolve to a registered
+    /// gravity source.
+    FrameSwitchTargetUnresolved {
         body_idx: usize,
-        target_source: usize,
+        target: FrameUid,
         num_sources: usize,
     },
-    /// Frame switch `target_source` is not in the body's gravity controls.
+    /// Frame switch `target` is not in the body's gravity controls.
     /// The post-switch gravity reclassification requires a control entry for
     /// the target source (it becomes the non-differential central body).
-    FrameSwitchTargetSourceNotInControls {
-        body_idx: usize,
-        target_source: usize,
-    },
+    FrameSwitchTargetNotInControls { body_idx: usize, target: FrameUid },
     /// Body uses a non-root integration frame (or has an active frame switch to
     /// a non-root frame) but has features that assume root-inertial coordinates.
     NonRootFrameWithRootDependentFeatures { body_idx: usize },
@@ -214,25 +222,37 @@ impl std::fmt::Display for ValidationError {
                      Ensure moon_source refers to a valid source index."
                 )
             }
-            Self::ShadowBodyOutOfRange { index, num_sources } => {
+            Self::ShadowBodyUnresolved {
+                target,
+                num_sources,
+            } => {
                 write!(
                     f,
-                    "shadow_body index {index} is out of range (only {num_sources} sources). \
-                     Ensure shadow_body refers to a valid source index."
+                    "shadow_body source `{target}` does not resolve to a registered gravity \
+                     source ({num_sources} sources registered). Reference the shadow-casting \
+                     source by its inertial-frame identity."
                 )
             }
-            Self::GeodeticPlanetOutOfRange { index, num_sources } => {
+            Self::GeodeticPlanetUnresolved {
+                target,
+                num_sources,
+            } => {
                 write!(
                     f,
-                    "geodetic_planet index {index} is out of range (only {num_sources} sources). \
-                     Ensure geodetic_planet refers to a valid source index."
+                    "geodetic source `{target}` does not resolve to a registered gravity \
+                     source ({num_sources} sources registered). Reference the geodetic \
+                     planet by its inertial-frame identity."
                 )
             }
-            Self::OrbitalElementsSourceOutOfRange { index, num_sources } => {
+            Self::OrbitalElementsSourceUnresolved {
+                target,
+                num_sources,
+            } => {
                 write!(
                     f,
-                    "orbital_elements_source index {index} is out of range (only {num_sources} sources). \
-                     Ensure orbital_elements_source refers to a valid source index."
+                    "orbital_elements_source `{target}` does not resolve to a registered \
+                     gravity source ({num_sources} sources registered). Reference the \
+                     orbital-elements source by its inertial-frame identity."
                 )
             }
             Self::AtmospherePlanetOutOfRange { index, num_sources } => {
@@ -305,27 +325,25 @@ impl std::fmt::Display for ValidationError {
                      moon_source. Set Simulation::moon_source for earth lighting computation."
                 )
             }
-            Self::FrameSwitchTargetSourceOutOfRange {
+            Self::FrameSwitchTargetUnresolved {
                 body_idx,
-                target_source,
+                target,
                 num_sources,
             } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch target_source index {target_source} \
-                     is out of range (simulation has {num_sources} gravity sources)."
+                    "Body {body_idx}: frame switch target `{target}` does not resolve to \
+                     a registered gravity source (simulation has {num_sources} gravity \
+                     sources)."
                 )
             }
-            Self::FrameSwitchTargetSourceNotInControls {
-                body_idx,
-                target_source,
-            } => {
+            Self::FrameSwitchTargetNotInControls { body_idx, target } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch target_source index {target_source} \
-                     is not in the body's gravity_controls. The post-switch gravity \
-                     reclassification requires the target source to have a \
-                     GravityControl entry (it becomes the non-differential central body)."
+                    "Body {body_idx}: frame switch target `{target}` is not in the \
+                     body's gravity_controls. The post-switch gravity reclassification \
+                     requires the target source to have a GravityControl entry (it \
+                     becomes the non-differential central body)."
                 )
             }
             Self::NonRootFrameWithRootDependentFeatures { body_idx } => {
@@ -483,18 +501,19 @@ impl ValidationError {
 /// - `mass`: optional mass properties (for inertia consistency check)
 /// - `has_rot_state`: whether rotational state exists
 /// - `trans_state`: optional translational state (for uninitialized check)
-/// - `source_lookup`: resolves source IDs to `GravitySource` (returns `None` if missing)
+/// - `source_lookup`: resolves source identities ([`FrameUid`]) to
+///   `GravitySource` (returns `None` if missing)
 /// - `plate_counts`: if flat plates are present, `Some((num_plates, num_temperatures, num_t_pow4))`
 // JEOD_INV: DM.03 — validation runs once before first integration step
 #[allow(clippy::too_many_arguments)]
-pub fn validate_body<'a, S: Copy + std::fmt::Debug>(
+pub fn validate_body<'a>(
     config: &DynamicsConfig,
-    gravity_controls: &GravityControls<S>,
+    gravity_controls: &GravityControls,
     has_gravity_accel: bool,
     mass: Option<&MassProperties>,
     has_rot_state: bool,
     trans_state: Option<&TranslationalState>,
-    source_lookup: impl Fn(S) -> Option<&'a GravitySource>,
+    source_lookup: impl Fn(&FrameUid) -> Option<&'a GravitySource>,
     plate_counts: Option<(usize, usize, usize)>,
 ) -> Vec<ValidationError> {
     let mut errors = Vec::new();
@@ -534,9 +553,9 @@ pub fn validate_body<'a, S: Copy + std::fmt::Debug>(
     // JEOD_INV: GV.12 — gravity source must exist for control
     // JEOD_INV: DM.08 — gravitation requires gravity source (init-time check)
     for ctrl in &gravity_controls.controls {
-        if source_lookup(ctrl.source_name).is_none() {
+        if source_lookup(&ctrl.source).is_none() {
             errors.push(ValidationError::GravitySourceMissing {
-                source_id: format!("{:?}", ctrl.source_name),
+                source_id: ctrl.source.to_string(),
             });
         }
     }

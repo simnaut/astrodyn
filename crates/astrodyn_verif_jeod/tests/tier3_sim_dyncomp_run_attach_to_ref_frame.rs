@@ -305,8 +305,8 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
             marker_only: false,
         },
     );
-    let sun_idx = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
-    let moon_idx = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
+    let _sun_idx = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
+    let _moon_idx = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
 
     // Atmosphere (MET, mean solar flux per `Modified_data/solar_flux.py`):
     // F10 = F10B = 128.8, geo_index = 15.7 (Ap convention).
@@ -349,9 +349,18 @@ fn build_sim(t0: &DyncompRecord) -> (Simulation, usize, usize) {
         mass: Some(astrodyn::typed_bridge::mass_raw_to_self_ref(&(mass))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(earth_idx, 8, 8, GravityGradient::Compute),
-                GravityControl::new_third_body(sun_idx),
-                GravityControl::new_third_body(moon_idx),
+                GravityControl::new_nonspherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    8,
+                    8,
+                    GravityGradient::Compute,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         drag: Some(DragConfig {

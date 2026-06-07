@@ -92,11 +92,14 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-dyncomp-13")
     });
@@ -139,7 +142,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(super::typed_helpers::rot_typed(
@@ -147,7 +150,10 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
         )),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-dyncomp-12")
     });
@@ -294,13 +300,16 @@ fn build_run2_lvlh_rot_init(_init: &InitialConditions) -> SimulationBuilder {
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_state,
         rot: Some(super::typed_helpers::rot_typed(&(rot_state))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-dyncomp-11")
     });
@@ -478,7 +487,7 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
     let grav_cfg = crate::gravity_control::load_gravity_control(&grav_file_refs);
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
-    let earth = sb.add_source("Earth", earth_sh_with_rnp());
+    let _earth = sb.add_source("Earth", earth_sh_with_rnp());
     let earth_gradient = if grav_cfg.gradient {
         GravityGradient::Compute
     } else {
@@ -488,7 +497,7 @@ fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder
         trans: trans_from(init),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 grav_cfg.degree,
                 grav_cfg.order,
                 earth_gradient,
@@ -606,7 +615,7 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
         .expect("Moon position at epoch");
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     let sun = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
     let moon = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
     debug_assert_eq!(
@@ -628,9 +637,16 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
         mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityGradient::Skip),
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         ..VehicleConfig::named("sim-dyncomp-9")
@@ -755,7 +771,7 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
         .expect("Moon state at epoch");
 
     let mut sb = SimulationBuilder::new(time, BATTIN_DT);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     let sun_idx = sb.add_source(
         "Sun",
         third_body_source_with_state(mu_sun, sun_pos_t0.raw_si(), sun_vel_t0.raw_si()),
@@ -765,9 +781,13 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
         third_body_source_with_state(mu_moon, moon_pos_t0.raw_si(), moon_vel_t0.raw_si()),
     );
 
-    let mut sun_control = GravityControl::new_third_body(sun_idx);
+    let mut sun_control = GravityControl::new_third_body(astrodyn::FrameUid::of::<
+        astrodyn::PlanetInertial<astrodyn::Sun>,
+    >());
     sun_control.battin_method = battin;
-    let mut moon_control = GravityControl::new_third_body(moon_idx);
+    let mut moon_control = GravityControl::new_third_body(astrodyn::FrameUid::of::<
+        astrodyn::PlanetInertial<astrodyn::Moon>,
+    >());
     moon_control.battin_method = battin;
 
     sb.add_body(VehicleConfig {
@@ -778,7 +798,10 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
         mass: Some(super::typed_helpers::mass_typed(&(iss_mass_properties()))),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 sun_control,
                 moon_control,
             ],
@@ -944,13 +967,17 @@ fn build_run7(
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(
-                    earth,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     grav_cfg.degree,
                     grav_cfg.order,
                     earth_gradient,
                 ),
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         drag,
@@ -1078,14 +1105,14 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Compute,
             )],
         },
@@ -1180,7 +1207,10 @@ fn build_run6_drag(
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(drag_config),
         ..VehicleConfig::named("sim-dyncomp-5")
@@ -1292,13 +1322,16 @@ fn build_run6_maneuver(init: &InitialConditions, case: &'static str) -> Simulati
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-dyncomp-4")
     });
@@ -1438,14 +1471,14 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Compute,
             )],
         },
@@ -1581,7 +1614,7 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Compute,
             )],
         },
@@ -1647,7 +1680,10 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
             &(MassProperties::new(1.0)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(DragConfig {
             cd: 0.02,
@@ -1796,13 +1832,16 @@ fn build_run9_scenario(init: &InitialConditions, case: &'static str) -> Simulati
     // Anchor at the configured SIM_dyncomp epoch (Modified_data/time.py).
     let time = dyncomp_time();
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
+    let _earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(super::typed_helpers::rot_typed(&(rot_from(init, case)))),
         mass: Some(super::typed_helpers::mass_typed(&(mass_props))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-dyncomp-0")
     });

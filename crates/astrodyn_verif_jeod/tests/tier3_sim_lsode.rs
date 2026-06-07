@@ -172,7 +172,7 @@ fn run_integ_test(
     time.set_scale_factor(time_scale);
     let mut sim = Simulation::new(time, SIM_DT);
 
-    let earth = sim.add_source(
+    let _earth = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -198,7 +198,10 @@ fn run_integ_test(
         }),
         integrator,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("tier3-sim-lsode-0")
     });

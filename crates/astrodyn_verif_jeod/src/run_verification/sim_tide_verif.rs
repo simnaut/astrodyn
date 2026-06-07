@@ -197,11 +197,15 @@ fn build_tide(init: &InitialConditions, split_gravity: bool) -> SimulationBuilde
                 let mut controls = if split_gravity {
                     // RUN_02: spherical central + perturbing-only harmonics.
                     vec![
-                        GravityControl::new_spherical(earth, GravityGradient::Compute),
+                        GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Compute,
+                        ),
                         GravityControl {
                             perturbing_only: true,
                             ..GravityControl::new_nonspherical(
-                                earth,
+                                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(
+                                ),
                                 8,
                                 8,
                                 GravityGradient::Compute,
@@ -211,14 +215,18 @@ fn build_tide(init: &InitialConditions, split_gravity: bool) -> SimulationBuilde
                 } else {
                     // RUN_01: single full spherical-harmonics control.
                     vec![GravityControl::new_nonspherical(
-                        earth,
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                         8,
                         8,
                         GravityGradient::Compute,
                     )]
                 };
-                controls.push(GravityControl::new_third_body(sun));
-                controls.push(GravityControl::new_third_body(moon));
+                controls.push(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()));
+                controls.push(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()));
                 controls
             },
         },

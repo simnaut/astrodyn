@@ -755,7 +755,7 @@ mod tests {
             )),
             mass: Some(mass_raw_to_self_ref(&(MassProperties::new(5.0)))),
             gravity_controls: GravityControls { controls: vec![] },
-            integ_source: Some(offset_src),
+            integ_source: Some(sim.source_uid(offset_src).clone()),
             ..VehicleConfig::named("kinematic-8")
         });
 

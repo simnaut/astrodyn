@@ -92,7 +92,10 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Spawn vehicle entity with all required components for 6-DOF integration.
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+        controls: vec![GravityControl::new_spherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            GravityGradient::Skip,
+        )],
     };
 
     let vehicle = app
@@ -154,14 +157,17 @@ fn run_simulation_steps() -> SixDofState {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..astrodyn::VehicleConfig::named("bevy-parity-1")
     });
@@ -244,7 +250,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -261,7 +267,10 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         .id();
 
     let controls = GravityControls {
-        controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+        controls: vec![GravityControl::new_spherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            GravityGradient::Skip,
+        )],
     };
 
     let vehicle = app
@@ -300,7 +309,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(astrodyn::VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_trans()),
@@ -308,7 +317,10 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
         mass: Some(mass_props()),
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..astrodyn::VehicleConfig::named("bevy-parity-0")
     });

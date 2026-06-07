@@ -61,7 +61,7 @@
 //! ```
 //! use astrodyn::{
 //!     recipes::{earth, orbital_elements, vehicle},
-//!     F64Ext, GravityControl, GravityGradient, VehicleBuilder,
+//!     F64Ext, FrameUid, GravityControl, GravityGradient, PlanetInertial, VehicleBuilder,
 //! };
 //!
 //! let mu = earth::point_mass().source.mu.m3_per_s2();
@@ -70,7 +70,12 @@
 //!     .from_orbital_elements(orbital_elements::iss(), mu)
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
-//!     .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+//!     // Sources are referenced by inertial-frame identity (issue
+//!     // #668) — the same value in every host.
+//!     .gravity(GravityControl::new_spherical(
+//!         FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+//!         GravityGradient::Skip,
+//!     ))
 //!     .build();
 //! # let _ = cfg;
 //! ```
@@ -110,7 +115,6 @@ pub mod recipes;
 pub mod rotation_model;
 pub mod simulation_builder;
 pub mod source_frames;
-pub mod source_handle;
 pub mod source_state;
 pub mod sources;
 // Internal bridge between typed `*Typed<F>` shapes and the underlying raw
@@ -181,7 +185,6 @@ pub use planet_config::{PlanetConfig, EARTH, JUPITER, MARS, MOON, SATURN, SUN};
 pub use rotation_model::RotationModel;
 pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
 pub use source_frames::SourceFrameIds;
-pub use source_handle::SourceHandle;
 pub use source_state::{
     set_source_position, set_source_state, source_frame_id, source_pfix_rotation, source_position,
 };

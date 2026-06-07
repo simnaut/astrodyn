@@ -145,7 +145,7 @@ fn run_gj_bootstrap_parity(
         .0
         .set_scale_factor(time_scale_factor);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -170,7 +170,10 @@ fn run_gj_bootstrap_parity(
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
@@ -192,13 +195,13 @@ fn run_gj_bootstrap_parity(
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
+    let _earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

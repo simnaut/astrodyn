@@ -495,7 +495,7 @@ pub fn register_body_frames_system<P: Planet>(
     // parent when no IntegSourceC is supplied.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sim_time: Res<crate::SimulationTimeR>,
-    sources: Query<&FrameEntityC, With<GravitySourceC>>,
+    sources: Query<(&FrameUidC, &FrameEntityC), With<GravitySourceC>>,
     bodies: Query<
         (
             Entity,
@@ -541,23 +541,25 @@ pub fn register_body_frames_system<P: Planet>(
             )
         });
 
-        // Resolve the integration frame entity. Default: root inertial.
-        let integ_frame_entity = match integ_source.and_then(|c| c.0) {
-            Some(source_entity) => {
-                sources
-                    .get(source_entity)
-                    .map(|fe| fe.0)
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "register_body_frames_system: body {entity:?} has \
-                         IntegSourceC pointing at {source_entity:?}, but that \
-                         entity is not a registered gravity source (missing \
-                         FrameEntityC + GravitySourceC). Spawn the source via \
-                         PlanetBundle before the body, or remove IntegSourceC. \
-                         Underlying error: {err:?}"
-                        )
-                    })
-            }
+        // Resolve the integration frame entity from the config-carried
+        // identity (issue #668). Default: root inertial. Same-tick scan
+        // over the registered sources' carried identities — a cached
+        // index could be stale within the registration tick.
+        let integ_frame_entity = match integ_source.and_then(|c| c.0.as_ref()) {
+            Some(integ_uid) => sources
+                .iter()
+                .find(|(uid, _)| &uid.0 == integ_uid)
+                .map(|(_, fe)| fe.0)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "register_body_frames_system: body {entity:?} has \
+                         IntegSourceC(`{integ_uid}`), but no registered gravity \
+                         source carries that identity (it is missing, or its \
+                         frame was never registered). Spawn the source via \
+                         PlanetBundle before the body, fix the identity, or \
+                         remove IntegSourceC."
+                    )
+                }),
             None => root_frame_entity.0,
         };
 
@@ -735,5 +737,74 @@ pub fn sync_body_to_frame_system<P: Planet>(
             )
         });
         *epoch = frame_epoch;
+    }
+}
+
+/// Resolve deferred [`ShadowBodyRefC`] references (issue #668):
+/// `spawn_bevy` only holds `Commands`, so a vehicle's shadow-caster
+/// declaration travels as a body-side `(FrameUid, radius)` ref; this
+/// system resolves the identity to the registered source entity,
+/// inserts [`ShadowBodyC`] on the *source*, and removes the ref.
+///
+/// Registered in the same slots as the `register_*_frames_system`
+/// chain so dynamically-spawned vehicles resolve before the SRP stage
+/// reads `ShadowBodyC`. A radius that disagrees with an
+/// already-present `ShadowBodyC` on the same source — or with another
+/// body's declaration in the *same tick* — panics: two vehicles
+/// declaring different radii for one caster is a misconfiguration the
+/// SRP eclipse geometry cannot honor (this is the same agreement check
+/// `populate_app`'s eager pre-collection used to perform before the
+/// deferred resolver replaced it). Same-tick declarations are tracked
+/// in a per-run map because the `Commands`-deferred insert is not
+/// visible to later iterations of this run — without the map, a
+/// same-tick mismatch would silently resolve to whichever body the
+/// query happened to iterate last.
+pub fn resolve_shadow_body_ref_system(
+    mut commands: Commands,
+    refs: Query<(Entity, &ShadowBodyRefC)>,
+    sources: Query<(Entity, &FrameUidC, Option<&ShadowBodyC>), With<GravitySourceC>>,
+) {
+    // Per-run declarations keyed by caster identity (issue #679 review).
+    let mut declared: std::collections::HashMap<&astrodyn::FrameUid, f64> =
+        std::collections::HashMap::new();
+    for (body_entity, sb_ref) in &refs {
+        let (source_entity, _, existing) = sources
+            .iter()
+            .find(|(_, uid, _)| uid.0 == sb_ref.source)
+            .unwrap_or_else(|| {
+                panic!(
+                    "resolve_shadow_body_ref_system: body {body_entity:?} declares \
+                     shadow caster `{}`, but no registered gravity source carries \
+                     that identity. Spawn the source (PlanetBundle / populate_app / \
+                     explicit FrameUidC) before the vehicle, or fix the identity.",
+                    sb_ref.source
+                )
+            });
+        // The authoritative prior radius: a same-tick declaration from an
+        // earlier iteration of this run, else the world's ShadowBodyC.
+        let prior = declared
+            .get(&sb_ref.source)
+            .copied()
+            .or(existing.map(|e| e.radius));
+        match prior {
+            Some(prev) => {
+                assert!(
+                    prev.to_bits() == sb_ref.radius.to_bits(),
+                    "resolve_shadow_body_ref_system: shadow caster `{}` already has \
+                     radius {prev} m (from an earlier declaration or its existing \
+                     ShadowBodyC), but body {body_entity:?} declares radius {} m. \
+                     All bodies sharing a shadow caster must agree on its radius.",
+                    sb_ref.source,
+                    sb_ref.radius,
+                );
+            }
+            None => {
+                commands.entity(source_entity).insert(ShadowBodyC {
+                    radius: sb_ref.radius,
+                });
+            }
+        }
+        declared.insert(&sb_ref.source, sb_ref.radius);
+        commands.entity(body_entity).remove::<ShadowBodyRefC>();
     }
 }

@@ -218,7 +218,7 @@ fn build_srp(
     let initial_sun = srp_sun_position(0.0, epoch_tai_tjt, &ephemeris);
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", earth_point_mass(earth_mu));
+    let _earth = sb.add_source("Earth", earth_point_mass(earth_mu));
     let sun = sb.add_source("Sun", sun_zero_mu(initial_sun));
     debug_assert_eq!(
         sun, SRP_SUN_IDX,
@@ -253,7 +253,10 @@ fn build_srp(
             ),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
@@ -263,7 +266,7 @@ fn build_srp(
             ..Default::default()
         })),
         shadow_body: Some(ShadowBody {
-            source_idx: earth,
+            source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             radius: EARTH.shadow_radius,
         }),
         ..VehicleConfig::named("sim-srp-2")
@@ -544,7 +547,7 @@ fn parity_zero_tolerances() -> Tolerances {
 /// Common 6-DOF body skeleton: ISS-like trans/rot/mass with
 /// spherical-Earth gravity controls and the gravity-gradient toggle
 /// passed in by the caller.
-fn parity_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
+fn parity_body_sixdof(_earth_idx: usize, gradient: bool) -> VehicleConfig {
     let gradient_mode = if gradient {
         GravityGradient::Compute
     } else {
@@ -555,7 +558,10 @@ fn parity_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
         rot: Some(super::typed_helpers::rot_typed(&parity_tumble_rot())),
         mass: Some(super::typed_helpers::mass_typed(&parity_iss_mass())),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, gradient_mode)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                gradient_mode,
+            )],
         },
         compute_gravity_gradient: gradient,
         ..VehicleConfig::named("sim-srp-1")
@@ -660,7 +666,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
         )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -677,7 +683,7 @@ fn build_flat_plate_with_shadow(_init: &InitialConditions) -> SimulationBuilder 
         ThermalIntegrationOrder::default(),
     )));
     body.shadow_body = Some(ShadowBody {
-        source_idx: 0,
+        source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         radius: astrodyn::EARTH.shadow_radius,
     });
     sb.add_body(body);
@@ -711,7 +717,7 @@ fn build_shadow_2a(albedo: f64, diffuse: f64, emissivity: f64) -> SimulationBuil
         ThermalIntegrationOrder::default(),
     )));
     body.shadow_body = Some(ShadowBody {
-        source_idx: 0,
+        source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         // Hand-rolled `run_shadow_parity` uses a hand-typed
         // 6_371_000 m radius (not `EARTH.shadow_radius`) — preserve
         // the literal so the recipes drive the same kernel inputs.

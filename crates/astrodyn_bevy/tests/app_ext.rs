@@ -28,7 +28,7 @@ struct VehicleEntity(Entity);
 fn setup_iss(mut commands: Commands) {
     let earth_recipe = earth::point_mass();
     let earth_mu = earth_recipe.source.mu;
-    let earth = commands
+    let _earth = commands
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
                 astrodyn::PlanetInertial<astrodyn::Earth>,
@@ -46,12 +46,12 @@ fn setup_iss(mut commands: Commands) {
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
-    let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+    let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands.insert_resource(VehicleEntity(vehicle_entity));
 }
 

@@ -75,17 +75,22 @@ fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth(mu, false));
+    let _earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
-            orbital_elements_source: Some(earth),
+            orbital_elements_source: Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             ..Default::default()
         },
         ..VehicleConfig::named("sim-derived-state-4")
@@ -130,14 +135,17 @@ fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth(mu, false));
+    let _earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: init.position,
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             lvlh: true,
@@ -225,7 +233,7 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
         crate::s_define::load_dynamics_dt(&crate::jeod_inputs::path(SIM_NED_DIR).join("S_define"));
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
-    let earth = sb.add_source("Earth", point_mass_earth(mu, true));
+    let _earth = sb.add_source("Earth", point_mass_earth(mu, true));
 
     let (r_eq, r_pol) = if spherical {
         (EARTH.shape.r_eq(), EARTH.shape.r_eq()) // spherical: r_pol = r_eq
@@ -239,11 +247,14 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
-                source_idx: earth,
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq,
                 r_pol,
             }),
@@ -390,7 +401,7 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth(mu, false));
+    let _earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: init.position,
@@ -406,7 +417,10 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
             &(iss_euler_mass_properties()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             euler_sequence: Some(EulerSequence::XYZ),
@@ -433,7 +447,7 @@ fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth(mu, false));
+    let _earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&TranslationalState {
             position: init.position,
@@ -449,7 +463,10 @@ fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
             &(iss_euler_mass_properties()),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             euler_sequence: Some(EulerSequence::XYZ),
