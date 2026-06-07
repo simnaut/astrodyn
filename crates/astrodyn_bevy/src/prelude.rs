@@ -60,8 +60,8 @@ pub use astrodyn::{
     FrameTransform, GravityControl, GravityGradient, JeodQuat, JointKinematicsModel,
     JointKinematicsSpec, Lvlh, Mars, Moon, MultiDofJointKinematicsSpec, Ned, OrbitalElementSet,
     Planet, PlanetFixed, PlanetInertial, Qty3, RootInertial, SelfPlanet, SelfRef,
-    SingleDofKinematics, SinusoidalJointKinematicsSpec, SourceHandle, StructuralFrame, Sun,
-    Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
+    SingleDofKinematics, SinusoidalJointKinematicsSpec, StructuralFrame, Sun, Vec3Ext, Vehicle,
+    VehicleBuilder, VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use astrodyn_bevy::prelude::*;` brings them into

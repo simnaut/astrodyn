@@ -452,6 +452,10 @@ impl Plugin for AstrodynPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                // Deferred shadow-caster resolution (issue #668): body-side
+                // ShadowBodyRefC → ShadowBodyC on the resolved source.
+                systems::resolve_shadow_body_ref_system
+                    .after(systems::register_source_frames_system),
                 // Identity index maintenance (issue #664, RF.14): index
                 // newly-stamped frame entities (the explicit ordering
                 // gives Bevy a sync point so this pass sees the frame
@@ -527,6 +531,9 @@ impl Plugin for AstrodynPlugin {
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
+                // Deferred shadow-caster resolution (issue #668).
+                systems::resolve_shadow_body_ref_system
+                    .after(systems::register_source_frames_system),
                 // Identity index maintenance (issue #664, RF.14).
                 systems::index_frame_uids_system
                     .after(systems::register_body_frames_system::<astrodyn::Earth>),
@@ -554,6 +561,16 @@ impl Plugin for AstrodynPlugin {
                     .before(AstrodynSet::EphemerisUpdate),
                 systems::deindex_frame_uids_system.before(systems::index_frame_uids_system),
             ),
+        );
+        // Deferred shadow-caster resolution (issue #668): body-side
+        // ShadowBodyRefC → ShadowBodyC on the resolved source. Separate
+        // add_systems call: the block above is at Bevy's tuple-size limit.
+        // Must land before the SRP stage reads ShadowBodyC this tick.
+        app.add_systems(
+            FixedUpdate,
+            systems::resolve_shadow_body_ref_system
+                .after(systems::register_source_frames_system)
+                .before(AstrodynSet::EphemerisUpdate),
         );
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
@@ -1350,8 +1367,8 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
 /// `SimulationBuilder::add_body`. This trait provides the parallel
 /// terminal for Bevy: given a runtime mapping from gravity-source indices
 /// (the `usize`-indexed [`GravityControl`](astrodyn::GravityControl)s in
-/// the built config) to ECS [`Entity`]s, it spawns the vehicle entity
-/// with all the required JEOD components attached.
+/// the built config), it spawns the vehicle entity with all the
+/// required JEOD components attached.
 ///
 /// # Example
 ///
@@ -1363,15 +1380,18 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
 ///
 /// let mut app = App::new();
 /// app.add_systems(Startup, |mut commands: Commands| {
-///     let earth = commands.spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH)).id();
+///     commands.spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH));
 ///     let cfg = VehicleBuilder::new()
 ///         .vehicle_named("iss")
 ///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 ///         .three_dof_point_mass(vehicle::iss_mass())
 ///         .rk4()
-///         .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+///         .gravity(GravityControl::new_spherical(
+///             astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+///             GravityGradient::Skip,
+///         ))
 ///         .build();
-///     cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+///     cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
 /// });
 /// app.update();
 /// ```
@@ -1385,14 +1405,17 @@ pub trait VehicleConfigBevyExt {
     /// mass properties, dynamics config, gravity controls, integrator
     /// type, structural transform, optional external force / torque,
     /// and (when `compute_gravity_gradient`) a default gravity torque
-    /// component. `source_entities` resolves each `usize` index in
-    /// `gravity_controls` to the corresponding ECS [`Entity`].
+    /// component. Config-carried source references are `FrameUid`
+    /// identities (issue #668) and move onto the spawned components
+    /// verbatim — the consuming systems resolve them against the
+    /// registered sources per run, so spawn order no longer matters
+    /// and no entity table is needed.
     ///
-    /// Also wires `integ_source` (translated to
-    /// [`components::IntegSourceC`] when `Some`) and `frame_switches`
-    /// (translated to [`components::FrameSwitchesC`] when non-empty),
-    /// retagging each `usize` source index to the matching ECS
-    /// [`Entity`] from `source_entities`.
+    /// Also wires `integ_source` (moved into
+    /// [`components::IntegSourceC`] when `Some`; resolved by
+    /// `register_body_frames_system`) and `frame_switches` (moved into
+    /// [`components::FrameSwitchesC`] when non-empty; resolved by
+    /// `frame_switch_system`).
     ///
     /// Derived-state requests on
     /// [`astrodyn::DerivedStateConfig`] are mirrored onto the spawned
@@ -1417,9 +1440,11 @@ pub trait VehicleConfigBevyExt {
     ///   [`components::EarthLightingConfigC`]
     ///
     /// `OrbitalElementsConfigC.gravity_source` and
-    /// `GeodeticConfigC.planet` are resolved through the same
-    /// `source_entities` table as `gravity_controls` / `integ_source` /
-    /// `frame_switches`.
+    /// `GeodeticConfigC.planet` carry the config identities verbatim;
+    /// the derived-state systems resolve them per run. The shadow-body
+    /// declaration becomes a body-side [`components::ShadowBodyRefC`]
+    /// that `resolve_shadow_body_ref_system` converts into a
+    /// [`components::ShadowBodyC`] on the resolved source entity.
     ///
     /// # Planet selection
     ///
@@ -1442,69 +1467,20 @@ pub trait VehicleConfigBevyExt {
     /// so the `body_action_system::<P>` apply pass mutates the same
     /// `TranslationalStateC<P>` slot this helper inserts.
     ///
-    /// # Panics
+    /// # Identity resolution
     ///
-    /// Panics if any of the following `usize` source indices is out of
-    /// bounds in `source_entities`:
-    ///
-    /// - any `GravityControl::source_name` in `gravity_controls.controls`
-    /// - the `integ_source` value (when `Some`)
-    /// - any `FrameSwitchConfig::target_source` in `frame_switches`
-    /// - `derived.orbital_elements_source` (when `Some`)
-    /// - `derived.geodetic.source_idx` (when `Some`)
-    ///
-    /// All five panics share the same diagnostic shape, telling the
-    /// caller to spawn all gravity sources before invoking `spawn_bevy`.
+    /// Source identities that don't resolve fail loudly *at the
+    /// consuming system* (gravity / registration / frame-switch /
+    /// derived-state), each panic naming the identity — spawn the
+    /// sources with matching `FrameUidC` values (PlanetBundle /
+    /// populate_app stamp them) in any order relative to the vehicle.
     ///
     /// Returns the spawned vehicle entity ID.
-    fn spawn_bevy<P: astrodyn::Planet>(
-        self,
-        commands: &mut Commands,
-        source_entities: &[Entity],
-    ) -> Entity;
-}
-
-/// Resolve a `usize` source index against the caller-supplied entity
-/// table, panicking with a descriptive error when the index is out of
-/// bounds. Centralizes the error message so every site in
-/// [`VehicleConfigBevyExt::spawn_bevy`] that translates a source index
-/// produces the same actionable diagnostic.
-fn resolve_source_entity(source_entities: &[Entity], idx: usize, what: &str) -> Entity {
-    *source_entities.get(idx).unwrap_or_else(|| {
-        panic!(
-            "spawn_bevy: {what} references source index {idx} but only {len} source \
-             entities were provided. Spawn all gravity sources before calling spawn_bevy.",
-            what = what,
-            idx = idx,
-            len = source_entities.len()
-        )
-    })
+    fn spawn_bevy<P: astrodyn::Planet>(self, commands: &mut Commands) -> Entity;
 }
 
 impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
-    fn spawn_bevy<P: astrodyn::Planet>(
-        self,
-        commands: &mut Commands,
-        source_entities: &[Entity],
-    ) -> Entity {
-        // Translate `GravityControls<usize>` to `GravityControls<Entity>` by
-        // retagging the source identifier on each control via the
-        // `GravityControl::retag_source` helper. The field list lives in
-        // exactly one place (`astrodyn_gravity::gravity_controls`), so adding a
-        // new field there does not require touching this site.
-        let entity_controls = astrodyn::GravityControls::<Entity> {
-            controls: self
-                .gravity_controls
-                .controls
-                .into_iter()
-                .map(|c| {
-                    c.retag_source(|idx| {
-                        resolve_source_entity(source_entities, idx, "GravityControl")
-                    })
-                })
-                .collect(),
-        };
-
+    fn spawn_bevy<P: astrodyn::Planet>(self, commands: &mut Commands) -> Entity {
         let dynamics_config = astrodyn::DynamicsConfig {
             translational_dynamics: true,
             rotational_dynamics: self.rot.is_some(),
@@ -1522,7 +1498,9 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             // the runner and the Bevy adapter stamp the same value.
             components::FrameUidC(self.frame_uid.clone()),
             components::DynamicsConfigC(dynamics_config),
-            components::GravityControlsC(entity_controls),
+            // Identity-keyed controls move verbatim (issue #668); the
+            // gravity systems resolve each FrameUid per run.
+            components::GravityControlsC(self.gravity_controls),
             components::IntegratorTypeC(self.integrator),
             components::StructuralTransformC(astrodyn::FrameTransform::from_matrix(
                 self.t_struct_body,
@@ -1584,62 +1562,33 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
                 });
             }
         }
-        // Shadow body — `VehicleConfig.shadow_body` references a
-        // gravity source by index that casts a conical shadow on the
-        // body for SRP eclipse computation. The runner-side SRP
-        // system reads this from the body; the Bevy adapter places a
-        // `ShadowBodyC` marker on the *source* entity itself and the
-        // shadow-detection system queries `(TranslationalStateC,
-        // ShadowBodyC)`. Translate by inserting the component on the
-        // resolved source entity. `populate_app` performs an
-        // idempotent re-walk of `shadow_body` markers (with a radius-
-        // mismatch fail-loud assertion across bodies that share a
-        // source); inserting here is safe under that re-walk and lets
-        // direct `spawn_bevy` callers (outside `populate_app`) get
-        // the marker too.
+        // Shadow body — `VehicleConfig.shadow_body` names the gravity
+        // source (by inertial-frame identity, issue #668) that casts a
+        // conical shadow on the body for SRP eclipse computation. The
+        // Bevy adapter places `ShadowBodyC` on the *source* entity, but
+        // spawn_bevy only holds `Commands` and cannot resolve identity →
+        // entity here; record the intent as a body-side ref that
+        // `resolve_shadow_body_ref_system` (registration slot) converts
+        // into the source-side marker before the SRP stage runs.
         if let Some(sb) = self.shadow_body {
-            let src = resolve_source_entity(source_entities, sb.source_idx, "shadow_body");
-            // The body's `entity` borrow above must be released before
-            // taking a fresh borrow on the source. Stash the body
-            // entity id, drop the borrow, mutate source, then re-
-            // acquire the body entity for any downstream inserts.
-            let body_id = entity.id();
-            commands
-                .entity(src)
-                .insert(components::ShadowBodyC { radius: sb.radius });
-            entity = commands.entity(body_id);
+            entity.insert(components::ShadowBodyRefC {
+                source: sb.source,
+                radius: sb.radius,
+            });
         }
-        // Non-root integration: translate the `usize` source index to
-        // the matching ECS Entity so `register_body_frames_system` can
-        // parent the body's frame entity under that source's frame
-        // entity. `IntegSourceC(None)` is the implicit default (root),
-        // so we only insert when the builder set a non-default integ
-        // source.
-        if let Some(idx) = self.integ_source {
-            let src = resolve_source_entity(source_entities, idx, "integ_source");
-            entity.insert(components::IntegSourceC(Some(src)));
+        // Non-root integration: the config-carried identity moves onto
+        // `IntegSourceC` verbatim; `register_body_frames_system`
+        // resolves it to the source's frame entity at registration.
+        // `IntegSourceC(None)` is the implicit default (root), so we
+        // only insert when the builder set a non-default integ source.
+        if let Some(uid) = self.integ_source {
+            entity.insert(components::IntegSourceC(Some(uid)));
         }
-        // Frame switches: translate each `FrameSwitchConfig<usize>` to
-        // `FrameSwitchConfig<Entity>` by retagging `target_source`. The
-        // bevy adapter's `frame_switch_system` reads
-        // `FrameSwitchConfig<Entity>` directly. Skip the insertion when
-        // the builder didn't configure any switches.
+        // Frame switches: identity-keyed configs move verbatim (issue
+        // #668); `frame_switch_system` resolves each target per run.
+        // Skip the insertion when the builder didn't configure any.
         if !self.frame_switches.is_empty() {
-            let entity_switches: Vec<astrodyn::FrameSwitchConfig<Entity>> = self
-                .frame_switches
-                .into_iter()
-                .map(|sw| astrodyn::FrameSwitchConfig::<Entity> {
-                    target_source: resolve_source_entity(
-                        source_entities,
-                        sw.target_source,
-                        "FrameSwitchConfig::target_source",
-                    ),
-                    switch_sense: sw.switch_sense,
-                    switch_distance: sw.switch_distance,
-                    active: sw.active,
-                })
-                .collect();
-            entity.insert(components::FrameSwitchesC(entity_switches));
+            entity.insert(components::FrameSwitchesC(self.frame_switches));
         }
         // ── Derived states ──
         //
@@ -1662,13 +1611,11 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             solar_beta,
             earth_lighting,
         } = self.derived;
-        if let Some(idx) = orbital_elements_source {
-            let src =
-                resolve_source_entity(source_entities, idx, "derived.orbital_elements_source");
+        if let Some(uid) = orbital_elements_source {
             entity.insert((
                 components::OrbitalElementsC::<P>::default(),
                 components::OrbitalElementsConfigC {
-                    gravity_source: src,
+                    gravity_source: uid,
                 },
             ));
         }
@@ -1693,15 +1640,10 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             // `populate_app` path, which inserts shape data only on
             // planets that need it) can still drive geodetic without
             // a separate planet-shape carrier on the source entity.
-            let src = resolve_source_entity(
-                source_entities,
-                geo.source_idx,
-                "derived.geodetic.source_idx",
-            );
             entity.insert((
                 components::GeodeticStateC::default(),
                 components::GeodeticConfigC {
-                    planet: src,
+                    planet: geo.source,
                     r_eq: geo.r_eq,
                     r_pol: geo.r_pol,
                 },

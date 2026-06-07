@@ -37,19 +37,18 @@ use super::{gravity::PlanetFixedRotationC, state::TranslationalStateC};
 /// `<PlanetInertial<P>>` → `<RootInertial>` at the call site.
 /// Non-shift consumers (atmosphere, drag, LVLH, geodetic, orbital
 /// elements) keep their physics in planet-inertial throughout.
-#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct IntegSourceC(pub Option<Entity>);
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+pub struct IntegSourceC(pub Option<astrodyn::FrameUid>);
 
 /// Distance-based integration-frame switches for a body (issue #71
 /// items 3 + Phase C4).
 ///
 /// Each entry triggers a reparent + gravity-controls flip when the body
-/// crosses the configured distance. The Bevy adapter uses
-/// `FrameSwitchConfig<Entity>` so `target_source` references a gravity
-/// source by ECS entity rather than by registration index — matching
-/// `GravityControlsC`'s `Entity`-keyed semantics. Read by
+/// crosses the configured distance. Targets are referenced by the
+/// source's inertial-frame `FrameUid` (issue #668) — matching
+/// `GravityControlsC`'s identity-keyed semantics. Read by
 /// [`crate::frame_switch_system`], which evaluates the predicates
 /// against [`crate::frame_param::RelativeFrameState`] and reparents
 /// the body's frame entity directly via Bevy `ChildOf`.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
-pub struct FrameSwitchesC(pub Vec<astrodyn::FrameSwitchConfig<Entity>>);
+pub struct FrameSwitchesC(pub Vec<astrodyn::FrameSwitchConfig>);

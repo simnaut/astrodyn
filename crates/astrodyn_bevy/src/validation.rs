@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use crate::components::{
     CannonballSrpC, DragConfigC, DynamicsConfigC, EarthLightingConfigC, EulerAnglesConfigC,
     FlatPlateConfigC, FrameAngVelC, FrameEntityC, FrameRotC, FrameSwitchesC, FrameTransC,
-    GeodeticConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC,
+    FrameUidC, GeodeticConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC,
     MassPropertiesC, MoonMarker, OrbitalElementsConfigC, PlanetFixedRotationC, RotationalStateC,
     SolarBetaC, SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
@@ -171,7 +171,7 @@ pub fn validate_jeod_invariants<P: Planet>(
         ),
         Added<GravityControlsC>,
     >,
-    sources: Query<(Entity, &GravitySourceC)>,
+    sources: Query<(Entity, &FrameUidC, &GravitySourceC)>,
     tidal_sources: Query<(
         Entity,
         &TidalConfigC,
@@ -197,7 +197,7 @@ pub fn validate_jeod_invariants<P: Planet>(
     // expose their frame entity via `FrameEntityC` for the
     // frame-switch target check.
     body_frame_state: Query<(Option<&FrameEntityC>, Option<&FrameSwitchesC>)>,
-    source_frames: Query<&FrameEntityC, With<GravitySourceC>>,
+    source_frames: Query<(&FrameUidC, &FrameEntityC), With<GravitySourceC>>,
     parents: Query<&ChildOf>,
     frame_states: Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
     // Needed by `is_root_equivalent_entity` to recognise a central
@@ -230,6 +230,18 @@ pub fn validate_jeod_invariants<P: Planet>(
         // were spawned and the work is otherwise idempotent.
         return;
     }
+
+    // Per-run identity → source maps (issue #668): controls and switch
+    // targets reference sources by FrameUid; same-tick scans over the
+    // few registered sources.
+    let source_by_uid: std::collections::HashMap<&astrodyn::FrameUid, Entity> = sources
+        .iter()
+        .map(|(source_entity, uid, _)| (&uid.0, source_entity))
+        .collect();
+    let source_frame_by_uid: std::collections::HashMap<&astrodyn::FrameUid, Entity> = source_frames
+        .iter()
+        .map(|(uid, fe)| (&uid.0, fe.0))
+        .collect();
 
     // Validate derived-state marker prerequisites.
     // Matches Simulation::validate() which errors on missing sun_source/moon_source.
@@ -359,7 +371,12 @@ pub fn validate_jeod_invariants<P: Planet>(
             mass_untyped.as_ref(),
             rot_state.is_some(),
             trans_untyped.as_ref(),
-            |source_entity| sources.get(source_entity).ok().map(|(_, source)| &source.0),
+            |uid: &astrodyn::FrameUid| {
+                source_by_uid
+                    .get(uid)
+                    .and_then(|&e| sources.get(e).ok())
+                    .map(|(_, _, source)| &source.0)
+            },
             plate_counts,
         );
 
@@ -467,15 +484,16 @@ pub fn validate_jeod_invariants<P: Planet>(
                 // `FrameEntityC`; the diagnostic enumerates both
                 // because either misconfiguration produces the same
                 // failure here.
-                let target_frame_entity = match source_frames.get(sw.target_source) {
-                    Ok(fe) => Some(fe.0),
-                    Err(_) => {
+                let target_frame_entity = match source_frame_by_uid.get(&sw.target) {
+                    Some(&fe) => Some(fe),
+                    None => {
                         panic!(
-                            "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
-                             is not a registered gravity source — it is missing \
-                             GravitySourceC and/or FrameEntityC. Spawn it with PlanetBundle \
-                             (which inserts both) before adding the body.",
-                            target = sw.target_source,
+                            "Entity {entity:?}: FrameSwitchConfig.target = `{target}` \
+                             does not resolve to a registered gravity source — no source \
+                             entity carries that FrameUidC (or its frame was never \
+                             registered). Spawn it with PlanetBundle before adding the \
+                             body, or fix the target identity.",
+                            target = sw.target,
                         );
                     }
                 };
@@ -483,20 +501,15 @@ pub fn validate_jeod_invariants<P: Planet>(
                 // gravity_controls — without it, the post-switch
                 // `differential = true` flip leaves no central body and
                 // the body integrates under the wrong gravity model.
-                if !controls
-                    .0
-                    .controls
-                    .iter()
-                    .any(|c| c.source_name == sw.target_source)
-                {
+                if !controls.0.controls.iter().any(|c| c.source == sw.target) {
                     panic!(
-                        "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
+                        "Entity {entity:?}: FrameSwitchConfig.target = `{target}` \
                          is not in the body's GravityControlsC. The post-switch gravity \
                          reclassification needs the target source to have a GravityControl \
                          entry (it becomes the non-differential central body). Add \
-                         GravityControl::new_spherical({target:?}, ...) to the body's \
+                         GravityControl::new_spherical(<that identity>, ...) to the body's \
                          controls before configuring the switch.",
-                        target = sw.target_source,
+                        target = sw.target,
                     );
                 }
                 // Same root-equivalence adjustment as `non_root_integ`
@@ -566,7 +579,10 @@ pub fn validate_jeod_invariants<P: Planet>(
         // Panics on any out-of-range gravity control parameter (degree,
         // order, gradient ordinals) — see CLAUDE.md "Fail Loudly".
         for ctrl in &controls.0.controls {
-            if let Ok((_source_entity, source)) = sources.get(ctrl.source_name) {
+            if let Some((_, _, source)) = source_by_uid
+                .get(&ctrl.source)
+                .and_then(|&e| sources.get(e).ok())
+            {
                 ctrl.check_validity(&source.0);
             }
         }

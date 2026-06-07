@@ -55,7 +55,7 @@ use super::util::body_integ_origin_in_root_lazy;
 pub fn frame_switch_system<P: Planet>(
     mut commands: Commands,
     root_frame_entity: Res<crate::RootFrameEntityR>,
-    sources: Query<&FrameEntityC, With<GravitySourceC>>,
+    sources: Query<(&FrameUidC, &FrameEntityC), With<GravitySourceC>>,
     parents: Query<&ChildOf>,
     rel: RelativeFrameState,
     mut bodies: Query<(
@@ -73,7 +73,14 @@ pub fn frame_switch_system<P: Planet>(
     // which dominates with many bodies and/or many sources even when
     // no switch fires.
     let known_source_frames: std::collections::HashSet<Entity> =
-        sources.iter().map(|fe| fe.0).collect();
+        sources.iter().map(|(_, fe)| fe.0).collect();
+    // Per-run identity → source-frame-entity map (issue #668): switch
+    // targets reference sources by FrameUid. Keyed off the *source*
+    // entities' carried identities (same-tick correct, and restricted
+    // to registered gravity sources — a body-frame identity can never
+    // resolve as a reparent target through this map).
+    let source_frame_by_uid: std::collections::HashMap<&astrodyn::FrameUid, Entity> =
+        sources.iter().map(|(uid, fe)| (&uid.0, fe.0)).collect();
     for (body_entity, mut trans, body_frame_entity, mut switches, mut gravity_controls) in
         &mut bodies
     {
@@ -118,29 +125,24 @@ pub fn frame_switch_system<P: Planet>(
             if !sw.active {
                 continue;
             }
-            // Resolve the target source's frame entity. Fail loud if
-            // the target isn't a registered gravity source — same
-            // contract as `evaluate_and_apply_frame_switch`'s
-            // `FrameSwitchTargetMissing` error. The query filter is
-            // `With<GravitySourceC>`, so a missing match means the
-            // target either isn't a gravity source at all (no
-            // `GravitySourceC`) or is one but `FrameEntityC` was never
-            // inserted by `register_source_frames_system` — both are
-            // user misconfigurations the diagnostic must enumerate.
-            let target_frame_entity =
-                sources
-                    .get(sw.target_source)
-                    .map(|fe| fe.0)
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "frame_switch_system: body {body_entity:?} switch evaluation failed: \
-                         target source {target:?} is not a registered gravity source — \
-                         it is missing GravitySourceC and/or FrameEntityC. Spawn it via \
-                         PlanetBundle (which inserts both) before referencing it from a \
-                         FrameSwitchConfig. Underlying error: {err:?}",
-                            target = sw.target_source,
-                        )
-                    });
+            // Resolve the target identity to its source's frame entity.
+            // Fail loud if it doesn't resolve — same contract as
+            // `evaluate_and_apply_frame_switch`'s
+            // `FrameSwitchTargetMissing` error. The map is built over
+            // `With<GravitySourceC>` rows, so a miss means the target
+            // either isn't a registered gravity source or its identity
+            // differs from the switch's — both user misconfigurations
+            // the diagnostic must enumerate.
+            let target_frame_entity = *source_frame_by_uid.get(&sw.target).unwrap_or_else(|| {
+                panic!(
+                    "frame_switch_system: body {body_entity:?} switch evaluation failed: \
+                     target `{target}` does not resolve to a registered gravity source — \
+                     no source entity carries that FrameUidC (or its frame entity was \
+                     never registered). Spawn it via PlanetBundle before referencing it \
+                     from a FrameSwitchConfig, or fix the target identity.",
+                    target = sw.target,
+                )
+            });
             // OnApproach: distance from body to target's frame
             // origin. OnDeparture: body's distance from its current
             // integration frame's origin (i.e. body's
@@ -170,11 +172,11 @@ pub fn frame_switch_system<P: Planet>(
             continue;
         };
 
-        let target_source = switches.0[idx].target_source;
+        let target = switches.0[idx].target.clone();
         switches.0[idx].active = false;
         // Re-resolve the target frame entity; lookup proven Some above.
-        let new_parent_frame_entity = sources.get(target_source).map(|fe| fe.0).expect(
-            "frame_switch_system: target source resolved during evaluation \
+        let new_parent_frame_entity = *source_frame_by_uid.get(&target).expect(
+            "frame_switch_system: target resolved during evaluation \
              but failed during application — caller-side mutation between lookups",
         );
 
@@ -230,10 +232,10 @@ pub fn frame_switch_system<P: Planet>(
 
         // Flip gravity controls: target source becomes
         // non-differential (central body), all others become
-        // differential. Identity match by `Entity` — same convention
+        // differential. Identity match by `FrameUid` — same convention
         // `evaluate_and_apply_frame_switch` uses.
         for ctrl in &mut gravity_controls.0.controls {
-            ctrl.differential = ctrl.source_name != target_source;
+            ctrl.differential = ctrl.source != target;
         }
         // `IntegSourceC` (the config-time intent) is intentionally
         // untouched — the live truth lives in the body frame
@@ -322,6 +324,8 @@ pub fn integration_system<P: Planet>(
     >,
     sources: Query<
         (
+            Entity,
+            &FrameUidC,
             &GravitySourceC,
             Option<&PlanetFixedRotationC<P>>,
             &SourceInertialPositionC,
@@ -339,6 +343,14 @@ pub fn integration_system<P: Planet>(
     dt: Res<IntegrationDtR>,
     sim_time: Res<SimulationTimeR>,
 ) {
+    // Per-run identity → source-entity map (issue #668): controls
+    // reference sources by FrameUid; a same-tick scan over the few
+    // registered sources can never be stale within the registration
+    // tick (unlike a cached resource).
+    let source_by_uid: std::collections::HashMap<&astrodyn::FrameUid, Entity> = sources
+        .iter()
+        .map(|(source_entity, uid, ..)| (&uid.0, source_entity))
+        .collect();
     // `dt` is the mandatory bit-exact f64 pipeline timestep from
     // `IntegrationDtR`; see its doc on `crate::IntegrationDtR`. The
     // non-`Option` `Res<...>` makes the resource a Bevy-level
@@ -437,29 +449,31 @@ pub fn integration_system<P: Planet>(
             typed_abs_pos,
             &controls.0,
             typed_origin,
-            |source_entity| match sources.get(source_entity) {
-                Ok((s, r, p, v, t, tidal, tidal_config)) => {
-                    let base_pos = p.0.raw_si();
-                    let stage_pos = if sub_dt != 0.0 {
-                        base_pos + source_vel(v, t) * sub_dt
-                    } else {
-                        base_pos
-                    };
-                    Some(astrodyn::ResolvedSource {
-                        source: &s.0,
-                        rotation: r.map(|r| r.0.matrix_ref()),
-                        position: stage_pos,
-                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
-                        has_delta_coeffs: tidal_config.is_some(),
-                    })
-                }
-                Err(_) => {
+            |uid: &astrodyn::FrameUid| {
+                let source_entity = *source_by_uid.get(uid).unwrap_or_else(|| {
                     panic!(
-                        "Entity {entity:?}: GravityControl references source \
-                         {source_entity:?} which does not exist or lacks \
-                         GravitySourceC + SourceInertialPositionC."
-                    );
-                }
+                        "Entity {entity:?}: GravityControl references source `{uid}` \
+                         but no registered gravity source carries that identity. \
+                         Spawn the source (PlanetBundle / populate_app / explicit \
+                         FrameUidC) before stepping, or fix the control's identity."
+                    )
+                });
+                let (_, _, s, r, p, v, t, tidal, tidal_config) = sources
+                    .get(source_entity)
+                    .expect("source_by_uid only indexes live source rows");
+                let base_pos = p.0.raw_si();
+                let stage_pos = if sub_dt != 0.0 {
+                    base_pos + source_vel(v, t) * sub_dt
+                } else {
+                    base_pos
+                };
+                Some(astrodyn::ResolvedSource {
+                    source: &s.0,
+                    rotation: r.map(|r| r.0.matrix_ref()),
+                    position: stage_pos,
+                    delta_c20: tidal.map_or(0.0, |t| t.0.value),
+                    has_delta_coeffs: tidal_config.is_some(),
+                })
             },
         );
         let mut accel = typed_accel.grav_accel.raw_si();
@@ -472,11 +486,12 @@ pub fn integration_system<P: Planet>(
             typed_abs_pos,
             typed_abs_vel,
             &controls.0,
-            |source_entity| {
+            |uid: &astrodyn::FrameUid| {
+                let source_entity = *source_by_uid.get(uid)?;
                 sources
                     .get(source_entity)
                     .ok()
-                    .map(|(s, _, p, v, t, _, _)| {
+                    .map(|(_, _, s, _, p, v, t, _, _)| {
                         // Step-start values for PPN — runner does the
                         // same (snapshots `src_pos`/`src_vel` outside
                         // the per-stage closure).

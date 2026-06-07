@@ -10,14 +10,15 @@ use bevy::prelude::*;
 
 /// Configuration for orbital elements computation.
 ///
-/// The `gravity_source` entity is queried for `GravitySourceC` to obtain `mu`.
+/// The `gravity_source` identity resolves to a registered source entity
+/// (issue #668), which is queried for `GravitySourceC` to obtain `mu`.
 /// Presence of this component + `OrbitalElementsC` on an entity enables
 /// per-step orbital elements computation in `AstrodynSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 #[require(OrbitalElementsC::<Earth>)]
 pub struct OrbitalElementsConfigC {
-    /// Gravity source entity supplying `mu` for the conversion.
-    pub gravity_source: Entity,
+    /// Inertial-frame identity of the gravity source supplying `mu`.
+    pub gravity_source: astrodyn::FrameUid,
 }
 
 /// Configuration for Euler angle decomposition.
@@ -43,11 +44,12 @@ pub struct EulerAnglesConfigC {
 /// geodetic computation. Presence of this component + `GeodeticStateC`
 /// on an entity enables per-step geodetic computation in
 /// `AstrodynSet::DerivedState`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
-    /// Planet entity supplying `T_inertial→pfix` (`PlanetFixedRotationC<P>`).
-    pub planet: Entity,
+    /// Inertial-frame identity of the planet source supplying
+    /// `T_inertial→pfix` (`PlanetFixedRotationC<P>`), issue #668.
+    pub planet: astrodyn::FrameUid,
     /// Equatorial radius of the reference ellipsoid (m).
     pub r_eq: f64,
     /// Polar radius of the reference ellipsoid (m).
