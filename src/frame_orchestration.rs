@@ -159,3 +159,103 @@ where
     }
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use astrodyn_quantities::frame::{Earth, Moon, PlanetInertial, RootInertial};
+    use astrodyn_quantities::frame_descriptor::FrameUid;
+
+    /// Build a minimal tree (root → Earth.inertial → body) plus a Moon
+    /// source frame, returning the pieces the switch helper needs.
+    fn switch_fixture() -> (
+        astrodyn_frames::FrameTree,
+        astrodyn_frames::FrameId,
+        astrodyn_frames::FrameId,
+        astrodyn_frames::FrameId,
+    ) {
+        let mut tree = astrodyn_frames::FrameTree::new();
+        let root = tree.add_root_typed::<RootInertial>("root".into());
+        let earth = tree.add_child_uid(
+            root,
+            FrameUid::of::<PlanetInertial<Earth>>(),
+            "Earth.inertial".into(),
+            astrodyn_frames::RefFrameState::default(),
+            None,
+        );
+        let body = tree.add_child_uid(
+            earth,
+            crate::named_body_frame_uid("switch-test-body"),
+            "body".into(),
+            astrodyn_frames::RefFrameState::default(),
+            None,
+        );
+        (tree, root, earth, body)
+    }
+
+    /// A frame-switch target must be an inertial-flavor class: the body
+    /// would integrate there. A Body-class identity as target is a
+    /// misconfiguration rejected before any resolution happens — even
+    /// if a frame with that identity exists.
+    // JEOD_INV: RF.15 — negative test: non-inertial-class switch target
+    #[test]
+    #[should_panic(expected = "may not host integration")]
+    fn frame_switch_rejects_non_inertial_class_target() {
+        let (mut tree, root, earth, body) = switch_fixture();
+        let mut integ = earth;
+        let mut trans = TranslationalState::default();
+        let mut switches = [FrameSwitchConfig {
+            // A Body-class identity: resolvable in principle, but
+            // class-ineligible to host integration.
+            target: crate::named_body_frame_uid("some-other-body"),
+            switch_sense: SwitchSense::OnApproach,
+            switch_distance: 1.0e9,
+            active: true,
+        }];
+        let mut controls = GravityControls::default();
+        let _ = evaluate_and_apply_frame_switch(
+            &mut tree,
+            root,
+            body,
+            &mut integ,
+            &mut trans,
+            &mut switches,
+            &mut controls,
+            |_| None,
+            1,
+            0,
+        );
+    }
+
+    /// An unresolvable (but class-eligible) target surfaces as the
+    /// FrameSwitchTargetMissing error carrying the identity.
+    #[test]
+    fn frame_switch_unresolved_target_errors_with_identity() {
+        let (mut tree, root, earth, body) = switch_fixture();
+        let mut integ = earth;
+        let mut trans = TranslationalState::default();
+        let moon = FrameUid::of::<PlanetInertial<Moon>>();
+        let mut switches = [FrameSwitchConfig {
+            target: moon.clone(),
+            switch_sense: SwitchSense::OnApproach,
+            switch_distance: 1.0e9,
+            active: true,
+        }];
+        let mut controls = GravityControls::default();
+        let err = evaluate_and_apply_frame_switch(
+            &mut tree,
+            root,
+            body,
+            &mut integ,
+            &mut trans,
+            &mut switches,
+            &mut controls,
+            |_| None, // host resolves nothing — Moon is not registered
+            1,
+            0,
+        )
+        .unwrap_err();
+        assert_eq!(err.target, moon, "the error names the missing identity");
+        assert_eq!(err.body_idx, 0);
+    }
+}
