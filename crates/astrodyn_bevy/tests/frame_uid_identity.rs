@@ -34,9 +34,8 @@ fn root_frame_carries_root_uid_and_is_indexed() {
     assert_eq!(
         app.world()
             .resource::<FrameUidIndexR>()
-            .0
             .get(&FrameUid::of::<RootInertial>()),
-        Some(&root),
+        Some(root),
         "the index resolves the root identity to the root frame entity"
     );
 }
@@ -72,14 +71,12 @@ fn source_and_pfix_frames_carry_planet_uids() {
     );
     let index = app.world().resource::<FrameUidIndexR>();
     assert_eq!(
-        index
-            .0
-            .get(&FrameUid::of::<PlanetInertial<astrodyn::Earth>>()),
-        Some(&fe)
+        index.get(&FrameUid::of::<PlanetInertial<astrodyn::Earth>>()),
+        Some(fe)
     );
     assert_eq!(
-        index.0.get(&FrameUid::of::<PlanetFixed<astrodyn::Earth>>()),
-        Some(&pfix_fe)
+        index.get(&FrameUid::of::<PlanetFixed<astrodyn::Earth>>()),
+        Some(pfix_fe)
     );
 }
 
@@ -106,10 +103,7 @@ fn body_frame_inherits_carried_identity() {
         uid,
         "the body's mission-supplied identity lands on its frame entity"
     );
-    assert_eq!(
-        app.world().resource::<FrameUidIndexR>().0.get(&uid),
-        Some(&fe)
-    );
+    assert_eq!(app.world().resource::<FrameUidIndexR>().get(&uid), Some(fe));
 }
 
 #[test]
@@ -164,8 +158,8 @@ fn retired_pfix_leaves_index_and_reuse_reacquires_it() {
     let pfix_uid = FrameUid::of::<PlanetFixed<astrodyn::Earth>>();
     let pfix_fe = app.world().get::<PfixFrameEntityC>(planet).expect("pfix").0;
     assert_eq!(
-        app.world().resource::<FrameUidIndexR>().0.get(&pfix_uid),
-        Some(&pfix_fe)
+        app.world().resource::<FrameUidIndexR>().get(&pfix_uid),
+        Some(pfix_fe)
     );
 
     // Toggle the rotation model to None: the pfix frame retires, its
@@ -181,10 +175,10 @@ fn retired_pfix_leaves_index_and_reuse_reacquires_it() {
         "retired pfix handle removed from the source"
     );
     assert!(
-        !app.world()
+        app.world()
             .resource::<FrameUidIndexR>()
-            .0
-            .contains_key(&pfix_uid),
+            .get(&pfix_uid)
+            .is_none(),
         "retired identity must leave the index so re-minting cannot collide"
     );
 
@@ -201,8 +195,8 @@ fn retired_pfix_leaves_index_and_reuse_reacquires_it() {
         .0;
     assert_eq!(reused, pfix_fe, "toggle-back reuses the retired entity");
     assert_eq!(
-        app.world().resource::<FrameUidIndexR>().0.get(&pfix_uid),
-        Some(&reused),
+        app.world().resource::<FrameUidIndexR>().get(&pfix_uid),
+        Some(reused),
         "re-minted identity is re-indexed"
     );
 }

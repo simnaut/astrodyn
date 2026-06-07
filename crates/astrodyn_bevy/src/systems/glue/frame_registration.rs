@@ -22,8 +22,39 @@ use crate::components::*;
 /// identities loudly, mirroring the arena's `register_uid`, and the map
 /// is the "addressable by stable identity" lookup the frame-document
 /// apply path resolves through.
+///
+/// The map is **read-only outside this module** ([`Self::get`] /
+/// [`Self::iter`]), carrying the arena's discipline across the
+/// boundary: `uid_index` is private there because direct mutation
+/// desyncs identity lookup from the store without ever tripping the
+/// duplicate-identity rejection (RF.14). Mutation happens only through
+/// the index/deindex systems, which observe the components themselves.
 #[derive(Resource, Debug, Default)]
-pub struct FrameUidIndexR(pub std::collections::HashMap<astrodyn::FrameUid, Entity>);
+pub struct FrameUidIndexR(pub(crate) std::collections::HashMap<astrodyn::FrameUid, Entity>);
+
+impl FrameUidIndexR {
+    /// Resolve a frame identity to its frame entity, or `None` if no
+    /// live frame entity carries it (never minted, or retired).
+    pub fn get(&self, uid: &astrodyn::FrameUid) -> Option<Entity> {
+        self.0.get(uid).copied()
+    }
+
+    /// Iterate the indexed `(identity, frame entity)` pairs, in
+    /// unspecified order.
+    pub fn iter(&self) -> impl Iterator<Item = (&astrodyn::FrameUid, Entity)> {
+        self.0.iter().map(|(uid, &e)| (uid, e))
+    }
+
+    /// Number of indexed identities.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 /// Index every newly-stamped frame entity's [`FrameUidC`] into
 /// [`FrameUidIndexR`], rejecting duplicates at the point of

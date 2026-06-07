@@ -428,3 +428,91 @@ fn tier3_frame_doc_frame_switch_continue() {
          (apply verified each record's declared parent against the rebuilt topology)"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Fail-loud guarantees (runner half)
+// ─────────────────────────────────────────────────────────────────────────
+// Plain-named (non-`tier3_`) tests: they pin the apply asserts' panic
+// paths, not full-pipeline cross-validation, and run in the unit/Tier-2
+// CI bucket. The Bevy half lives in
+// `astrodyn_verif_parity/tests/bevy_parity_frame_doc.rs`.
+
+/// Restore targets a freshly built simulation: a sim that already
+/// stepped must refuse the document instead of silently double-advancing
+/// time over live state.
+#[test]
+#[should_panic(expected = "has already stepped")]
+fn runner_apply_panics_after_stepping() {
+    let (mut producer, _) = build_leo_rnp_sim();
+    producer.step().expect("producer step");
+    let doc = producer.export_frame_document();
+
+    let (mut sim, _) = build_leo_rnp_sim();
+    sim.step().expect("consumer step"); // registration window closed
+    sim.apply_frame_document(&doc);
+}
+
+/// Derived time scales are functions of the epoch: a document produced
+/// under a different `tai_tjt_at_epoch` must be refused, never silently
+/// reinterpreted.
+#[test]
+#[should_panic(expected = "time-epoch mismatch")]
+fn runner_apply_panics_on_epoch_mismatch() {
+    let (mut producer, _) = build_leo_rnp_sim();
+    producer.step().expect("producer step");
+    let mut doc = producer.export_frame_document();
+    doc.header.tai_tjt_at_epoch += 1.0;
+
+    let (mut sim, _) = build_leo_rnp_sim();
+    sim.apply_frame_document(&doc);
+}
+
+/// Apply never reparents: a record whose declared parent disagrees with
+/// the rebuilt tree is a loud topology inconsistency (RF.02).
+#[test]
+#[should_panic(expected = "topology mismatch")]
+fn runner_apply_panics_on_topology_mismatch() {
+    let (mut producer, _) = build_leo_rnp_sim();
+    producer.step().expect("producer step");
+    let mut doc = producer.export_frame_document();
+
+    // Redeclare the body's parent as Earth.pfix (its real parent is the
+    // integration frame): the rebuilt tree's topology must win, loudly.
+    let body_uid = astrodyn::named_body_frame_uid("frame-doc-leo");
+    let pfix_uid = astrodyn::FrameUid::of::<astrodyn::PlanetFixed<astrodyn::Earth>>();
+    let pfix_idx = doc
+        .uids
+        .iter()
+        .position(|u| *u == pfix_uid)
+        .expect("pfix identity in the uid table");
+    let pfix_idx = u32::try_from(pfix_idx).expect("uid table fits u32");
+    for rec in &mut doc.records {
+        if doc.uids[rec.uid_index as usize] == body_uid {
+            rec.parent = Some(pfix_idx);
+        }
+    }
+
+    let (mut sim, _) = build_leo_rnp_sim();
+    sim.apply_frame_document(&doc);
+}
+
+/// A record whose identity is unknown to the rebuilt simulation is a
+/// loud population mismatch, never a skipped record.
+#[test]
+#[should_panic(expected = "no such frame")]
+fn runner_apply_panics_on_unknown_identity() {
+    let (mut producer, _) = build_leo_rnp_sim();
+    producer.step().expect("producer step");
+    let mut doc = producer.export_frame_document();
+
+    let body_uid = astrodyn::named_body_frame_uid("frame-doc-leo");
+    let body_idx = doc
+        .uids
+        .iter()
+        .position(|u| *u == body_uid)
+        .expect("body identity in the uid table");
+    doc.uids[body_idx] = astrodyn::named_body_frame_uid("no-such-body");
+
+    let (mut sim, _) = build_leo_rnp_sim();
+    sim.apply_frame_document(&doc);
+}

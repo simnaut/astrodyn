@@ -623,22 +623,20 @@ fn spawn_source<P: Planet>(
     // The source's inertial-frame identity (issue #664): the builder's
     // pre-minted value when supplied (add_source_typed), else the same
     // strict sealed-planet name dispatch the runner's add_source applies
-    // (#662) — unknown names fail loudly, never minting by accident.
-    let inertial_uid = uid.unwrap_or_else(|| match name {
-        "Earth" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
-        "Moon" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
-        "Sun" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Sun>>(),
-        "Mars" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
-        "Jupiter" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Jupiter>>(),
-        "Saturn" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Saturn>>(),
-        other => panic!(
-            "spawn_source: unknown gravity-source name {other:?} — the \
-             string-dispatch path only knows the six sealed planets (Earth, \
-             Moon, Sun, Mars, Jupiter, Saturn). For any other body, register \
-             it via SimulationBuilder::add_source_typed::<P>(name, entry) \
-             with a Planet marker defined via define_planet! so the source \
-             frame gets a real stamped identity."
-        ),
+    // (#662) — *shared code* (`astrodyn::sealed_planet_inertial_uid`),
+    // so the name→identity table cannot drift between backends; unknown
+    // names fail loudly, never minting by accident.
+    let inertial_uid = uid.unwrap_or_else(|| {
+        astrodyn::sealed_planet_inertial_uid(name).unwrap_or_else(|| {
+            panic!(
+                "spawn_source: unknown gravity-source name {name:?} — the \
+                 string-dispatch path only knows the six sealed planets (Earth, \
+                 Moon, Sun, Mars, Jupiter, Saturn). For any other body, register \
+                 it via SimulationBuilder::add_source_typed::<P>(name, entry) \
+                 with a Planet marker defined via define_planet! so the source \
+                 frame gets a real stamped identity."
+            )
+        })
     });
 
     let mut entity_cmds = app.world_mut().spawn((

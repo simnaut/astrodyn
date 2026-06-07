@@ -24,24 +24,26 @@
 //! Scenario mirrors `bevy_parity_highfidelity_sh4x4_rnp` (GGM02C 4×4
 //! spherical harmonics + EarthRNP), whose gravity consumes the
 //! matrix-canonical pfix rotation each step — a single-ULP error in any
-//! restored representation diverges the trajectory.
+//! restored representation diverges the trajectory. A second export-eq
+//! scenario (Earth + DE421 Moon) pins the ephemeris-driven half of the
+//! origin/epoch mirror that the SH+RNP scenario cannot reach.
 
 mod common;
 
 use std::collections::BTreeMap;
 
-use astrodyn::frame_doc::{FrameDocument, FrameRecord};
+use astrodyn::frame_doc::{FrameDocument, FrameRecord, Origin};
 use astrodyn::{
-    FrameUid, GravityControl, GravityControls, GravityGradient, GravityModel, GravitySource,
-    GravitySourceEntry, VehicleConfig,
+    Ephemeris, EphemerisBody, FrameUid, GravityControl, GravityControls, GravityGradient,
+    GravityModel, GravitySource, GravitySourceEntry, TranslationalState, VehicleConfig,
 };
 use astrodyn_bevy::{
-    DynamicsConfigC, GravityControlsC, GravitySourceC, IntegrationDtR, PlanetFixedRotationC,
-    SourceInertialPositionC, TranslationalStateC,
+    DynamicsConfigC, EphemerisBodyC, GravityControlsC, GravitySourceC, IntegrationDtR, MoonMarker,
+    PlanetFixedRotationC, SourceInertialPositionC, TranslationalStateC,
 };
 use astrodyn_runner::RotationModel;
 use bevy::prelude::*;
-use glam::DMat3;
+use glam::{DMat3, DVec3};
 
 use common::*;
 
@@ -264,6 +266,118 @@ fn bevy_parity_frame_doc_export_eq_runner_export() {
 }
 
 #[test]
+fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
+    // The SH+RNP scenario above has no DE-ephemeris source, which left
+    // two hand-mirrored, mirror-critical paths unpinned cross-backend:
+    // the `Origin::Derived { model: "DE4xx:{target}/{observer}" }`
+    // string (each backend formats its own) and the per-step epoch
+    // re-stamp that is gated on the source being ephemeris-driven.
+    // Earth (central, static) + DE421 Moon pins both: the Moon's frame
+    // record must come out ephemeris-Derived with a per-step epoch,
+    // bit-equal across backends, while static Earth keeps its
+    // registration-time epoch.
+    const EPH_BODY_LABEL: &str = "bevy-parity-frame-doc-eph";
+    let initial_moon_pos = moon_initial_pos();
+    let mu_moon = astrodyn::MOON.shape.mu;
+    let moon_source = || GravitySource {
+        mu: mu_moon,
+        model: GravityModel::PointMass,
+    };
+
+    // ── Runner ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            moon_source(),
+            astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(initial_moon_pos),
+            None,
+        ),
+    );
+    sim.set_source_ephemeris(moon_idx, EphemerisBody::Moon, EphemerisBody::Earth);
+    sim.moon_source = Some(moon_idx);
+    sim.ephemeris = Some(Ephemeris::from_bsp(&bsp_path()).expect("load DE421"));
+    let mut moon_ctrl = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+    moon_ctrl.differential = true;
+    sim.add_body(VehicleConfig {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![
+                GravityControl::new_spherical(earth_idx, GravityGradient::Skip),
+                moon_ctrl,
+            ],
+        },
+        ..VehicleConfig::named(EPH_BODY_LABEL)
+    });
+    sim.validate().unwrap();
+    sim.step_n(SNAPSHOT_STEP).expect("runner step_n");
+    let runner_doc = sim.export_frame_document();
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(astrodyn_bevy::EphemerisR(
+        Ephemeris::from_bsp(&bsp_path()).expect("load DE421"),
+    ));
+    let planet = spawn_earth_source(&mut app);
+    let moon = app
+        .world_mut()
+        .spawn((
+            astrodyn_bevy::FrameUidC(FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>()),
+            Name::new("Moon"),
+            MoonMarker,
+            GravitySourceC(moon_source()),
+            TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState {
+                position: initial_moon_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(astrodyn::Position::<astrodyn::RootInertial>::from_raw_si(
+                initial_moon_pos,
+            )),
+            EphemerisBodyC {
+                target: EphemerisBody::Moon,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+    let mut moon_ctrl = GravityControl::new_spherical(moon, GravityGradient::Skip);
+    moon_ctrl.differential = true;
+    app.world_mut().spawn((
+        astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(EPH_BODY_LABEL)),
+        TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
+        DynamicsConfigC(astrodyn::DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        }),
+        GravityControlsC(GravityControls {
+            controls: vec![
+                GravityControl::new_spherical(planet, GravityGradient::Skip),
+                moon_ctrl,
+            ],
+        }),
+    ));
+    step_bevy(&mut app, SNAPSHOT_STEP);
+    let bevy_doc = astrodyn_bevy::frame_doc::export_frame_document(app.world_mut());
+
+    // Guard the pin itself: the Moon record must actually be
+    // ephemeris-Derived (equality alone would also pass if both
+    // backends misclassified it the same static way).
+    let moon_uid = FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>().to_string();
+    let (_, moon_rec) = &by_uid(&runner_doc)[&moon_uid];
+    assert!(
+        matches!(&moon_rec.origin, Origin::Derived { model } if model == "DE4xx:Moon/Earth"),
+        "Moon record must be ephemeris-derived, got {:?}",
+        moon_rec.origin
+    );
+
+    assert_docs_eq(
+        "bevy export vs runner export (DE421 Moon)",
+        &bevy_doc,
+        &runner_doc,
+    );
+}
+
+#[test]
 fn bevy_parity_frame_doc_apply_continue_eq_uninterrupted() {
     // Bevy export mid-run → fresh App → apply → continue ≡ the
     // uninterrupted Bevy run, bit-exact.
@@ -335,4 +449,143 @@ fn bevy_parity_frame_doc_cross_restore_both_directions() {
         &astrodyn::typed_bridge::trans_typed_to_raw(&runner_restored.body(0).trans),
         &runner_ref,
     );
+}
+
+// ──────────────────── Fail-loud guarantees (Bevy half) ────────────────────
+// Plain-named (non-`bevy_parity_`) tests: they pin the document layer's
+// panic paths, not cross-backend parity, and run in the unit/Tier-2 CI
+// bucket. The runner half lives in
+// `astrodyn_verif_jeod/tests/tier3_frame_doc.rs`.
+
+/// Export refuses to *silently omit* an entity that carries frame state
+/// but no identity — an entity that bypassed registration must be a loud
+/// diagnostic, not a missing record (issue #664 review).
+#[test]
+#[should_panic(expected = "bypassed identity stamping")]
+fn export_panics_on_identityless_frame_state_entity() {
+    let (mut app, _vehicle) = build_bevy_app();
+    step_bevy(&mut app, 1);
+    // Frame state spawned around registration: no FrameUidC ever stamped.
+    app.world_mut().spawn(astrodyn_bevy::FrameTransC {
+        position: glam::DVec3::ZERO,
+        velocity: glam::DVec3::ZERO,
+    });
+    let _ = astrodyn_bevy::frame_doc::export_frame_document(app.world_mut());
+}
+
+/// Retired pfix frames are the one *sanctioned* identityless frame-state
+/// entity: export excludes them from the snapshot without tripping the
+/// fail-loud sweep.
+#[test]
+fn export_excludes_retired_pfix_frame() {
+    let (mut app, _vehicle) = build_bevy_app();
+    step_bevy(&mut app, 1);
+    let pfix_uid = FrameUid::of::<astrodyn::PlanetFixed<astrodyn::Earth>>().to_string();
+    let doc = astrodyn_bevy::frame_doc::export_frame_document(app.world_mut());
+    assert!(
+        by_uid(&doc).contains_key(&pfix_uid),
+        "while rotating, the pfix frame is part of the snapshot"
+    );
+
+    // Toggle the rotation model off: the pfix frame retires (identity
+    // stripped, entity kept alive for reuse).
+    let planet = {
+        let mut q = app
+            .world_mut()
+            .query_filtered::<Entity, With<GravitySourceC>>();
+        q.iter(app.world()).next().expect("one gravity source")
+    };
+    app.world_mut()
+        .entity_mut(planet)
+        .insert(astrodyn_bevy::RotationModelC(astrodyn::RotationModel::None));
+    step_bevy(&mut app, 2);
+
+    let doc = astrodyn_bevy::frame_doc::export_frame_document(app.world_mut());
+    assert!(
+        !by_uid(&doc).contains_key(&pfix_uid),
+        "a retired pfix frame is excluded from the snapshot, not exported \
+         as a phantom record"
+    );
+}
+
+/// Restore targets a freshly built App: a pre-advanced clock must refuse
+/// the document instead of silently double-advancing time.
+#[test]
+#[should_panic(expected = "restore targets a freshly built App")]
+fn bevy_apply_panics_when_clock_not_zero() {
+    let (mut producer, _) = build_bevy_app();
+    step_bevy(&mut producer, 1);
+    let doc = astrodyn_bevy::frame_doc::export_frame_document(producer.world_mut());
+
+    let (mut app, _) = build_bevy_app();
+    step_bevy(&mut app, 1); // clock no longer at zero
+    astrodyn_bevy::frame_doc::apply_frame_document::<astrodyn::Earth>(app.world_mut(), &doc);
+}
+
+/// Derived time scales are functions of the epoch: a document produced
+/// under a different `tai_tjt_at_epoch` must be refused, never silently
+/// reinterpreted.
+#[test]
+#[should_panic(expected = "time-epoch mismatch")]
+fn bevy_apply_panics_on_epoch_mismatch() {
+    let (mut producer, _) = build_bevy_app();
+    step_bevy(&mut producer, 1);
+    let mut doc = astrodyn_bevy::frame_doc::export_frame_document(producer.world_mut());
+    doc.header.tai_tjt_at_epoch += 1.0;
+
+    let (mut app, _) = build_bevy_app();
+    app.update();
+    astrodyn_bevy::frame_doc::apply_frame_document::<astrodyn::Earth>(app.world_mut(), &doc);
+}
+
+/// Apply never reparents: a record whose declared parent disagrees with
+/// the rebuilt hierarchy is a loud topology inconsistency (RF.02).
+#[test]
+#[should_panic(expected = "topology mismatch")]
+fn bevy_apply_panics_on_topology_mismatch() {
+    let (mut producer, _) = build_bevy_app();
+    step_bevy(&mut producer, 1);
+    let mut doc = astrodyn_bevy::frame_doc::export_frame_document(producer.world_mut());
+
+    // Redeclare the body's parent as Earth.pfix (its real parent is the
+    // root): the rebuilt App's hierarchy must win, loudly.
+    let body_uid = astrodyn::named_body_frame_uid(BODY_LABEL);
+    let pfix_uid = FrameUid::of::<astrodyn::PlanetFixed<astrodyn::Earth>>();
+    let pfix_idx = doc
+        .uids
+        .iter()
+        .position(|u| *u == pfix_uid)
+        .expect("pfix identity in the uid table");
+    let pfix_idx = u32::try_from(pfix_idx).expect("uid table fits u32");
+    for rec in &mut doc.records {
+        if doc.uids[rec.uid_index as usize] == body_uid {
+            rec.parent = Some(pfix_idx);
+        }
+    }
+
+    let (mut app, _) = build_bevy_app();
+    app.update();
+    astrodyn_bevy::frame_doc::apply_frame_document::<astrodyn::Earth>(app.world_mut(), &doc);
+}
+
+/// A record whose identity is unknown to the rebuilt App is a loud
+/// population mismatch, never a skipped record.
+#[test]
+#[should_panic(expected = "no such frame")]
+fn bevy_apply_panics_on_unknown_identity() {
+    let (mut producer, _) = build_bevy_app();
+    step_bevy(&mut producer, 1);
+    let mut doc = astrodyn_bevy::frame_doc::export_frame_document(producer.world_mut());
+
+    let body_uid = astrodyn::named_body_frame_uid(BODY_LABEL);
+    let body_idx = doc
+        .uids
+        .iter()
+        .position(|u| *u == body_uid)
+        .expect("body identity in the uid table");
+    doc.uids[body_idx] = astrodyn::named_body_frame_uid("no-such-body");
+
+    let (mut app, _) = build_bevy_app();
+    app.update();
+    astrodyn_bevy::frame_doc::apply_frame_document::<astrodyn::Earth>(app.world_mut(), &doc);
 }

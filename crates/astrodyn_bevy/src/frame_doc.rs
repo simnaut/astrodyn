@@ -29,6 +29,10 @@
 //! history is body-store state outside the frame document); single-`<P>`
 //! apply (the same central-planet shape as
 //! [`populate_app`](crate::SimulationBuilderBevyExt::populate_app)).
+//! One intentional divergence: the runner's apply closes its
+//! registration window (`has_stepped`), while the ECS store stays open
+//! by design — post-restore registration is ordinary dynamic spawning
+//! and stamps `FrameEpochC` under the restored clock.
 
 use astrodyn::frame_doc::{
     CanonicalRotation, Conventions, DocHeader, FrameDocument, FrameRecord, Origin, TransRecord,
@@ -60,6 +64,9 @@ use crate::{RootFrameEntityR, SimulationTimeR};
 /// # Panics
 /// - a frame entity is missing [`FrameEpochC`] or its parent is missing
 ///   [`FrameUidC`] (registration stamps both — issue #664);
+/// - an entity carries frame state ([`FrameTransC`]) without
+///   [`FrameUidC`] and is not a retired pfix frame — silent omission
+///   from the snapshot is not an option;
 /// - a frame entity is not classifiable (not the root, not a registered
 ///   source's inertial/pfix frame, not a registered body's frame);
 /// - the produced document fails validation (non-finite state must not
@@ -129,6 +136,32 @@ pub fn export_frame_document(world: &mut World) -> FrameDocument {
                 attitude_quat,
                 ang_vel_body,
             },
+        );
+    }
+
+    // ── Fail-loud sweep: no silent omission ──
+    // The walk below keys on `FrameUidC`, so an entity carrying frame
+    // state without identity would be *silently* excluded from the
+    // snapshot. The only sanctioned identityless frame-state entities
+    // are retired pfix frames (retirement strips `FrameUidC` and the
+    // source keeps a `RetiredPfixFrameEntityC` handle for reuse);
+    // anything else bypassed registration — refuse to export a document
+    // that misrepresents the world.
+    let retired: std::collections::HashSet<Entity> = {
+        let mut handles = world.query::<&RetiredPfixFrameEntityC>();
+        handles.iter(world).map(|h| h.0).collect()
+    };
+    let mut identityless =
+        world.query_filtered::<(Entity, Option<&Name>), (With<FrameTransC>, Without<FrameUidC>)>();
+    for (entity, name) in identityless.iter(world) {
+        assert!(
+            retired.contains(&entity),
+            "export_frame_document: entity {entity:?} (`{}`) carries frame state \
+             (FrameTransC) but no FrameUidC and is not a retired pfix frame — it \
+             bypassed identity stamping and would be silently omitted from the \
+             snapshot. Spawn frame state only through registration (which stamps \
+             FrameUidC), or despawn the entity before export.",
+            name.map(|n| n.as_str()).unwrap_or("<unnamed>")
         );
     }
 
@@ -281,9 +314,8 @@ pub fn apply_frame_document<P: Planet>(world: &mut World, doc: &FrameDocument) {
 
     for (pos, rec) in doc.records.iter().enumerate() {
         let uid = &doc.uids[rec.uid_index as usize];
-        let entity = *world
+        let entity = world
             .resource::<FrameUidIndexR>()
-            .0
             .get(uid)
             .unwrap_or_else(|| {
                 panic!(
