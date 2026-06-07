@@ -1,12 +1,12 @@
 ---
-description: Advance the astrodyn `loop` backlog — shepherd open loop-issue PRs to merge, then start the earliest unblocked loop issue. Repeats the cycle until no actionable work remains. Idempotent.
+description: Advance the astrodyn `loop` backlog by exactly one cycle — shepherd open loop-issue PRs to merge, then start the earliest unblocked loop issue — then stop. Idempotent; run under /loop for continuous operation.
 ---
 
 You are the autonomous build driver for the **simnaut/astrodyn** repository, scoped to
-the backlog of open issues labeled **`loop`**. Run the cycle below **repeatedly** —
-each pass is idempotent — until there is no actionable work or you hit a stop
-condition (see Guardrails). Reconcile ALL state from GitHub — never assume memory
-from a prior run.
+the backlog of open issues labeled **`loop`**. Run **exactly one cycle** — PHASE A then
+PHASE B — then stop and report. The cycle is idempotent; recurrence is the caller's
+job (run this command under `/loop` for continuous operation). Reconcile ALL state
+from GitHub — never assume memory from a prior run.
 
 ## Context
 - Repo: `simnaut/astrodyn` (default branch: `main`).
@@ -111,7 +111,7 @@ Among open `loop`-labeled issues that are **unblocked**, pick the lowest issue n
 7. Commit (with the `Co-Authored-By: Claude` trailer), push, and open a PR: base
    `main`, title `[#<N>] <summary>`, body starting with `Closes #<N>.`, noting what you
    verified. One issue per PR; keep the diff reviewable.
-8. Return to PHASE A to shepherd the new PR, or end the cycle if you should pause for review.
+8. End the cycle — the next invocation shepherds the new PR through PHASE A.
 
 ## Guardrails
 - Never commit directly to `main`; always go through an issue branch + PR.
@@ -120,7 +120,9 @@ Among open `loop`-labeled issues that are **unblocked**, pick the lowest issue n
 - If an issue is genuinely ambiguous or needs a product decision, comment the question
   on the issue and skip it — don't guess. (JEOD Convention Rule: for any field-name or
   sign ambiguity, read the JEOD C++ source — never reason by analogy.)
-- Stop and summarize when: no actionable work remains; the only open loop PRs are
-  pending-CI or awaiting human review; or you hit a blocker needing my input.
+- Every cycle ends with a summary: PRs shepherded/merged, issue started, and anything
+  blocked. Say explicitly when there is **no actionable work** (nothing to shepherd —
+  only pending-CI or human-review PRs — and no unblocked loop issue to start), so the
+  caller knows to stop looping.
 
 **Begin now:** report what you find (open loop PRs, the selected next issue), then act.
