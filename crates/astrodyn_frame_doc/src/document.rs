@@ -356,10 +356,16 @@ impl FrameDocument {
     }
 }
 
-/// Shared uid-table validation (snapshot + series): every interned
-/// identity must be distinct — two table entries holding the same
-/// identity would let records alias one frame through "distinct" indices.
-pub(crate) fn validate_uid_table(uids: &[FrameUid]) -> Result<(), DocError> {
+/// Validate an interned uid table on its own: every identity must be
+/// distinct — two table entries holding the same identity would let
+/// records alias one frame through "distinct" indices.
+///
+/// Public for **per-record / streaming consumers** (see the crate docs):
+/// a live feed receives the header + uid table as its handshake and
+/// must validate both before interpreting any row, exactly as
+/// [`FrameDocument::validate`] / [`FrameSeries::validate`](crate::FrameSeries::validate)
+/// do for the whole-document forms.
+pub fn validate_uid_table(uids: &[FrameUid]) -> Result<(), DocError> {
     let mut seen: std::collections::HashMap<&FrameUid, usize> =
         std::collections::HashMap::with_capacity(uids.len());
     for (i, uid) in uids.iter().enumerate() {
@@ -371,8 +377,14 @@ pub(crate) fn validate_uid_table(uids: &[FrameUid]) -> Result<(), DocError> {
     Ok(())
 }
 
-/// Shared header validation (snapshot + series).
-pub(crate) fn validate_header(header: &DocHeader) -> Result<(), DocError> {
+/// Validate a [`DocHeader`] on its own: schema version, the in-band
+/// numeric [`Conventions`] against this build's, and finiteness of the
+/// time anchors — **before any state number is interpreted**.
+///
+/// Public for **per-record / streaming consumers** (see the crate
+/// docs): this is the handshake gate of a live feed, the same check
+/// the whole-document `validate()` entry points run first.
+pub fn validate_header(header: &DocHeader) -> Result<(), DocError> {
     if header.schema_version != SCHEMA_VERSION {
         return Err(DocError::UnsupportedVersion {
             found: header.schema_version,
@@ -411,8 +423,22 @@ pub(crate) fn validate_header(header: &DocHeader) -> Result<(), DocError> {
     Ok(())
 }
 
-/// Shared per-record validation (snapshot + series rows).
-pub(crate) fn validate_record(
+/// Validate a single [`FrameRecord`] against a uid table of
+/// `uid_table_len` entries: index bounds (`uid_index`, `parent`),
+/// self-parenting, and finiteness of every state field. `record_pos`
+/// only labels the error.
+///
+/// Public for **per-record / streaming consumers** (see the crate
+/// docs): a loose row arriving over a socket gets exactly the per-record
+/// half of [`FrameDocument::validate`]. What this deliberately does NOT
+/// check — because a loose record cannot — are the cross-record
+/// invariants: topology (cycle-freedom, declared-parent consistency
+/// against the consumer's folded tree) and the series invariants
+/// (row completeness, constant topology within a segment). Streaming
+/// consumers own those checks; each record's declared `parent` exists
+/// precisely so a mismatch surfaces as a loud inconsistency rather
+/// than a silent reinterpretation.
+pub fn validate_record(
     rec: &FrameRecord,
     record_pos: usize,
     uid_table_len: usize,

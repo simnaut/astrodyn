@@ -609,11 +609,16 @@ fn generate_orientation_kernels(argv: Vec<String>) {
 
 // Topological order for `cargo xtask publish`. Each entry must be
 // publishable using only registry copies of the entries above it. The
-// layers are: (0) astrodyn_quantities; (1) astrodyn_math, _time,
-// _ephemeris, _atmosphere; (2) _planet, _frames, _dynamics; (3)
-// _gravity, _interactions; (4) astrodyn (root); (5) _bevy, _runner.
+// layers are: (0) astrodyn_quantities; (1) astrodyn_frame_doc,
+// astrodyn_math, _time, _ephemeris, _atmosphere; (2) _planet, _frames,
+// _dynamics; (3) _gravity, _interactions; (4) astrodyn (root); (5)
+// _bevy, _runner.
 const PUBLISH_ORDER: &[&str] = &[
     "astrodyn_quantities",
+    // Identity + wire schema only; depends solely on _quantities. Must
+    // precede `astrodyn`, whose optional `frame-doc` feature carries a
+    // versioned dep on it (issue #663).
+    "astrodyn_frame_doc",
     "astrodyn_math",
     "astrodyn_time",
     "astrodyn_ephemeris",
@@ -824,7 +829,7 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
 }
 
 // Read `[workspace.package].version` from the workspace `Cargo.toml`.
-// All 13 publishable crates inherit this value via
+// All 14 publishable crates inherit this value via
 // `version.workspace = true`, so we only need to find it once.
 fn workspace_version() -> String {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
