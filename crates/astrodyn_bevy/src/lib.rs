@@ -564,18 +564,25 @@ impl Plugin for AstrodynPlugin {
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
                 // Planet-agnostic since #664; registered once, not per planet.
-                systems::register_source_frames_system.before(AstrodynSet::EphemerisUpdate),
+                // `.before(TimeUpdate)`: registration stamps FrameEpochC from
+                // SimulationTimeR (read), which time_advance_system writes.
+                // Stamping BEFORE the advance makes a between-tick
+                // registration carry the previous tick's time — exactly the
+                // runner's between-step registration semantics (and a
+                // first-tick registration carries t=0, matching the runner's
+                // pre-step add_source/add_body stamps bit-for-bit).
+                systems::register_source_frames_system.before(AstrodynSet::TimeUpdate),
                 // Late-attached `PlanetFixedRotationC` → pfix child node
                 // (see `register_pfix_frames_system` doc).
                 systems::register_pfix_frames_system::<astrodyn::Earth>
+                    .before(AstrodynSet::TimeUpdate)
                     .after(systems::register_source_frames_system)
-                    .before(AstrodynSet::EphemerisUpdate)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Catch dynamically-spawned bodies (after source registration so
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system::<astrodyn::Earth>
+                    .before(AstrodynSet::TimeUpdate)
                     .after(systems::register_pfix_frames_system::<astrodyn::Earth>)
-                    .before(AstrodynSet::EphemerisUpdate)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 // Late-acquired / late-lost `MassPropertiesC` →
                 // insert / remove `MassPointRef` for bodies that have
@@ -1173,16 +1180,19 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
     app.add_systems(
         FixedUpdate,
         (
+            // `.before(TimeUpdate)`: see the Earth block — registration
+            // stamps FrameEpochC at the pre-advance time, mirroring the
+            // runner's between-step registration semantics.
             systems::register_pfix_frames_system::<P>
+                .before(AstrodynSet::TimeUpdate)
                 .after(systems::register_source_frames_system)
-                .before(AstrodynSet::EphemerisUpdate)
                 .in_set(PerPlanetSet::of::<P>()),
             // `.before(sync_body_mass_point_ref_system)` — see the
             // PreUpdate block above for the rationale. #562 Option B fix.
             systems::register_body_frames_system::<P>
+                .before(AstrodynSet::TimeUpdate)
                 .after(systems::register_pfix_frames_system::<P>)
                 .before(systems::sync_body_mass_point_ref_system)
-                .before(AstrodynSet::EphemerisUpdate)
                 .in_set(PerPlanetSet::of::<P>()),
             // Per-planet validator instantiation. Mirrors the schedule
             // slot of the Earth registration in `AstrodynPlugin::build`:
