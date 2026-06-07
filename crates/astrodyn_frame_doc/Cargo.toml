@@ -12,6 +12,9 @@ rust-version.workspace = true
 # Dev-only proptest corpus — not part of the published package.
 exclude = ["proptest-regressions/**"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 # Identity vocabulary only (FrameUid + its components). `astrodyn_quantities`
 # is the type-facade layer (no physics algorithms); its `serde` feature gates
