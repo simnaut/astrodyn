@@ -253,12 +253,15 @@ pub(crate) struct SimBody {
     /// DB.21 — only unattached bodies integrate.
     pub frame_attach: Option<FrameAttachState>,
     pub config: DynamicsConfig,
-    pub gravity_controls: GravityControls<usize>,
+    pub gravity_controls: GravityControls,
     pub integrator: astrodyn::IntegratorType,
     pub drag: Option<DragConfig>,
     pub flat_plate_state: Option<astrodyn::FlatPlateState<astrodyn::SelfRef>>,
     pub cannonball_srp: Option<(f64, f64, f64)>,
-    pub shadow_body: Option<(usize, f64)>,
+    /// SRP shadow caster: (source inertial-frame identity, radius m).
+    /// Identity-keyed (issue #668); resolved per consumption via the
+    /// simulation's uid → index boundary map.
+    pub shadow_body: Option<(astrodyn::FrameUid, f64)>,
     pub t_struct_body: DMat3,
     pub compute_gravity_torque: bool,
     /// Per-body atmospheric state slot.
@@ -304,10 +307,10 @@ pub(crate) struct SimBody {
     pub gravity_torque: Option<DVec3>,
 
     // ── Derived state config ──
-    pub orbital_elements_source: Option<usize>,
+    pub orbital_elements_source: Option<astrodyn::FrameUid>,
     pub euler_sequence: Option<EulerSequence>,
     pub compute_lvlh: bool,
-    pub geodetic_planet: Option<(usize, f64, f64)>,
+    pub geodetic_planet: Option<(astrodyn::FrameUid, f64, f64)>,
     pub compute_solar_beta: bool,
     pub earth_lighting_config: Option<(f64, f64, f64)>,
 
@@ -349,7 +352,7 @@ impl SimBody {
             None => (None, None),
         };
 
-        let shadow_body = config.shadow_body.map(|sb| (sb.source_idx, sb.radius));
+        let shadow_body = config.shadow_body.map(|sb| (sb.source, sb.radius));
 
         Self {
             // VehicleConfig::trans is typed `<RootInertial>`; the
@@ -395,10 +398,7 @@ impl SimBody {
             orbital_elements_source: config.derived.orbital_elements_source,
             euler_sequence: config.derived.euler_sequence,
             compute_lvlh: config.derived.lvlh,
-            geodetic_planet: config
-                .derived
-                .geodetic
-                .map(|g| (g.source_idx, g.r_eq, g.r_pol)),
+            geodetic_planet: config.derived.geodetic.map(|g| (g.source, g.r_eq, g.r_pol)),
             compute_solar_beta: config.derived.solar_beta,
             earth_lighting_config: config
                 .derived

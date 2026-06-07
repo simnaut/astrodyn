@@ -64,11 +64,11 @@ use astrodyn::EphemerisBody;
 ///         }
 ///         StepError::FrameSwitchTargetMissing {
 ///             body_idx,
-///             target_source,
+///             target,
 ///             num_sources,
 ///         } => {
 ///             eprintln!(
-///                 "body {body_idx}: target {target_source} >= {num_sources}"
+///                 "body {body_idx}: target `{target}` not among {num_sources} sources"
 ///             );
 ///         }
 ///     }
@@ -92,15 +92,15 @@ pub enum StepError {
         message: String,
     },
     /// A body's [`FrameSwitchConfig`](astrodyn::FrameSwitchConfig)
-    /// referenced a `target_source` index that doesn't correspond to any
+    /// referenced a target identity that does not correspond to any
     /// registered gravity source. Typically a mid-mission edit hazard
     /// caught at step time when [`Simulation::validate`](crate::Simulation::validate)
     /// wasn't re-run after the change.
     FrameSwitchTargetMissing {
         /// Index of the body whose frame switch contains the bad target.
         body_idx: usize,
-        /// Out-of-range target source index.
-        target_source: usize,
+        /// The unresolved target identity (issue #668).
+        target: astrodyn::FrameUid,
         /// Number of sources currently registered.
         num_sources: usize,
     },
@@ -122,15 +122,14 @@ impl fmt::Display for StepError {
             ),
             Self::FrameSwitchTargetMissing {
                 body_idx,
-                target_source,
+                target,
                 num_sources,
             } => write!(
                 f,
-                "frame switch evaluation: body {body_idx} references target_source \
-                 {target_source} but only {num_sources} source(s) are configured. \
-                 Re-run Simulation::validate() before stepping; if a frame switch \
-                 was added or edited mid-mission, also check the body's \
-                 frame_switches list."
+                "frame switch evaluation: body {body_idx} references target \
+                 `{target}` which does not resolve to any of the {num_sources} \
+                 registered gravity source(s). Re-run Simulation::validate after \
+                 mid-mission source/switch edits."
             ),
         }
     }

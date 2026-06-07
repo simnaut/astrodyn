@@ -40,6 +40,10 @@ impl Simulation {
         let is_root_equivalent =
             |frame_id: FrameId| frame_id == root_frame_id || Some(frame_id) == central_inertial;
         let mut all_errors = Vec::new();
+        // Hoisted field borrow (issue #668): the loop holds
+        // `self.bodies.iter_mut()`, so uid resolution must go through a
+        // disjoint field borrow rather than a `&self` method.
+        let uid_to_idx = &self.source_uid_to_idx;
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             let plate_counts = body.flat_plate_state.as_ref().map(|fps| {
                 (
@@ -70,36 +74,41 @@ impl Simulation {
                 mass_untyped.as_ref(),
                 body.rot.is_some(),
                 Some(&trans_untyped),
-                |source_id: usize| self.gravity_data.get(source_id).map(|g| &g.source),
+                |uid: &astrodyn::FrameUid| {
+                    uid_to_idx
+                        .get(uid)
+                        .and_then(|&i| self.gravity_data.get(i))
+                        .map(|g| &g.source)
+                },
                 plate_counts,
             );
             all_errors.extend(errors);
 
-            // Validate shadow_body index
-            if let Some((idx, _radius)) = body.shadow_body {
-                if idx >= num_sources {
-                    all_errors.push(ValidationError::ShadowBodyOutOfRange {
-                        index: idx,
+            // Validate shadow_body identity resolves (issue #668)
+            if let Some((ref uid, _radius)) = body.shadow_body {
+                if !uid_to_idx.contains_key(uid) {
+                    all_errors.push(ValidationError::ShadowBodyUnresolved {
+                        target: uid.clone(),
                         num_sources,
                     });
                 }
             }
 
-            // Validate geodetic_planet index
-            if let Some((idx, _, _)) = body.geodetic_planet {
-                if idx >= num_sources {
-                    all_errors.push(ValidationError::GeodeticPlanetOutOfRange {
-                        index: idx,
+            // Validate geodetic_planet identity resolves
+            if let Some((ref uid, _, _)) = body.geodetic_planet {
+                if !uid_to_idx.contains_key(uid) {
+                    all_errors.push(ValidationError::GeodeticPlanetUnresolved {
+                        target: uid.clone(),
                         num_sources,
                     });
                 }
             }
 
-            // Validate orbital_elements_source index
-            if let Some(idx) = body.orbital_elements_source {
-                if idx >= num_sources {
-                    all_errors.push(ValidationError::OrbitalElementsSourceOutOfRange {
-                        index: idx,
+            // Validate orbital_elements_source identity resolves
+            if let Some(ref uid) = body.orbital_elements_source {
+                if !uid_to_idx.contains_key(uid) {
+                    all_errors.push(ValidationError::OrbitalElementsSourceUnresolved {
+                        target: uid.clone(),
                         num_sources,
                     });
                 }
@@ -162,28 +171,27 @@ impl Simulation {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
             }
 
-            // Frame switch target_source must be a valid source index AND
-            // present in the body's gravity controls (so the post-switch
+            // Frame switch target must resolve to a registered source AND
+            // be present in the body's gravity controls (so the post-switch
             // differential flip actually takes effect).
             // Only validate active switches — JEOD only evaluates active switches.
             for sw in &body.frame_switches {
                 if sw.active {
-                    let target = sw.target_source;
-                    if target >= num_sources {
-                        all_errors.push(ValidationError::FrameSwitchTargetSourceOutOfRange {
+                    if !uid_to_idx.contains_key(&sw.target) {
+                        all_errors.push(ValidationError::FrameSwitchTargetUnresolved {
                             body_idx,
-                            target_source: target,
+                            target: sw.target.clone(),
                             num_sources,
                         });
                     } else if !body
                         .gravity_controls
                         .controls
                         .iter()
-                        .any(|c| c.source_name == target)
+                        .any(|c| c.source == sw.target)
                     {
-                        all_errors.push(ValidationError::FrameSwitchTargetSourceNotInControls {
+                        all_errors.push(ValidationError::FrameSwitchTargetNotInControls {
                             body_idx,
-                            target_source: target,
+                            target: sw.target.clone(),
                         });
                     }
                 }
@@ -206,9 +214,9 @@ impl Simulation {
                 let non_root_integ = !is_root_equivalent(body.integ_frame_id);
                 let non_root_switch = body.frame_switches.iter().any(|sw| {
                     sw.active
-                        && self
-                            .source_frame_ids
-                            .get(sw.target_source)
+                        && uid_to_idx
+                            .get(&sw.target)
+                            .and_then(|&i| self.source_frame_ids.get(i))
                             .is_some_and(|frame| !frame.central)
                 });
                 if non_root_integ || non_root_switch {
@@ -235,7 +243,10 @@ impl Simulation {
             // a wrong gravity model is not recoverable downstream.
             // JEOD_INV: GV.03 — check_validity() called at startup
             for ctrl in &body.gravity_controls.controls {
-                if let Some(grav) = self.gravity_data.get(ctrl.source_name) {
+                if let Some(grav) = uid_to_idx
+                    .get(&ctrl.source)
+                    .and_then(|&i| self.gravity_data.get(i))
+                {
                     ctrl.check_validity(&grav.source);
                 }
             }

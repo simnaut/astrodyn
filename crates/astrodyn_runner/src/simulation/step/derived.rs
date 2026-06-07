@@ -24,6 +24,9 @@ impl Simulation {
         body_integ_origins: &[IntegOrigin],
     ) {
         let gravity_data = &self.gravity_data;
+        // Identity → index boundary map (issue #668): derived-state
+        // source references are FrameUids.
+        let uid_to_idx = &self.source_uid_to_idx;
 
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             // RF.10 distinction:
@@ -42,8 +45,14 @@ impl Simulation {
             let integ_origin = &body_integ_origins[body_idx];
 
             // Orbital elements (NOT a shift site)
-            if let Some(src_idx) = body.orbital_elements_source {
-                if let Some(mu) = gravity_data.get(src_idx).map(|g| g.source.mu) {
+            if body.orbital_elements_source.is_some() {
+                let mu = body
+                    .orbital_elements_source
+                    .as_ref()
+                    .and_then(|uid| uid_to_idx.get(uid))
+                    .and_then(|&i| gravity_data.get(i))
+                    .map(|g| g.source.mu);
+                if let Some(mu) = mu {
                     body.orbital_elements = astrodyn::compute_orbital_elements(
                         mu,
                         body.trans.position.raw_si(),
@@ -79,10 +88,10 @@ impl Simulation {
             }
 
             // Geodetic state (NOT a shift site)
-            if let Some((src_idx, r_eq, r_pol)) = body.geodetic_planet {
-                let pfix_rot = self
-                    .source_frame_ids
-                    .get(src_idx)
+            if let Some((ref src_uid, r_eq, r_pol)) = body.geodetic_planet {
+                let pfix_rot = uid_to_idx
+                    .get(src_uid)
+                    .and_then(|&i| self.source_frame_ids.get(i))
                     .and_then(|sfids| sfids.pfix)
                     .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this);
                 if let Some(t_pfix) = pfix_rot {

@@ -34,6 +34,10 @@ impl Simulation {
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
+        // Identity → index boundary map (issue #668): shadow-body
+        // references are FrameUids; an unresolvable identity panics
+        // loudly (silent full-illumination would be wrong physics).
+        let uid_to_idx = &self.source_uid_to_idx;
 
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             // JEOD_INV: RF.10 — SRP / shadow consume root-inertial position
@@ -104,11 +108,18 @@ impl Simulation {
                         // scheduled-class shadow evaluation in SIM_3_ORBIT).
                         let illum_factor = body
                             .shadow_body
-                            .map(|(idx, radius)| {
+                            .as_ref()
+                            .map(|(uid, radius)| {
                                 astrodyn::compute_shadow_fraction(
                                     inertial_pos,
                                     sun_position,
                                     {
+                                        let idx = *uid_to_idx.get(uid).unwrap_or_else(|| {
+                                            panic!(
+                                                "shadow_body source `{uid}` does not resolve \
+                                                 to a registered gravity source"
+                                            )
+                                        });
                                         let fid = source_frame_ids[idx].inertial;
                                         if fid == root_fid {
                                             DVec3::ZERO
@@ -116,7 +127,7 @@ impl Simulation {
                                             frame_tree.get(fid).state.trans.position
                                         }
                                     },
-                                    radius,
+                                    *radius,
                                     astrodyn::SOLAR_RADIUS,
                                 )
                             })
@@ -214,11 +225,18 @@ impl Simulation {
                 } else if let Some((cx_area, albedo, diffuse)) = body.cannonball_srp {
                     let illum_factor = body
                         .shadow_body
-                        .map(|(idx, radius)| {
+                        .as_ref()
+                        .map(|(uid, radius)| {
                             astrodyn::compute_shadow_fraction(
                                 inertial_pos,
                                 sun_position,
                                 {
+                                    let idx = *uid_to_idx.get(uid).unwrap_or_else(|| {
+                                        panic!(
+                                            "shadow_body source `{uid}` does not resolve \
+                                             to a registered gravity source"
+                                        )
+                                    });
                                     let fid = source_frame_ids[idx].inertial;
                                     if fid == root_fid {
                                         DVec3::ZERO
@@ -226,7 +244,7 @@ impl Simulation {
                                         frame_tree.get(fid).state.trans.position
                                     }
                                 },
-                                radius,
+                                *radius,
                                 astrodyn::SOLAR_RADIUS,
                             )
                         })

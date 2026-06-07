@@ -133,7 +133,7 @@ impl Simulation {
         let inertial_name = format!("{name}.inertial");
         let inertial_id = self.frame_tree.add_child_uid(
             self.root_frame_id,
-            inertial_uid,
+            inertial_uid.clone(),
             inertial_name,
             RefFrameState {
                 trans: RefFrameTrans {
@@ -189,6 +189,12 @@ impl Simulation {
             "add_source: tidal_config requires a planet-fixed frame \
              (set rotation_model or t_inertial_pfix on the source)."
         );
+
+        // The single handle↔uid boundary (issue #668): config-carried
+        // identities resolve to source indices through this map at every
+        // consumption site. `add_child_uid` above already rejected a
+        // duplicate identity (RF.14), so this insert cannot clobber.
+        self.source_uid_to_idx.insert(inertial_uid, idx);
 
         self.source_frame_ids.push(SourceFrameIds {
             inertial: inertial_id,
@@ -257,6 +263,32 @@ impl Simulation {
         self.source_frame_ids
             .iter()
             .any(|sf| sf.central && sf.inertial == frame_id)
+    }
+
+    /// The inertial-frame identity of a gravity source (issue #668) —
+    /// the value mission config references the source by
+    /// (`GravityControl::new_spherical(sim.source_uid(idx).clone(), …)`,
+    /// `FrameSwitchConfig { target, … }`). The reverse of the boundary
+    /// map maintained by [`Self::add_source_with_uids`].
+    ///
+    /// # Panics
+    /// Panics if `source_idx` is out of range.
+    pub fn source_uid(&self, source_idx: usize) -> &astrodyn::FrameUid {
+        let sf = self.source_frame_ids.get(source_idx).unwrap_or_else(|| {
+            panic!(
+                "source_uid: source index {source_idx} is out of range; \
+                 {} source(s) configured",
+                self.num_sources()
+            )
+        });
+        self.frame_tree.get(sf.inertial).uid()
+    }
+
+    /// Resolve a source identity to its registration index, or `None`
+    /// if no source carries it. The single uid → handle resolution the
+    /// runner's consumption sites go through (issue #668).
+    pub(crate) fn source_idx_for_uid(&self, uid: &astrodyn::FrameUid) -> Option<usize> {
+        self.source_uid_to_idx.get(uid).copied()
     }
 
     /// Get the inertial frame ID for a gravity source.

@@ -167,6 +167,13 @@ pub struct Simulation {
     source_frame_ids: Vec<SourceFrameIds>,
     /// Per-source gravity model data (parallel to `source_frame_ids`).
     gravity_data: Vec<GravityData>,
+    /// Identity → source-index boundary map (issue #668): mission config
+    /// references sources by inertial-frame `FrameUid`; every runner
+    /// consumption site (gravity eval, frame switch, derived state, SRP
+    /// shadow, validation) resolves through this map. Maintained at the
+    /// single registration site (`add_source_with_uids`), so handle↔uid
+    /// translation lives at exactly one boundary.
+    source_uid_to_idx: std::collections::HashMap<astrodyn::FrameUid, usize>,
     /// Per-source ephemeris body mapping (parallel to `source_frame_ids`).
     source_ephem_bodies: Vec<Option<(astrodyn::EphemerisBody, astrodyn::EphemerisBody)>>,
     /// Atmosphere configuration. `None` disables atmosphere for all bodies.
@@ -306,6 +313,7 @@ impl Simulation {
             root_frame_id,
             source_frame_ids: Vec::new(),
             gravity_data: Vec::new(),
+            source_uid_to_idx: std::collections::HashMap::new(),
             source_ephem_bodies: Vec::new(),
             atmosphere: None,
             atmosphere_planet_source: None,
