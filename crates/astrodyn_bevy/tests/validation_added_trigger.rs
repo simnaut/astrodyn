@@ -42,6 +42,9 @@ fn build_app() -> (App, Entity) {
     let earth = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),

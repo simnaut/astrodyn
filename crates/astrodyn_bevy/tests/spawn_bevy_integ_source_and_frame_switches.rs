@@ -151,7 +151,15 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
 
     // Build a config that integrates in Moon (source index 1).
@@ -199,7 +207,15 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
 
     let cfg = earth_then_moon_config();
@@ -372,7 +388,15 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .insert(SourceInertialVelocityC::default())
         .id();
 

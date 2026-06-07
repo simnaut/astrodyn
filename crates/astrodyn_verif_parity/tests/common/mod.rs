@@ -216,6 +216,9 @@ pub fn new_sim_earth(dt: f64) -> (Simulation, usize) {
 pub fn spawn_earth_source(app: &mut App) -> Entity {
     app.world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),

@@ -35,6 +35,9 @@ fn bevy_parity_point_mass_sixdof() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             astrodyn_bevy::GravitySourceC(earth_source()),
             astrodyn_bevy::SourceInertialPositionC::default(),
@@ -45,6 +48,10 @@ fn bevy_parity_point_mass_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-point-mass-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -95,6 +102,10 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-point-mass-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
@@ -177,6 +188,10 @@ fn bevy_parity_point_mass_run2_6dof() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-point-mass-b3-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -250,6 +265,10 @@ fn bevy_parity_point_mass_orbinit_cross_consistency() {
         let vehicle = app
             .world_mut()
             .spawn((
+                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "bevy-parity-point-mass-b4-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(*trans),
                 DynamicsConfigC::default(),
                 GravityControlsC(GravityControls {
@@ -706,6 +725,10 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-point-mass-b5-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
@@ -768,3 +791,7 @@ fn bevy_parity_point_mass_run5c_atmosphere_max() {
     };
     run_atmosphere_parity("run5c_atmos_max", ecc_trans);
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

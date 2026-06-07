@@ -4,7 +4,9 @@
 //! entities. They are entirely optional — you can always spawn individual
 //! components directly.
 
-use astrodyn::{FrameTransform, GravityModel, GravitySource, Planet, PlanetConfig};
+use astrodyn::{
+    FrameTransform, FrameUid, GravityModel, GravitySource, Planet, PlanetConfig, PlanetInertial,
+};
 use bevy::prelude::*;
 
 use crate::components::*;
@@ -47,6 +49,11 @@ pub struct PlanetBundle<P: Planet> {
     pub rotation_model: RotationModelC,
     /// Planet shape (radii, mu, flattening).
     pub shape: PlanetC,
+    /// The source's inertial-frame identity (issue #664) —
+    /// `FrameUid::of::<PlanetInertial<P>>()`, copied onto the source's
+    /// frame entity at registration; the pfix sibling is derived via
+    /// [`astrodyn::pfix_sibling_uid`].
+    pub uid: FrameUidC,
 }
 
 impl<P: Planet> PlanetBundle<P> {
@@ -65,6 +72,7 @@ impl<P: Planet> PlanetBundle<P> {
             ang_vel: PlanetAngularVelocityC::<P>::default(),
             rotation_model: RotationModelC(config.rotation_model),
             shape: PlanetC(config.shape),
+            uid: FrameUidC(FrameUid::of::<PlanetInertial<P>>()),
         }
     }
 
@@ -130,12 +138,14 @@ impl<P: Planet> PlanetBundle<P> {
         GravitySourceC,
         SourceInertialPositionC,
         TranslationalStateC<P>,
+        FrameUidC,
     ) {
         (
             name.into(),
             GravitySourceC(source),
             SourceInertialPositionC::default(),
             TranslationalStateC::<P>::default(),
+            FrameUidC(FrameUid::of::<PlanetInertial<P>>()),
         )
     }
 }

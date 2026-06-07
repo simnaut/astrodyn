@@ -43,9 +43,20 @@ fn build_planet_app(name: &str, config: &PlanetConfig) -> (App, Entity) {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
+    // Identity = the source's own planet (issue #664): the helper takes
+    // the planet by name, so mirror the strict sealed-planet dispatch.
+    let uid = match name {
+        "Earth" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+        "Moon" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+        "Mars" => astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
+        other => panic!("build_planet_app: unsupported planet name {other:?}"),
+    };
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass(name, config))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            uid: astrodyn_bevy::FrameUidC(uid),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass(name, config)
+        })
         .id();
     (app, planet)
 }
@@ -205,6 +216,9 @@ fn bevy_parity_planet_ang_vel_rotation_none_leaves_default() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Inert"),
             GravitySourceC(GravitySource {
                 mu: EARTH.shape.mu,
@@ -400,7 +414,15 @@ fn bevy_parity_planet_ang_vel_moon_de421() {
     app.insert_resource(EphemerisR(eph));
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
     // Override the bundle's default `RotationModelC(MoonIAU)` (copied
     // from `MOON.rotation_model`) with `MoonDE421`. Inserting after

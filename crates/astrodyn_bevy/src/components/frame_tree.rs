@@ -116,6 +116,35 @@ pub struct BodyFrameMarker;
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct IntegrationFrameMarker;
 
+/// Stable runtime identity of a frame entity (issue #664) — the ECS
+/// analogue of the arena's required `FrameNode::uid`. **Required on
+/// every frame entity**: the registration systems stamp root / source
+/// inertial / pfix frame entities with their type-derived identities
+/// and copy a body's config-carried identity onto its body-frame
+/// entity (panicking, #662-style, if a body entity carries none).
+/// [`crate::FrameUidIndexR`] indexes these for identity-keyed lookup
+/// and rejects duplicates at registration, mirroring the arena's
+/// `register_uid`.
+///
+/// Body entities also carry this component (inserted by
+/// `VehicleConfig::spawn_bevy` from `config.frame_uid`, or by hand for
+/// raw spawns via `astrodyn::named_body_frame_uid`); the registration
+/// system copies it to the spawned frame entity, so the same
+/// mission-supplied identity the runner stamps flows through the Bevy
+/// path unchanged.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct FrameUidC(pub astrodyn::FrameUid);
+
+/// Frame epoch: the time-validity (TDB) of this frame entity's state —
+/// the ECS analogue of the arena's `FrameNode::epoch` (RFS-603).
+/// Stamped at registration and re-stamped by the same writers that
+/// re-stamp the runner's nodes (ephemeris-driven source sync, pfix
+/// rotation updates, per-step body sync), so the two backends carry
+/// bit-identical heterogeneous epochs and the frame-document export is
+/// cross-backend comparable.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct FrameEpochC(pub astrodyn::SecondsSince<astrodyn::TDB>);
+
 /// Bidirectional handle linking a body / source / planet entity to its
 /// frame entity in the ECS hierarchy. Inserted by
 /// `register_*_frames_system` for every entity that carries dynamics

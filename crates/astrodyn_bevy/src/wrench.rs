@@ -564,6 +564,11 @@ pub fn wrench_aggregation_system(
 
 #[cfg(test)]
 mod tests {
+    /// Per-call unique suffix for swept test-body identities (#664):
+    /// helpers spawning multiple bodies per App must mint distinct
+    /// identities.
+    static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     use super::*;
     use crate::components::{
         DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, MassChildOf,
@@ -658,6 +663,10 @@ mod tests {
         let entity = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b1-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(core),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -694,6 +703,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b2-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -705,6 +718,10 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b3-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
@@ -751,6 +768,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b4-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -763,6 +784,10 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b5-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
@@ -826,6 +851,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b6-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -842,6 +871,10 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b7-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 TotalForceC::default(),
@@ -889,6 +922,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b8-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -906,6 +943,10 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b9-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 TotalForceC::default(),
@@ -965,6 +1006,10 @@ mod tests {
         let rot_parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b10-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("rotated_parent"),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
@@ -983,6 +1028,10 @@ mod tests {
         let _rot_child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b11-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("rotated_child"),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(rot_parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
@@ -1002,6 +1051,10 @@ mod tests {
         let id_parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b12-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("identity_parent"),
                 mp_c_from_raw(MassProperties::new(8.0)),
                 TotalForceC::default(),
@@ -1014,6 +1067,10 @@ mod tests {
         let _id_child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b13-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("identity_child"),
                 mp_c_from_raw(MassProperties::new(2.0)),
                 MassChildOf::new(id_parent, DVec3::new(0.0, 1.0, 0.0)),
@@ -1089,6 +1146,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b14-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1100,6 +1161,10 @@ mod tests {
         let _a = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b15-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
                 TotalForceC::default(),
@@ -1112,6 +1177,10 @@ mod tests {
         let _b = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b16-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(0.0, -1.0, 0.0)),
                 TotalForceC::default(),
@@ -1212,6 +1281,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b17-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
@@ -1227,6 +1300,10 @@ mod tests {
         let _child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b18-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
                 TotalForceC::default(),
@@ -1360,6 +1437,10 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b19-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("child"),
                 mp_c_from_raw(MassProperties::new(100.0)),
                 MassChildOf::new(parent, DVec3::new(0.5, 0.0, 0.0)),
@@ -1503,6 +1584,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b20-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("parent"),
                 mp_c_from_raw(MassProperties::new(10.0)),
                 TotalForceC::default(),
@@ -1543,6 +1628,10 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b21-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("child_appendage"),
                 mp_c_from_raw(MassProperties::new(1.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
@@ -1693,6 +1782,10 @@ mod tests {
         let parent = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b22-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("parent"),
                 mp_c_from_raw(parent_mass),
                 TotalForceC::default(),
@@ -1721,6 +1814,10 @@ mod tests {
         let child = app
             .world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "wrench-b23-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 Name::new("child"),
                 mp_c_from_raw(MassProperties::new(5.0)),
                 MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),

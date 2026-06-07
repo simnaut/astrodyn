@@ -92,7 +92,15 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -108,6 +116,10 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-frame-switch-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("EarthToMoon"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -317,7 +329,15 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<astrodyn::Earth> {
+            // Identity = the source's own planet (issue #664); the
+            // bundle's <Earth> only tags component storage (the sim's
+            // central-planet convention, see SunBundle).
+            uid: astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >()),
+            ..PlanetBundle::<astrodyn::Earth>::point_mass("Moon", &MOON)
+        })
         .id();
 
     let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
@@ -330,6 +350,10 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-frame-switch-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("EarthDeparture"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -440,3 +464,7 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         );
     }
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -64,6 +64,10 @@ fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_sta
     let body = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-frame-attach-environment-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("frame_attached_body"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(TranslationalState::default()),
             RotationalStateC::from(RotationalStateTyped::<SelfRef>::default()),
@@ -145,3 +149,7 @@ fn bevy_parity_frame_attach_environment_frame_attach_gravity_sees_propagated_sta
          reflect the body's pre-tick default-zero position."
     );
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

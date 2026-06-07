@@ -30,6 +30,9 @@ fn setup_iss(mut commands: Commands) {
     let earth_mu = earth_recipe.source.mu;
     let earth = commands
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),

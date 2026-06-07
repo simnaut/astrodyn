@@ -77,6 +77,9 @@ fn build_app() -> (App, Entity, Entity) {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(GravitySource {
                 mu: MU_EARTH,
@@ -95,6 +98,10 @@ fn build_app() -> (App, Entity, Entity) {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-b1-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -240,6 +247,9 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
     let planet = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Earth>,
+            >()),
             Name::new("Earth"),
             GravitySourceC(GravitySource {
                 mu: MU_EARTH,
@@ -257,6 +267,10 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
     let vehicle = app
         .world_mut()
         .spawn((
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-b2-{}",
+                NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))),
             Name::new("Vehicle"),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(initial_trans()),
             RotationalStateC::from(initial_rot()),
@@ -310,3 +324,7 @@ fn bevy_parity_rkf45_matches_simulation_bit_identical() {
 
     assert_sixdof_bit_identical("Bevy RKF45 vs Sim RKF45", &bevy_state, &sim_state);
 }
+
+/// Per-call unique suffix for swept test-body identities (#664): helpers
+/// spawning multiple bodies per App must mint distinct identities.
+static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

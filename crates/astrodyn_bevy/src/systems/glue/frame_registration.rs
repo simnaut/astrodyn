@@ -15,24 +15,90 @@ use bevy::prelude::*;
 use super::super::integration::{frame_switch_system, integration_system};
 use crate::components::*;
 
+/// Identity index for the ECS frame store (issue #664): `FrameUid` →
+/// frame [`Entity`], the analogue of the arena's private `uid_index`.
+/// Maintained by [`index_frame_uids_system`] /
+/// [`deindex_frame_uids_system`]; the indexer rejects duplicate
+/// identities loudly, mirroring the arena's `register_uid`, and the map
+/// is the "addressable by stable identity" lookup the frame-document
+/// apply path resolves through.
+#[derive(Resource, Debug, Default)]
+pub struct FrameUidIndexR(pub std::collections::HashMap<astrodyn::FrameUid, Entity>);
+
+/// Index every newly-stamped frame entity's [`FrameUidC`] into
+/// [`FrameUidIndexR`], rejecting duplicates at the point of
+/// introduction. Only **frame entities** (carrying [`FrameTransC`]) are
+/// indexed — source / body entities carry `FrameUidC` as the
+/// identity-*carrier* the registration systems copy from, and indexing
+/// them too would self-collide with their own frame entities.
+///
+/// Runs in the registration slots after the `register_*_frames_system`
+/// chain; `Added<FrameUidC>` makes repeated passes cost one query
+/// iteration. Frame entities stamped by a later-registered planet's
+/// chain in the same pass are picked up on the next pass — duplicate
+/// rejection is at-latest-next-tick, and the manual frame-document
+/// apply path (which runs between ticks) always sees a current index.
+// JEOD_INV: RF.14 — every frame identity maps to exactly one entity in
+// the ECS store; a duplicate registration is rejected loudly, mirroring
+// the arena's register_uid.
+#[allow(clippy::type_complexity)]
+pub fn index_frame_uids_system(
+    mut index: ResMut<FrameUidIndexR>,
+    added: Query<(Entity, &FrameUidC), (Added<FrameUidC>, With<FrameTransC>)>,
+) {
+    for (entity, uid) in &added {
+        if let Some(&existing) = index.0.get(&uid.0) {
+            if existing == entity {
+                continue; // re-stamp of the same entity (pfix reuse path)
+            }
+            panic!(
+                "FrameUidIndexR: duplicate frame identity `{}` — already registered \
+                 at entity {existing:?}, cannot register it again at {entity:?}. Each \
+                 FrameUid maps to exactly one frame entity. If these are genuinely \
+                 distinct frames, mint distinct identities (different tag, role, or \
+                 namespace).",
+                uid.0
+            );
+        }
+        index.0.insert(uid.0.clone(), entity);
+    }
+}
+
+/// Drop index entries for frame entities whose [`FrameUidC`] was removed
+/// (pfix retirement) or that were despawned — keeps
+/// [`FrameUidIndexR`] consistent so a retired identity can be re-minted
+/// on the next rotation-model toggle without colliding.
+pub fn deindex_frame_uids_system(
+    mut index: ResMut<FrameUidIndexR>,
+    mut removed: RemovedComponents<FrameUidC>,
+) {
+    for entity in removed.read() {
+        index.0.retain(|_, e| *e != entity);
+    }
+}
+
 /// Auto-register every gravity-source entity (carrying [`GravitySourceC`])
 /// by spawning its frame entity as a child of the root frame entity and
 /// attaching [`FrameEntityC`] back to the source. The frame entity's
 /// [`FrameTransC`] is initialized from [`SourceInertialPositionC`] and
 /// (when present) [`SourceInertialVelocityC`].
 ///
-/// A [`PfixFrameEntityC`] is additionally inserted iff the source also
-/// carries [`PlanetFixedRotationC`] — that's the indicator
-/// `planet_fixed_rotation_system` filters on; without it the source
-/// never rotates and a pfix frame would be a permanent identity. When
-/// `PlanetFixedRotationC` is present and `RotationModelC` is omitted,
-/// the same `EarthRNP` default applies as in
-/// `planet_fixed_rotation_system`.
-///
 /// This is the Bevy analog of `astrodyn_runner::Simulation::add_source` —
 /// it makes the source state observable to gravity / integration via
 /// [`crate::frame_param::FrameOrigin`] and to mission code via
 /// [`crate::frame_param::RelativeFrameState`].
+///
+/// **Planet-agnostic since issue #664** (and registered exactly once,
+/// not per planet): the frame entity's identity comes from the source
+/// entity's carried [`FrameUidC`] value, not from a type parameter — a
+/// `<P>`-generic version matched every source under *every* registered
+/// planet's instantiation (the query never keyed on `<P>`), so a
+/// two-planet App double-spawned an orphan frame entity per source.
+/// The identity index turned that silent leak into a loud duplicate,
+/// and value-carried identity removes the `<P>` entirely. Pfix child
+/// frames are spawned by the per-planet
+/// [`register_pfix_frames_system`], which is genuinely `<P>`-keyed
+/// (`With<PlanetFixedRotationC<P>>`).
 ///
 /// **Divergence from astrodyn_runner**: every source becomes a child of
 /// the root frame, including the central body. `astrodyn_runner` renames
@@ -43,25 +109,44 @@ use crate::components::*;
 /// "central" sources. Frame-switch parity lives at the orchestration
 /// layer, where this divergence is invisible.
 #[allow(clippy::type_complexity)]
-pub fn register_source_frames_system<P: Planet>(
+pub fn register_source_frames_system(
     mut commands: Commands,
     root_frame_entity: Res<crate::RootFrameEntityR>,
+    sim_time: Res<crate::SimulationTimeR>,
     sources: Query<
         (
             Entity,
             Option<&Name>,
+            Option<&FrameUidC>,
             &SourceInertialPositionC,
             Option<&SourceInertialVelocityC>,
-            Option<&RotationModelC>,
-            Option<&PlanetFixedRotationC<P>>,
         ),
         (With<GravitySourceC>, Without<FrameEntityC>),
     >,
 ) {
-    for (entity, name, pos, vel, rotation_model, pfix_rot) in &sources {
+    let frame_epoch = FrameEpochC(sim_time.tdb());
+    for (entity, name, uid, pos, vel) in &sources {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
+        // Identity is required (issue #664) and travels as a value on
+        // the source entity — this system cannot type-derive the
+        // source's own planet (a Sun entity in an Earth-centered sim
+        // carries `TranslationalStateC<Earth>`). The spawn site knows
+        // the planet: `PlanetBundle<P>` stamps
+        // `FrameUid::of::<PlanetInertial<P>>()`, `populate_app` carries
+        // the builder's pre-minted identities, and raw spawns supply
+        // one explicitly.
+        let uid = uid.unwrap_or_else(|| {
+            panic!(
+                "register_source_frames_system: gravity source {entity:?} ({label}) \
+                 has no FrameUidC — every gravity source must carry its \
+                 inertial-frame identity. Spawn it via PlanetBundle (which stamps \
+                 FrameUid::of::<PlanetInertial<P>>()), via populate_app, or insert \
+                 FrameUidC(astrodyn::FrameUid::of::<astrodyn::PlanetInertial<P>>()) \
+                 explicitly before registration."
+            )
+        });
         // Initialize the source frame entity's FrameTransC from the
         // entity's current typed state. Reading both Position and
         // (optional) Velocity lets sources that already carry a
@@ -79,6 +164,11 @@ pub fn register_source_frames_system<P: Planet>(
             .spawn((
                 Name::new(format!("{label}.frame.inertial")),
                 InertialFrameMarker,
+                // The source entity's carried identity becomes the frame
+                // entity's identity (issue #664) — same value the runner
+                // stamps on its source inertial node.
+                uid.clone(),
+                frame_epoch,
                 FrameTransC {
                     position: init_pos,
                     velocity: init_vel,
@@ -92,35 +182,11 @@ pub fn register_source_frames_system<P: Planet>(
             .entity(entity)
             .insert(FrameEntityC(source_frame_entity));
 
-        // Create a pfix child frame only if this source actually
-        // rotates. The presence of `PlanetFixedRotationC` is the
-        // indicator — `planet_fixed_rotation_system` queries
-        // `&mut PlanetFixedRotationC`, so an entity without it never
-        // rotates, and a pfix frame would be a permanent identity.
-        // Plain point-mass sources spawned without
-        // `PlanetFixedRotationC` get no pfix frame, matching
-        // `astrodyn_runner` for the same case. When rotation IS present
-        // and `RotationModelC` is omitted, the EarthRNP default
-        // applies — same default as `planet_fixed_rotation_system`.
-        if pfix_rot.is_some() {
-            let default_model = astrodyn::RotationModel::EarthRNP;
-            let model_value = rotation_model.map_or(default_model, |m| m.0);
-            if !matches!(model_value, astrodyn::RotationModel::None) {
-                let pfix_frame_entity = commands
-                    .spawn((
-                        Name::new(format!("{label}.frame.pfix")),
-                        PlanetFixedFrameMarker,
-                        FrameTransC::default(),
-                        FrameRotC::default(),
-                        FrameAngVelC::default(),
-                        ChildOf(source_frame_entity),
-                    ))
-                    .id();
-                commands
-                    .entity(entity)
-                    .insert(PfixFrameEntityC(pfix_frame_entity));
-            }
-        }
+        // Pfix child frames are spawned by the per-planet
+        // `register_pfix_frames_system` (the genuinely `<P>`-keyed half
+        // of registration), which runs after this system and picks the
+        // source up once its `FrameEntityC` lands — same pass for the
+        // common Startup/PreUpdate flows.
     }
 }
 
@@ -148,10 +214,15 @@ pub fn register_source_frames_system<P: Planet>(
 #[allow(clippy::type_complexity)]
 pub fn register_pfix_frames_system<P: Planet>(
     mut commands: Commands,
+    sim_time: Res<crate::SimulationTimeR>,
     sources: Query<
         (
             Entity,
             Option<&Name>,
+            // The source's carried inertial-frame identity (issue #664);
+            // required — `register_source_frames_system` panics before
+            // this system can see a source without one.
+            &FrameUidC,
             // The source's own frame entity: the spawned pfix frame
             // entity ChildOf-links under it. Required for registration
             // — `register_source_frames_system` always inserts it.
@@ -171,7 +242,8 @@ pub fn register_pfix_frames_system<P: Planet>(
     mut frame_rots: Query<&mut FrameRotC>,
     mut frame_ang_vels: Query<&mut FrameAngVelC>,
 ) {
-    for (entity, name, source_frame_entity, rotation_model, retired_entity) in &sources {
+    let frame_epoch = FrameEpochC(sim_time.tdb());
+    for (entity, name, uid, source_frame_entity, rotation_model, retired_entity) in &sources {
         let default_model = astrodyn::RotationModel::EarthRNP;
         let model_value = rotation_model.map_or(default_model, |m| m.0);
         if matches!(model_value, astrodyn::RotationModel::None) {
@@ -180,6 +252,7 @@ pub fn register_pfix_frames_system<P: Planet>(
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
+        let pfix_uid = FrameUidC(astrodyn::pfix_sibling_uid(&uid.0));
 
         let pfix_frame_entity = if let Some(retired_e) = retired_entity {
             // Reuse: restore canonical name (via Commands so we
@@ -190,9 +263,14 @@ pub fn register_pfix_frames_system<P: Planet>(
             // `ChildOf(source_frame_entity.0)` edge was preserved
             // across the toggle cycle, so the hierarchy is already
             // correct.
-            commands
-                .entity(retired_e.0)
-                .insert(Name::new(format!("{label}.frame.pfix")));
+            commands.entity(retired_e.0).insert((
+                Name::new(format!("{label}.frame.pfix")),
+                // Re-mint the identity + epoch the retirement path
+                // removed (issue #664): the reused entity becomes a
+                // live tree node again, re-indexed via Added<FrameUidC>.
+                pfix_uid.clone(),
+                frame_epoch,
+            ));
             // Fail loud if the retired pfix frame entity has lost any
             // of its FrameTransC / FrameRotC / FrameAngVelC components
             // (or has been despawned out from under us). Silently
@@ -257,6 +335,8 @@ pub fn register_pfix_frames_system<P: Planet>(
                 .spawn((
                     Name::new(format!("{label}.frame.pfix")),
                     PlanetFixedFrameMarker,
+                    pfix_uid.clone(),
+                    frame_epoch,
                     FrameTransC::default(),
                     FrameRotC::default(),
                     FrameAngVelC::default(),
@@ -296,15 +376,24 @@ pub fn register_pfix_frames_system<P: Planet>(
 /// sync sees the latest values.
 #[allow(clippy::type_complexity)]
 pub fn sync_source_to_frame_system<P: Planet>(
+    sim_time: Res<crate::SimulationTimeR>,
     sources: Query<(
         &FrameEntityC,
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TranslationalStateC<P>>,
+        Has<EphemerisBodyC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
+    mut frame_epochs: Query<&mut FrameEpochC>,
 ) {
-    for (fe, pos, vel, trans) in &sources {
+    // Frame-epoch re-stamp for ephemeris-driven sources only (RFS-603):
+    // mirrors the runner's 2b loop, which re-stamps a source node's
+    // epoch only when DE4xx rewrites it. Static sources keep their
+    // registration-time epoch — the heterogeneous epochs must match the
+    // runner's bit-for-bit for cross-backend document equality.
+    let frame_epoch = FrameEpochC(sim_time.tdb());
+    for (fe, pos, vel, trans, ephemeris_driven) in &sources {
         let position = pos.0.raw_si();
         let velocity = vel
             .map(|v| v.0.raw_si())
@@ -334,6 +423,18 @@ pub fn sync_source_to_frame_system<P: Planet>(
         if let Some(v) = velocity {
             frame_trans.velocity = v;
         }
+        if ephemeris_driven {
+            let mut epoch = frame_epochs.get_mut(fe.0).unwrap_or_else(|err| {
+                panic!(
+                    "sync_source_to_frame_system: source has FrameEntityC({:?}) \
+                     but that entity has no FrameEpochC ({err:?}). Frame \
+                     entities are stamped with FrameEpochC at registration \
+                     (issue #664); do not strip it.",
+                    fe.0
+                )
+            });
+            *epoch = frame_epoch;
+        }
     }
 }
 
@@ -362,11 +463,13 @@ pub fn register_body_frames_system<P: Planet>(
     // The ECS-side root frame entity, used as the body's frame
     // parent when no IntegSourceC is supplied.
     root_frame_entity: Res<crate::RootFrameEntityR>,
+    sim_time: Res<crate::SimulationTimeR>,
     sources: Query<&FrameEntityC, With<GravitySourceC>>,
     bodies: Query<
         (
             Entity,
             Option<&Name>,
+            Option<&FrameUidC>,
             &TranslationalStateC<P>,
             Option<&IntegSourceC>,
             // Wire the frame-side `MassPointRef` back-pointer at
@@ -387,10 +490,25 @@ pub fn register_body_frames_system<P: Planet>(
         ),
     >,
 ) {
-    for (entity, name, trans, integ_source, has_mass) in &bodies {
+    let frame_epoch = FrameEpochC(sim_time.tdb());
+    for (entity, name, uid, trans, integ_source, has_mass) in &bodies {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("body{:?}", entity));
+        // Identity is REQUIRED, never minted by accident (issue #664,
+        // mirroring the runner's #662 add_body): the body's frame
+        // identity is mission-supplied configuration, carried as a value
+        // on the body entity.
+        let body_uid = uid.unwrap_or_else(|| {
+            panic!(
+                "register_body_frames_system: body {entity:?} ({label}) has no \
+                 FrameUidC — every dynamic body must carry a stable frame \
+                 identity. Spawn it via VehicleConfig::spawn_bevy (which stamps \
+                 config.frame_uid), or insert \
+                 FrameUidC(astrodyn::named_body_frame_uid(\"<label>\")) on the \
+                 body entity before registration."
+            )
+        });
 
         // Resolve the integration frame entity. Default: root inertial.
         let integ_frame_entity = match integ_source.and_then(|c| c.0) {
@@ -433,6 +551,11 @@ pub fn register_body_frames_system<P: Planet>(
             .spawn((
                 Name::new(format!("{label}.frame.body")),
                 BodyFrameMarker,
+                // The mission-supplied identity carried by the body entity
+                // becomes the frame entity's identity — the same value the
+                // runner stamps from `VehicleConfig::frame_uid` (#662).
+                body_uid.clone(),
+                frame_epoch,
                 FrameTransC {
                     position: init_pos,
                     velocity: init_vel,
@@ -538,9 +661,14 @@ pub fn sync_body_mass_point_ref_system(
 /// frame entity is updated by `sync_source_to_frame_system` from the
 /// source-side state instead.
 pub fn sync_body_to_frame_system<P: Planet>(
+    sim_time: Res<crate::SimulationTimeR>,
     bodies: Query<(&TranslationalStateC<P>, &FrameEntityC), With<DynamicsConfigC>>,
     mut frame_states: Query<&mut FrameTransC>,
+    mut frame_epochs: Query<&mut FrameEpochC>,
 ) {
+    // Frame-epoch re-stamp every step (RFS-603) — mirrors the runner's
+    // stage-8 body-node writeback stamping each body node per step.
+    let frame_epoch = FrameEpochC(sim_time.tdb());
     for (trans, frame_entity) in &bodies {
         let position = trans.0.position.raw_si();
         let velocity = trans.0.velocity.raw_si();
@@ -566,5 +694,15 @@ pub fn sync_body_to_frame_system<P: Planet>(
         });
         frame_trans.position = position;
         frame_trans.velocity = velocity;
+        let mut epoch = frame_epochs.get_mut(frame_entity.0).unwrap_or_else(|err| {
+            panic!(
+                "sync_body_to_frame_system: body has FrameEntityC({:?}) but \
+                 that entity has no FrameEpochC ({err:?}). Frame entities are \
+                 stamped with FrameEpochC at registration (issue #664); do \
+                 not strip it.",
+                frame_entity.0
+            )
+        });
+        *epoch = frame_epoch;
     }
 }

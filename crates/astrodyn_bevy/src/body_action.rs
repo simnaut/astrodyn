@@ -856,6 +856,11 @@ pub fn add_body_action_via(
     reason = "body-action tests assert bit-exact recovery of literal-built mass values"
 )]
 mod tests {
+    /// Per-call unique suffix for swept test-body identities (#664):
+    /// helpers spawning multiple bodies per App must mint distinct
+    /// identities.
+    static NEXT_BODY_UID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     use super::*;
     use crate::components::{
         DynamicsConfigC, MassPropertiesC, RotationalStateC, TranslationalStateC,
@@ -891,6 +896,10 @@ mod tests {
     fn spawn_vehicle(app: &mut App) -> Entity {
         app.world_mut()
             .spawn((
+                crate::components::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                    "body-action-b1-{}",
+                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ))),
                 TranslationalStateC::<astrodyn::Earth>::default(),
                 RotationalStateC::default(),
                 MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_self_ref(
