@@ -77,7 +77,7 @@ fn six_dof_rkf45_with_options() {
         .sixdof(rot, mass)
         .rkf45()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .drag(drag)

@@ -40,19 +40,17 @@ pub enum SwitchSense {
 /// frame in the frame tree, and gravity controls are flipped to make the
 /// target source non-differential (central body).
 ///
-/// Generic over `SourceId` to mirror [`astrodyn_gravity::GravityControls`]:
-/// `astrodyn_runner::Simulation` uses the default `SourceId = usize` (sources
-/// are identified by their registration order); the Bevy adapter uses
-/// `SourceId = bevy::ecs::entity::Entity` (sources are identified by
-/// their ECS entity). The lifted
-/// [`crate::evaluate_and_apply_frame_switch`] helper is generic over the
-/// same type so both consumers share one implementation.
+/// The target is referenced by its inertial-frame [`FrameUid`] (issue
+/// #668) — the same value identity in every host. The runner resolves
+/// it against its source table; the Bevy adapter resolves it against
+/// the registered source entities; a miss fails loudly naming the uid.
 #[derive(Debug, Clone)]
-pub struct FrameSwitchConfig<SourceId = usize> {
-    /// Identifier of the gravity source whose inertial frame to switch to.
-    /// On switch, this source becomes non-differential and all others become
+pub struct FrameSwitchConfig {
+    /// Identity of the gravity source's inertial frame to switch to
+    /// (e.g. `FrameUid::of::<PlanetInertial<Moon>>()`). On switch, this
+    /// source becomes non-differential and all others become
     /// differential, matching JEOD's `GravityInteraction::set_integ_frame()`.
-    pub target_source: SourceId,
+    pub target: FrameUid,
     /// Whether to switch on approach or departure.
     pub switch_sense: SwitchSense,
     /// Distance threshold (meters).
@@ -92,10 +90,11 @@ pub enum SrpModel {
 // ── Shadow body ─────────────────────────────────────────────────────────
 
 /// Shadow-casting body for SRP eclipse computation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ShadowBody {
-    /// Index into the gravity source table.
-    pub source_idx: usize,
+    /// The shadow-casting gravity source's inertial-frame identity
+    /// (issue #668).
+    pub source: FrameUid,
     /// Body radius (m) for eclipse geometry.
     pub radius: f64,
 }
@@ -103,10 +102,11 @@ pub struct ShadowBody {
 // ── Geodetic computation ────────────────────────────────────────────────
 
 /// Geodetic computation configuration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GeodeticConfig {
-    /// Gravity source index (must have `t_inertial_pfix` for planet-fixed rotation).
-    pub source_idx: usize,
+    /// The reference planet's inertial-frame identity (issue #668). The
+    /// source must have `t_inertial_pfix` for planet-fixed rotation.
+    pub source: FrameUid,
     /// Equatorial radius (m).
     pub r_eq: f64,
     /// Polar radius (m).
@@ -131,8 +131,9 @@ pub struct EarthLightingConfig {
 /// All derived-state requests for a vehicle, grouped in one place.
 #[derive(Debug, Clone, Default)]
 pub struct DerivedStateConfig {
-    /// Gravity source index for orbital elements. `None` = skip.
-    pub orbital_elements_source: Option<usize>,
+    /// The orbital-elements reference source's inertial-frame identity
+    /// (issue #668). `None` = skip.
+    pub orbital_elements_source: Option<FrameUid>,
     /// Euler angle decomposition sequence. `None` = skip.
     pub euler_sequence: Option<EulerSequence>,
     /// Whether to compute LVLH frame each step.
@@ -195,8 +196,9 @@ pub struct VehicleConfig {
     pub t_struct_body: DMat3,
 
     // ── Gravity ──
-    /// Gravity controls referencing sources by index.
-    pub gravity_controls: GravityControls<usize>,
+    /// Gravity controls referencing sources by inertial-frame identity
+    /// (issue #668).
+    pub gravity_controls: GravityControls,
     /// Whether to compute gravity gradient (needed for gravity torque).
     pub compute_gravity_gradient: bool,
 
@@ -225,9 +227,10 @@ pub struct VehicleConfig {
     >,
 
     // ── Frame switching ──
-    /// Gravity source whose inertial frame is used for integration.
-    /// `None` means the root frame (Earth.inertial). `Some(idx)` means
-    /// the inertial frame of the source at that index.
+    /// Gravity source whose inertial frame is used for integration,
+    /// referenced by inertial-frame identity (issue #668). `None` means
+    /// the root frame. `Some(uid)` means the inertial frame of the
+    /// source carrying that identity.
     ///
     /// **Non-root caveat (issue #263).** When `Some(...)`, the
     /// integrated translational state is integ-frame-relative rather
@@ -240,7 +243,7 @@ pub struct VehicleConfig {
     /// answers. Until #263 closes, mission code should either avoid
     /// non-root integration or restrict derived states to ones
     /// evaluated in the same source's frame.
-    pub integ_source: Option<usize>,
+    pub integ_source: Option<FrameUid>,
     /// Distance-based frame switch triggers.
     pub frame_switches: Vec<FrameSwitchConfig>,
 }

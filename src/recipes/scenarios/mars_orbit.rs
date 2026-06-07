@@ -13,6 +13,8 @@ use glam::DVec3;
 use crate::recipes::{epoch, mars, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
 use crate::SimulationBuilder;
+use astrodyn_quantities::frame::{Mars, PlanetInertial, Sun};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 
 /// Dawn-class spacecraft in a Mars orbit. Mars central body
 /// (point-mass + IAU rotation), Sun as a third-body source. Step size
@@ -34,7 +36,7 @@ use crate::SimulationBuilder;
 /// ```
 pub fn mars_orbit() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::dawn_mars_2009(), 10.0);
-    let mars_idx = sb.add_source("Mars", mars::point_mass());
+    let _ = sb.add_source("Mars", mars::point_mass());
     let sun_idx = sb.add_source(
         "Sun",
         sun::third_body(
@@ -58,10 +60,12 @@ pub fn mars_orbit() -> SimulationBuilder {
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            mars_idx,
+            FrameUid::of::<PlanetInertial<Mars>>(),
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(FrameUid::of::<
+            PlanetInertial<Sun>,
+        >()))
         .build();
     sb.add_body(vehicle);
     sb
