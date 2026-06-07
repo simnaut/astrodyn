@@ -50,13 +50,95 @@
 //! **in-band** ([`Conventions`]); [`FrameDocument::validate`] checks them
 //! before any state is interpreted, so a consumer that never links astrodyn
 //! cannot silently misread a changed convention.
+//!
+//! ## Per-record / streaming consumers
+//!
+//! The record types — [`DocHeader`], [`FrameRecord`], [`EpochRow`],
+//! [`FrameUid`] and their components — are a **supported, stable surface**
+//! for independent serialization, not internals behind the whole-document
+//! JSON API. `to_json_string` / `from_json_str` are conveniences over the
+//! same `serde` derives; a live feed may serialize records individually
+//! (e.g. a binary serde format over a socket) under these rules:
+//!
+//! - **Handshake = header + uid table.** Records reference identities
+//!   positionally (`FrameRecord::uid_index` / `parent` index into the
+//!   interned `Vec<FrameUid>`), so transmit [`DocHeader`] and the uid
+//!   table once, then per-epoch [`EpochRow`]s. Validate the handshake
+//!   *before interpreting any number* via [`validate_header`] and
+//!   [`validate_uid_table`], and each arriving row via
+//!   [`validate_record`] — the loose-piece equivalents of the
+//!   whole-document `validate()` entry points.
+//! - **Topology changes are segment boundaries.** A reparent or attach
+//!   changes what `parent` means; mirror replay v1's rule on a live feed
+//!   by re-sending header + uid table as a fresh keyframe. Per-record
+//!   `parent` keeps every row self-checking: verify it against your
+//!   folded topology and treat a mismatch as a loud inconsistency, never
+//!   a reinterpretation. (Cross-record invariants — cycle-freedom, row
+//!   completeness, constant topology within a segment — are the
+//!   container `validate()`s' job and become the *consumer's* job on a
+//!   stream.)
+//! - **Format notes.** Positional formats (postcard/bincode) bind to
+//!   field *order*, self-describing formats to field *names*; pin this
+//!   crate's version on both ends and gate on
+//!   [`DocHeader::schema_version`] at handshake. Binary `f64` encodings
+//!   are inherently bit-exact — the shortest-round-trip /
+//!   `float_roundtrip` requirement above is JSON-specific. Non-finite
+//!   values remain invalid in any encoding.
+//! - **Stability.** The wire schema evolves only through
+//!   [`SCHEMA_VERSION`]; these Rust types *are* the schema, so field
+//!   changes imply a version bump and a semver-visible crate change.
+//!   Evolution is additive where possible (enums such as [`Origin`] /
+//!   [`CanonicalRotation`] may gain variants behind a version bump);
+//!   existing fields are not silently re-shaped.
+//!
+//! ```
+//! use astrodyn_frame_doc::{
+//!     validate_header, validate_record, validate_uid_table, CanonicalRotation, Conventions,
+//!     DocHeader, EpochRow, FrameRecord, FrameUid, Origin, TransRecord, SCHEMA_VERSION,
+//! };
+//! use astrodyn_quantities::frame::RootInertial;
+//!
+//! // ── Producer side: handshake, then rows ──
+//! let header = DocHeader {
+//!     schema_version: SCHEMA_VERSION,
+//!     conventions: Conventions::current(),
+//!     simtime: 0.0,
+//!     tai_tjt_at_epoch: 11544.499257592593,
+//! };
+//! let uids = vec![FrameUid::of::<RootInertial>()];
+//! let row = EpochRow {
+//!     simtime: 0.0,
+//!     records: vec![FrameRecord {
+//!         name: "root".into(),
+//!         uid_index: 0,
+//!         parent: None,
+//!         epoch: Some(0.0),
+//!         trans: TransRecord {
+//!             position: [0.0; 3],
+//!             velocity: [0.0; 3],
+//!         },
+//!         rotation: CanonicalRotation::Quat([1.0, 0.0, 0.0, 0.0]),
+//!         ang_vel_this: [0.0; 3],
+//!         origin: Origin::Injected,
+//!     }],
+//! };
+//!
+//! // ── Consumer side: validate the handshake before any number, then
+//! //    each arriving row against the handshake's uid table. ──
+//! validate_header(&header).expect("handshake header");
+//! validate_uid_table(&uids).expect("handshake uid table");
+//! for (pos, rec) in row.records.iter().enumerate() {
+//!     validate_record(rec, pos, uids.len()).expect("arriving row");
+//!     // ...then check rec.parent against your folded topology.
+//! }
+//! ```
 
 mod document;
 mod series;
 
 pub use document::{
-    CanonicalRotation, Conventions, DocError, DocHeader, FrameDocument, FrameRecord, Origin,
-    TransRecord, SCHEMA_VERSION,
+    validate_header, validate_record, validate_uid_table, CanonicalRotation, Conventions, DocError,
+    DocHeader, FrameDocument, FrameRecord, Origin, TransRecord, SCHEMA_VERSION,
 };
 pub use series::{EpochRow, FrameSegment, FrameSeries, SeriesBuilder};
 
