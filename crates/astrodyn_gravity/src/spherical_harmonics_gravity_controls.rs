@@ -11,10 +11,11 @@ use crate::gravity_controls::GravityControl;
 /// Ordered list of [`GravityControl`] entries — one per gravity source
 /// active for the vehicle. The pipeline accumulates each source's
 /// contribution into the vehicle's net gravity acceleration in
-/// iteration order.
+/// iteration order. Sources are referenced by their inertial-frame
+/// `FrameUid` (issue #668) — the same control list serves every host.
 #[derive(Debug, Clone, Default)]
-pub struct GravityControls<SourceId = String> {
+pub struct GravityControls {
     /// Per-source controls. Order is significant for differential /
     /// third-body sources whose contributions partially cancel.
-    pub controls: Vec<GravityControl<SourceId>>,
+    pub controls: Vec<GravityControl>,
 }

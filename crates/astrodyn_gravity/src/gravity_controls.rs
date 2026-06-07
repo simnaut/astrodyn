@@ -12,6 +12,7 @@
 
 use astrodyn_dynamics::GravityAcceleration;
 use astrodyn_quantities::aliases::HarmonicDegree;
+use astrodyn_quantities::frame_descriptor::FrameUid;
 use glam::DMat3;
 use glam::DVec3;
 
@@ -58,14 +59,18 @@ impl GravityGradient {
 /// degree / order, gradient flags, and third-body / Battin /
 /// relativistic toggles.
 ///
-/// `SourceId` is a generic source identifier so adapters can carry the
-/// source as a `String`, a workspace-internal `usize` index, or a Bevy
-/// `Entity` handle. Use [`Self::retag_source`] to map between
-/// instantiations without enumerating the field list.
+/// The source is referenced by its inertial-frame [`FrameUid`] — the
+/// same value identity in every host (issue #668 collapsed the old
+/// host-generic `SourceId` parameter: the runner resolves uid → source
+/// index and the Bevy adapter resolves uid → source entity, each at its
+/// own boundary, so one control expression serves both backends and a
+/// wrong reference fails loudly *by name* instead of silently indexing
+/// the wrong source).
 #[derive(Debug, Clone, PartialEq)]
-pub struct GravityControl<SourceId = String> {
-    /// Source identifier.
-    pub source_name: SourceId,
+pub struct GravityControl {
+    /// The source's inertial-frame identity (e.g.
+    /// `FrameUid::of::<PlanetInertial<Earth>>()`).
+    pub source: FrameUid,
     /// Compute the gravity-gradient tensor in addition to acceleration.
     pub gradient: bool,
     /// If true, use only point-mass (spherical) gravity for this source,
@@ -111,19 +116,19 @@ pub struct GravityControl<SourceId = String> {
     pub relativistic: bool,
 }
 
-impl<SourceId> GravityControl<SourceId> {
+impl GravityControl {
     /// Create a spherical (point-mass only) gravity control.
     ///
     /// Uses only µ/r² acceleration. Any spherical harmonics data on the source
     /// is ignored. For gravity with J2+ harmonics, use [`new_nonspherical`](Self::new_nonspherical).
     ///
-    /// `source_name` accepts `impl Into<SourceId>` so the gateway-level
-    /// typed source-table wrapper (`SourceHandle`) flows in alongside
-    /// bare `usize`, Bevy `Entity`, or `String` callsites without
-    /// per-callsite plumbing — the conversion lives at this seam.
-    pub fn new_spherical(source_name: impl Into<SourceId>, gradient: GravityGradient) -> Self {
+    /// `source` accepts `impl Into<FrameUid>` so any future identity
+    /// sugar flows through this seam without per-callsite plumbing;
+    /// today callers pass a `FrameUid` directly (e.g.
+    /// `FrameUid::of::<PlanetInertial<Earth>>()`).
+    pub fn new_spherical(source: impl Into<FrameUid>, gradient: GravityGradient) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: gradient.as_bool(),
             spherical: true,
             degree: 0,
@@ -143,15 +148,15 @@ impl<SourceId> GravityControl<SourceId> {
     /// `degree` and `order`. The source must have a `SphericalHarmonics` model
     /// and the gravity source entry must provide a planet-fixed rotation matrix.
     ///
-    /// See [`Self::new_spherical`] for the `impl Into<SourceId>` rationale.
+    /// See [`Self::new_spherical`] for the `impl Into<FrameUid>` rationale.
     pub fn new_nonspherical(
-        source_name: impl Into<SourceId>,
+        source: impl Into<FrameUid>,
         degree: usize,
         order: usize,
         gradient: GravityGradient,
     ) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: gradient.as_bool(),
             spherical: false,
             degree,
@@ -171,10 +176,10 @@ impl<SourceId> GravityControl<SourceId> {
     /// the vehicle toward this source minus the acceleration of the integration
     /// frame origin toward this source.
     ///
-    /// See [`Self::new_spherical`] for the `impl Into<SourceId>` rationale.
-    pub fn new_third_body(source_name: impl Into<SourceId>) -> Self {
+    /// See [`Self::new_spherical`] for the `impl Into<FrameUid>` rationale.
+    pub fn new_third_body(source: impl Into<FrameUid>) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: false,
             spherical: true,
             degree: 0,
@@ -185,31 +190,6 @@ impl<SourceId> GravityControl<SourceId> {
             differential: true,
             battin_method: false,
             relativistic: false,
-        }
-    }
-
-    /// Re-tag the source identifier through a mapper, producing a fresh
-    /// [`GravityControl<T>`] with all other fields copied verbatim.
-    ///
-    /// Used by ECS adapters that translate `GravityControl<usize>` (recipe-side
-    /// source-table index) to `GravityControl<Entity>` (Bevy entity handle)
-    /// without enumerating the field list at every call site.
-    ///
-    /// Adding a new field to `GravityControl` requires updating only this
-    /// constructor; ECS adapters are unaffected.
-    pub fn retag_source<T>(self, mapper: impl FnOnce(SourceId) -> T) -> GravityControl<T> {
-        GravityControl {
-            source_name: mapper(self.source_name),
-            gradient: self.gradient,
-            spherical: self.spherical,
-            degree: self.degree,
-            order: self.order,
-            perturbing_only: self.perturbing_only,
-            gradient_degree: self.gradient_degree,
-            gradient_order: self.gradient_order,
-            differential: self.differential,
-            battin_method: self.battin_method,
-            relativistic: self.relativistic,
         }
     }
 
@@ -600,7 +580,7 @@ impl<SourceId> GravityControl<SourceId> {
     }
 }
 
-/// Typed sibling of [`GravityControl<SourceId>`].
+/// Typed sibling of [`GravityControl`].
 ///
 /// Field-for-field parity with the untyped form, except the four
 /// spherical-harmonic ordinals (`degree`, `order`, `gradient_degree`,
@@ -615,9 +595,9 @@ impl<SourceId> GravityControl<SourceId> {
 /// can prove ordinals are distinct kinds, not that one specific
 /// ordinal is bounded by another's runtime value.
 #[derive(Debug, Clone)]
-pub struct GravityControlTyped<SourceId = String> {
-    /// Source identifier (see [`GravityControl::source_name`]).
-    pub source_name: SourceId,
+pub struct GravityControlTyped {
+    /// The source's inertial-frame identity (see [`GravityControl::source`]).
+    pub source: FrameUid,
     /// Compute the gravity-gradient tensor in addition to acceleration.
     pub gradient: bool,
     /// Use only point-mass gravity for this source.
@@ -640,13 +620,13 @@ pub struct GravityControlTyped<SourceId = String> {
     pub relativistic: bool,
 }
 
-impl<SourceId> GravityControlTyped<SourceId> {
+impl GravityControlTyped {
     /// Spherical (point-mass) typed control. See
-    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// [`GravityControl::new_spherical`] for the `impl Into<FrameUid>`
     /// rationale.
-    pub fn new_spherical(source_name: impl Into<SourceId>, gradient: GravityGradient) -> Self {
+    pub fn new_spherical(source: impl Into<FrameUid>, gradient: GravityGradient) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: gradient.as_bool(),
             spherical: true,
             degree: HarmonicDegree::default(),
@@ -661,16 +641,16 @@ impl<SourceId> GravityControlTyped<SourceId> {
     }
 
     /// Non-spherical (spherical-harmonics) typed control. See
-    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// [`GravityControl::new_spherical`] for the `impl Into<FrameUid>`
     /// rationale.
     pub fn new_nonspherical(
-        source_name: impl Into<SourceId>,
+        source: impl Into<FrameUid>,
         degree: HarmonicDegree,
         order: HarmonicDegree,
         gradient: GravityGradient,
     ) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: gradient.as_bool(),
             spherical: false,
             degree,
@@ -685,11 +665,11 @@ impl<SourceId> GravityControlTyped<SourceId> {
     }
 
     /// Third-body (point-mass + differential) typed control. See
-    /// [`GravityControl::new_spherical`] for the `impl Into<SourceId>`
+    /// [`GravityControl::new_spherical`] for the `impl Into<FrameUid>`
     /// rationale.
-    pub fn new_third_body(source_name: impl Into<SourceId>) -> Self {
+    pub fn new_third_body(source: impl Into<FrameUid>) -> Self {
         Self {
-            source_name: source_name.into(),
+            source: source.into(),
             gradient: false,
             spherical: true,
             degree: HarmonicDegree::default(),
@@ -704,7 +684,7 @@ impl<SourceId> GravityControlTyped<SourceId> {
     }
 }
 
-impl<SourceId: Clone> GravityControlTyped<SourceId> {
+impl GravityControlTyped {
     /// Validate this typed control against its gravity source.
     ///
     /// Delegates to [`GravityControl::check_validity`] on the untyped
@@ -723,9 +703,9 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
     /// storage form. Cross-field invariants (GV.03–GV.11) remain
     /// runtime-checked via the resulting
     /// [`GravityControl::check_validity`].
-    pub fn to_untyped(&self) -> GravityControl<SourceId> {
+    pub fn to_untyped(&self) -> GravityControl {
         GravityControl {
-            source_name: self.source_name.clone(),
+            source: self.source.clone(),
             gradient: self.gradient,
             spherical: self.spherical,
             degree: self.degree.get(),
@@ -740,9 +720,9 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
     }
 
     /// Wrap an untyped [`GravityControl`] as typed. Lossless conversion.
-    pub fn from_untyped_unchecked(c: &GravityControl<SourceId>) -> Self {
+    pub fn from_untyped_unchecked(c: &GravityControl) -> Self {
         Self {
-            source_name: c.source_name.clone(),
+            source: c.source.clone(),
             gradient: c.gradient,
             spherical: c.spherical,
             degree: HarmonicDegree::from(c.degree),
@@ -757,22 +737,28 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
     }
 }
 
-impl<SourceId: Default> Default for GravityControlTyped<SourceId> {
-    fn default() -> Self {
-        Self::new_spherical(SourceId::default(), GravityGradient::Skip)
-    }
-}
-
-impl<SourceId: Default> Default for GravityControl<SourceId> {
-    fn default() -> Self {
-        Self::new_spherical(SourceId::default(), GravityGradient::Skip)
-    }
-}
+// No `Default` impls: a control's source identity must be supplied
+// explicitly — there is no meaningful "default source", and minting an
+// identity by accident is exactly the failure mode `FrameUid` keying
+// exists to kill (issue #668; `FrameUid` itself has no `Default` for
+// the same reason).
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+    use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, Namespace, Tag};
+
+    /// A fixed source identity for tests that only need *a* uid — the
+    /// clamping/validation logic under test never resolves it.
+    fn test_uid() -> FrameUid {
+        FrameUid::external(
+            Namespace(2),
+            FrameClass::PlanetInertial,
+            FrameRole::Primary,
+            Tag::Named("test-source".into()),
+        )
+    }
 
     /// Build an in-memory spherical-harmonics source with all zero
     /// coefficients (degenerate, but sufficient for exercising the
@@ -793,40 +779,12 @@ mod tests {
         }
     }
 
-    /// `retag_source` returns a `GravityControl<T>` whose `source_name`
-    /// is the mapped value and every other field is bit-identical.
-    #[test]
-    fn retag_source_preserves_all_fields() {
-        let mut original =
-            GravityControl::<usize>::new_nonspherical(7_usize, 8, 4, GravityGradient::Compute);
-        original.perturbing_only = true;
-        original.gradient_degree = 6;
-        original.gradient_order = 3;
-        original.differential = true;
-        original.battin_method = true;
-        original.relativistic = true;
-
-        let retagged: GravityControl<&'static str> = original.clone().retag_source(|_| "Earth");
-
-        assert_eq!(retagged.source_name, "Earth");
-        assert_eq!(retagged.gradient, original.gradient);
-        assert_eq!(retagged.spherical, original.spherical);
-        assert_eq!(retagged.degree, original.degree);
-        assert_eq!(retagged.order, original.order);
-        assert_eq!(retagged.perturbing_only, original.perturbing_only);
-        assert_eq!(retagged.gradient_degree, original.gradient_degree);
-        assert_eq!(retagged.gradient_order, original.gradient_order);
-        assert_eq!(retagged.differential, original.differential);
-        assert_eq!(retagged.battin_method, original.battin_method);
-        assert_eq!(retagged.relativistic, original.relativistic);
-    }
-
     /// `effective_orders` for a spherical control returns all zeros
     /// regardless of the source's degree.
     #[test]
     fn effective_orders_spherical_returns_zeros() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize>::new_spherical(0_usize, GravityGradient::Skip);
+        let ctrl = GravityControl::new_spherical(test_uid(), GravityGradient::Skip);
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
 
@@ -838,11 +796,11 @@ mod tests {
             mu: 3.986_004_415e14,
             model: GravityModel::PointMass,
         };
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 8,
             order: 8,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
@@ -852,11 +810,11 @@ mod tests {
     #[test]
     fn effective_orders_clamps_degree_order_to_source() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 100,
             order: 100,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert_eq!(ctrl.effective_orders(&src), (8, 8, 0, 0));
     }
@@ -865,11 +823,11 @@ mod tests {
     #[test]
     fn effective_orders_clamps_order_to_degree() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 8,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert_eq!(ctrl.effective_orders(&src), (4, 4, 0, 0));
     }
@@ -880,14 +838,14 @@ mod tests {
     #[test]
     fn effective_orders_clamps_gradient_ordinals() {
         let src = dummy_sh_source(8, 6);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 8,
             order: 4,
             gradient: true,
             gradient_degree: 1, // → collapses to 0
             gradient_order: 5,  // > gradient_degree, > order → clamped
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         // After clamping: degree=8, order=4 (≤ src.order=6), gradient_degree=0, gradient_order=0.
         assert_eq!(ctrl.effective_orders(&src), (8, 4, 0, 0));
@@ -900,14 +858,14 @@ mod tests {
     #[test]
     fn evaluate_does_not_panic_on_out_of_range_gradient_degree() {
         let src = dummy_sh_source(4, 4);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
             gradient: true,
             gradient_degree: 100, // wildly out of range
             gradient_order: 100,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         let rot = DMat3::IDENTITY;
@@ -922,11 +880,11 @@ mod tests {
     #[test]
     fn evaluate_does_not_panic_on_out_of_range_degree() {
         let src = dummy_sh_source(4, 4);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 100,
             order: 100,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         let rot = DMat3::IDENTITY;
@@ -942,11 +900,11 @@ mod tests {
     #[test]
     fn effective_orders_collapses_degree_one_to_zero() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
     }
@@ -962,28 +920,28 @@ mod tests {
             mu: 3.986_004_415e14,
             model: GravityModel::PointMass,
         };
-        let degree_one = GravityControl::<usize> {
+        let degree_one = GravityControl {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
-        let against_pm = GravityControl::<usize> {
+        let against_pm = GravityControl {
             spherical: false,
             degree: 8,
             order: 8,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert!(degree_one.is_nonspherical()); // config says yes
         assert!(!degree_one.requires_planet_fixed_rotation(&sh)); // runtime says no
         assert!(against_pm.is_nonspherical()); // config says yes
         assert!(!against_pm.requires_planet_fixed_rotation(&pm)); // runtime says no
 
-        let real_sh = GravityControl::<usize> {
+        let real_sh = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         assert!(real_sh.requires_planet_fixed_rotation(&sh));
     }
@@ -996,11 +954,11 @@ mod tests {
     #[test]
     fn evaluate_degree_one_does_not_require_rotation() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
         // No rotation matrix supplied; would have panicked previously.
@@ -1029,11 +987,11 @@ mod tests {
     )]
     fn check_validity_panics_on_zero_degree_with_spherical_false() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 0,
             order: 0,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1051,11 +1009,11 @@ mod tests {
     )]
     fn check_validity_panics_on_degree_one_with_spherical_false() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 1,
             order: 1,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1069,14 +1027,14 @@ mod tests {
     #[should_panic(expected = "Gravity gradient degree (12) > gravity degree (4)")]
     fn check_validity_panics_on_gradient_degree_above_degree() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
             gradient: true,
             gradient_degree: 12,
             gradient_order: 0,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1089,14 +1047,14 @@ mod tests {
     #[should_panic(expected = "Gravity gradient degree must not equal 1")]
     fn check_validity_panics_on_gradient_degree_equal_one() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
             gradient: true,
             gradient_degree: 1,
             gradient_order: 0,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1107,14 +1065,14 @@ mod tests {
     #[should_panic(expected = "Gravity gradient order (5) > gradient degree (2)")]
     fn check_validity_panics_on_gradient_order_above_gradient_degree() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
             gradient: true,
             gradient_degree: 2,
             gradient_order: 5,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1128,14 +1086,14 @@ mod tests {
     #[should_panic(expected = "Gravity gradient order (4) > gravity order (2)")]
     fn check_validity_panics_on_gradient_order_above_order() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 8,
             order: 2,
             gradient: true,
             gradient_degree: 4,
             gradient_order: 4,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1147,14 +1105,14 @@ mod tests {
     #[test]
     fn check_validity_accepts_well_formed_control() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
             gradient: true,
             gradient_degree: 4,
             gradient_order: 4,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src); // does not panic
     }
@@ -1167,11 +1125,11 @@ mod tests {
     fn typed_check_validity_panics_on_zero_degree_with_spherical_false() {
         use astrodyn_quantities::aliases::HarmonicDegree;
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControlTyped::<usize> {
+        let ctrl = GravityControlTyped {
             spherical: false,
             degree: HarmonicDegree::from(0_usize),
             order: HarmonicDegree::from(0_usize),
-            ..GravityControlTyped::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControlTyped::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1188,11 +1146,11 @@ mod tests {
     )]
     fn gv_04_panics_on_degree_above_source_degree() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 12,
             order: 8,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1208,11 +1166,11 @@ mod tests {
     fn gv_05_panics_on_order_above_source_order() {
         // Source: degree=8, order=4 (sectorial truncation).
         let src = dummy_sh_source(8, 4);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 6,
             order: 6,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1226,11 +1184,11 @@ mod tests {
     #[should_panic(expected = "Gravity field order (5) is greater than gravity field degree (4).")]
     fn gv_06_panics_on_order_above_degree() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 5,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1251,11 +1209,11 @@ mod tests {
     )]
     fn gv_19_panics_on_degree_above_source_max() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 50,
             order: 8,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         ctrl.check_validity(&src);
     }
@@ -1277,11 +1235,11 @@ mod tests {
     )]
     fn gv_17_panics_on_nonspherical_without_rotation() {
         let src = dummy_sh_source(8, 8);
-        let ctrl = GravityControl::<usize> {
+        let ctrl = GravityControl {
             spherical: false,
             degree: 4,
             order: 4,
-            ..GravityControl::new_spherical(0_usize, GravityGradient::Skip)
+            ..GravityControl::new_spherical(test_uid(), GravityGradient::Skip)
         };
         // `evaluate` (not `accumulate_gravity`) drives the kernel-level
         // assert in `evaluate_inner` directly; this test pins the
@@ -1294,8 +1252,11 @@ mod tests {
 
     use proptest::prelude::*;
 
-    fn arb_gravity_control() -> impl Strategy<Value = GravityControl<String>> {
+    fn arb_gravity_control() -> impl Strategy<Value = GravityControl> {
         (
+            // Identity entropy: arbitrary tag names in an external
+            // namespace, so the round-trips cover the uid field too
+            // (issue #668 — the source reference is a FrameUid value).
             "[a-z]{1,8}",
             any::<bool>(),
             any::<bool>(),
@@ -1322,7 +1283,12 @@ mod tests {
                     battin_method,
                     relativistic,
                 )| GravityControl {
-                    source_name,
+                    source: FrameUid::external(
+                        Namespace(2),
+                        FrameClass::PlanetInertial,
+                        FrameRole::Primary,
+                        Tag::Named(source_name.into()),
+                    ),
                     gradient,
                     spherical,
                     degree,
@@ -1340,14 +1306,14 @@ mod tests {
     proptest! {
         #[test]
         fn round_trip_gravity_control_untyped_typed_untyped(orig in arb_gravity_control()) {
-            let typed = GravityControlTyped::<String>::from_untyped_unchecked(&orig);
+            let typed = GravityControlTyped::from_untyped_unchecked(&orig);
             prop_assert_eq!(typed.to_untyped(), orig);
         }
 
         #[test]
         fn round_trip_gravity_control_typed_untyped_typed(orig in arb_gravity_control()) {
-            let typed = GravityControlTyped::<String>::from_untyped_unchecked(&orig);
-            let lifted = GravityControlTyped::<String>::from_untyped_unchecked(&typed.to_untyped());
+            let typed = GravityControlTyped::from_untyped_unchecked(&orig);
+            let lifted = GravityControlTyped::from_untyped_unchecked(&typed.to_untyped());
             prop_assert_eq!(lifted.to_untyped(), typed.to_untyped());
         }
     }

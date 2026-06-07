@@ -7,6 +7,7 @@ use astrodyn_dynamics::forces::GravityAccelerationTyped;
 use astrodyn_dynamics::GravityAcceleration;
 use astrodyn_quantities::aliases::{Acceleration, Position, Velocity};
 use astrodyn_quantities::frame::{IntegrationFrame, RootInertial};
+use astrodyn_quantities::frame_descriptor::FrameUid;
 use astrodyn_quantities::integ_origin::IntegOrigin;
 use glam::{DMat3, DVec3};
 
@@ -42,28 +43,28 @@ pub struct ResolvedSource<'a> {
 /// the source. This matches JEOD's `GravityIntegFrame::is_third_body` logic
 /// in `gravity_controls.cc:calc_spherical()`.
 ///
-/// # Type parameter
-/// - `S`: source identifier type. In Bevy: `Entity`. In `Simulation`: `usize`.
-///
-/// The `source_lookup` closure resolves it to a [`ResolvedSource`] containing
-/// the gravity model, optional planet-fixed rotation, and inertial position.
+/// Sources are referenced by their inertial-frame [`FrameUid`] (issue
+/// #668); the host-supplied `source_lookup` closure resolves an identity
+/// to a [`ResolvedSource`] containing the gravity model, optional
+/// planet-fixed rotation, and inertial position (the runner resolves
+/// uid → source index, the Bevy adapter uid → source entity).
 ///
 /// # Arguments
 /// - `position`: body position in the inertial frame (m)
 /// - `controls`: per-body gravity controls specifying which sources to use
 /// - `integration_origin`: position of the integration frame origin in the
 ///   inertial frame (m). Typically `DVec3::ZERO` for Earth-centered integration.
-/// - `source_lookup`: resolves source identifiers to physical data
+/// - `source_lookup`: resolves source identities to physical data
 ///
 /// # Panics
-/// - Source not found (JEOD_INV: GV.12)
+/// - Source not found (JEOD_INV: GV.12) — the panic names the uid
 /// - Non-spherical gravity without planet-fixed rotation
 // JEOD_INV: GV.12 — gravity source must exist for control
-pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
+pub fn accumulate_gravity<'a>(
     position: DVec3,
-    controls: &GravityControls<S>,
+    controls: &GravityControls,
     integration_origin: DVec3,
-    source_lookup: impl Fn(S) -> Option<ResolvedSource<'a>>,
+    source_lookup: impl Fn(&FrameUid) -> Option<ResolvedSource<'a>>,
 ) -> GravityAcceleration {
     let mut total = GravityAcceleration::default();
 
@@ -73,12 +74,12 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
         // (non-fatal, severity 0) when find_grav_source() returns nullptr. We
         // escalate to a panic because silently omitting a gravity source would
         // produce incorrect physics.
-        let resolved = source_lookup(ctrl.source_name).unwrap_or_else(|| {
+        let resolved = source_lookup(&ctrl.source).unwrap_or_else(|| {
             panic!(
-                "GravityControl references source {:?} which does not exist. \
+                "GravityControl references source `{}` which does not exist. \
                  JEOD logs a non-fatal error and skips; we panic to prevent \
                  silently wrong physics.",
-                ctrl.source_name
+                ctrl.source
             );
         });
 
@@ -91,8 +92,8 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
         if ctrl.requires_planet_fixed_rotation(resolved.source) && resolved.rotation.is_none() {
             panic!(
                 "Non-spherical GravityControl (degree={}, order={}) references \
-                 source {:?} which has no planet-fixed rotation matrix.",
-                ctrl.degree, ctrl.order, ctrl.source_name
+                 source `{}` which has no planet-fixed rotation matrix.",
+                ctrl.degree, ctrl.order, ctrl.source
             );
         }
 
@@ -119,10 +120,10 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
             let frame_pos_relative_to_source = integration_origin - resolved.position;
             assert!(
                 frame_pos_relative_to_source.length_squared() > 0.0,
-                "Differential (third-body) gravity source {:?} is at the integration \
+                "Differential (third-body) gravity source `{}` is at the integration \
                  frame origin. Third-body sources must be distinct from the central \
                  body (e.g., Sun/Moon when integrating in an Earth-centered frame).",
-                ctrl.source_name
+                ctrl.source
             );
 
             // Battin's method applies only to the spherical (point-mass) term of
@@ -224,13 +225,13 @@ pub struct ResolvedRelativisticSource {
 /// source, builds the "other sources" list and calls
 /// [`crate::relativistic::compute_relativistic_correction`].
 ///
-/// `source_lookup` resolves source identifiers (index or Entity) to
+/// `source_lookup` resolves source identities ([`FrameUid`]) to
 /// `ResolvedRelativisticSource` values, the same pattern as `accumulate_gravity`.
-pub fn accumulate_relativistic_corrections<S: Copy + std::fmt::Debug + PartialEq>(
+pub fn accumulate_relativistic_corrections(
     body_position: DVec3,
     body_velocity: DVec3,
-    controls: &GravityControls<S>,
-    source_lookup: impl Fn(S) -> Option<ResolvedRelativisticSource>,
+    controls: &GravityControls,
+    source_lookup: impl Fn(&FrameUid) -> Option<ResolvedRelativisticSource>,
 ) -> DVec3 {
     let mut total_correction = DVec3::ZERO;
 
@@ -238,15 +239,15 @@ pub fn accumulate_relativistic_corrections<S: Copy + std::fmt::Debug + PartialEq
         if !ctrl.relativistic {
             continue;
         }
-        let Some(src) = source_lookup(ctrl.source_name) else {
+        let Some(src) = source_lookup(&ctrl.source) else {
             continue;
         };
         let other: Vec<crate::relativistic::RelativisticSource> = controls
             .controls
             .iter()
-            .filter(|c| c.source_name != ctrl.source_name)
+            .filter(|c| c.source != ctrl.source)
             .filter_map(|c| {
-                source_lookup(c.source_name).map(|s| crate::relativistic::RelativisticSource {
+                source_lookup(&c.source).map(|s| crate::relativistic::RelativisticSource {
                     mu: s.mu,
                     position: s.position,
                 })
@@ -273,11 +274,11 @@ pub fn accumulate_relativistic_corrections<S: Copy + std::fmt::Debug + PartialEq
 /// [`GravityAccelerationTyped<RootInertial>`] at exit. The `source_lookup`
 /// closure still returns the existing untyped [`ResolvedSource`].
 // JEOD_INV: GV.12 — gravity source must exist for control
-pub fn accumulate_gravity_typed<'a, S: Copy + std::fmt::Debug>(
+pub fn accumulate_gravity_typed<'a>(
     position: Position<RootInertial>,
-    controls: &GravityControls<S>,
+    controls: &GravityControls,
     integration_origin: Position<RootInertial>,
-    source_lookup: impl Fn(S) -> Option<ResolvedSource<'a>>,
+    source_lookup: impl Fn(&FrameUid) -> Option<ResolvedSource<'a>>,
 ) -> GravityAccelerationTyped<RootInertial> {
     let raw = accumulate_gravity(
         position.raw_si(),
@@ -292,11 +293,11 @@ pub fn accumulate_gravity_typed<'a, S: Copy + std::fmt::Debug>(
 ///
 /// Same kernel; entry/exit boundary types are
 /// `Position<RootInertial>` / `Velocity<RootInertial>` / `Acceleration<RootInertial>`.
-pub fn accumulate_relativistic_corrections_typed<S: Copy + std::fmt::Debug + PartialEq>(
+pub fn accumulate_relativistic_corrections_typed(
     body_position: Position<RootInertial>,
     body_velocity: Velocity<RootInertial>,
-    controls: &GravityControls<S>,
-    source_lookup: impl Fn(S) -> Option<ResolvedRelativisticSource>,
+    controls: &GravityControls,
+    source_lookup: impl Fn(&FrameUid) -> Option<ResolvedRelativisticSource>,
 ) -> Acceleration<RootInertial> {
     let raw = accumulate_relativistic_corrections(
         body_position.raw_si(),
@@ -337,13 +338,13 @@ pub fn accumulate_relativistic_corrections_typed<S: Copy + std::fmt::Debug + Par
 /// - `resolve_rel_source`: source resolver for the relativistic correction
 ///   (same closure shape as [`accumulate_relativistic_corrections_typed`])
 // JEOD_INV: RF.10 — integ-frame to root-inertial shift is encapsulated here.
-pub fn evaluate_body_gravity_typed<'a, S: Copy + std::fmt::Debug + PartialEq>(
+pub fn evaluate_body_gravity_typed<'a>(
     body_position: Position<IntegrationFrame>,
     body_velocity: Velocity<IntegrationFrame>,
     integ_origin: IntegOrigin,
-    controls: &GravityControls<S>,
-    resolve_source: impl Fn(S) -> Option<ResolvedSource<'a>>,
-    resolve_rel_source: impl Fn(S) -> Option<ResolvedRelativisticSource>,
+    controls: &GravityControls,
+    resolve_source: impl Fn(&FrameUid) -> Option<ResolvedSource<'a>>,
+    resolve_rel_source: impl Fn(&FrameUid) -> Option<ResolvedRelativisticSource>,
 ) -> GravityAccelerationTyped<RootInertial> {
     let abs_pos = integ_origin.shift_position(body_position);
     let abs_vel = integ_origin.shift_velocity(body_velocity);
@@ -364,7 +365,7 @@ pub fn evaluate_body_gravity_typed<'a, S: Copy + std::fmt::Debug + PartialEq>(
 /// driver's `BodyIter` items and its `resolve_source` closure share
 /// that lifetime via the `'a` parameter on
 /// [`run_gravity_stage`].
-pub struct GravityBodyInputs<'a, S> {
+pub struct GravityBodyInputs<'a> {
     /// Body position in its integration frame.
     pub position: Position<IntegrationFrame>,
     /// Body velocity in its integration frame.
@@ -375,7 +376,7 @@ pub struct GravityBodyInputs<'a, S> {
     /// Per-body gravity controls. Borrowed because controls live in
     /// adapter-owned storage (Bevy `Query<&GravityControlsC>` row,
     /// `SimBody.gravity_controls` field) and cloning is unnecessary.
-    pub controls: &'a GravityControls<S>,
+    pub controls: &'a GravityControls,
 }
 
 /// Drive the gravity stage across an adapter-supplied iterator of
@@ -393,9 +394,9 @@ pub struct GravityBodyInputs<'a, S> {
 ///    so the closure is a direct move.
 ///
 /// `resolve_source` and `resolve_rel_source` receive the body key
-/// alongside the source identifier so adapters that want to surface
+/// alongside the source identity so adapters that want to surface
 /// body context in diagnostic panics (e.g. *"Entity {body:?}: gravity
-/// source {src:?} not found"*) keep the reference they need.
+/// source `{uid}` not found"*) keep the reference they need.
 ///
 /// The closure-based writer lets each adapter use whatever mutable
 /// handle its iterator yields (`Mut<'_, GravityAccelerationC>` for
@@ -406,17 +407,16 @@ pub struct GravityBodyInputs<'a, S> {
 /// Both ECS adapters today route gravity through this function; future
 /// stage-shape changes (a new pre-step, a new gating condition, new
 /// telemetry) edit one site rather than two.
-pub fn run_gravity_stage<'a, S, K, Store, BodyIter, FS, FR>(
+pub fn run_gravity_stage<'a, K, Store, BodyIter, FS, FR>(
     bodies: BodyIter,
     resolve_source: FS,
     resolve_rel_source: FR,
 ) where
-    S: Copy + std::fmt::Debug + PartialEq + 'a,
     K: Copy,
     Store: FnOnce(GravityAccelerationTyped<RootInertial>),
-    BodyIter: IntoIterator<Item = (K, GravityBodyInputs<'a, S>, Store)>,
-    FS: Fn(K, S) -> Option<ResolvedSource<'a>>,
-    FR: Fn(K, S) -> Option<ResolvedRelativisticSource>,
+    BodyIter: IntoIterator<Item = (K, GravityBodyInputs<'a>, Store)>,
+    FS: Fn(K, &FrameUid) -> Option<ResolvedSource<'a>>,
+    FR: Fn(K, &FrameUid) -> Option<ResolvedRelativisticSource>,
 {
     for (key, inputs, store) in bodies {
         let result = evaluate_body_gravity_typed(
@@ -449,9 +449,21 @@ mod tests {
         }
     }
 
+    /// A fixed source identity for tests — the resolver closures below
+    /// ignore it and return the test source directly.
+    fn test_uid() -> astrodyn_quantities::frame_descriptor::FrameUid {
+        use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, Namespace, Tag};
+        FrameUid::external(
+            Namespace(2),
+            FrameClass::PlanetInertial,
+            FrameRole::Primary,
+            Tag::Named("test-source".into()),
+        )
+    }
+
     /// Helper: build a single third-body control with or without Battin's method.
-    fn third_body_control(source_id: usize, battin: bool) -> GravityControl<usize> {
-        let mut ctrl = GravityControl::new_third_body(source_id);
+    fn third_body_control(battin: bool) -> GravityControl {
+        let mut ctrl = GravityControl::new_third_body(test_uid());
         ctrl.battin_method = battin;
         ctrl
     }
@@ -477,7 +489,7 @@ mod tests {
         let integration_origin = DVec3::ZERO;
 
         let controls_direct = GravityControls {
-            controls: vec![third_body_control(0, false)],
+            controls: vec![third_body_control(false)],
         };
         let result_direct =
             accumulate_gravity(vehicle_pos, &controls_direct, integration_origin, |_| {
@@ -491,7 +503,7 @@ mod tests {
             });
 
         let controls_battin = GravityControls {
-            controls: vec![third_body_control(0, true)],
+            controls: vec![third_body_control(true)],
         };
         let result_battin =
             accumulate_gravity(vehicle_pos, &controls_battin, integration_origin, |_| {
@@ -583,7 +595,7 @@ mod tests {
         let integration_origin = DVec3::ZERO;
 
         let controls = GravityControls {
-            controls: vec![third_body_control(0, true)],
+            controls: vec![third_body_control(true)],
         };
         let result = accumulate_gravity(vehicle_pos, &controls, integration_origin, |_| {
             Some(ResolvedSource {
@@ -623,7 +635,7 @@ mod tests {
         let vehicle_pos = DVec3::new(500.0, 0.0, 0.0);
 
         let controls_direct = GravityControls {
-            controls: vec![third_body_control(0, false)],
+            controls: vec![third_body_control(false)],
         };
         let result_direct =
             accumulate_gravity(vehicle_pos, &controls_direct, integration_origin, |_| {
@@ -637,7 +649,7 @@ mod tests {
             });
 
         let controls_battin = GravityControls {
-            controls: vec![third_body_control(0, true)],
+            controls: vec![third_body_control(true)],
         };
         let result_battin =
             accumulate_gravity(vehicle_pos, &controls_battin, integration_origin, |_| {
@@ -673,12 +685,12 @@ mod tests {
         let integration_origin = DVec3::ZERO;
 
         // Spherical control with perturbing_only + battin_method = true
-        let mut ctrl: GravityControl<usize> = GravityControl::new_third_body(0_usize);
+        let mut ctrl = GravityControl::new_third_body(test_uid());
         ctrl.battin_method = true;
         ctrl.perturbing_only = true;
 
         // Direct (no battin) with perturbing_only
-        let mut ctrl_direct: GravityControl<usize> = GravityControl::new_third_body(0_usize);
+        let mut ctrl_direct = GravityControl::new_third_body(test_uid());
         ctrl_direct.battin_method = false;
         ctrl_direct.perturbing_only = true;
 
@@ -720,15 +732,14 @@ mod tests {
     /// Verify `battin_method` defaults to false in all constructors.
     #[test]
     fn battin_method_defaults_false() {
-        let spherical: GravityControl<usize> =
-            GravityControl::new_spherical(0_usize, GravityGradient::Skip);
+        let spherical = GravityControl::new_spherical(test_uid(), GravityGradient::Skip);
         assert!(!spherical.battin_method);
 
-        let nonspherical: GravityControl<usize> =
-            GravityControl::new_nonspherical(0_usize, 4, 4, GravityGradient::Skip);
+        let nonspherical =
+            GravityControl::new_nonspherical(test_uid(), 4, 4, GravityGradient::Skip);
         assert!(!nonspherical.battin_method);
 
-        let third_body: GravityControl<usize> = GravityControl::new_third_body(0_usize);
+        let third_body = GravityControl::new_third_body(test_uid());
         assert!(!third_body.battin_method);
     }
 
@@ -754,11 +765,11 @@ mod tests {
 
         let controls = GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                test_uid(),
                 GravityGradient::Skip,
             )],
         };
-        let resolve_source = |_: usize| {
+        let resolve_source = |_: &FrameUid| {
             Some(ResolvedSource {
                 source: &source,
                 rotation: None,
@@ -767,7 +778,7 @@ mod tests {
                 has_delta_coeffs: false,
             })
         };
-        let resolve_rel_source = |_: usize| {
+        let resolve_rel_source = |_: &FrameUid| {
             Some(ResolvedRelativisticSource {
                 mu,
                 position: source_pos,
@@ -815,7 +826,7 @@ mod tests {
         let source_pos = DVec3::ZERO;
         let controls = GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                test_uid(),
                 GravityGradient::Skip,
             )],
         };
@@ -830,7 +841,7 @@ mod tests {
             velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
         };
 
-        let resolve_source = |_body: usize, _src: usize| {
+        let resolve_source = |_body: usize, _src: &FrameUid| {
             Some(ResolvedSource {
                 source: &source,
                 rotation: None,
@@ -839,7 +850,7 @@ mod tests {
                 has_delta_coeffs: false,
             })
         };
-        let resolve_rel_source = |_body: usize, _src: usize| {
+        let resolve_rel_source = |_body: usize, _src: &FrameUid| {
             Some(ResolvedRelativisticSource {
                 mu,
                 position: source_pos,
@@ -919,11 +930,11 @@ mod tests {
         let integ_origin = IntegOrigin::zero();
         let controls = GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                test_uid(),
                 GravityGradient::Skip,
             )],
         };
-        let resolve_source = |_: usize| {
+        let resolve_source = |_: &FrameUid| {
             Some(ResolvedSource {
                 source: &source,
                 rotation: None,
@@ -932,7 +943,7 @@ mod tests {
                 has_delta_coeffs: false,
             })
         };
-        let resolve_rel_source = |_: usize| {
+        let resolve_rel_source = |_: &FrameUid| {
             Some(ResolvedRelativisticSource {
                 mu,
                 position: source_pos,
@@ -973,7 +984,7 @@ mod tests {
     fn accumulate_gravity_panics_on_missing_source() {
         let controls = GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                test_uid(),
                 GravityGradient::Skip,
             )],
         };
@@ -981,7 +992,7 @@ mod tests {
             DVec3::new(7e6, 0.0, 0.0),
             &controls,
             DVec3::ZERO,
-            |_id: usize| -> Option<ResolvedSource<'_>> { None },
+            |_id: &FrameUid| -> Option<ResolvedSource<'_>> { None },
         );
     }
 
@@ -1007,7 +1018,7 @@ mod tests {
         };
         let controls = GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                0_usize,
+                test_uid(),
                 4,
                 4,
                 GravityGradient::Skip,
@@ -1017,7 +1028,7 @@ mod tests {
             DVec3::new(7e6, 0.0, 0.0),
             &controls,
             DVec3::ZERO,
-            |_id: usize| -> Option<ResolvedSource<'_>> {
+            |_id: &FrameUid| -> Option<ResolvedSource<'_>> {
                 Some(ResolvedSource {
                     source: &source,
                     rotation: None, // ← missing rotation triggers GV.13
@@ -1049,7 +1060,7 @@ mod tests {
             mu,
             model: GravityModel::PointMass,
         };
-        let mut ctrl = GravityControl::new_third_body(0_usize);
+        let mut ctrl = GravityControl::new_third_body(test_uid());
         // `new_third_body` already sets `differential = true`; assert
         // here so the test's intent is independent of constructor
         // defaults.
@@ -1065,7 +1076,7 @@ mod tests {
             DVec3::new(1.5e11, 0.0, 0.0),
             &controls,
             DVec3::ZERO,
-            |_id: usize| -> Option<ResolvedSource<'_>> {
+            |_id: &FrameUid| -> Option<ResolvedSource<'_>> {
                 Some(ResolvedSource {
                     source: &source,
                     rotation: None,
