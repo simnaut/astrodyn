@@ -144,14 +144,14 @@ fn build_abm4_scenario(initial_state: TranslationalState) -> SimulationBuilder {
         central: true,
         marker_only: false,
     };
-    let earth_idx = b.add_source("Earth", earth);
+    let _earth_idx = b.add_source("Earth", earth);
 
     b.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&initial_state),
         integrator: IntegratorType::Abm4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

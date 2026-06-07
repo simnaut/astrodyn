@@ -119,7 +119,7 @@ fn build_leo_rnp_sim() -> (Simulation, usize) {
     // RNP evaluation writes the pfix node matrix-canonically AND feeds
     // the SH gravity evaluation, so the body trajectory depends on the
     // restored pfix rotation bits.
-    let earth = sim.add_source("Earth", astrodyn::recipes::earth::ggm05c());
+    let _earth = sim.add_source("Earth", astrodyn::recipes::earth::ggm05c());
 
     let body = sim.add_body(VehicleConfig {
         trans: trans_raw_to_root(&TranslationalState {
@@ -144,7 +144,7 @@ fn build_leo_rnp_sim() -> (Simulation, usize) {
         ))),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 8,
                 8,
                 GravityGradient::Skip,
@@ -294,7 +294,7 @@ fn build_apollo8_sim(post_switch: bool) -> (Simulation, usize, usize) {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
 
     let moon = sim.add_source(
         "Moon",
@@ -318,13 +318,21 @@ fn build_apollo8_sim(post_switch: bool) -> (Simulation, usize, usize) {
     // switch target becomes non-differential, everything else
     // differential.
     let mut controls = vec![
-        GravityControl::new_spherical(earth, GravityGradient::Skip),
-        GravityControl::new_third_body(sun),
-        GravityControl::new_third_body(moon),
+        GravityControl::new_spherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            GravityGradient::Skip,
+        ),
+        GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Sun>,
+        >()),
+        GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
     ];
     if post_switch {
         for ctrl in &mut controls {
-            ctrl.differential = ctrl.source_name != moon;
+            ctrl.differential =
+                ctrl.source != astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>();
         }
     }
 
@@ -348,12 +356,18 @@ fn build_apollo8_sim(post_switch: bool) -> (Simulation, usize, usize) {
             DVec3::ZERO,
         ))),
         gravity_controls: GravityControls { controls },
-        integ_source: if post_switch { Some(moon) } else { None },
+        integ_source: if post_switch {
+            Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())
+        } else {
+            None
+        },
         frame_switches: if post_switch {
             vec![]
         } else {
             vec![FrameSwitchConfig {
-                target_source: moon,
+                target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
                 switch_sense: SwitchSense::OnApproach,
                 switch_distance: A8_SWITCH_DISTANCE,
                 active: true,

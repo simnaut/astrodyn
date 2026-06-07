@@ -151,7 +151,7 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         .expect("Moon at epoch");
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_source,
@@ -191,9 +191,17 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         GravityGradient::Skip
     };
     let mut earth_ctrl = if cfg.earth_nonspherical {
-        GravityControl::new_nonspherical(earth, 20, 20, earth_gradient)
+        GravityControl::new_nonspherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            20,
+            20,
+            earth_gradient,
+        )
     } else {
-        GravityControl::new_spherical(earth, earth_gradient)
+        GravityControl::new_spherical(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            earth_gradient,
+        )
     };
     if cfg.earth_gradient {
         earth_ctrl.gradient_degree = cfg.gradient_degree;
@@ -220,8 +228,12 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         gravity_controls: GravityControls {
             controls: vec![
                 earth_ctrl,
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         compute_gravity_gradient: cfg.earth_gradient,

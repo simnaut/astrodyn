@@ -731,13 +731,13 @@ mod tests {
             None,
         );
         earth.central = true;
-        let earth_idx = b.add_source("Earth", earth);
+        let _earth_idx = b.add_source("Earth", earth);
         b.add_body(VehicleConfig {
             // allowed: typed↔raw kernel boundary (#397)
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    earth_idx,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Skip,
                 )],
             },
@@ -826,7 +826,7 @@ mod tests {
             None,
         );
         earth.central = true;
-        let earth_idx = b.add_source("Earth", earth);
+        let _earth_idx = b.add_source("Earth", earth);
         // Add two third bodies so we exercise the multi-source path.
         let _sun_idx = b.add_source(
             "Sun",
@@ -859,7 +859,7 @@ mod tests {
             trans: astrodyn::typed_bridge::trans_raw_to_root(&iss_trans()),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    earth_idx,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Skip,
                 )],
             },

@@ -62,7 +62,7 @@ fn build_two_body_app(
     let id_b = tree.add_body("BodyB".into(), MassProperties::new(500.0));
     app.insert_resource(MassTreeR(tree));
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -108,7 +108,10 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -131,7 +134,10 @@ fn build_two_body_app(
                 ),
             ),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
             GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
@@ -245,7 +251,7 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
     let id_new = tree.add_body("NewAttachee".into(), MassProperties::new(50.0));
     app.insert_resource(MassTreeR(tree));
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -269,30 +275,32 @@ fn bevy_parity_mass_attach_detach_with_gj_mass_attach_with_gj_resets_full_ancest
     // continue path (#485 C1) so the test focuses on parity between runner
     // and Bevy mass-tree handling rather than the fail-loudly default.
     let gj_cfg = GaussJacksonConfig::with_order(8).with_allow_non_convergence(true);
-    let mk_body = |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
-        app.world_mut()
-            .spawn((
-                astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
-                    "bevy-parity-mass-attach-detach-with-gj-b3-{}",
-                    NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                ))),
-                Name::new(name.to_string()),
-                DynamicsConfigC::default(),
-                TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
-                MassPropertiesC::from(
-                    astrodyn::typed_bridge::mass_raw_to_typed::<astrodyn::SelfRef>(
-                        &(MassProperties::new(mass)),
-                    ),
-                ),
-                GravityControlsC(GravityControls {
-                    controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
-                }),
-                IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
-                GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
-                MassBodyIdC(id),
-            ))
-            .id()
-    };
+    let mk_body =
+        |app: &mut App, id: astrodyn::MassBodyId, mass: f64, name: &str| -> Entity {
+            app.world_mut()
+                .spawn((
+                    astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                        "bevy-parity-mass-attach-detach-with-gj-b3-{}",
+                        NEXT_BODY_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ))),
+                    Name::new(name.to_string()),
+                    DynamicsConfigC::default(),
+                    TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
+                    MassPropertiesC::from(astrodyn::typed_bridge::mass_raw_to_typed::<
+                        astrodyn::SelfRef,
+                    >(&(MassProperties::new(mass)))),
+                    GravityControlsC(GravityControls {
+                        controls: vec![GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        )],
+                    }),
+                    IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
+                    GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
+                    MassBodyIdC(id),
+                ))
+                .id()
+        };
     let e_top = mk_body(&mut app, id_top, 1000.0, "Top");
     let e_middle = mk_body(&mut app, id_middle, 500.0, "Middle");
     let e_leaf = mk_body(&mut app, id_leaf, 100.0, "Leaf");

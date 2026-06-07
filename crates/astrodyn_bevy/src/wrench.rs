@@ -1381,7 +1381,7 @@ mod tests {
         app.add_plugins(crate::AstrodynPlugin);
 
         // Earth point-mass source.
-        let earth = app
+        let _earth = app
             .world_mut()
             .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
             .id();

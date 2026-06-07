@@ -129,7 +129,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
 
     let moon = sim.add_source(
         "Moon",
@@ -177,16 +177,23 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
         gravity_controls: GravityControls {
             controls: vec![
                 // Earth is the central body for Earth-centered integration.
-                GravityControl::new_spherical(earth, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 // Sun and Moon are third-body (differential acceleration).
-                GravityControl::new_third_body(sun),
-                GravityControl::new_third_body(moon),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
             ],
         },
         integ_source: None,
         frame_switches: if enable_frame_switch {
             vec![FrameSwitchConfig {
-                target_source: moon,
+                target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
                 switch_sense: SwitchSense::OnApproach,
                 switch_distance: SWITCH_DISTANCE,
                 active: true,

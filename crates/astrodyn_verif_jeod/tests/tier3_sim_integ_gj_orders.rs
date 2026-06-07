@@ -62,7 +62,7 @@ fn gj_energy_error(order: usize) -> f64 {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(
+    let _earth = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -97,7 +97,10 @@ fn gj_energy_error(order: usize) -> f64 {
             GaussJacksonConfig::with_order(order).with_allow_non_convergence(true),
         ),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("tier3-sim-integ-gj-orders-0")
     });

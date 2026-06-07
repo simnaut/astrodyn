@@ -104,7 +104,7 @@ fn step(app: &mut App) {
 
 #[test]
 fn spawn_bevy_wires_orbital_elements() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
         .vehicle_named("spawn-bevy-derived-state-0")
@@ -112,15 +112,17 @@ fn spawn_bevy_wires_orbital_elements() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
-        .orbital_elements(0)
+        .orbital_elements(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >())
         .build();
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 
@@ -132,7 +134,8 @@ fn spawn_bevy_wires_orbital_elements() {
         .get::<OrbitalElementsConfigC>(vehicle)
         .expect("spawn_bevy must insert OrbitalElementsConfigC when orbital_elements is set");
     assert_eq!(
-        cfgc.gravity_source, earth,
+        cfgc.gravity_source,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         "OrbitalElementsConfigC.gravity_source must resolve to the earth Entity"
     );
     assert!(
@@ -163,7 +166,7 @@ fn spawn_bevy_wires_orbital_elements() {
 
 #[test]
 fn spawn_bevy_wires_euler_angles() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
         .vehicle_named("spawn-bevy-derived-state-1")
@@ -171,7 +174,7 @@ fn spawn_bevy_wires_euler_angles() {
         .sixdof(iss_rot(), iss_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .euler_angles(EulerSequence::ZYX)
@@ -179,7 +182,7 @@ fn spawn_bevy_wires_euler_angles() {
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 
@@ -217,7 +220,7 @@ fn spawn_bevy_wires_euler_angles() {
 
 #[test]
 fn spawn_bevy_wires_lvlh() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
         .vehicle_named("spawn-bevy-derived-state-2")
@@ -225,7 +228,7 @@ fn spawn_bevy_wires_lvlh() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .lvlh()
@@ -233,7 +236,7 @@ fn spawn_bevy_wires_lvlh() {
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 
@@ -261,7 +264,7 @@ fn spawn_bevy_wires_lvlh() {
 
 #[test]
 fn spawn_bevy_wires_geodetic() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
 
     let cfg = VehicleBuilder::new()
         .vehicle_named("spawn-bevy-derived-state-3")
@@ -269,15 +272,18 @@ fn spawn_bevy_wires_geodetic() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
-        .geodetic(0, &EARTH)
+        .geodetic(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            &EARTH,
+        )
         .build();
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 
@@ -286,7 +292,8 @@ fn spawn_bevy_wires_geodetic() {
         .get::<GeodeticConfigC>(vehicle)
         .expect("spawn_bevy must insert GeodeticConfigC when geodetic is set");
     assert_eq!(
-        cfgc.planet, earth,
+        cfgc.planet,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         "GeodeticConfigC.planet must resolve to the earth Entity"
     );
     assert!(
@@ -314,7 +321,7 @@ fn spawn_bevy_wires_geodetic() {
 
 #[test]
 fn spawn_bevy_wires_solar_beta() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
     // `solar_beta_system` and the validation precondition check both
     // require exactly one `SunMarker` entity carrying
     // `TranslationalStateC<P>`. Park the Sun on the +z axis so the
@@ -334,7 +341,7 @@ fn spawn_bevy_wires_solar_beta() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .solar_beta()
@@ -342,7 +349,7 @@ fn spawn_bevy_wires_solar_beta() {
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 
@@ -372,7 +379,7 @@ fn spawn_bevy_wires_solar_beta() {
 
 #[test]
 fn spawn_bevy_wires_earth_lighting() {
-    let (mut app, earth) = app_with_earth();
+    let (mut app, _earth) = app_with_earth();
     app.world_mut().spawn(SunBundle::<astrodyn::Earth>::new(
         astrodyn::TranslationalState {
             position: DVec3::new(1.496e11, 0.0, 0.0),
@@ -392,7 +399,7 @@ fn spawn_bevy_wires_earth_lighting() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .earth_lighting(&EARTH, &MOON, &SUN)
@@ -400,7 +407,7 @@ fn spawn_bevy_wires_earth_lighting() {
 
     let vehicle = {
         let mut commands = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands)
     };
     app.world_mut().flush();
 

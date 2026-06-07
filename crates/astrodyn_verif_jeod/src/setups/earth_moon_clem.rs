@@ -128,7 +128,7 @@ pub fn earth_moon_clem(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Simula
     sun_source.source.mu = astrodyn::gravity_fixtures::load_sun_spherical_mu();
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let moon_idx = sb.add_source("Moon", moon_source);
+    let _moon_idx = sb.add_source("Moon", moon_source);
     let earth_idx = sb.add_source("Earth", earth_source);
     let sun_idx = sb.add_source("Sun", sun_source);
     sb.set_source_ephemeris(earth_idx, EphemerisBody::Earth, EphemerisBody::Moon);
@@ -147,13 +147,17 @@ pub fn earth_moon_clem(dt: f64, initial_state: Option<(DVec3, DVec3)>) -> Simula
         .three_dof_point_mass(424.0.kg())
         .rk4()
         .gravity(GravityControl::new_nonspherical(
-            moon_idx,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             60,
             60,
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(earth_idx))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Sun>,
+        >()))
         .cannonball_srp(SRP_CX_AREA, SRP_ALBEDO, SRP_DIFFUSE)
         .build();
     sb.add_body(vehicle);

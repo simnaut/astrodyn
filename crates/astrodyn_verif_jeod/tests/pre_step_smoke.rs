@@ -91,7 +91,7 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
         mu: 3.986_004_415e14,
         model: GravityModel::PointMass,
     };
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_grav,
@@ -131,7 +131,10 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("pre-step-smoke-0")
     });

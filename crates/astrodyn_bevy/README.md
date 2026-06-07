@@ -84,28 +84,32 @@ astrodyn_bevy = "0.1"
 use bevy::prelude::*;
 use astrodyn_bevy::prelude::*;
 use astrodyn_bevy::recipes::{earth, orbital_elements, vehicle};
-use astrodyn::Earth;
+use astrodyn::{Earth, FrameUid, PlanetInertial};
 
 fn setup(mut commands: Commands) {
     let earth_recipe = earth::point_mass();
     let mu = earth_recipe.source.mu.m3_per_s2();
-    let earth_entity = commands
-        .spawn((
-            GravitySourceC(earth_recipe.source),
-            SourceInertialPositionC::default(),
-            TranslationalStateC::<Earth>::default(),
-        ))
-        .id();
+    commands.spawn((
+        // The source's inertial-frame identity (issue #668): gravity
+        // controls reference it by this value, in every host.
+        FrameUidC(FrameUid::of::<PlanetInertial<Earth>>()),
+        GravitySourceC(earth_recipe.source),
+        SourceInertialPositionC::default(),
+        TranslationalStateC::<Earth>::default(),
+    ));
 
     let cfg = VehicleBuilder::new()
         .vehicle_named("iss")
         .from_orbital_elements(orbital_elements::iss(), mu)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+        .gravity(GravityControl::new_spherical(
+            FrameUid::of::<PlanetInertial<Earth>>(),
+            GravityGradient::Skip,
+        ))
         .build();
 
-    cfg.spawn_bevy::<Earth>(&mut commands, &[earth_entity]);
+    cfg.spawn_bevy::<Earth>(&mut commands);
 }
 
 fn main() {

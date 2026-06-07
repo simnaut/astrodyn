@@ -294,13 +294,19 @@ mod tests {
             // values (mu=0 on both).
             gravity_controls: GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(origin_src, GravityGradient::Skip),
-                    GravityControl::new_spherical(far_src, GravityGradient::Compute),
+                    GravityControl::new_spherical(
+                        sim.source_uid(origin_src).clone(),
+                        GravityGradient::Skip,
+                    ),
+                    GravityControl::new_spherical(
+                        sim.source_uid(far_src).clone(),
+                        GravityGradient::Compute,
+                    ),
                 ],
             },
             integ_source: None,
             frame_switches: vec![FrameSwitchConfig {
-                target_source: far_src,
+                target: sim.source_uid(far_src).clone(),
                 switch_sense: SwitchSense::OnApproach,
                 switch_distance: 1.0e3,
                 active: true,

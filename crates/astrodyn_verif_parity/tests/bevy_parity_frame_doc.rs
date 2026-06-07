@@ -66,7 +66,7 @@ fn earth_sh_source() -> GravitySource {
 fn build_runner_sim() -> astrodyn_runner::Simulation {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: earth_sh_source(),
@@ -85,7 +85,7 @@ fn build_runner_sim() -> astrodyn_runner::Simulation {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 4,
                 4,
                 GravityGradient::Skip,
@@ -105,7 +105,7 @@ fn build_bevy_app() -> (App, Entity) {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>()),
@@ -130,7 +130,7 @@ fn build_bevy_app() -> (App, Entity) {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_nonspherical(
-                    planet,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     4,
                     4,
                     GravityGradient::Skip,
@@ -285,7 +285,7 @@ fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
     };
 
     // ── Runner ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     let moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::new(
@@ -297,13 +297,19 @@ fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
     sim.set_source_ephemeris(moon_idx, EphemerisBody::Moon, EphemerisBody::Earth);
     sim.moon_source = Some(moon_idx);
     sim.ephemeris = Some(Ephemeris::from_bsp(&bsp_path()).expect("load DE421"));
-    let mut moon_ctrl = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+    let mut moon_ctrl = GravityControl::new_spherical(
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+        GravityGradient::Skip,
+    );
     moon_ctrl.differential = true;
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(earth_idx, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 moon_ctrl,
             ],
         },
@@ -318,8 +324,8 @@ fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
     app.insert_resource(astrodyn_bevy::EphemerisR(
         Ephemeris::from_bsp(&bsp_path()).expect("load DE421"),
     ));
-    let planet = spawn_earth_source(&mut app);
-    let moon = app
+    let _planet = spawn_earth_source(&mut app);
+    let _moon = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>()),
@@ -339,7 +345,10 @@ fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
             },
         ))
         .id();
-    let mut moon_ctrl = GravityControl::new_spherical(moon, GravityGradient::Skip);
+    let mut moon_ctrl = GravityControl::new_spherical(
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+        GravityGradient::Skip,
+    );
     moon_ctrl.differential = true;
     app.world_mut().spawn((
         astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(EPH_BODY_LABEL)),
@@ -351,7 +360,10 @@ fn bevy_parity_frame_doc_export_eq_runner_export_ephemeris() {
         }),
         GravityControlsC(GravityControls {
             controls: vec![
-                GravityControl::new_spherical(planet, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 moon_ctrl,
             ],
         }),

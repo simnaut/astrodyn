@@ -1,7 +1,7 @@
 // JEOD_INV: TS.01 — `<SelfRef>` / `<SelfPlanet>` are runtime-resolved storage-boundary wildcards; see `docs/JEOD_invariants.md` row TS.01 and the lint at `tests/self_ref_self_planet_discipline.rs`.
 //! Tier 3: Bevy non-root integration frame parity (issue #71 item 4).
 //!
-//! With `IntegSourceC(Some(planet))` on a body, the Bevy adapter
+//! With `IntegSourceC(Some(astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>()))` on a body, the Bevy adapter
 //! integrates the body in that planet's inertial frame: gravity is
 //! evaluated at `body_pos + integ_origin`, the differential-gravity
 //! correction subtracts the integ frame's own acceleration toward each
@@ -181,14 +181,22 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    ),
                 ],
             }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
 
@@ -230,7 +238,7 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::third_body(
             &MOON,
@@ -245,14 +253,22 @@ fn bevy_parity_integ_source_lunar_orbit_matches_simulation() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                    GravityGradient::Skip,
+                ),
             ],
         },
-        integ_source: Some(moon_idx),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
         ..VehicleConfig::named("bevy-parity-integ-source-4")
     });
     sim.validate().unwrap();
@@ -326,14 +342,22 @@ fn bevy_parity_integ_source_moving_moon_matches_simulation() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    ),
                 ],
             }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
     app.world_mut().run_schedule(Startup);
@@ -386,14 +410,22 @@ fn bevy_parity_integ_source_moving_moon_matches_simulation() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                    GravityGradient::Skip,
+                ),
             ],
         },
-        integ_source: Some(moon_idx),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
         ..VehicleConfig::named("bevy-parity-integ-source-3")
     });
     sim.validate().unwrap();
@@ -422,7 +454,7 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -465,7 +497,10 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -508,7 +543,7 @@ fn bevy_parity_integ_source_root_matches_legacy_no_op() {
         )),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                0_usize,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -643,14 +678,22 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    ),
                 ],
             }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
             SolarBetaC::default(),
         ))
         .id();
@@ -676,7 +719,7 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::third_body(
             &MOON,
@@ -703,14 +746,22 @@ fn bevy_parity_integ_source_solar_beta_in_lunar_integ_frame() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                    GravityGradient::Skip,
+                ),
             ],
         },
-        integ_source: Some(moon_idx),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
         derived: DerivedStateConfig {
             solar_beta: true,
             ..Default::default()
@@ -863,14 +914,22 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
             GravityControlsC(GravityControls {
                 controls: vec![
                     {
-                        let mut c = GravityControl::new_spherical(_earth, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
-                    GravityControl::new_spherical(moon, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    ),
                 ],
             }),
-            IntegSourceC(Some(moon)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
             FlatPlateConfigC(FlatPlateState {
                 plates: plates.clone(),
                 temperatures: vec![init_temp; 1],
@@ -921,7 +980,7 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::third_body(
             &MOON,
@@ -948,14 +1007,22 @@ fn bevy_parity_integ_source_flat_plate_srp_in_lunar_integ_frame() {
         gravity_controls: GravityControls {
             controls: vec![
                 {
-                    let mut c = GravityControl::new_spherical(0_usize, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
-                GravityControl::new_spherical(moon_idx, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                    GravityGradient::Skip,
+                ),
             ],
         },
-        integ_source: Some(moon_idx),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Moon>,
+        >()),
         srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp; 1],

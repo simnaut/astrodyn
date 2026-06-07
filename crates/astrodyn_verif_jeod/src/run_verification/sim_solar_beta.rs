@@ -119,7 +119,7 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", earth_point_mass(mu_earth));
+    let _earth = sb.add_source("Earth", earth_point_mass(mu_earth));
     let sun = sb.add_source("Sun", sun_zero_mu(sun_t0.raw_si()));
     debug_assert_eq!(
         sun, SUN_SOURCE_IDX,
@@ -134,7 +134,10 @@ fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -264,7 +267,7 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
 
     let mut sb = SimulationBuilder::new(sim_solar_beta_time(), sim_solar_beta_dt());
     sb = sb.ephemeris(ephemeris);
-    let earth = sb.add_source("Earth", earth_point_mass(mu_earth));
+    let _earth = sb.add_source("Earth", earth_point_mass(mu_earth));
     let sun = sb.add_source("Sun", sun_zero_mu(sun_t0.raw_si()));
     sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
     sb = sb.sun(sun);
@@ -274,7 +277,10 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             solar_beta: true,
@@ -332,7 +338,7 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, sim_solar_beta_dt());
     sb = sb.ephemeris(ephemeris);
 
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -360,7 +366,7 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
         }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 8,
                 8,
                 GravityGradient::Skip,

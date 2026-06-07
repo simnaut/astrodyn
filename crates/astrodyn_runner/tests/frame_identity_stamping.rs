@@ -34,7 +34,7 @@ fn point_mass_entry(
     }
 }
 
-fn leo_body(name: &str, gravity_source_idx: usize) -> VehicleConfig {
+fn leo_body(name: &str, gravity_source: astrodyn::FrameUid) -> VehicleConfig {
     VehicleConfig {
         trans: TranslationalStateTyped::<RootInertial> {
             // allowed: typed↔raw kernel-boundary helpers used in test scaffolding
@@ -45,7 +45,7 @@ fn leo_body(name: &str, gravity_source_idx: usize) -> VehicleConfig {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                gravity_source_idx,
+                gravity_source,
                 GravityGradient::Skip,
             )],
         },
@@ -61,14 +61,22 @@ fn leo_body(name: &str, gravity_source_idx: usize) -> VehicleConfig {
 fn body_integ_frame_uid_publishes_resolved_identity() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         point_mass_entry(EARTH.shape.mu, Position::<RootInertial>::zero(), true),
     );
 
-    let root_integrating = sim.add_body(leo_body("root-integrating", earth_idx));
-    let mut cfg = leo_body("earth-integrating", earth_idx);
-    cfg.integ_source = Some(earth_idx);
+    let root_integrating = sim.add_body(leo_body(
+        "root-integrating",
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    ));
+    let mut cfg = leo_body(
+        "earth-integrating",
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    );
+    cfg.integ_source = Some(astrodyn::FrameUid::of::<
+        astrodyn::PlanetInertial<astrodyn::Earth>,
+    >());
     let earth_integrating = sim.add_body(cfg);
 
     assert_eq!(
@@ -91,11 +99,11 @@ fn body_integ_frame_uid_publishes_resolved_identity() {
 fn frame_switch_preserves_uid_to_frame_id_resolution() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         point_mass_entry(EARTH.shape.mu, Position::<RootInertial>::zero(), true),
     );
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         point_mass_entry(
             4.9028e12,
@@ -105,9 +113,12 @@ fn frame_switch_preserves_uid_to_frame_id_resolution() {
         ),
     );
 
-    let mut cfg = leo_body("switcher", earth_idx);
+    let mut cfg = leo_body(
+        "switcher",
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    );
     cfg.frame_switches.push(astrodyn::FrameSwitchConfig {
-        target_source: moon_idx,
+        target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
         switch_sense: astrodyn::SwitchSense::OnApproach,
         // Far larger than the ~3.8e8 m body-to-Moon distance, so the
         // switch triggers on the first step.

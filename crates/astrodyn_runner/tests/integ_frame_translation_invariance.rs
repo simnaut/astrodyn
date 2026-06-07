@@ -156,7 +156,10 @@ fn atmosphere_config() -> AtmosphereConfig {
     }
 }
 
-fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> VehicleConfig {
+fn body_config(
+    integ_source: Option<astrodyn::FrameUid>,
+    gravity_source: astrodyn::FrameUid,
+) -> VehicleConfig {
     let trans = TranslationalState {
         // Earth-relative ECI coords. In setup (a) the body integrates in
         // root=Earth.inertial, so this is also root-coords. In setup (b)
@@ -175,7 +178,7 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
         mass: None,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                gravity_source_idx,
+                gravity_source.clone(),
                 GravityGradient::Skip,
             )],
         },
@@ -185,10 +188,10 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
     cfg.integ_source = integ_source;
 
     // Enable derived states sensitive to frame.
-    cfg.derived.orbital_elements_source = Some(gravity_source_idx);
+    cfg.derived.orbital_elements_source = Some(gravity_source.clone());
     cfg.derived.lvlh = true;
     cfg.derived.geodetic = Some(astrodyn::GeodeticConfig {
-        source_idx: gravity_source_idx,
+        source: gravity_source,
         r_eq: EARTH.shape.r_eq(),
         r_pol: EARTH.shape.r_pol(),
     });
@@ -213,7 +216,10 @@ fn build_root_setup() -> Simulation {
     let earth = sb.add_source("Earth", earth_point_mass(MU_EARTH));
     let sun = sb.add_source("Sun", sun_source(SUN_FROM_EARTH));
     sb = sb.atmosphere(atmosphere_config(), earth).sun(sun);
-    sb.add_body(body_config(None, earth));
+    sb.add_body(body_config(
+        None,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    ));
     sb.build().expect("setup (a) builds")
 }
 
@@ -230,7 +236,12 @@ fn build_offset_setup() -> Simulation {
     let earth = sb.add_source("Earth", earth_at_offset(MU_EARTH));
     let sun = sb.add_source("Sun", sun_source(SSB_TO_EARTH_OFFSET + SUN_FROM_EARTH));
     sb = sb.atmosphere(atmosphere_config(), earth).sun(sun);
-    sb.add_body(body_config(Some(earth), earth));
+    sb.add_body(body_config(
+        Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    ));
     sb.build().expect("setup (b) builds")
 }
 

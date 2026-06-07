@@ -399,20 +399,22 @@ mod tests {
     /// are enough to drive the system.
     fn spawn_vehicle_with_state(mu: f64, pos: DVec3, vel: DVec3) -> App {
         let mut app = create_minimal_test_app();
-        let source = app
-            .world_mut()
-            .spawn(GravitySourceC(GravitySource {
+        app.world_mut().spawn((
+            crate::components::FrameUidC(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
+            ),
+            GravitySourceC(GravitySource {
                 mu,
                 model: GravityModel::PointMass,
-            }))
-            .id();
+            }),
+        ));
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: pos,
                 velocity: vel,
             }),
             OrbitalElementsConfigC {
-                gravity_source: source,
+                gravity_source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
             },
             OrbitalElementsC::<Earth>::default(),
         ));
@@ -499,17 +501,16 @@ mod tests {
     /// real-world failure mode (the caller spawned a planet entity
     /// before the bundle that inserts `GravitySourceC` ran).
     #[test]
-    #[should_panic(expected = "does not resolve to a GravitySourceC component")]
+    #[should_panic(expected = "does not resolve to a registered gravity source")]
     fn orbital_gravity_source_lookup_miss_panics_with_caller_fix() {
         let mut app = create_minimal_test_app();
-        let bad_source = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7500.0, 0.0),
             }),
             OrbitalElementsConfigC {
-                gravity_source: bad_source,
+                gravity_source: astrodyn::named_body_frame_uid("derived-state-no-such-source"),
             },
             OrbitalElementsC::<Earth>::default(),
         ));
@@ -527,17 +528,16 @@ mod tests {
     /// misconfiguration shape.
     // JEOD_INV: AT.03 — planet-fixed rotation required for geodetic altitude
     #[test]
-    #[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
+    #[should_panic(expected = "does not resolve to an entity carrying PlanetFixedRotationC")]
     fn geodetic_planet_lookup_miss_panics_with_caller_fix() {
         let mut app = create_minimal_test_app();
-        let bad_planet = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             TranslationalStateC::<Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
             GeodeticConfigC {
-                planet: bad_planet,
+                planet: astrodyn::named_body_frame_uid("derived-state-no-such-source"),
                 r_eq: astrodyn::EARTH.shape.r_eq(),
                 r_pol: astrodyn::EARTH.shape.r_pol(),
             },
@@ -602,12 +602,12 @@ mod tests {
         // Planet entity carries `PlanetFixedRotationC<P>` (what
         // `spawn_source` inserts when `rotation_model != None`) but
         // *not* `PlanetC` (what `PlanetBundle::from_config` inserts).
-        let planet = app
-            .world_mut()
-            .spawn(PlanetFixedRotationC::<Earth>(FrameTransform::from_matrix(
-                glam::DMat3::IDENTITY,
-            )))
-            .id();
+        app.world_mut().spawn((
+            crate::components::FrameUidC(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
+            ),
+            PlanetFixedRotationC::<Earth>(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+        ));
         let vehicle = app
             .world_mut()
             .spawn((
@@ -616,7 +616,7 @@ mod tests {
                     velocity: DVec3::new(0.0, 7500.0, 0.0),
                 }),
                 GeodeticConfigC {
-                    planet,
+                    planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<Earth>>(),
                     r_eq: EARTH.shape.r_eq(),
                     r_pol: EARTH.shape.r_pol(),
                 },

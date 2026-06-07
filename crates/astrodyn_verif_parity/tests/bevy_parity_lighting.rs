@@ -63,7 +63,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
 
     // ── Bevy ──
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
@@ -94,7 +94,10 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -113,7 +116,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         .clone();
 
     // ── Simulation ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -146,7 +149,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -284,7 +287,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
     let moon_pos = DVec3::new(0.0, 3.844e8, 0.0);
 
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
@@ -312,7 +315,10 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -332,7 +338,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
         .clone();
 
     // ── Simulation ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -362,7 +368,7 @@ fn bevy_parity_lighting_earth_lighting_pipeline() {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -449,7 +455,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
 
     // Earth: root-source for gravity controls. (`spawn_earth_source`
     // also inserts a `GravitySourceC` at the root.)
-    let earth = spawn_earth_source(&mut app);
+    let _earth = spawn_earth_source(&mut app);
 
     // Sun: dual-role marker + (no-mass) gravity source so we don't
     // need a second sun entity. Position is set later via
@@ -519,7 +525,10 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             }),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             EarthLightingConfigC {
                 earth_radius: earth_r,
@@ -529,7 +538,9 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
             // Body integrates in Moon's inertial frame: TranslationalStateC
             // is moon-relative. earth_lighting_system must lift to root
             // (add MOON_OFFSET) before evaluating the kernel.
-            IntegSourceC(Some(moon_entity)),
+            IntegSourceC(Some(astrodyn::FrameUid::of::<
+                astrodyn::PlanetInertial<astrodyn::Moon>,
+            >())),
         ))
         .id();
 
@@ -552,7 +563,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
     let lifted_pos = body_moon_rel_pos + MOON_OFFSET;
     let lifted_vel = body_moon_rel_vel; // Moon at rest → no velocity lift
 
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -585,7 +596,7 @@ fn bevy_parity_lighting_earth_lighting_non_root_integ_source() {
         }),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

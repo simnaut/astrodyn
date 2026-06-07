@@ -89,14 +89,14 @@ fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
     let body = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<astrodyn::Earth>(&mut commands_queue)
     };
     app.world_mut().flush();
     // Update tick lets the Startup-equivalent registration systems

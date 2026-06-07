@@ -94,7 +94,7 @@ fn build_relative_extended(
 ) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -115,7 +115,10 @@ fn build_relative_extended(
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&trans_chief),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             lvlh: lvlh_chief,
@@ -126,7 +129,10 @@ fn build_relative_extended(
     sb.add_body(VehicleConfig {
         trans: super::typed_helpers::trans_typed(&trans_deputy),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig::default(),
         ..VehicleConfig::named("sim-relative-extended-0")

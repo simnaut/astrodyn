@@ -33,7 +33,7 @@ fn pipeline_earth_lighting_smoke() {
     let mut sim = Simulation::new(time, 60.0);
 
     // Earth
-    let earth = sim.add_source(
+    let _earth = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -122,7 +122,10 @@ fn pipeline_earth_lighting_smoke() {
             )),
         },
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {

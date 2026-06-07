@@ -87,7 +87,7 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
                 rotational_dynamics: true,
                 three_dof: false,
             }),
-            GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
+            GravityControlsC(GravityControls { controls: vec![] }),
         ))
         .id();
 

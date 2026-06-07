@@ -444,7 +444,7 @@ pub fn validate_jeod_invariants<P: Planet>(
         // ── Frame-switch + non-root frame validation ──
         // Mirrors `Simulation::validate()` checks at
         // `crates/astrodyn_runner/src/simulation/validate.rs:129-184`: every
-        // active `FrameSwitchConfig.target_source`
+        // active `FrameSwitchConfig.target`
         // must (a) be a registered gravity source and (b) appear in the
         // body's `gravity_controls` so the post-switch differential flip
         // leaves a non-differential central body. Bodies whose
@@ -476,7 +476,7 @@ pub fn validate_jeod_invariants<P: Planet>(
                 if !sw.active {
                     continue;
                 }
-                // (a) target_source must be a registered gravity source
+                // (a) the target identity must resolve to a registered gravity source
                 // (Bevy analog of runner's `target >= num_sources` check).
                 // The `source_frames` query is filtered by
                 // `With<GravitySourceC>`, so a missing match means the
@@ -497,7 +497,7 @@ pub fn validate_jeod_invariants<P: Planet>(
                         );
                     }
                 };
-                // (b) target_source must appear in the body's
+                // (b) the target must appear in the body's
                 // gravity_controls — without it, the post-switch
                 // `differential = true` flip leaves no central body and
                 // the body integrates under the wrong gravity model.

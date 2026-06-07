@@ -35,7 +35,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     sb = sb.polar_motion(XP_ARCSEC * ARCSEC_TO_RAD, YP_ARCSEC * ARCSEC_TO_RAD);
 
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -59,7 +59,10 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-polar-motion-0")
     });

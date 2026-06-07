@@ -61,7 +61,7 @@
 //! ```
 //! use astrodyn::{
 //!     recipes::{earth, orbital_elements, vehicle},
-//!     F64Ext, GravityControl, GravityGradient, VehicleBuilder,
+//!     F64Ext, FrameUid, GravityControl, GravityGradient, PlanetInertial, VehicleBuilder,
 //! };
 //!
 //! let mu = earth::point_mass().source.mu.m3_per_s2();
@@ -70,7 +70,12 @@
 //!     .from_orbital_elements(orbital_elements::iss(), mu)
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
-//!     .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+//!     // Sources are referenced by inertial-frame identity (issue
+//!     // #668) — the same value in every host.
+//!     .gravity(GravityControl::new_spherical(
+//!         FrameUid::of::<PlanetInertial<astrodyn::Earth>>(),
+//!         GravityGradient::Skip,
+//!     ))
 //!     .build();
 //! # let _ = cfg;
 //! ```

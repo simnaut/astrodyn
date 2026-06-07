@@ -64,7 +64,7 @@ fn propagate_mercury_periapses(
 
     let (init_pos, init_vel) = mercury_perihelion_state();
 
-    let sun = sim.add_source(
+    let _sun = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
             GravitySource {
@@ -76,7 +76,10 @@ fn propagate_mercury_periapses(
         ),
     );
 
-    let mut ctrl = GravityControl::new_spherical(sun, GravityGradient::Skip);
+    let mut ctrl = GravityControl::new_spherical(
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Sun>>(),
+        GravityGradient::Skip,
+    );
     ctrl.relativistic = relativistic;
 
     sim.add_body(VehicleConfig {
@@ -267,7 +270,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     // Newtonian run
     let time_n = SimulationTime::at_j2000(leap_table.clone());
     let mut sim_n = Simulation::new(time_n, dt);
-    let sun_n = sim_n.add_source(
+    let _sun_n = sim_n.add_source(
         "Sun",
         GravitySourceEntry::new(
             GravitySource {
@@ -284,7 +287,10 @@ fn tier3_simulation_mercury_relativistic_effect() {
             velocity: init_vel,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(sun_n, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Sun>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("tier3-sim-mercury-1")
     });
@@ -296,7 +302,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     // Relativistic run
     let time_r = SimulationTime::at_j2000(leap_table);
     let mut sim_r = Simulation::new(time_r, dt);
-    let sun_r = sim_r.add_source(
+    let _sun_r = sim_r.add_source(
         "Sun",
         GravitySourceEntry::new(
             GravitySource {
@@ -307,7 +313,10 @@ fn tier3_simulation_mercury_relativistic_effect() {
             None,
         ),
     );
-    let mut ctrl = GravityControl::new_spherical(sun_r, GravityGradient::Skip);
+    let mut ctrl = GravityControl::new_spherical(
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Sun>>(),
+        GravityGradient::Skip,
+    );
     ctrl.relativistic = true;
     sim_r.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&TranslationalState {

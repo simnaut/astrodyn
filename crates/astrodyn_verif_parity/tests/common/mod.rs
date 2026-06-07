@@ -234,7 +234,7 @@ pub fn assert_geodetic_eq(label: &str, a: &astrodyn::GeodeticState, b: &astrodyn
     println!("  {label}: bit-identical (lat, lon, alt)");
 }
 
-pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
+pub fn new_sim_body_sixdof(_earth_idx: usize, gradient: bool) -> VehicleConfig {
     let gradient_mode = if gradient {
         GravityGradient::Compute
     } else {
@@ -245,7 +245,10 @@ pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, gradient_mode)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                gradient_mode,
+            )],
         },
         compute_gravity_gradient: gradient,
         ..VehicleConfig::named("mod-0")

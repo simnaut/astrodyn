@@ -58,14 +58,14 @@ fn build_app() -> (App, Entity) {
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
     let mut commands = commands_state.get_mut(app.world_mut());
-    let _ = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+    let _ = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands_state.apply(app.world_mut());
 
     // Drive startup + two FixedUpdate ticks so the body has been validated
@@ -83,7 +83,7 @@ fn build_app() -> (App, Entity) {
 
 #[test]
 fn validation_fires_for_body_added_after_startup() {
-    let (mut app, earth) = build_app();
+    let (mut app, _earth) = build_app();
 
     // Add a *second* vehicle mid-simulation. Give it a non-spherical
     // GravityControl targeting the existing Earth source, even though
@@ -105,7 +105,7 @@ fn validation_fires_for_body_added_after_startup() {
         // panics with "Non-spherical gravity (spherical=false) is only
         // supported for SphericalHarmonics gravity models."
         .gravity(GravityControl::new_nonspherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             4,
             4,
             GravityGradient::Skip,
@@ -114,7 +114,7 @@ fn validation_fires_for_body_added_after_startup() {
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
     let mut commands = commands_state.get_mut(app.world_mut());
-    let _ = bogus_cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+    let _ = bogus_cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands_state.apply(app.world_mut());
 
     // Step once more — validation must run for the new body and panic.

@@ -109,7 +109,7 @@ fn build_pair(
     // Inertial-only environment: no gravity sources contributing
     // acceleration. We still need at least one source frame for the
     // pipeline to be valid.
-    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+    let _inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -137,7 +137,7 @@ fn build_pair(
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -150,7 +150,7 @@ fn build_pair(
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -634,7 +634,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
 
-    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+    let _inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -660,7 +660,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -673,7 +673,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -686,7 +686,7 @@ fn runner_attach_handles_interior_kinematic_parent() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -870,7 +870,7 @@ fn runner_detach_lifts_through_integ_origin() {
             marker_only: false,
         },
     );
-    let earth = sb.add_source(
+    let _earth = sb.add_source(
         "Earth",
         GravitySourceEntry {
             source: GravitySource {
@@ -895,9 +895,14 @@ fn runner_detach_lifts_through_integ_origin() {
         mass: Some(mass_typed(&(parent_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
-        integ_source: Some(earth),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
         ..VehicleConfig::named("runner-attach-detach-momentum-3")
     });
     let child_idx = sb.add_body(VehicleConfig {
@@ -906,9 +911,14 @@ fn runner_detach_lifts_through_integ_origin() {
         mass: Some(mass_typed(&(child_mass))),
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
-        integ_source: Some(earth),
+        integ_source: Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
         ..VehicleConfig::named("runner-attach-detach-momentum-2")
     });
     let mut sim = sb.build().expect("non-root-integ pair builds");
@@ -1062,7 +1072,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                _inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -1075,7 +1085,7 @@ fn from_builder_preserves_attached_bodies_initial_state() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                _inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },

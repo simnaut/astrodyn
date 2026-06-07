@@ -167,7 +167,7 @@ fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
     let time = SimulationTime::new(init.tai_tjt, leap_table);
     let mut sb = SimulationBuilder::new(time, DT);
 
-    let earth = sb.add_source("Earth", {
+    let _earth = sb.add_source("Earth", {
         let mut e = GravitySourceEntry::new(
             GravitySource {
                 mu: mu_earth_gemt1,
@@ -208,7 +208,10 @@ fn build_reversal_run1_builder(init: &ReversalRow) -> SimulationBuilder {
             1.0,
         ))),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-time-reversal-0")
     });

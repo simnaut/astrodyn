@@ -81,7 +81,7 @@ fn build_gj_scenario(
         central: true,
         marker_only: false,
     };
-    let earth_idx = b.add_source("Earth", earth);
+    let _earth_idx = b.add_source("Earth", earth);
     b.add_body(VehicleConfig {
         // allowed: typed↔raw kernel-boundary lift (named-method
         // opt-in; see #397).
@@ -89,7 +89,7 @@ fn build_gj_scenario(
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

@@ -21,7 +21,10 @@
 //!     .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
 //!     .three_dof_point_mass(vehicle::iss_mass())
 //!     .rk4()
-//!     .gravity(GravityControl::new_spherical(0_usize, GravityGradient::Skip))
+//!     .gravity(GravityControl::new_spherical(
+//!         astrodyn::FrameUid::of::<PlanetInertial<Earth>>(),
+//!         GravityGradient::Skip,
+//!     ))
 //!     .build();
 //! assert!(cfg.mass.is_some());
 //! ```

@@ -62,7 +62,7 @@ fn step(app: &mut App) {
 // crosses the rotation boundary and the per-cause panic fires on
 // the first `DerivedState` tick.
 #[test]
-#[should_panic(expected = "does not resolve to PlanetFixedRotationC")]
+#[should_panic(expected = "does not resolve to an entity carrying PlanetFixedRotationC")]
 fn at_03_panics_on_geodetic_planet_without_planet_fixed_rotation() {
     // JEOD_INV: AT.03 — geodetic_system must panic when the planet
     // entity lacks PlanetFixedRotationC (in-body tag so the
@@ -77,7 +77,7 @@ fn at_03_panics_on_geodetic_planet_without_planet_fixed_rotation() {
     // `point_mass_only` deliberately omits `PlanetFixedRotationC`. Any
     // entity spawned from this bundle cannot satisfy `geodetic_system`'s
     // planet-query precondition.
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass_only(
             "Earth",
@@ -101,15 +101,18 @@ fn at_03_panics_on_geodetic_planet_without_planet_fixed_rotation() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
-        .geodetic(0, &EARTH)
+        .geodetic(
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+            &EARTH,
+        )
         .build();
 
     {
         let mut commands = app.world_mut().commands();
-        let vehicle = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+        let vehicle = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
         // Force the deferred spawn so the GeodeticConfigC is present
         // before the first FixedUpdate runs; otherwise the body lands
         // mid-tick and the per-step system would see an empty query
@@ -129,9 +132,11 @@ fn at_03_panics_on_geodetic_planet_without_planet_fixed_rotation() {
             .next()
             .expect("body must carry GeodeticConfigC after spawn_bevy")
             .planet
+            .clone()
     };
     assert_eq!(
-        planet_field, earth,
+        planet_field,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         "GeodeticConfigC.planet must point at the rotation-less Earth entity for AT.03 to fire"
     );
 

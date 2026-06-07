@@ -32,7 +32,7 @@ fn bevy_parity_point_mass_sixdof() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -61,7 +61,10 @@ fn bevy_parity_point_mass_sixdof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -78,8 +81,8 @@ fn bevy_parity_point_mass_sixdof() {
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
-    sim.add_body(new_sim_body_sixdof(earth_idx, false));
+    let _earth_idx = sim.add_source("Earth", earth_entry);
+    sim.add_body(new_sim_body_sixdof(0, false));
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
@@ -97,7 +100,7 @@ fn bevy_parity_point_mass_sixdof() {
 fn run_planetary_parity(label: &str, trans: TranslationalState) {
     // ── Bevy ──
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -109,7 +112,10 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
             TranslationalStateC::<astrodyn::Earth>::from_untyped(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -118,12 +124,12 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     let bevy_trans = read_trans(app.world(), vehicle);
 
     // ── Simulation ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -183,7 +189,7 @@ fn bevy_parity_point_mass_planetary_geo() {
 fn bevy_parity_point_mass_run2_6dof() {
     println!("Run2 6-DOF parity: point-mass gravity with rotation");
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -201,7 +207,10 @@ fn bevy_parity_point_mass_run2_6dof() {
                 three_dof: false,
             }),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -210,8 +219,8 @@ fn bevy_parity_point_mass_run2_6dof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(new_sim_body_sixdof(earth_idx, false));
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
+    sim.add_body(new_sim_body_sixdof(0, false));
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS).expect("step_n failed");
 
@@ -261,7 +270,7 @@ fn bevy_parity_point_mass_orbinit_cross_consistency() {
 
     for (label, trans) in &orbits {
         let mut app = new_bevy_app(DT);
-        let planet = spawn_earth_source(&mut app);
+        let _planet = spawn_earth_source(&mut app);
         let vehicle = app
             .world_mut()
             .spawn((
@@ -272,20 +281,23 @@ fn bevy_parity_point_mass_orbinit_cross_consistency() {
                 TranslationalStateC::<astrodyn::Earth>::from_untyped(*trans),
                 DynamicsConfigC::default(),
                 GravityControlsC(GravityControls {
-                    controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                    controls: vec![GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    )],
                 }),
             ))
             .id();
         step_bevy_dt(&mut app, 1, DT);
         let bevy_trans = read_trans(app.world(), vehicle);
 
-        let (mut sim, earth_idx) = new_sim_earth(DT);
+        let (mut sim, _earth_idx) = new_sim_earth(DT);
         sim.add_body(VehicleConfig {
             // allowed: typed↔raw kernel-boundary lift (see #397).
             trans: astrodyn::typed_bridge::trans_raw_to_root(trans),
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    earth_idx,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Skip,
                 )],
             },
@@ -358,13 +370,16 @@ fn bevy_parity_point_mass_time_reversal_round_trip() {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-point-mass-5")
     });
@@ -416,14 +431,17 @@ fn bevy_parity_point_mass_relative_state_consistency() {
         None,
     );
     earth_entry.central = true;
-    let earth = sim.add_source("Earth", earth_entry);
+    let _earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-point-mass-4")
     });
@@ -440,7 +458,10 @@ fn bevy_parity_point_mass_relative_state_consistency() {
         )),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-point-mass-3")
     });
@@ -569,7 +590,10 @@ fn bevy_parity_point_mass_mars_rotation_dispatch() {
             velocity: DVec3::new(0.0, 3.5e3, 0.0),
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(mars, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-point-mass-2")
     });
@@ -646,7 +670,10 @@ fn bevy_parity_point_mass_multi_source_rotation() {
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("bevy-parity-point-mass-1")
     });
@@ -720,7 +747,7 @@ fn bevy_parity_point_mass_relativistic_gravity_consistency() {
 fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     // ── Bevy ──
     let mut app = new_bevy_app(DT);
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -739,7 +766,7 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(
-                    planet,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GravityGradient::Compute,
                 )],
             }),
@@ -750,14 +777,14 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let (mut sim, _earth_idx) = new_sim_earth(DT);
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&trans),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Compute,
             )],
         },

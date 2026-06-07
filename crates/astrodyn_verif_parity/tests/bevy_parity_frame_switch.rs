@@ -86,7 +86,7 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -104,10 +104,10 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         .insert(SourceInertialVelocityC::default())
         .id();
 
-    // `FrameSwitchConfig<Entity>` — the Bevy adapter references
+    // `FrameSwitchConfig` — the Bevy adapter references
     // gravity sources by their ECS entity, no usize bridge.
-    let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
-        target_source: moon,
+    let switches: Vec<FrameSwitchConfig> = vec![FrameSwitchConfig {
+        target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
         switch_sense: SwitchSense::OnApproach,
         switch_distance: SWITCH_RADIUS,
         active: true,
@@ -131,9 +131,15 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    ),
                     {
-                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
@@ -230,7 +236,7 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::third_body(
             &MOON,
@@ -244,16 +250,22 @@ fn bevy_parity_frame_switch_earth_to_moon_matches_simulation() {
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 {
-                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
             ],
         },
         frame_switches: vec![FrameSwitchConfig {
-            target_source: moon_idx,
+            target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             switch_sense: SwitchSense::OnApproach,
             switch_distance: SWITCH_RADIUS,
             active: true,
@@ -323,7 +335,7 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(AstrodynPlugin);
 
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass("Earth", &EARTH))
         .id();
@@ -340,8 +352,8 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         })
         .id();
 
-    let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
-        target_source: moon,
+    let switches: Vec<FrameSwitchConfig> = vec![FrameSwitchConfig {
+        target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
         switch_sense: SwitchSense::OnDeparture,
         switch_distance: departure_threshold,
         active: true,
@@ -365,9 +377,15 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![
-                    GravityControl::new_spherical(earth, GravityGradient::Skip),
+                    GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                        GravityGradient::Skip,
+                    ),
                     {
-                        let mut c = GravityControl::new_spherical(moon, GravityGradient::Skip);
+                        let mut c = GravityControl::new_spherical(
+                            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                            GravityGradient::Skip,
+                        );
                         c.differential = true;
                         c
                     },
@@ -414,7 +432,7 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source(
+    let _moon_idx = sim.add_source(
         "Moon",
         GravitySourceEntry::third_body(
             &MOON,
@@ -427,16 +445,22 @@ fn bevy_parity_frame_switch_on_departure_matches_simulation() {
         mass: Some(vehicle_mass()),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(0_usize, GravityGradient::Skip),
+                GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                ),
                 {
-                    let mut c = GravityControl::new_spherical(moon_idx, GravityGradient::Skip);
+                    let mut c = GravityControl::new_spherical(
+                        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
+                        GravityGradient::Skip,
+                    );
                     c.differential = true;
                     c
                 },
             ],
         },
         frame_switches: vec![FrameSwitchConfig {
-            target_source: moon_idx,
+            target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Moon>>(),
             switch_sense: SwitchSense::OnDeparture,
             switch_distance: departure_threshold,
             active: true,

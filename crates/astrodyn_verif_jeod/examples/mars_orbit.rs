@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mars_mu = mars_source.source.mu;
 
     let mut sb = SimulationBuilder::new(time, DT);
-    let mars = sb.add_source("Mars", mars_source);
+    let _mars = sb.add_source("Mars", mars_source);
     let sun_idx = sb.add_source(
         "Sun",
         sun::third_body(astrodyn::Vec3Ext::m_at::<astrodyn::RootInertial>(sun_pos)),
@@ -88,12 +88,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .three_dof_point_mass(vehicle::dawn_mass())
         .rk4()
         .gravity(GravityControl::new_nonspherical(
-            mars,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             110,
             110,
             GravityGradient::Skip,
         ))
-        .gravity(GravityControl::new_third_body(sun_idx))
+        .gravity(GravityControl::new_third_body(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Sun>,
+        >()))
         .build();
     sb.add_body(dawn);
 

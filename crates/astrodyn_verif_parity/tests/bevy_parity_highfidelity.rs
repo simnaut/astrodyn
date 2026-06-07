@@ -40,7 +40,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -71,7 +71,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_nonspherical(
-                    planet,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     4,
                     4,
                     GravityGradient::Skip,
@@ -86,7 +86,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: sh_source,
@@ -106,7 +106,7 @@ fn bevy_parity_highfidelity_sh4x4_rnp() {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 4,
                 4,
                 GravityGradient::Skip,
@@ -164,7 +164,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     app.insert_resource(IntegrationDtR(DT));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -196,7 +196,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
             }),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_nonspherical(
-                    planet,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     4,
                     4,
                     GravityGradient::Skip,
@@ -211,7 +211,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = astrodyn_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
+    let _earth_idx = sim.add_source(
         "Earth",
         GravitySourceEntry {
             source: sh_source,
@@ -231,7 +231,7 @@ fn bevy_parity_highfidelity_tidal_sh4x4() {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 4,
                 4,
                 GravityGradient::Skip,
@@ -260,7 +260,7 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
 
     let mut app = new_bevy_app(DT);
     app.insert_resource(PolarMotionR { xp, yp });
-    let planet = spawn_earth_source(&mut app);
+    let _planet = spawn_earth_source(&mut app);
 
     let vehicle = app
         .world_mut()
@@ -272,7 +272,10 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
             TranslationalStateC::<astrodyn::Earth>::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
         ))
         .id();
@@ -288,14 +291,14 @@ fn bevy_parity_highfidelity_run2p_polar_motion() {
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
+    let _earth_idx = sim.add_source("Earth", earth_entry);
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -327,7 +330,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     app.insert_resource(IntegrationDtR(dt));
     app.add_plugins(astrodyn_bevy::AstrodynPlugin);
 
-    let planet = app
+    let _planet = app
         .world_mut()
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
@@ -353,7 +356,10 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             DynamicsConfigC::default(),
             TranslationalStateC::<astrodyn::Earth>::from_untyped(gj_trans),
             GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, GravityGradient::Skip)],
+                controls: vec![GravityControl::new_spherical(
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                    GravityGradient::Skip,
+                )],
             }),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
@@ -375,14 +381,14 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         None,
     );
     earth_entry.central = true;
-    let earth_idx = sim.add_source("Earth", earth_entry);
+    let _earth_idx = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
         trans: astrodyn::typed_bridge::trans_raw_to_root(&gj_trans),
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                earth_idx,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 GravityGradient::Skip,
             )],
         },

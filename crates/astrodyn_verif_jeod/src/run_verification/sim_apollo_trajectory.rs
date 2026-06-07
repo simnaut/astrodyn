@@ -388,13 +388,17 @@ pub fn apollo_trajectory_builder() -> ApolloBuilderHandles {
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(
-                    earth,
+                    astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                     GRAV_DEGREE,
                     GRAV_ORDER,
                     GravityGradient::Skip,
                 ),
-                GravityControl::new_third_body(moon),
-                GravityControl::new_third_body(sun),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Moon>,
+                >()),
+                GravityControl::new_third_body(astrodyn::FrameUid::of::<
+                    astrodyn::PlanetInertial<astrodyn::Sun>,
+                >()),
             ],
         },
         ..VehicleConfig::named("sim-apollo-trajectory-0")

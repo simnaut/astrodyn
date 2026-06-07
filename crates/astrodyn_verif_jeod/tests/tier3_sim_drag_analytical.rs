@@ -114,7 +114,10 @@ fn make_drag_sim(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(drag_config),
         ..VehicleConfig::named("tier3-sim-drag-analytical-1")
@@ -573,7 +576,10 @@ fn make_drag_sim_with_wind(
             &(MassProperties::new(mass)),
         )),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         drag: Some(drag_config),
         ..VehicleConfig::named("tier3-sim-drag-analytical-0")

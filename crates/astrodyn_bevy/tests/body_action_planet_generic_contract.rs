@@ -78,7 +78,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
 
-    let mars = app
+    let _mars = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Mars>::point_mass("Mars", &MARS))
         .id();
@@ -89,7 +89,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -97,7 +97,7 @@ fn spawn_bevy_inserts_planet_tagged_translational_storage_for_mars() {
     let vehicle_id = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg.spawn_bevy::<astrodyn::Mars>(&mut commands_queue, &[mars]);
+        let id = cfg.spawn_bevy::<astrodyn::Mars>(&mut commands_queue);
         world.flush();
         id
     };
@@ -154,7 +154,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -162,7 +162,7 @@ fn body_action_for_mars_writes_through_mars_tagged_storage() {
     let vehicle = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg.spawn_bevy::<astrodyn::Mars>(&mut commands_queue, &[mars]);
+        let id = cfg.spawn_bevy::<astrodyn::Mars>(&mut commands_queue);
         world.flush();
         id
     };
@@ -282,14 +282,14 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
-    let earth_planet = app
+    let _earth_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass(
             "Earth",
             &astrodyn::EARTH,
         ))
         .id();
-    let mars_planet = app
+    let _mars_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Mars>::point_mass("Mars", &MARS))
         .id();
@@ -300,7 +300,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -313,7 +313,7 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -321,14 +321,14 @@ fn earth_tagged_action_does_not_mutate_mars_body() {
     let mars_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_mars.spawn_bevy::<astrodyn::Mars>(&mut commands_queue, &[mars_planet]);
+        let id = cfg_mars.spawn_bevy::<astrodyn::Mars>(&mut commands_queue);
         world.flush();
         id
     };
     let earth_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth_planet]);
+        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
         world.flush();
         id
     };
@@ -438,14 +438,14 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     app.add_plugins(AstrodynPlugin);
     register_planet_systems::<astrodyn::Mars>(&mut app);
 
-    let earth_planet = app
+    let _earth_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass(
             "Earth",
             &astrodyn::EARTH,
         ))
         .id();
-    let mars_planet = app
+    let _mars_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Mars>::point_mass("Mars", &MARS))
         .id();
@@ -456,7 +456,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -469,7 +469,7 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
@@ -477,14 +477,14 @@ fn planet_agnostic_remove_cancels_mars_pending_without_disturbing_earth() {
     let mars_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_mars.spawn_bevy::<astrodyn::Mars>(&mut commands_queue, &[mars_planet]);
+        let id = cfg_mars.spawn_bevy::<astrodyn::Mars>(&mut commands_queue);
         world.flush();
         id
     };
     let earth_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth_planet]);
+        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
         world.flush();
         id
     };
@@ -608,7 +608,7 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
     app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 
-    let earth_planet = app
+    let _earth_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass(
             "Earth",
@@ -628,14 +628,14 @@ fn add_for_unregistered_planet_panics_with_named_diagnostic() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
     let earth_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth_planet]);
+        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
         world.flush();
         id
     };
@@ -680,7 +680,7 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
     app.add_plugins(AstrodynPlugin);
     // NOTE: deliberately NOT calling `register_planet_systems::<Mars>`.
 
-    let earth_planet = app
+    let _earth_planet = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass(
             "Earth",
@@ -696,14 +696,14 @@ fn add_body_action_for_unregistered_planet_panics_at_commands_flush() {
         .sixdof(initial_rot(), vehicle_mass())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Mars>>(),
             GravityGradient::Skip,
         ))
         .build();
     let earth_body = {
         let world = app.world_mut();
         let mut commands_queue = world.commands();
-        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue, &[earth_planet]);
+        let id = cfg_earth.spawn_bevy::<astrodyn::Earth>(&mut commands_queue);
         world.flush();
         id
     };

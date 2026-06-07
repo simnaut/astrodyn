@@ -27,7 +27,7 @@
 use std::time::Duration;
 
 use astrodyn::recipes::{constants, earth, orbital_elements, vehicle};
-use astrodyn::{F64Ext, GravityControl, GravityGradient, SourceHandle, VehicleBuilder};
+use astrodyn::{F64Ext, GravityControl, GravityGradient, VehicleBuilder};
 
 /// The mission's vehicle marker: the builder's `.vehicle::<Iss>()` stage
 /// derives the frame identity `FrameUid::of::<BodyFrame<Iss>>()` from it
@@ -99,7 +99,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     // separately when needed.
     let earth_recipe = earth::point_mass();
     let earth_mu_raw = earth_recipe.source.mu;
-    let earth = commands
+    let _earth = commands
         .spawn((
             astrodyn_bevy::FrameUidC(astrodyn::FrameUid::of::<
                 astrodyn::PlanetInertial<astrodyn::Earth>,
@@ -128,18 +128,15 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         .from_orbital_elements(orbital_elements::iss(), mu_typed)
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        // `SourceHandle::central()` is the typed wrapper around index 0
-        // of the per-config source slice — the Earth entity passed to
-        // `spawn_bevy(...)` below. Bare-`usize` callsites continue to
-        // work via `From<usize> for SourceHandle`; new mission code
-        // should prefer the named constructor for self-documenting intent.
+        // The source is referenced by its inertial-frame identity
+        // (issue #668) — the same `FrameUid` value in every host.
         .gravity(GravityControl::new_spherical(
-            SourceHandle::central(),
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .build();
 
-    let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+    let vehicle_entity = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands
         .entity(vehicle_entity)
         .insert(Name::new("Satellite"));

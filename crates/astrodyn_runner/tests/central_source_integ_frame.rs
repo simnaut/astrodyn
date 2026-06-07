@@ -48,7 +48,10 @@ fn earth_central_source() -> GravitySourceEntry {
 /// enabled (orbital elements around `gravity_source_idx`). The
 /// derived state opts into the `NonRootFrameWithRootDependentFeatures`
 /// branch in `validate()`, which is the predicate this test pins.
-fn leo_body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> VehicleConfig {
+fn leo_body_config(
+    integ_source: Option<astrodyn::FrameUid>,
+    gravity_source: astrodyn::FrameUid,
+) -> VehicleConfig {
     let altitude_m = 700_000.0;
     let radius_m = EARTH.shape.r_eq() + altitude_m;
     let speed_m_s = 7_504.567; // ~circular at 700 km
@@ -64,14 +67,14 @@ fn leo_body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Ve
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                gravity_source_idx,
+                gravity_source,
                 GravityGradient::Skip,
             )],
         },
         ..VehicleConfig::named("central-source-integ-frame-0")
     };
     cfg.integ_source = integ_source;
-    cfg.derived.orbital_elements_source = Some(gravity_source_idx);
+    cfg.derived.orbital_elements_source = Some(cfg.gravity_controls.controls[0].source.clone());
     cfg
 }
 
@@ -119,8 +122,13 @@ fn root_frame_is_named_root_and_central_source_has_distinct_inertial() {
 fn integ_source_eq_central_with_orbital_elements_validates_clean() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let earth_idx = sim.add_source("Earth", earth_central_source());
-    sim.add_body(leo_body_config(Some(earth_idx), earth_idx));
+    let _earth_idx = sim.add_source("Earth", earth_central_source());
+    sim.add_body(leo_body_config(
+        Some(astrodyn::FrameUid::of::<
+            astrodyn::PlanetInertial<astrodyn::Earth>,
+        >()),
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    ));
     sim.validate().unwrap_or_else(|errors| {
         panic!(
             "expected clean validation for a body integrating in the central source's \
@@ -136,8 +144,11 @@ fn integ_source_eq_central_with_orbital_elements_validates_clean() {
 fn integ_source_eq_none_with_orbital_elements_validates_clean() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let earth_idx = sim.add_source("Earth", earth_central_source());
-    sim.add_body(leo_body_config(None, earth_idx));
+    let _earth_idx = sim.add_source("Earth", earth_central_source());
+    sim.add_body(leo_body_config(
+        None,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    ));
     sim.validate().unwrap_or_else(|errors| {
         panic!(
             "expected clean validation for a body integrating in root with \
@@ -154,10 +165,13 @@ fn integ_source_eq_none_with_orbital_elements_validates_clean() {
 fn frame_switch_target_central_with_derived_state_validates_clean() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let earth_idx = sim.add_source("Earth", earth_central_source());
-    let mut cfg = leo_body_config(None, earth_idx);
+    let _earth_idx = sim.add_source("Earth", earth_central_source());
+    let mut cfg = leo_body_config(
+        None,
+        astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+    );
     cfg.frame_switches.push(astrodyn::FrameSwitchConfig {
-        target_source: earth_idx,
+        target: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
         switch_sense: astrodyn::SwitchSense::OnDeparture,
         switch_distance: 1.0e9,
         active: true,

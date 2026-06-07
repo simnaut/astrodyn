@@ -33,7 +33,7 @@ fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
 
-    let earth = sb.add_source("Earth", {
+    let _earth = sb.add_source("Earth", {
         let mut e = GravitySourceEntry::new(
             GravitySource {
                 mu: mu_earth,
@@ -51,7 +51,10 @@ fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
             velocity: init.velocity,
         }),
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, GravityGradient::Skip)],
+            controls: vec![GravityControl::new_spherical(
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                GravityGradient::Skip,
+            )],
         },
         ..VehicleConfig::named("sim-planetary-0")
     });

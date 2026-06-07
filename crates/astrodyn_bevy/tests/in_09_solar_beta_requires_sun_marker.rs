@@ -79,7 +79,7 @@ fn in_09_panics_on_solar_beta_without_sun_marker() {
     // Spawn an Earth gravity source. Deliberately no `SunBundle` /
     // `SunMarker` in the world — that is the misconfiguration this
     // test drives.
-    let earth = app
+    let _earth = app
         .world_mut()
         .spawn(PlanetBundle::<astrodyn::Earth>::point_mass_only(
             "Earth",
@@ -101,7 +101,7 @@ fn in_09_panics_on_solar_beta_without_sun_marker() {
         .three_dof_point_mass(iss_mass_kg())
         .rk4()
         .gravity(GravityControl::new_spherical(
-            0_usize,
+            astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
             GravityGradient::Skip,
         ))
         .solar_beta()
@@ -109,7 +109,7 @@ fn in_09_panics_on_solar_beta_without_sun_marker() {
 
     {
         let mut commands = app.world_mut().commands();
-        let _vehicle = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands, &[earth]);
+        let _vehicle = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     }
     app.world_mut().flush();
 

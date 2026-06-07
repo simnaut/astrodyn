@@ -60,7 +60,7 @@ fn mass_typed(mp: &SimMassProperties) -> MassPropertiesTyped<SelfRef> {
 fn build_two_body_sim() -> (Simulation, usize) {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+    let _inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -94,7 +94,7 @@ fn build_two_body_sim() -> (Simulation, usize) {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
@@ -115,7 +115,7 @@ fn build_two_body_sim() -> (Simulation, usize) {
 fn duplicate_body_identity_panics() {
     let time = SimulationTime::at_j2000(astrodyn::default_leap_second_table());
     let mut sim = Simulation::new(time, 1.0);
-    let inertial = sim.add_source_typed::<tags::InertialAnchor>(
+    let _inertial = sim.add_source_typed::<tags::InertialAnchor>(
         "InertialAnchor",
         GravitySourceEntry {
             source: GravitySource {
@@ -141,7 +141,7 @@ fn duplicate_body_identity_panics() {
         integrator: IntegratorType::Rk4,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(
-                inertial,
+                astrodyn::FrameUid::of::<astrodyn::PlanetInertial<tags::InertialAnchor>>(),
                 GravityGradient::Skip,
             )],
         },
