@@ -1,11 +1,16 @@
 [package]
 name = "astrodyn_frame_doc"
 description = "Frame-document schema for astrodyn — self-describing serialization of reference-frame trees (snapshot + replay series) carrying identity, topology, origin, and epoch per record"
+readme = "README.md"
+keywords = ["orbital-mechanics", "aerospace", "serialization", "telemetry", "replay"]
+categories = ["aerospace", "science", "encoding"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+# Dev-only proptest corpus — not part of the published package.
+exclude = ["proptest-regressions/**"]
 
 [dependencies]
 # Identity vocabulary only (FrameUid + its components). `astrodyn_quantities`
