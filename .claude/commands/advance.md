@@ -1,11 +1,12 @@
 ---
-description: Advance the astrodyn `loop` backlog one cycle — shepherd open loop-issue PRs to merge, then start the earliest unblocked loop issue. Idempotent.
+description: Advance the astrodyn `loop` backlog — shepherd open loop-issue PRs to merge, then start the earliest unblocked loop issue. Repeats the cycle until no actionable work remains. Idempotent.
 ---
 
 You are the autonomous build driver for the **simnaut/astrodyn** repository, scoped to
-the backlog of open issues labeled **`loop`**. Advance that backlog by one cycle,
-idempotently, then continue until there is no actionable work or you hit a stop
-condition. Reconcile ALL state from GitHub — never assume memory from a prior run.
+the backlog of open issues labeled **`loop`**. Run the cycle below **repeatedly** —
+each pass is idempotent — until there is no actionable work or you hit a stop
+condition (see Guardrails). Reconcile ALL state from GitHub — never assume memory
+from a prior run.
 
 ## Context
 - Repo: `simnaut/astrodyn` (default branch: `main`).
@@ -20,9 +21,30 @@ condition. Reconcile ALL state from GitHub — never assume memory from a prior 
   (no engine concerns in physics crates), computational independence, Tier 3
   cross-validation as definition of done for new physics, fail-loudly, lint policy,
   JEOD invariant tracking. Read the wiki pages it links before refactoring.
-- Follow my global `CLAUDE.md` conventions: fetch unresolved PR review threads via the
-  GraphQL query and resolve them with `resolveReviewThread`; edit PR bodies via the REST
-  PATCH (`gh pr edit` fails on this repo).
+- **Review-thread mechanics** (REST pagination is unreliable for threads — use GraphQL):
+  - List unresolved threads:
+    ```bash
+    gh api graphql -f query='
+    {
+      repository(owner: "simnaut", name: "astrodyn") {
+        pullRequest(number: <N>) {
+          reviewThreads(last: 50) {
+            nodes {
+              id
+              isResolved
+              comments(first: 1) { nodes { databaseId path body } }
+            }
+          }
+        }
+      }
+    }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
+    ```
+  - Resolve a thread:
+    ```bash
+    gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<threadId>"}) { thread { isResolved } } }'
+    ```
+  - Edit a PR body via `gh api repos/simnaut/astrodyn/pulls/<N> -X PATCH -f body='…'`
+    (`gh pr edit` fails on this repo with a Projects Classic deprecation error).
 - **Merge gate:** `main` is protected by a ruleset — squash-only, no direct pushes,
   required conversation resolution, and these required status checks all green before
   merge: `Lint & Format`, `Docs (rustdoc -D warnings + doctests)`,
@@ -51,9 +73,10 @@ Among open `loop`-labeled issues that are **unblocked**, pick the lowest issue n
 ## The cycle — run PHASE A first (open PRs are closest to done), then PHASE B.
 
 ### PHASE A — drive existing loop-issue PRs to merge
-1. `gh pr list --repo simnaut/astrodyn --state open --json number,title,headRefName,body,isDraft`.
+1. `gh pr list --repo simnaut/astrodyn --state open --json number,title,headRefName,body,isDraft,createdAt`.
    Keep only PRs tied to a `loop`-labeled issue (body `Closes #<N>` or branch `<N>-*`
-   where issue `#<N>` carries the label). Process oldest first; skip drafts.
+   where issue `#<N>` carries the label). Process oldest first (ascending `createdAt`);
+   skip drafts.
 2. For each such PR:
    - **CI:** `gh pr checks <N>`. If a required check is FAILING → `gh pr checkout <N>`,
      diagnose, fix, run the local gates above, commit (with the `Co-Authored-By`
