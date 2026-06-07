@@ -99,6 +99,24 @@ verification crates: `astrodyn_verif_jeod`, the new
 dependency) and `astrodyn_verif_nesc` (NESC GN&C Lunar Check Cases
 track), and `astrodyn_verif_parity`.
 
+## [0.1.1] - 2026-05-11
+
+Same-day patch release following the initial 0.1.0 publish.
+
+### Changed
+
+- **Ephemeris kernels are distributed via GitHub Releases** (the
+  `kernels-v1` tag) rather than bundled in the published crate (#476),
+  keeping the `astrodyn_ephemeris` `.crate` small. See the
+  [Environment](https://github.com/simnaut/astrodyn/wiki/Environment)
+  wiki for kernel handling.
+
+### Added
+
+- `force_torque_response` recipe extracted as a reusable surface, with a
+  `bevy_parity` wrapper (#477).
+- `bevy_parity` wrappers for `drag_verif` and `drag_rot_verif` (#475).
+
 ## [0.1.0] - 2026-04-28
 
 Initial public release. The original phased implementation plan
@@ -158,4 +176,5 @@ Fourteen workspace crates at this version:
   (runner ↔ Bevy bit-identical parity tests).
 
 [0.2.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.2.0
+[0.1.1]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.0
