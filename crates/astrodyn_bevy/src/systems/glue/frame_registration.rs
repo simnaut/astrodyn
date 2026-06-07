@@ -141,10 +141,10 @@ pub fn register_source_frames_system(
             panic!(
                 "register_source_frames_system: gravity source {entity:?} ({label}) \
                  has no FrameUidC — every gravity source must carry its \
-                 inertial-frame identity. Spawn it via PlanetBundle (which stamps \
-                 FrameUid::of::<PlanetInertial<P>>()), via populate_app, or insert \
-                 FrameUidC(astrodyn::FrameUid::of::<astrodyn::PlanetInertial<P>>()) \
-                 explicitly before registration."
+                 inertial-frame identity, minted from the source's own planet \
+                 marker. Spawn it via PlanetBundle or populate_app (both stamp \
+                 it), or insert it explicitly before registration, e.g. \
+                 FrameUidC(astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>())."
             )
         });
         // Initialize the source frame entity's FrameTransC from the

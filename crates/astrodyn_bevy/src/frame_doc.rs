@@ -441,6 +441,21 @@ pub fn apply_frame_document<P: Planet>(world: &mut World, doc: &FrameDocument) {
                             state.trans.velocity,
                         );
                     }
+                    // `TranslationalStateC<P>` on the source entity is what
+                    // SRP / lighting / interaction queries read — leaving it
+                    // stale would diverge a restored App immediately for
+                    // static sources (and until the first ephemeris tick for
+                    // model-driven ones).
+                    if let Some(mut trans_c) = source_mut.get_mut::<TranslationalStateC<P>>() {
+                        // allowed: wire-deserialization boundary (as above);
+                        // named-method opt-in lift matching spawn_source.
+                        trans_c.0 = astrodyn::typed_bridge::trans_raw_to_planet::<P>(
+                            &astrodyn::TranslationalState {
+                                position: state.trans.position,
+                                velocity: state.trans.velocity,
+                            },
+                        );
+                    }
                 }
             }
         }
