@@ -749,16 +749,24 @@ pub fn sync_body_to_frame_system<P: Planet>(
 /// Registered in the same slots as the `register_*_frames_system`
 /// chain so dynamically-spawned vehicles resolve before the SRP stage
 /// reads `ShadowBodyC`. A radius that disagrees with an
-/// already-present `ShadowBodyC` on the same source panics — two
-/// vehicles declaring different radii for one caster is a
-/// misconfiguration the SRP eclipse geometry cannot honor (this is the
-/// same agreement check `populate_app`'s eager pre-collection used to
-/// perform before the deferred resolver replaced it).
+/// already-present `ShadowBodyC` on the same source — or with another
+/// body's declaration in the *same tick* — panics: two vehicles
+/// declaring different radii for one caster is a misconfiguration the
+/// SRP eclipse geometry cannot honor (this is the same agreement check
+/// `populate_app`'s eager pre-collection used to perform before the
+/// deferred resolver replaced it). Same-tick declarations are tracked
+/// in a per-run map because the `Commands`-deferred insert is not
+/// visible to later iterations of this run — without the map, a
+/// same-tick mismatch would silently resolve to whichever body the
+/// query happened to iterate last.
 pub fn resolve_shadow_body_ref_system(
     mut commands: Commands,
     refs: Query<(Entity, &ShadowBodyRefC)>,
     sources: Query<(Entity, &FrameUidC, Option<&ShadowBodyC>), With<GravitySourceC>>,
 ) {
+    // Per-run declarations keyed by caster identity (issue #679 review).
+    let mut declared: std::collections::HashMap<&astrodyn::FrameUid, f64> =
+        std::collections::HashMap::new();
     for (body_entity, sb_ref) in &refs {
         let (source_entity, _, existing) = sources
             .iter()
@@ -772,22 +780,31 @@ pub fn resolve_shadow_body_ref_system(
                     sb_ref.source
                 )
             });
-        if let Some(existing) = existing {
-            assert!(
-                existing.radius.to_bits() == sb_ref.radius.to_bits(),
-                "resolve_shadow_body_ref_system: shadow caster `{}` already carries \
-                 ShadowBodyC with radius {} m, but body {body_entity:?} declares \
-                 radius {} m. All bodies sharing a shadow caster must agree on its \
-                 radius.",
-                sb_ref.source,
-                existing.radius,
-                sb_ref.radius,
-            );
-        } else {
-            commands.entity(source_entity).insert(ShadowBodyC {
-                radius: sb_ref.radius,
-            });
+        // The authoritative prior radius: a same-tick declaration from an
+        // earlier iteration of this run, else the world's ShadowBodyC.
+        let prior = declared
+            .get(&sb_ref.source)
+            .copied()
+            .or(existing.map(|e| e.radius));
+        match prior {
+            Some(prev) => {
+                assert!(
+                    prev.to_bits() == sb_ref.radius.to_bits(),
+                    "resolve_shadow_body_ref_system: shadow caster `{}` already has \
+                     radius {prev} m (from an earlier declaration or its existing \
+                     ShadowBodyC), but body {body_entity:?} declares radius {} m. \
+                     All bodies sharing a shadow caster must agree on its radius.",
+                    sb_ref.source,
+                    sb_ref.radius,
+                );
+            }
+            None => {
+                commands.entity(source_entity).insert(ShadowBodyC {
+                    radius: sb_ref.radius,
+                });
+            }
         }
+        declared.insert(&sb_ref.source, sb_ref.radius);
         commands.entity(body_entity).remove::<ShadowBodyRefC>();
     }
 }
