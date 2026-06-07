@@ -318,9 +318,13 @@ fn spawn_body(
 ) -> Entity {
     app.world_mut()
         .spawn((
-            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(
-                "bevy-parity-chained-attach-event-b1",
-            )),
+            // Identity derived from the helper's per-call `name`: three
+            // vehicles spawn through this one helper in a single App, so
+            // the label must vary per call — deterministically, via the
+            // caller-supplied name rather than a counter.
+            astrodyn_bevy::FrameUidC(astrodyn::named_body_frame_uid(&format!(
+                "bevy-parity-chained-attach-event-{name}"
+            ))),
             Name::new(name.to_string()),
             DynamicsConfigC(six_dof_config()),
             MassPropertiesC::from(mass),
