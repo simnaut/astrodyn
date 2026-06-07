@@ -41,14 +41,32 @@ pub struct FrameSeries {
 }
 
 impl FrameSeries {
-    /// Validate the header (before interpreting any state), every record,
-    /// and the replay-v1 invariant: **within one segment the declared
-    /// topology is constant** — a row whose parent assignments differ from
-    /// the segment's first row is a recording bug ([`SeriesBuilder`] can
-    /// never produce one).
+    /// Validate the header (before interpreting any state), the uid
+    /// table, every record, and the replay-v1 structural invariants:
+    ///
+    /// - **within one segment the declared topology is constant** — a row
+    ///   whose parent assignments differ from the segment's first row is
+    ///   a recording bug ([`SeriesBuilder`] can never produce one);
+    /// - **every epoch row covers the full uid table** (fixed population:
+    ///   one record per frame per epoch — a partial row would make
+    ///   consumers silently operate on incomplete state);
+    /// - **segments are non-empty** and their `start_simtime` equals
+    ///   their first epoch's `simtime` (the boundary is the seek
+    ///   keyframe).
     pub fn validate(&self) -> Result<(), DocError> {
         validate_header(&self.header)?;
+        crate::document::validate_uid_table(&self.uids)?;
         for (seg_pos, seg) in self.segments.iter().enumerate() {
+            let Some(first) = seg.epochs.first() else {
+                return Err(DocError::EmptySegment { segment: seg_pos });
+            };
+            if seg.start_simtime.to_bits() != first.simtime.to_bits() {
+                return Err(DocError::SegmentStartMismatch {
+                    segment: seg_pos,
+                    start: seg.start_simtime,
+                    first_epoch: first.simtime,
+                });
+            }
             let mut segment_topology: Option<BTreeMap<u32, Option<u32>>> = None;
             for row in &seg.epochs {
                 if !row.simtime.is_finite() {
@@ -56,6 +74,14 @@ impl FrameSeries {
                         "segment {seg_pos} epoch simtime = {}",
                         row.simtime
                     )));
+                }
+                if row.records.len() != self.uids.len() {
+                    return Err(DocError::IncompleteRow {
+                        segment: seg_pos,
+                        simtime: row.simtime,
+                        found: row.records.len(),
+                        expected: self.uids.len(),
+                    });
                 }
                 let mut seen = vec![false; self.uids.len()];
                 for (i, rec) in row.records.iter().enumerate() {
@@ -315,5 +341,55 @@ mod tests {
     fn push_epoch_rejects_non_finite_simtime() {
         let mut builder = SeriesBuilder::new(header(), uid_table());
         builder.push_epoch(f64::NAN, row());
+    }
+
+    #[test]
+    fn validate_rejects_incomplete_row() {
+        // A row that consistently omits a frame would make consumers
+        // silently operate on partial state — replay v1 is
+        // fixed-population, every row covers the full uid table.
+        let mut builder = SeriesBuilder::new(header(), uid_table());
+        builder.push_epoch(0.0, row());
+        let mut series = builder.finish();
+        series.segments[0].epochs[0].records.pop();
+        assert!(matches!(
+            series.validate(),
+            Err(DocError::IncompleteRow {
+                segment: 0,
+                found: 2,
+                expected: 3,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_empty_segment() {
+        let series = FrameSeries {
+            header: header(),
+            uids: uid_table(),
+            segments: vec![FrameSegment {
+                start_simtime: 0.0,
+                epochs: vec![],
+            }],
+        };
+        assert!(matches!(
+            series.validate(),
+            Err(DocError::EmptySegment { segment: 0 })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_segment_start_mismatch() {
+        // The boundary doubles as the seek keyframe — stale seek
+        // metadata is silently wrong replay.
+        let mut builder = SeriesBuilder::new(header(), uid_table());
+        builder.push_epoch(1.0, row());
+        let mut series = builder.finish();
+        series.segments[0].start_simtime = 0.5;
+        assert!(matches!(
+            series.validate(),
+            Err(DocError::SegmentStartMismatch { segment: 0, .. })
+        ));
     }
 }

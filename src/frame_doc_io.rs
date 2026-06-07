@@ -168,6 +168,10 @@ pub fn export_tree(
 pub fn record_state(rec: &FrameRecord) -> RefFrameState {
     let (q_parent_this, t_parent_this) = match &rec.rotation {
         CanonicalRotation::Quat(q) => {
+            // allowed: wire-deserialization boundary — scalar-first
+            // left-transformation layout is the document's rotation
+            // convention (RF.07), validated in the header before any
+            // state is interpreted.
             let q = JeodQuat::from_array(*q);
             (q, q.left_quat_to_transformation())
         }
@@ -193,18 +197,28 @@ pub fn record_state(rec: &FrameRecord) -> RefFrameState {
 /// hosts applying records to an existing tree via
 /// [`FrameTree::set_epoch`].
 pub fn record_epoch(rec: &FrameRecord) -> Option<SecondsSince<TDB>> {
+    // allowed: wire-deserialization boundary — the record epoch is
+    // defined as TDB seconds by the header's time-scale convention,
+    // validated on load before any state is interpreted.
     rec.epoch.map(SecondsSince::<TDB>::from_seconds)
 }
 
 /// Rebuild a standalone [`FrameTree`] from a snapshot document.
 ///
 /// Validates the document (header conventions **before** any state is
-/// interpreted), then places records root-first. The wire's structural
-/// failure modes map onto the [`FrameTreeError`] vocabulary that was
-/// structurally unreachable before this load path existed:
-/// a declared parent with no record → [`LoadError::UnresolvedParent`];
-/// records whose parent chains never reach a root → [`LoadError::Cycle`].
-/// The rebuilt tree's own `validate_forest()` runs as the final belt.
+/// interpreted), then places records in **document order** by repeated
+/// sweeps: a record is placed once its parent is. A document produced by
+/// [`export_tree`] is already topologically ordered (a `FrameTree` parent
+/// always precedes its children in arena order), so it places in a single
+/// sweep and the loaded `FrameId`s equal the record positions — loading
+/// an exported document reproduces the producer's arena layout exactly.
+///
+/// The wire's structural failure modes map onto the [`FrameTreeError`]
+/// vocabulary that was structurally unreachable before this load path
+/// existed: a declared parent with no record →
+/// [`LoadError::UnresolvedParent`]; records whose parent chains never
+/// reach a root → [`LoadError::Cycle`]. The rebuilt tree's own
+/// `validate_forest()` runs as the final belt.
 // JEOD_INV: RF.02 — the loader cross-checks every record's declared parent
 // identity while rebuilding topology; the tree-level belt (validate_forest)
 // runs on the result. This is the bulk-load path the Cycle/UnresolvedParent
@@ -234,57 +248,64 @@ pub fn load_document(doc: &FrameDocument) -> Result<FrameTree, LoadError> {
 
     let mut tree = FrameTree::new();
     let mut placed: Vec<Option<FrameId>> = vec![None; doc.records.len()];
-    let mut frontier: Vec<usize> = Vec::new();
+    let mut placed_count = 0;
 
-    // Roots first.
-    for (pos, rec) in doc.records.iter().enumerate() {
-        if rec.parent.is_none() {
-            let uid = doc.uids[rec.uid_index as usize].clone();
-            if !uid.class.may_be_root_or_integ() {
-                return Err(LoadError::NonInertialRoot {
-                    record: pos,
-                    name: rec.name.clone(),
-                    uid,
-                });
-            }
-            let fid = tree.add_root_uid(uid, rec.name.clone());
-            tree.get_mut(fid).state = record_state(rec);
-            tree.set_epoch(fid, rec.epoch.map(SecondsSince::<TDB>::from_seconds));
-            placed[pos] = Some(fid);
-            frontier.push(pos);
-        }
-    }
-
-    // Breadth-first placement: a record is placeable once its parent is.
-    while let Some(parent_pos) = frontier.pop() {
-        let parent_uid_index = doc.records[parent_pos].uid_index;
-        let parent_fid = placed[parent_pos].expect("frontier entries are placed");
+    // Order-preserving sweeps: each pass walks the records in document
+    // order and places every record whose parent is already in the tree
+    // (roots place unconditionally). Exported documents finish in one
+    // pass; arbitrary topological shuffles finish in ≤ depth passes; no
+    // progress with records remaining is the wire form of a cycle.
+    while placed_count < doc.records.len() {
+        let mut progressed = false;
         for (pos, rec) in doc.records.iter().enumerate() {
-            if placed[pos].is_none() && rec.parent == Some(parent_uid_index) {
-                let uid = doc.uids[rec.uid_index as usize].clone();
-                let fid = tree.add_child_uid(
-                    parent_fid,
-                    uid,
-                    rec.name.clone(),
-                    record_state(rec),
-                    rec.epoch.map(SecondsSince::<TDB>::from_seconds),
-                );
-                placed[pos] = Some(fid);
-                frontier.push(pos);
+            if placed[pos].is_some() {
+                continue;
             }
+            let fid = match rec.parent {
+                None => {
+                    let uid = doc.uids[rec.uid_index as usize].clone();
+                    if !uid.class.may_be_root_or_integ() {
+                        return Err(LoadError::NonInertialRoot {
+                            record: pos,
+                            name: rec.name.clone(),
+                            uid,
+                        });
+                    }
+                    let fid = tree.add_root_uid(uid, rec.name.clone());
+                    tree.get_mut(fid).state = record_state(rec);
+                    tree.set_epoch(fid, record_epoch(rec));
+                    fid
+                }
+                Some(p) => {
+                    let parent_pos =
+                        record_of_uid[p as usize].expect("checked unresolvable parents above");
+                    let Some(parent_fid) = placed[parent_pos] else {
+                        continue; // parent not placed yet — next sweep
+                    };
+                    tree.add_child_uid(
+                        parent_fid,
+                        doc.uids[rec.uid_index as usize].clone(),
+                        rec.name.clone(),
+                        record_state(rec),
+                        record_epoch(rec),
+                    )
+                }
+            };
+            placed[pos] = Some(fid);
+            placed_count += 1;
+            progressed = true;
         }
-    }
-
-    // Anything unplaced has a parent chain that never reaches a root: the
-    // wire form of a cycle.
-    let unplaced: Vec<String> = placed
-        .iter()
-        .zip(&doc.records)
-        .filter(|(p, _)| p.is_none())
-        .map(|(_, r)| r.name.clone())
-        .collect();
-    if !unplaced.is_empty() {
-        return Err(LoadError::Cycle { names: unplaced });
+        if !progressed {
+            // Anything unplaced has a parent chain that never reaches a
+            // root: the wire form of a cycle.
+            let names: Vec<String> = placed
+                .iter()
+                .zip(&doc.records)
+                .filter(|(p, _)| p.is_none())
+                .map(|(_, r)| r.name.clone())
+                .collect();
+            return Err(LoadError::Cycle { names });
+        }
     }
 
     // Final belt: the tree's own integrity validation (forest form — a
@@ -488,6 +509,40 @@ mod tests {
             load_document(&doc).err(),
             Some(LoadError::NonInertialRoot { record: 2, .. })
         ));
+    }
+
+    #[test]
+    fn load_assigns_frame_ids_in_document_order_for_interleaved_depth() {
+        // Runner-shaped arena order interleaves depth: root(0),
+        // Earth.inertial(1, → root), Earth.pfix(2, → inertial),
+        // body(3, → root). A breadth-first loader would place the
+        // root's children before the grandchild (body=2, pfix=3),
+        // silently renumbering vs the producer. The order-preserving
+        // sweep must reproduce the arena layout exactly.
+        let mut tree = stamped_tree(); // root(0), Earth.inertial(1), Earth.pfix(2)
+        let root = 0;
+        tree.add_child_uid(
+            root,
+            FrameUid::external(
+                astrodyn_quantities::frame_descriptor::Namespace(1),
+                astrodyn_frame_doc::FrameClass::Body,
+                astrodyn_frame_doc::FrameRole::CompositeBody,
+                astrodyn_frame_doc::Tag::Named("iss".into()),
+            ),
+            "body_0.integ".into(),
+            RefFrameState::default(),
+            Some(SecondsSince::from_seconds(100.0)),
+        );
+        let loaded = load_document(&export(&tree)).expect("load");
+        assert_eq!(loaded.len(), 4);
+        for id in 0..tree.len() {
+            assert_eq!(
+                tree.get(id).uid(),
+                loaded.get(id).uid(),
+                "FrameId {id} must hold the same identity as the producer's arena"
+            );
+            assert_eq!(tree.parent(id), loaded.parent(id));
+        }
     }
 
     #[test]

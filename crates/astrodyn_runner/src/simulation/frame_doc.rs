@@ -243,7 +243,12 @@ impl Simulation {
                         });
                     match (attitude_quat, ang_vel_body, self.bodies[idx].rot.is_some()) {
                         (Some(q), Some(w), true) => {
+                            // The Integrated payload's scalar-first layout
+                            // is the document's rotation convention (RF.07),
+                            // validated in the header; rot_raw_to_self_ref
+                            // re-checks unit norm on lift.
                             self.bodies[idx].rot = Some(rot_raw_to_self_ref(&RotationalState {
+                                // allowed: wire-deserialization boundary (RF.07 layout, header-validated)
                                 quaternion: JeodQuat::from_array(*q),
                                 ang_vel_body: glam::DVec3::from_array(*w),
                             }));

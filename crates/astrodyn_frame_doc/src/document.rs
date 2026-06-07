@@ -237,6 +237,58 @@ pub enum DocError {
         /// The duplicated uid-table index.
         index: u32,
     },
+    /// The interned uid table itself holds the same identity at two
+    /// indices — two records could then carry "distinct" indices that
+    /// alias one frame, defeating identity uniqueness downstream (the
+    /// tree loader would reject the second registration).
+    #[error("uid table entries {first} and {second} hold the same identity")]
+    DuplicateUidEntry {
+        /// First table index.
+        first: usize,
+        /// Aliasing table index.
+        second: usize,
+    },
+    /// A series epoch row does not cover the full uid table — replay v1
+    /// records a fixed frame population, one record per frame per epoch;
+    /// a partial row would make consumers silently operate on incomplete
+    /// state.
+    #[error(
+        "segment {segment} epoch at simtime {simtime} carries {found} records \
+         for a {expected}-frame population — every epoch row must cover the \
+         full uid table (replay v1 is fixed-population)"
+    )]
+    IncompleteRow {
+        /// Segment position.
+        segment: usize,
+        /// Offending epoch's simtime.
+        simtime: f64,
+        /// Records present.
+        found: usize,
+        /// Records required (uid-table length).
+        expected: usize,
+    },
+    /// A series segment carries no epochs — segments exist to span
+    /// epochs; an empty one is recording corruption.
+    #[error("segment {segment} has no epochs")]
+    EmptySegment {
+        /// Segment position.
+        segment: usize,
+    },
+    /// A segment's `start_simtime` disagrees with its first epoch's
+    /// `simtime` — the boundary doubles as the seek keyframe, so stale
+    /// seek metadata is silently wrong replay.
+    #[error(
+        "segment {segment} declares start_simtime {start} but its first epoch \
+         is at {first_epoch} — the boundary is the seek keyframe and must match"
+    )]
+    SegmentStartMismatch {
+        /// Segment position.
+        segment: usize,
+        /// Declared boundary.
+        start: f64,
+        /// Actual first-epoch simtime.
+        first_epoch: f64,
+    },
     /// In a series, an epoch row inside one segment declares a different
     /// topology than the segment's first row — topology changes must close
     /// the segment (replay v1: segment-per-topology-change).
@@ -260,10 +312,11 @@ pub enum DocError {
 
 impl FrameDocument {
     /// Validate the header (version + conventions, **before** interpreting
-    /// any state), index ranges, uid uniqueness, and finiteness of every
-    /// numeric field.
+    /// any state), index ranges, uid uniqueness (per record **and** in the
+    /// interned table itself), and finiteness of every numeric field.
     pub fn validate(&self) -> Result<(), DocError> {
         validate_header(&self.header)?;
+        validate_uid_table(&self.uids)?;
         let mut seen = vec![false; self.uids.len()];
         for (i, rec) in self.records.iter().enumerate() {
             validate_record(rec, i, self.uids.len())?;
@@ -301,6 +354,21 @@ impl FrameDocument {
         doc.validate()?;
         Ok(doc)
     }
+}
+
+/// Shared uid-table validation (snapshot + series): every interned
+/// identity must be distinct — two table entries holding the same
+/// identity would let records alias one frame through "distinct" indices.
+pub(crate) fn validate_uid_table(uids: &[FrameUid]) -> Result<(), DocError> {
+    let mut seen: std::collections::HashMap<&FrameUid, usize> =
+        std::collections::HashMap::with_capacity(uids.len());
+    for (i, uid) in uids.iter().enumerate() {
+        if let Some(&first) = seen.get(uid) {
+            return Err(DocError::DuplicateUidEntry { first, second: i });
+        }
+        seen.insert(uid, i);
+    }
+    Ok(())
 }
 
 /// Shared header validation (snapshot + series).
@@ -521,6 +589,22 @@ mod tests {
         let mut doc = snapshot();
         doc.records[2].uid_index = doc.records[1].uid_index;
         assert!(matches!(doc.validate(), Err(DocError::DuplicateUid { .. })));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_uid_table_entry() {
+        // Two table entries holding the SAME identity: records at
+        // "distinct" indices would alias one frame — caught at the
+        // table, not left for a loader panic.
+        let mut doc = snapshot();
+        doc.uids[2] = doc.uids[1].clone();
+        assert!(matches!(
+            doc.validate(),
+            Err(DocError::DuplicateUidEntry {
+                first: 1,
+                second: 2
+            })
+        ));
     }
 
     #[test]
