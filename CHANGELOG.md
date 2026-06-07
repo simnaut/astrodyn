@@ -5,7 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-05-19
+## [0.2.0] - Unreleased
+
+Second release. Headlined by the **frame-identity** work
+([#659](https://github.com/simnaut/astrodyn/issues/659) / #660–#664 /
+#668): every reference frame now carries a stable `FrameUid`, every
+cross-source reference resolves through it, and a new
+`astrodyn_frame_doc` crate captures that identity in a self-describing,
+replayable wire schema.
+
+### Added
+
+- **`astrodyn_frame_doc` crate** (#663) — frame-document schema: a
+  self-describing serialized form of a reference-frame tree (snapshot
+  `FrameDocument` + replay-series `FrameSeries`) carrying identity,
+  topology, origin, and epoch on every record, with bit-exact `f64`
+  round-trips. Per-record validators (`validate_header`,
+  `validate_uid_table`, `validate_record`) support independent
+  streaming consumers (#659). The gateway exposes it behind a new,
+  off-by-default `frame-doc` feature (`astrodyn::frame_doc` +
+  `astrodyn::frame_doc_io`), keeping the production build serde-free.
+- **Frame identity vocabulary** (#660) — `FrameUid` plus
+  `Frame::DESCRIPTOR` on the sealed `Frame` trait.
+- **`CartesianState<F>`** (#650) — typed position + velocity state
+  record with opt-in serde (the gateway's `serde` feature forwards to
+  it).
+- **New frames and presets**: Moon mean-Earth (ME) frame for DEM
+  georeferencing (#652); site-anchored topocentric ENU frame (#651);
+  generic IAU body-fixed rotation beyond Moon/Mars (#653); a typed
+  `Ephemeris` rotation accessor (#648); Jupiter + Saturn shape presets
+  (#649).
+- **LSODE integrator family** (#615/#616/#617) — non-stiff Adams and
+  stiff BDF (Newton corrector + Jacobian) integrators, wired through
+  the Bevy adapter with a parity test.
 
 ### Changed
 
@@ -13,13 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own `rust-version = "1.89"`; cargo's MSRV-aware resolution refuses
   to build the workspace on older toolchains. README § "Minimum
   supported Rust version" updated.
+- Docs and package metadata reframed to describe astrodyn as an
+  engine-agnostic framework rather than a Bevy-first library (#647).
 
 ### Breaking
 
+- **Frame identity is now required throughout** (#661/#664/#668).
+  `RefFrameKind` was removed; `FrameUid` is required on `FrameTree`
+  nodes behind a checked typed boundary (`validate()` + namespace
+  rules); and the former `SourceId` collapsed so every cross-source
+  reference is a `FrameUid`. Downstream code that built frames without
+  identities, or referenced frames via the old `SourceId` /
+  `RefFrameKind` types, must migrate to `FrameUid`.
 - `astrodyn::source_frames::SourceFrameIds` gained a `pub central: bool`
   field (originally landed in #568 without a version bump). Downstream
   code constructing this struct via struct literal must add the new
-  field. Detected and gated by the new `cargo-semver-checks` CI job.
+  field. Detected and gated by the `cargo-semver-checks` CI job.
 
 ### Tooling
 
@@ -38,6 +79,25 @@ Bundled as part of [#527](https://github.com/simnaut/astrodyn/issues/527):
 - CI ergonomics: cancel-superseded `concurrency:` blocks on both
   `ci.yml` and the new `tooling.yml`, plus `RUST_BACKTRACE=1` so
   Tier 3 / parity panics emit stack traces.
+- Claude Code review + `@claude` mention workflows (#666).
+
+### Verification
+
+- Large Tier 2 / Tier 3 cross-validation expansion against JEOD Trick
+  sims: SIM_orbinit (full 46/46 init-variant matrix), SIM_verif_attach_mass,
+  SIM_dyncomp, SIM_MET, SIM_tide_verif, SIM_7_time_reversal, SIM_VER_DRAG
+  (with the `DRAG_OPT_CONST` aero option), SIM_RNP_J2000_prop, and the
+  SIM_csr_compare gravity-acceleration octant sweep. Added Rosetta
+  swing-by and Phobos mission benchmarks (#203/#204).
+
+### Crates
+
+Fourteen publishable workspace crates at this version — the thirteen
+from 0.1.0 plus the new `astrodyn_frame_doc`. Four `publish = false`
+verification crates: `astrodyn_verif_jeod`, the new
+`astrodyn_verif_jeod_fixtures` (pure JEOD-data parsers, no pipeline
+dependency) and `astrodyn_verif_nesc` (NESC GN&C Lunar Check Cases
+track), and `astrodyn_verif_parity`.
 
 ## [0.1.0] - 2026-04-28
 

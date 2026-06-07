@@ -23,6 +23,13 @@ exclude = [
     "CHANGELOG.md",
 ]
 
+# Build docs with every feature so the optional `frame-doc` surface
+# (`astrodyn::frame_doc` + `astrodyn::frame_doc_io`) and the `serde`
+# forwarding both render on docs.rs. Matches the per-crate convention
+# (`all-features = true` on every published `astrodyn_*` member).
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 astrodyn_quantities = { path = "crates/astrodyn_quantities", version = "0.2.0" }
 astrodyn_math = { path = "crates/astrodyn_math", version = "0.2.0" }
