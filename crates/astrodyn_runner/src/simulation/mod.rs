@@ -22,11 +22,16 @@
 
 mod bodies;
 mod frame_attach;
+#[cfg(feature = "frame-doc")]
+mod frame_doc;
 mod mass_tree;
 mod sources;
 mod step;
 pub(crate) mod types;
 mod validate;
+
+#[cfg(feature = "frame-doc")]
+pub use frame_doc::FrameSeriesRecorder;
 
 pub use astrodyn::{DetachedSubtreeState, GroundFacet, SphericalTerrain, Terrain};
 pub use types::{ContactPairConfig, FrameAttachState, GroundContactPairConfig, VehicleOutput};
