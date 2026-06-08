@@ -2,47 +2,105 @@
 //!
 //! The compile-time path mints identities via
 //! [`FrameUid::of`](astrodyn_quantities::frame_descriptor::FrameUid::of)
-//! in [`Namespace::LOCAL`] — exclusively type-derived. Bodies, however, are
-//! an *open, instance-scoped* set: mission configurations legitimately
-//! spawn them in loops, so their identity is a mission-supplied **value**
-//! (a name), not a type. This module is the single home of that
-//! convention, shared by every host (the runner today, the Bevy adapter's
-//! `FrameUidC` in issue #664) so the mapping from a body name to its
-//! identity is shared *code*, never a per-host convention that can drift.
+//! in [`Namespace::LOCAL`] — exclusively type-derived. Some frames, however,
+//! belong to *open, instance-scoped* sets: mission configurations
+//! legitimately spawn bodies in loops and populate ground-site catalogs from
+//! data, so their identity is a mission-supplied **value** (a body name, a
+//! site key), not a type. This module is the single home of that convention,
+//! shared by every host (the runner today, the Bevy adapter's `FrameUidC` in
+//! issue #664) so the mapping from a value to its identity is shared *code*,
+//! never a per-host convention that can drift.
 //!
 //! ## Namespace allocation
 //!
 //! | Namespace | Owner | Mint |
 //! |---|---|---|
 //! | `LOCAL` (0) | type-derived identities | `FrameUid::of::<F>()` only |
-//! | [`MISSION_NAMED_NS`] (1) | mission-named bodies | [`named_body_frame_uid`] |
+//! | [`MISSION_NAMED_NS`] (1) | mission-supplied **value** identities (named bodies, topocentric sites) | [`named_body_frame_uid`], [`topocentric_site_frame_uid`] |
 //! | ≥ 2 | host-allocated (imports, external producers) | `FrameUid::external` / `FrameTree::import_subtree` |
 //!
+//! Within [`MISSION_NAMED_NS`] the `(class, role)` pair keeps the value kinds
+//! disjoint — named bodies mint `(Body, CompositeBody)`, topocentric sites
+//! mint `(Topocentric, Primary)` — so a body name and a site key can never
+//! alias even when both are `Tag::Named`. Two values *of the same kind* are
+//! distinguished by their tag (RF.14).
+//!
 //! Hosts importing foreign frame trees **must allocate a namespace ≥ 2**:
-//! reusing namespace 1 would let an imported body impersonate a
-//! mission-named body — the duplicate-identity check catches exact
-//! collisions, but distinct foreign names would silently coexist as if
-//! mission-named.
+//! reusing namespace 1 would let an imported frame impersonate a
+//! mission-supplied identity — the duplicate-identity check catches exact
+//! collisions, but distinct foreign values would silently coexist as if
+//! mission-supplied.
 
 use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
 
-/// Namespace reserved for mission-supplied *named* bodies — bodies whose
-/// identity is a configuration value (`VehicleConfig::named`,
-/// `VehicleBuilder::vehicle_named`) rather than a compile-time `Vehicle`
-/// marker. Type-derived identities live in [`Namespace::LOCAL`]; a named
-/// `"iss"` body and a `BodyFrame<Iss>` body therefore never alias.
+/// Namespace reserved for mission-supplied **value** identities — frames
+/// whose identity is a configuration value (a body name, a site key) rather
+/// than a compile-time marker type. Named bodies (`VehicleConfig::named`,
+/// `VehicleBuilder::vehicle_named` → [`named_body_frame_uid`]) and
+/// topocentric sites ([`topocentric_site_frame_uid`]) both live here, kept
+/// disjoint by their `(class, role)` pair. Type-derived identities live in
+/// [`Namespace::LOCAL`]; a named `"iss"` body and a `BodyFrame<Iss>` body
+/// therefore never alias.
 pub const MISSION_NAMED_NS: Namespace = Namespace(1);
 
 /// Mint the runtime identity of a mission-named body's composite-body
-/// frame. The single shared mint for [`MISSION_NAMED_NS`] — the runner and
-/// the Bevy adapter both route named-body identity through here, so the
-/// convention cannot drift between hosts.
+/// frame. The single shared mint for *named bodies* in [`MISSION_NAMED_NS`]
+/// (its sibling [`topocentric_site_frame_uid`] mints sites in the same
+/// namespace) — the runner and the Bevy adapter both route named-body
+/// identity through here, so the convention cannot drift between hosts.
 pub fn named_body_frame_uid(name: &str) -> FrameUid {
     FrameUid::external(
         MISSION_NAMED_NS,
         FrameClass::Body,
         FrameRole::CompositeBody,
         Tag::Named(name.into()),
+    )
+}
+
+/// Mint the runtime identity of a topocentric (ENU) frame anchored at a fixed
+/// geodetic site on `planet`. The single shared mint for site identities in
+/// [`MISSION_NAMED_NS`]: every host — independent producer and consumer —
+/// routes through here, so a `(planet, site_key)` pair maps to the **same**
+/// [`FrameUid`] across processes without coordination. That convergence is
+/// the property a scene store / visualizer relies on to recognize a
+/// producer's frames (see [#688]).
+///
+/// Sites are an *open, config-driven* set (launch / landing / station
+/// catalogs populated from data), so — like mission-named bodies
+/// ([`named_body_frame_uid`]) and unlike compile-time frame types — their
+/// identity is a **value**, not a type: there is deliberately no
+/// [`FrameUid::of`] / `is::<…>` path for a specific site.
+///
+/// # Canonical tag composition (stable cross-process contract)
+///
+/// The instance tag is `Tag::Named("{planet}/site:{site_key}")`. The planet
+/// name qualifies the key so the same `site_key` on two planets cannot
+/// collide, and the `site:` segment follows the [`Tag::Named`] site
+/// convention. Producer- and consumer-minted uids are byte-identical *only
+/// because both call this one function*, so the exact string is a contract:
+/// it is pinned by `topocentric_site_uid_format_is_stable` and must not
+/// drift. The tag is an **opaque identity key, not a parseable structure** —
+/// recovering `(planet, site_key)` from it is out of scope (that is the
+/// deferred structured-`Tag::Site` option). A future typed `Topocentric<P,
+/// S>` sugar, if ever added, must lower through this same composition so the
+/// typed and value spellings of a site converge on one identity.
+///
+/// Pass the planet's marker `NAME` verbatim (e.g.
+/// [`Planet::NAME`](astrodyn_quantities::frame::Planet::NAME)); the mint is
+/// case-sensitive, matching [`sealed_planet_inertial_uid`]. The site
+/// `site_key` is a **label**: nothing here validates it against the geodetic
+/// anchor carried by the `FrameTransform` the site builder returns — the
+/// anchor is authoritative ([#688] req 6; the transform is orientation-only,
+/// [#689]).
+///
+/// [#688]: https://github.com/simnaut/astrodyn/issues/688
+/// [#689]: https://github.com/simnaut/astrodyn/issues/689
+pub fn topocentric_site_frame_uid(planet: &str, site_key: &str) -> FrameUid {
+    FrameUid::external(
+        MISSION_NAMED_NS,
+        FrameClass::Topocentric,
+        FrameRole::Primary,
+        Tag::Named(format!("{planet}/site:{site_key}").into()),
     )
 }
 
@@ -169,5 +227,53 @@ mod tests {
             named_body_frame_uid("iss").to_string(),
             "ns1:iss.composite_body"
         );
+    }
+
+    #[test]
+    fn topocentric_site_identities_are_key_keyed() {
+        // Same (planet, site) → same identity across calls: the cross-process
+        // convergence contract a producer and a consumer rely on.
+        assert_eq!(
+            topocentric_site_frame_uid("Earth", "KSC-LC39A"),
+            topocentric_site_frame_uid("Earth", "KSC-LC39A"),
+        );
+        // Distinct sites on the same planet → distinct identities (RF.14) —
+        // the gap #688 was filed to close.
+        assert_ne!(
+            topocentric_site_frame_uid("Earth", "KSC-LC39A"),
+            topocentric_site_frame_uid("Earth", "Baikonur-1-5"),
+        );
+        // Same key on different planets → distinct identities (planet-qualified).
+        assert_ne!(
+            topocentric_site_frame_uid("Earth", "Base-Alpha"),
+            topocentric_site_frame_uid("Moon", "Base-Alpha"),
+        );
+    }
+
+    #[test]
+    fn topocentric_site_uid_format_is_stable() {
+        // The canonical composition is a cross-process contract: changing any
+        // field or the tag string breaks convergence with already-recorded
+        // documents and with independent producers.
+        let uid = topocentric_site_frame_uid("Earth", "KSC-LC39A");
+        assert_eq!(uid.namespace, MISSION_NAMED_NS);
+        assert_eq!(uid.class, FrameClass::Topocentric);
+        assert_eq!(uid.role, FrameRole::Primary);
+        assert_eq!(uid.tag, Tag::Named("Earth/site:KSC-LC39A".into()));
+        assert_eq!(uid.to_string(), "ns1:Earth/site:KSC-LC39A.topo");
+    }
+
+    #[test]
+    fn topocentric_site_never_aliases_named_body() {
+        // Both kinds live in MISSION_NAMED_NS; the (class, role) pair keeps
+        // them disjoint even if a body name and a site key were spelled
+        // identically — the invariant that lets the two value kinds share one
+        // namespace.
+        let site = topocentric_site_frame_uid("Earth", "iss");
+        let body = named_body_frame_uid("iss");
+        assert_ne!(site, body);
+        assert_eq!(site.namespace, body.namespace, "same namespace…");
+        assert_ne!(site.class, body.class, "…disjoint by class");
+        assert_ne!(site.role, body.role, "…and by role");
     }
 }
