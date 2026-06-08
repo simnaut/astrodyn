@@ -16,9 +16,20 @@ concurrency:
 
 jobs:
   claude-review:
-    # Skip PRs from forks: repository secrets (CLAUDE_CODE_OAUTH_TOKEN) aren't available
-    # to fork PRs, so the action would only produce noisy failures.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Skip when the run can't reach CLAUDE_CODE_OAUTH_TOKEN, since the action
+    # would only produce a fast, noisy failure:
+    #   - Fork PRs: repository secrets aren't exposed to fork-head workflows.
+    #   - Dependabot PRs: GitHub routes Dependabot-triggered `pull_request`
+    #     runs through a separate secrets store, so the regular Actions secret
+    #     is empty (the action dies in ~15s with no auth). #686.
+    # `claude-review` is a required check; a skipped job reports success to
+    # branch protection, so skipping here unblocks these PRs rather than
+    # wedging them. Keyed on `github.actor` (not the PR author) on purpose: a
+    # human pushing to a Dependabot branch makes secrets available again, and
+    # the review then correctly runs.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
