@@ -37,6 +37,14 @@ ignore = [
     # `paste`. Tracked in https://github.com/bevyengine/bevy as the chain
     # migrates.
     "RUSTSEC-2024-0436",
+    # `proc-macro-error2 2.0.1` — RUSTSEC-2026-0173. The author confirmed the
+    # crate is unmaintained and recommends migrating away; this is an
+    # administrative status, not a vulnerability. It reaches us transitively
+    # via the ephemeris chain (`anise` → `tabled` → `tabled_derive` →
+    # `proc-macro-error2`). We can drop this entry once `tabled`/`anise` ship
+    # a release off `proc-macro-error2`. Tracked upstream at
+    # https://github.com/nyx-space/anise.
+    "RUSTSEC-2026-0173",
 ]
 
 # -----------------------------------------------------------------------------
