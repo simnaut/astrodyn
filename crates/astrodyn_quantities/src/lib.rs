@@ -175,6 +175,7 @@ pub mod dims;
 pub mod ext;
 pub mod frame;
 pub mod frame_descriptor;
+pub mod frame_identity;
 pub mod frame_transform;
 pub mod guard_macros;
 pub mod harmonic;
@@ -195,6 +196,10 @@ pub use frame::*;
 pub use frame_descriptor::{
     FrameClass, FrameDescriptorStatic, FrameRole, FrameRoleStatic, FrameUid, MintPolicy, Namespace,
     Tag,
+};
+pub use frame_identity::{
+    named_body_frame_uid, pfix_sibling_uid, sealed_planet_inertial_uid, topocentric_site_frame_uid,
+    MISSION_NAMED_NS,
 };
 pub use frame_transform::*;
 pub use integ_origin::IntegOrigin;

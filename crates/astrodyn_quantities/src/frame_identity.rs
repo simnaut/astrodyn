@@ -1,7 +1,7 @@
 //! Shared frame-identity minting conventions for hosts.
 //!
 //! The compile-time path mints identities via
-//! [`FrameUid::of`](astrodyn_quantities::frame_descriptor::FrameUid::of)
+//! [`FrameUid::of`](crate::frame_descriptor::FrameUid::of)
 //! in [`Namespace::LOCAL`] — exclusively type-derived. Some frames, however,
 //! belong to *open, instance-scoped* sets: mission configurations
 //! legitimately spawn bodies in loops and populate ground-site catalogs from
@@ -10,6 +10,15 @@
 //! shared by every host (the runner today, the Bevy adapter's `FrameUidC` in
 //! issue #664) so the mapping from a value to its identity is shared *code*,
 //! never a per-host convention that can drift.
+//!
+//! It lives in `astrodyn_quantities` — the dependency-light identity crate —
+//! rather than the umbrella `astrodyn` crate, so a firewalled pure consumer
+//! (a renderer / scene store that must not link the ephemeris or physics
+//! stack) can route through the *same* mint as a producer. That reachability
+//! is what makes the single-mint convergence invariant real for every host,
+//! not just those that link the full pipeline (issue #695). The umbrella
+//! re-exports these symbols, so `astrodyn::named_body_frame_uid` & co. are
+//! unchanged.
 //!
 //! ## Namespace allocation
 //!
@@ -31,7 +40,7 @@
 //! collisions, but distinct foreign values would silently coexist as if
 //! mission-supplied.
 
-use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
+use crate::frame_descriptor::{FrameClass, FrameRole, FrameUid, Namespace, Tag};
 
 /// Namespace reserved for mission-supplied **value** identities — frames
 /// whose identity is a configuration value (a body name, a site key) rather
@@ -86,7 +95,7 @@ pub fn named_body_frame_uid(name: &str) -> FrameUid {
 /// typed and value spellings of a site converge on one identity.
 ///
 /// Pass the planet's marker `NAME` verbatim (e.g.
-/// [`Planet::NAME`](astrodyn_quantities::frame::Planet::NAME)); the mint is
+/// [`Planet::NAME`](crate::frame::Planet::NAME)); the mint is
 /// case-sensitive, matching [`sealed_planet_inertial_uid`]. The site
 /// `site_key` is a **label**: nothing here validates it against the geodetic
 /// anchor carried by the `FrameTransform` the site builder returns — the
@@ -147,7 +156,7 @@ pub fn pfix_sibling_uid(inertial: &FrameUid) -> FrameUid {
 /// source rotates, is [`pfix_sibling_uid`] of the returned identity —
 /// pinned equal to the typed mint for all six planets.
 pub fn sealed_planet_inertial_uid(name: &str) -> Option<FrameUid> {
-    use astrodyn_quantities::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
+    use crate::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
     Some(match name {
         "Earth" => FrameUid::of::<PlanetInertial<Earth>>(),
         "Moon" => FrameUid::of::<PlanetInertial<Moon>>(),
@@ -162,10 +171,10 @@ pub fn sealed_planet_inertial_uid(name: &str) -> Option<FrameUid> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use astrodyn_quantities::frame::BodyFrame;
-    use astrodyn_quantities::frame_descriptor::FrameUid;
+    use crate::frame::BodyFrame;
+    use crate::frame_descriptor::FrameUid;
 
-    astrodyn_quantities::define_vehicle!(IdentityTestVehicle);
+    crate::define_vehicle!(IdentityTestVehicle);
 
     #[test]
     fn named_identity_never_aliases_typed_identity() {
@@ -181,9 +190,7 @@ mod tests {
 
     #[test]
     fn pfix_sibling_matches_typed_mint_for_every_sealed_planet() {
-        use astrodyn_quantities::frame::{
-            Earth, Jupiter, Mars, Moon, PlanetFixed, PlanetInertial, Saturn, Sun,
-        };
+        use crate::frame::{Earth, Jupiter, Mars, Moon, PlanetFixed, PlanetInertial, Saturn, Sun};
         macro_rules! check {
             ($($p:ty),+) => {$(
                 assert_eq!(
@@ -204,11 +211,11 @@ mod tests {
 
     #[test]
     fn sealed_planet_dispatch_matches_typed_mint() {
-        use astrodyn_quantities::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
+        use crate::frame::{Earth, Jupiter, Mars, Moon, PlanetInertial, Saturn, Sun};
         macro_rules! check {
             ($($p:ty),+) => {$(
                 assert_eq!(
-                    sealed_planet_inertial_uid(<$p as astrodyn_quantities::frame::Planet>::NAME),
+                    sealed_planet_inertial_uid(<$p as crate::frame::Planet>::NAME),
                     Some(FrameUid::of::<PlanetInertial<$p>>()),
                     "name dispatch must equal the typed mint",
                 );

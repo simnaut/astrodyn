@@ -101,7 +101,6 @@ pub mod forces;
 pub use astrodyn_frame_doc as frame_doc;
 #[cfg(feature = "frame-doc")]
 pub mod frame_doc_io;
-pub mod frame_identity;
 pub mod frame_orchestration;
 pub mod gravity;
 pub mod integrable;
@@ -367,7 +366,13 @@ pub use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid,
 // the Bevy adapter's `FrameEpochC` carries it per frame entity).
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 pub use astrodyn_quantities::time_scale::{SecondsSince, TDB};
-pub use frame_identity::{
+// Frame-identity minting conventions live in `astrodyn_quantities` (the
+// dependency-light identity crate) so firewalled pure consumers can route
+// through the same shared mint (#695). Re-exported here as both the module
+// (`astrodyn::frame_identity::*`) and the root function names
+// (`astrodyn::named_body_frame_uid`) so every prior umbrella path is unchanged.
+pub use astrodyn_quantities::frame_identity;
+pub use astrodyn_quantities::frame_identity::{
     named_body_frame_uid, pfix_sibling_uid, sealed_planet_inertial_uid, topocentric_site_frame_uid,
     MISSION_NAMED_NS,
 };
