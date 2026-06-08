@@ -548,8 +548,12 @@ jobs:
 
   runtime-budget:
     name: Runtime budget (envelope)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # Main-only: the earth_moon envelope is a ~37-min job (see the `changes`
+    # job comment above and the measurement step below) — too slow to gate
+    # every PR. It runs post-merge on `main`, mirroring `perf-baseline-track`.
+    # On PRs the job is skipped (reports "skipping") and does not block; a
+    # regression that blows the envelope is caught on the merge commit.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
