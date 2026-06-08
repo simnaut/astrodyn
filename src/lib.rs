@@ -368,7 +368,8 @@ pub use astrodyn_quantities::frame_descriptor::{FrameClass, FrameRole, FrameUid,
 pub use astrodyn_quantities::integ_origin::IntegOrigin;
 pub use astrodyn_quantities::time_scale::{SecondsSince, TDB};
 pub use frame_identity::{
-    named_body_frame_uid, pfix_sibling_uid, sealed_planet_inertial_uid, MISSION_NAMED_NS,
+    named_body_frame_uid, pfix_sibling_uid, sealed_planet_inertial_uid, topocentric_site_frame_uid,
+    MISSION_NAMED_NS,
 };
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `astrodyn` don't need a direct
