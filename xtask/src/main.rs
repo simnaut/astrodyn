@@ -769,18 +769,20 @@ fn publish(argv: Vec<String>) {
     );
 }
 
-// Poll `cargo search` until the just-published crate AND VERSION
-// appear in the sparse index. `cargo publish` returns success once
-// the upload is accepted, but the index can lag by 10–60s before
-// path+version deps in the next crate resolve. Matching on the
-// version (not just the name) is critical: on every publish after the
-// first, the crate name is already on the registry from a prior
-// version, so a name-only check would short-circuit while the index
-// is still serving stale metadata. Cap at 15 minutes — both the
-// v0.1.0 and v0.1.1 releases hit the previous 5-min cap on the
-// first-crate poll, so the longer window covers the observed
-// sparse-index propagation tail. Anything beyond that is a registry
-// incident worth a human eye.
+// Poll the crates.io sparse index until the just-published crate AND
+// VERSION appear. `cargo publish` returns success once the upload is
+// accepted, but a dependent crate can't resolve the new version until it
+// lands in the index. We query `index.crates.io` directly — the same
+// source cargo's resolver reads — rather than `cargo search`, whose
+// `api.crates.io` search endpoint lags the index by minutes and produced
+// a spurious 15-min timeout mid-publish during the v0.2.0 release (#699).
+// Matching on the version (not just the name) is critical: on every
+// publish after the first, the crate's path already exists in the index
+// from a prior version, so a name-only check would short-circuit while
+// the new version is still propagating. Cap at 15 minutes; the sparse
+// index normally serves the version within seconds (cargo's own
+// post-publish wait already blocked on it), so anything near the cap is a
+// registry incident worth a human eye.
 const WAIT_FOR_INDEX_SECS: u64 = 900;
 
 fn wait_for_index(crate_name: &str, expected_version: &str) {
@@ -790,21 +792,26 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
     let deadline = Instant::now() + Duration::from_secs(WAIT_FOR_INDEX_SECS);
     let mut attempt = 0u32;
     eprintln!("publish: waiting for crates.io index to serve {crate_name} {expected_version}...");
-    // `cargo search foo --limit 1` prints `foo = "x.y.z" # ...` for
-    // the latest version. Match on the exact version literal.
-    let needle = format!("{crate_name} = \"{expected_version}\"");
+    let url = format!("https://index.crates.io/{}", sparse_index_path(crate_name));
+    // Sparse-index entries are newline-delimited compact JSON, one object
+    // per published version: `{"name":"…","vers":"0.2.0",…}`. Ready once a
+    // line carries our version.
+    let needle = format!("\"vers\":\"{expected_version}\"");
     loop {
         attempt += 1;
-        let out = Command::new("cargo")
-            .args(["search", crate_name, "--limit", "1"])
+        let out = Command::new("curl")
+            .args(["--silent", "--fail", &url])
             .output()
-            .expect("failed to spawn `cargo search`");
-        if out.status.success() {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.lines().any(|line| line.starts_with(&needle)) {
-                eprintln!("publish: {crate_name} {expected_version} is live on the index.");
-                return;
-            }
+            .expect(
+                "failed to spawn `curl` — the publish index-readiness check needs curl on \
+                 PATH; install curl or re-run with --no-wait (cargo's native post-publish \
+                 wait already guarantees availability)",
+            );
+        // `--fail` exits non-zero on a 404 (a brand-new crate whose path is
+        // not in the index yet); treat that as "not ready" and keep polling.
+        if out.status.success() && String::from_utf8_lossy(&out.stdout).contains(&needle) {
+            eprintln!("publish: {crate_name} {expected_version} is live on the index.");
+            return;
         }
         if Instant::now() >= deadline {
             let mins = WAIT_FOR_INDEX_SECS / 60;
@@ -815,8 +822,8 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
             );
             exit(1);
         }
-        // Backoff: 10s, 10s, 15s, 20s, then 30s. Most publishes land
-        // within the first two polls; the longer waits are insurance
+        // Backoff: 10s, 10s, 15s, 20s, then 30s. The index usually serves
+        // the new version on the first poll; the longer waits are insurance
         // against a stuck index.
         let delay = match attempt {
             1 | 2 => 10,
@@ -825,6 +832,22 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
             _ => 30,
         };
         sleep(Duration::from_secs(delay));
+    }
+}
+
+// Map a crate name to its path in the registry sparse-index layout
+// (<https://doc.rust-lang.org/cargo/reference/registry-index.html>):
+// 1-char names live under `1/`, 2-char under `2/`, 3-char under
+// `3/<first>/`, everything else under `<first-two>/<next-two>/`. Names
+// are lowercased (the index is case-insensitive) and ASCII (`[a-z0-9_-]`),
+// so byte slicing is safe.
+fn sparse_index_path(name: &str) -> String {
+    let name = name.to_lowercase();
+    match name.len() {
+        1 => format!("1/{name}"),
+        2 => format!("2/{name}"),
+        3 => format!("3/{}/{}", &name[..1], name),
+        _ => format!("{}/{}/{}", &name[..2], &name[2..4], name),
     }
 }
 
@@ -870,4 +893,33 @@ fn workspace_version() -> String {
         "could not find `[workspace.package].version` in {}",
         manifest_path.display()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sparse_index_path;
+
+    #[test]
+    fn sparse_index_path_matches_registry_layout() {
+        // Length-bucketed prefixes per the registry-index spec.
+        assert_eq!(sparse_index_path("a"), "1/a");
+        assert_eq!(sparse_index_path("ab"), "2/ab");
+        assert_eq!(sparse_index_path("abc"), "3/a/abc");
+        // The crates this workspace actually publishes (all 4+ chars).
+        assert_eq!(
+            sparse_index_path("astrodyn_quantities"),
+            "as/tr/astrodyn_quantities"
+        );
+        assert_eq!(sparse_index_path("astrodyn"), "as/tr/astrodyn");
+        assert_eq!(
+            sparse_index_path("astrodyn_frame_doc"),
+            "as/tr/astrodyn_frame_doc"
+        );
+    }
+
+    #[test]
+    fn sparse_index_path_lowercases() {
+        // The index is case-insensitive; paths are always lowercase.
+        assert_eq!(sparse_index_path("Serde"), "se/rd/serde");
+    }
 }
