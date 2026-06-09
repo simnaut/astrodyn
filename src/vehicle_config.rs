@@ -116,10 +116,12 @@ pub struct GeodeticConfig {
 // ── NED frame (runtime) ─────────────────────────────────────────────────
 
 /// Runtime NED-frame computation configuration (the per-step analog of
-/// JEOD's `NedDerivedState`). Needs the same inputs as [`GeodeticConfig`] —
-/// the planet-fixed rotation source plus ellipsoid radii — and additionally
-/// reads the source's planet-rotation rate for the NED frame's pfix-relative
-/// velocity.
+/// JEOD's `NedDerivedState`). Takes the same inputs as [`GeodeticConfig`] —
+/// the planet-fixed rotation source plus ellipsoid radii. The computed
+/// [`NedFrame`](astrodyn_math::NedFrame) carries the frame **origin and
+/// orientation**; the origin velocity is deferred (it would require the
+/// source's planet-rotation rate, which the adapters do not surface — see the
+/// `NedFrame` docs).
 #[derive(Debug, Clone)]
 pub struct NedConfig {
     /// The reference planet's inertial-frame identity (issue #668). The
