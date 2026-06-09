@@ -10,7 +10,9 @@
 
 use crate::rotational::RotationalState;
 use crate::state::{TranslationalState, TranslationalStateTyped};
-use astrodyn_math::{mat3_from_rows, GeodeticState, JeodQuat, OrbitalElements};
+use astrodyn_math::{
+    local_level_ned_axes, mat3_from_rows, GeodeticState, JeodQuat, OrbitalElements,
+};
 use astrodyn_quantities::aliases::{Position, Velocity};
 use astrodyn_quantities::dims::GravParam;
 use astrodyn_quantities::ext::Vec3Ext;
@@ -1059,20 +1061,17 @@ pub fn init_rot_from_ned(
 ///
 /// These vectors form the rows of the PCPF-to-NED transformation matrix.
 ///
+/// The axis arithmetic is the shared [`astrodyn_math::local_level_ned_axes`]
+/// kernel — the single source of truth also consumed by
+/// [`astrodyn_math::topocentric_enu_transform`] (which permutes NED → ENU).
+/// Keeping the kernel here unchanged preserves this function's exact
+/// floating-point output, and with it the Tier-3 NED-init freeze.
+///
 /// # Arguments
 /// * `lat` - Geodetic latitude (rad)
 /// * `lon` - Geodetic longitude (rad)
 pub fn compute_ned_rotation(lat: f64, lon: f64) -> DMat3 {
-    let sin_lat = lat.sin();
-    let cos_lat = lat.cos();
-    let sin_lon = lon.sin();
-    let cos_lon = lon.cos();
-
-    // Rows of the PCPF-to-NED transformation matrix
-    let north = DVec3::new(-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat);
-    let east = DVec3::new(-sin_lon, cos_lon, 0.0);
-    let down = DVec3::new(-cos_lat * cos_lon, -cos_lat * sin_lon, -sin_lat);
-
+    let (north, east, down) = local_level_ned_axes(lat, lon);
     mat3_from_rows(north, east, down)
 }
 
@@ -1644,6 +1643,22 @@ mod tests {
                 "NED rotation determinant != 1 at lat={}, lon={}",
                 lat,
                 lon
+            );
+        }
+    }
+
+    // `compute_ned_rotation` must stay a thin lay-out of the shared
+    // `astrodyn_math::local_level_ned_axes` kernel. Locking the delegation
+    // here means a future kernel edit that diverges from the bit-frozen NED
+    // arithmetic trips this fast unit test rather than a slow Tier-3 run.
+    #[test]
+    fn compute_ned_rotation_matches_shared_kernel() {
+        for &(lat, lon) in &[(0.6, -2.06), (-0.21, 1.34), (1.561, 2.53)] {
+            let (north, east, down) = astrodyn_math::local_level_ned_axes(lat, lon);
+            assert_eq!(
+                compute_ned_rotation(lat, lon),
+                astrodyn_math::mat3_from_rows(north, east, down),
+                "compute_ned_rotation must delegate to local_level_ned_axes"
             );
         }
     }

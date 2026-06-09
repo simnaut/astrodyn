@@ -104,6 +104,16 @@ impl Simulation {
                 }
             }
 
+            // Validate ned_planet identity resolves
+            if let Some((ref uid, _, _)) = body.ned_planet {
+                if !uid_to_idx.contains_key(uid) {
+                    all_errors.push(ValidationError::NedPlanetUnresolved {
+                        target: uid.clone(),
+                        num_sources,
+                    });
+                }
+            }
+
             // Validate orbital_elements_source identity resolves
             if let Some(ref uid) = body.orbital_elements_source {
                 if !uid_to_idx.contains_key(uid) {
@@ -227,6 +237,7 @@ impl Simulation {
                         || body.euler_sequence.is_some()
                         || body.compute_lvlh
                         || body.geodetic_planet.is_some()
+                        || body.ned_planet.is_some()
                         || body.compute_solar_beta
                         || body.earth_lighting_config.is_some();
                     if has_root_dependent_feature {

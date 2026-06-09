@@ -177,6 +177,9 @@ pub fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
 pub struct NedRecord {
     /// Sample time in seconds.
     pub time: f64,
+    /// NED frame origin (the body's sub-point) in planet-fixed coordinates,
+    /// metres — JEOD `ned_state.cart_coords`.
+    pub cart_coords: DVec3,
     /// Geodetic altitude in metres.
     pub ellip_altitude: f64,
     /// Geodetic latitude in radians.
@@ -213,6 +216,7 @@ pub fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(NedRecord {
             time: p(0),
+            cart_coords: DVec3::new(p(1), p(2), p(3)),
             ellip_altitude: p(4),
             ellip_latitude: p(6),
             ellip_longitude: p(8),

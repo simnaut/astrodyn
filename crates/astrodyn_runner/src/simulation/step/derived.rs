@@ -106,6 +106,27 @@ impl Simulation {
                 }
             }
 
+            // Runtime NED frame pose (NOT a shift site). Same pfix-rotation
+            // lookup as geodetic; the frame origin is the body's pfix position
+            // and the axes are the NED triad at that sub-point.
+            if let Some((ref src_uid, r_eq, r_pol)) = body.ned_planet {
+                let pfix_rot = uid_to_idx
+                    .get(src_uid)
+                    .and_then(|&i| self.source_frame_ids.get(i))
+                    .and_then(|sfids| sfids.pfix)
+                    .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this);
+                if let Some(t_pfix) = pfix_rot {
+                    body.ned_frame = Some(astrodyn::compute_body_ned_frame(
+                        body.trans.position.raw_si(),
+                        &t_pfix,
+                        r_eq,
+                        r_pol,
+                    ));
+                } else {
+                    body.ned_frame = None;
+                }
+            }
+
             // Solar beta — JEOD_INV: RF.10 — uses root-inertial sun_pos.
             // The typed sibling `compute_body_solar_beta_typed` takes
             // `Position<RootInertial>` and `Velocity<RootInertial>`, so any

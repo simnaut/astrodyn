@@ -243,6 +243,57 @@ pub fn geodetic_system<P: Planet>(
     }
 }
 
+/// Compute the runtime NED frame pose for entities with `NedConfigC`.
+///
+/// Placed in `AstrodynSet::DerivedState`. Mirrors [`geodetic_system`] — same
+/// `PlanetFixedRotationC<P>` lookup and fail-loudly diagnostic — and writes the
+/// NED frame origin + orientation to `NedFrameStateC`.
+///
+/// # Panics
+///
+/// Panics when `NedConfigC.planet` does not resolve to an entity carrying
+/// `PlanetFixedRotationC<P>`, identically to [`geodetic_system`]: a silent
+/// `NedFrame::default()` would write the planet-centre origin with identity
+/// axes, indistinguishable from a real sub-point. CLAUDE.md "Fail Loudly".
+pub fn ned_system<P: Planet>(
+    mut query: Query<(
+        Entity,
+        &TranslationalStateC<P>,
+        &NedConfigC,
+        &mut NedFrameStateC,
+    )>,
+    planets: Query<(&FrameUidC, &PlanetFixedRotationC<P>)>,
+) {
+    for (entity, state, config, mut ned) in &mut query {
+        // JEOD_INV: AT.03 — same wiring-miss fail-loud as `geodetic_system`:
+        // the planet entity must carry `PlanetFixedRotationC<P>` (the
+        // inertial→pfix rotation the NED kernel needs).
+        let rot = planets
+            .iter()
+            .find(|(uid, _)| uid.0 == config.planet)
+            .map(|(_, r)| r)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{entity:?} NED frame: \
+                     NedConfigC.planet = `{planet_uid}` does not resolve to \
+                     an entity carrying PlanetFixedRotationC<{p}>. Spawn the planet \
+                     source with that identity and a non-`None` `rotation_model` \
+                     (or hand-insert `PlanetFixedRotationC<{p}>` on it), or fix \
+                     the config's identity.",
+                    planet_uid = config.planet,
+                    p = std::any::type_name::<P>(),
+                )
+            });
+        use astrodyn::F64Ext;
+        ned.0 = astrodyn::compute_body_ned_frame_typed::<P>(
+            state.position,
+            rot.0.matrix_ref(),
+            config.r_eq.m(),
+            config.r_pol.m(),
+        );
+    }
+}
+
 /// Compute solar beta angle for entities with `SolarBetaC`.
 ///
 /// Requires a `SunMarker` entity to exist in the world.
@@ -544,6 +595,31 @@ mod tests {
             GeodeticStateC::default(),
         ));
         app.add_systems(Update, geodetic_system::<Earth>);
+        app.update();
+    }
+
+    /// `ned_system` shares the geodetic fail-loud guard: a `NedConfigC.planet`
+    /// that does not resolve to an entity with `PlanetFixedRotationC<P>` must
+    /// panic naming the body and the missing component, rather than writing a
+    /// silent `NedFrame::default()` (planet-centre origin, identity axes).
+    // JEOD_INV: AT.03 — planet-fixed rotation required for the NED frame
+    #[test]
+    #[should_panic(expected = "does not resolve to an entity carrying PlanetFixedRotationC")]
+    fn ned_planet_lookup_miss_panics_with_caller_fix() {
+        let mut app = create_minimal_test_app();
+        app.world_mut().spawn((
+            TranslationalStateC::<Earth>::from_untyped(TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            }),
+            NedConfigC {
+                planet: astrodyn::named_body_frame_uid("derived-state-no-such-source"),
+                r_eq: astrodyn::EARTH.shape.r_eq(),
+                r_pol: astrodyn::EARTH.shape.r_pol(),
+            },
+            NedFrameStateC::default(),
+        ));
+        app.add_systems(Update, ned_system::<Earth>);
         app.update();
     }
 

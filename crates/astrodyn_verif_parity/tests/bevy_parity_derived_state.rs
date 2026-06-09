@@ -4,16 +4,16 @@
 
 mod common;
 
-use astrodyn::{DerivedStateConfig, GeodeticConfig, GravitySourceEntry, VehicleConfig};
+use astrodyn::{DerivedStateConfig, GeodeticConfig, GravitySourceEntry, NedConfig, VehicleConfig};
 use astrodyn::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityGradient, GravityModel,
     GravitySource, PlanetShape, SixDofState, TranslationalState,
 };
 use astrodyn_bevy::{
     DynamicsConfigC, EulerAnglesC, EulerAnglesConfigC, GeodeticConfigC, GeodeticStateC,
-    GravityControlsC, GravitySourceC, IntegrationDtR, LvlhFrameC, MassPropertiesC,
-    OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RotationalStateC,
-    SolarBetaC, SourceInertialPositionC, SunMarker, TranslationalStateC,
+    GravityControlsC, GravitySourceC, IntegrationDtR, LvlhFrameC, MassPropertiesC, NedConfigC,
+    NedFrameStateC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
+    RotationalStateC, SolarBetaC, SourceInertialPositionC, SunMarker, TranslationalStateC,
 };
 use astrodyn_runner::RotationModel;
 use bevy::prelude::*;
@@ -230,6 +230,11 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             },
+            NedConfigC {
+                planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
+            },
         ))
         .id();
 
@@ -237,6 +242,7 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
 
     let bevy_trans = read_trans(app.world(), vehicle);
     let bevy_geodetic = app.world().get::<GeodeticStateC>(vehicle).unwrap().0;
+    let bevy_ned = app.world().get::<NedFrameStateC>(vehicle).unwrap().0;
 
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
@@ -267,6 +273,11 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
+            }),
+            ned: Some(NedConfig {
                 source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
@@ -306,6 +317,9 @@ fn bevy_parity_derived_state_geodetic_derived_state() {
         sim_geodetic.altitude,
     );
     println!("  Bevy vs Sim geodetic: bit-identical (lat, lon, alt)");
+
+    let sim_ned = sim_body.ned_frame.expect("NED frame computed");
+    assert_ned_eq("Bevy vs Sim NED", &bevy_ned, &sim_ned);
 }
 
 // ── Scenario M: Eccentric orbit with derived states ──
@@ -540,6 +554,11 @@ fn bevy_parity_derived_state_polar_geodetic() {
                 r_eq: earth_shape.r_eq(),
                 r_pol: earth_shape.r_pol(),
             },
+            NedConfigC {
+                planet: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                r_eq: earth_shape.r_eq(),
+                r_pol: earth_shape.r_pol(),
+            },
         ))
         .id();
 
@@ -547,6 +566,7 @@ fn bevy_parity_derived_state_polar_geodetic() {
 
     let bevy_trans = read_trans(app.world(), vehicle);
     let bevy_geodetic = app.world().get::<GeodeticStateC>(vehicle).unwrap().0;
+    let bevy_ned = app.world().get::<NedFrameStateC>(vehicle).unwrap().0;
 
     // ── Simulation ──
     let time = astrodyn::SimulationTime::at_j2000(astrodyn::default_leap_second_table());
@@ -577,6 +597,11 @@ fn bevy_parity_derived_state_polar_geodetic() {
         },
         derived: DerivedStateConfig {
             geodetic: Some(GeodeticConfig {
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                r_eq: r_sph,
+                r_pol: r_sph,
+            }),
+            ned: Some(NedConfig {
                 source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
                 r_eq: r_sph,
                 r_pol: r_sph,
@@ -615,6 +640,9 @@ fn bevy_parity_derived_state_polar_geodetic() {
         sim_geodetic.altitude,
     );
     println!("  Bevy vs Sim polar geodetic: bit-identical");
+
+    let sim_ned = sim_body.ned_frame.expect("NED frame computed");
+    assert_ned_eq("Bevy vs Sim (polar) NED", &bevy_ned, &sim_ned);
 }
 
 // ── Scenario O: Equatorial orbit with solar beta ──

@@ -73,6 +73,7 @@ pub mod ref_frame_state;
 pub mod rotation_j2000;
 pub mod rotation_mars;
 pub mod rotation_moon;
+pub mod topocentric_pose;
 
 pub use frame_storage::{
     common_ancestor, compose_to_ancestor, compute_relative_state, FrameStorage,
@@ -82,3 +83,4 @@ pub use orchestration::{
     compute_relative_state_typed, frame_origin, frame_origin_typed, sync_pfix_rotation,
 };
 pub use ref_frame_state::*;
+pub use topocentric_pose::topocentric_enu_state;

@@ -56,6 +56,23 @@ pub struct GeodeticConfigC {
     pub r_pol: f64,
 }
 
+/// Runtime NED-frame computation config — the Bevy analog of the runner's
+/// `body.ned_planet: (uid, r_eq, r_pol)`. Same inputs as [`GeodeticConfigC`]:
+/// `ned_system` reads `PlanetFixedRotationC<P>` from the `planet` entity and
+/// the ellipsoid radii here. Presence of this component + `NedFrameStateC`
+/// enables per-step NED-frame computation in `AstrodynSet::DerivedState`.
+#[derive(Component, Debug, Clone)]
+#[require(NedFrameStateC)]
+pub struct NedConfigC {
+    /// Inertial-frame identity of the planet source supplying
+    /// `T_inertial→pfix` (`PlanetFixedRotationC<P>`), issue #668.
+    pub planet: astrodyn::FrameUid,
+    /// Equatorial radius of the reference ellipsoid (m).
+    pub r_eq: f64,
+    /// Polar radius of the reference ellipsoid (m).
+    pub r_pol: f64,
+}
+
 // ── Derived State Outputs ──
 
 /// Orbital elements computed each step.
@@ -106,6 +123,14 @@ pub struct LvlhFrameC(pub astrodyn::LvlhFrame);
 /// [`astrodyn::GeodeticState`] for the full rationale.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct GeodeticStateC(pub astrodyn::GeodeticState);
+
+/// Runtime NED frame pose (origin + orientation) computed each step.
+///
+/// Written by `ned_system` for entities that also have `NedConfigC`. Carries
+/// the NED frame origin (the body's pfix position) and the NED-axes rotation;
+/// see [`astrodyn::NedFrame`] for the deferred origin velocity.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct NedFrameStateC(pub astrodyn::NedFrame);
 
 /// Solar beta angle (radians) computed each step.
 ///

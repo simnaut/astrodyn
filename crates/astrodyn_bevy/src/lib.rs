@@ -1027,6 +1027,9 @@ impl Plugin for AstrodynPlugin {
                 systems::geodetic_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::DerivedState)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
+                systems::ned_system::<astrodyn::Earth>
+                    .in_set(AstrodynSet::DerivedState)
+                    .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
                 systems::solar_beta_system::<astrodyn::Earth>
                     .in_set(AstrodynSet::DerivedState)
                     .in_set(PerPlanetSet::of::<astrodyn::Earth>()),
@@ -1346,6 +1349,9 @@ pub fn register_planet_systems<P: astrodyn::Planet>(app: &mut App) {
             systems::geodetic_system::<P>
                 .in_set(AstrodynSet::DerivedState)
                 .in_set(PerPlanetSet::of::<P>()),
+            systems::ned_system::<P>
+                .in_set(AstrodynSet::DerivedState)
+                .in_set(PerPlanetSet::of::<P>()),
             systems::solar_beta_system::<P>
                 .in_set(AstrodynSet::DerivedState)
                 .in_set(PerPlanetSet::of::<P>()),
@@ -1608,6 +1614,7 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
             euler_sequence,
             lvlh,
             geodetic,
+            ned,
             solar_beta,
             earth_lighting,
         } = self.derived;
@@ -1646,6 +1653,19 @@ impl VehicleConfigBevyExt for astrodyn::VehicleConfig {
                     planet: geo.source,
                     r_eq: geo.r_eq,
                     r_pol: geo.r_pol,
+                },
+            ));
+        }
+        if let Some(n) = ned {
+            // Same arrangement as geodetic: `NedConfigC.planet` is the source
+            // identity, and `ned_system` reads `PlanetFixedRotationC` from that
+            // entity plus the ellipsoid radii here.
+            entity.insert((
+                components::NedFrameStateC::default(),
+                components::NedConfigC {
+                    planet: n.source,
+                    r_eq: n.r_eq,
+                    r_pol: n.r_pol,
                 },
             ));
         }
