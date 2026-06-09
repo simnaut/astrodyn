@@ -800,18 +800,31 @@ fn wait_for_index(crate_name: &str, expected_version: &str) {
     loop {
         attempt += 1;
         let out = Command::new("curl")
-            .args(["--silent", "--fail", &url])
+            .args(["--silent", "--show-error", "--fail", &url])
             .output()
             .expect(
                 "failed to spawn `curl` — the publish index-readiness check needs curl on \
                  PATH; install curl or re-run with --no-wait (cargo's native post-publish \
                  wait already guarantees availability)",
             );
-        // `--fail` exits non-zero on a 404 (a brand-new crate whose path is
-        // not in the index yet); treat that as "not ready" and keep polling.
-        if out.status.success() && String::from_utf8_lossy(&out.stdout).contains(&needle) {
-            eprintln!("publish: {crate_name} {expected_version} is live on the index.");
-            return;
+        if out.status.success() {
+            if String::from_utf8_lossy(&out.stdout).contains(&needle) {
+                eprintln!("publish: {crate_name} {expected_version} is live on the index.");
+                return;
+            }
+        } else if out.status.code() != Some(22) {
+            // `--fail` exits 22 on HTTP >= 400 — a brand-new crate's index
+            // path 404s until its first version lands, the expected "not
+            // ready yet" case, so stay quiet on 22 and keep polling. Any
+            // other exit (couldn't-resolve-host 6, connect 7, timeout 28,
+            // TLS 35, …) is a transport failure: surface curl's stderr so a
+            // connectivity problem isn't silently misreported as 15 minutes
+            // of index-propagation lag.
+            eprintln!(
+                "publish: curl failed querying {url} (exit {}): {}",
+                out.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         if Instant::now() >= deadline {
             let mins = WAIT_FOR_INDEX_SECS / 60;
