@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-06-08
 
 Second release. Headlined by the **frame-identity** work
 ([#659](https://github.com/simnaut/astrodyn/issues/659) / #660–#664 /
@@ -175,6 +175,6 @@ Fourteen workspace crates at this version:
   `run_verification` scenario rigs) and `astrodyn_verif_parity`
   (runner ↔ Bevy bit-identical parity tests).
 
-[0.2.0]: https://github.com/simnaut/astrodyn/compare/v0.1.1...HEAD
+[0.2.0]: https://github.com/simnaut/astrodyn/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/simnaut/astrodyn/releases/tag/v0.1.0
