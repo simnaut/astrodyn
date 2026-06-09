@@ -54,6 +54,11 @@ pub enum ValidationError {
         target: FrameUid,
         num_sources: usize,
     },
+    /// `ned` source identity does not resolve to a registered source.
+    NedPlanetUnresolved {
+        target: FrameUid,
+        num_sources: usize,
+    },
     /// `orbital_elements_source` identity does not resolve to a registered source.
     OrbitalElementsSourceUnresolved {
         target: FrameUid,
@@ -241,6 +246,17 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "geodetic source `{target}` does not resolve to a registered gravity \
                      source ({num_sources} sources registered). Reference the geodetic \
+                     planet by its inertial-frame identity."
+                )
+            }
+            Self::NedPlanetUnresolved {
+                target,
+                num_sources,
+            } => {
+                write!(
+                    f,
+                    "NED source `{target}` does not resolve to a registered gravity \
+                     source ({num_sources} sources registered). Reference the NED \
                      planet by its inertial-frame identity."
                 )
             }

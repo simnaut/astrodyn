@@ -1058,6 +1058,7 @@ impl ExtrasAccumulator {
                 ("altitude", 0.0, "m"),
                 ("latitude", 0.0, "rad"),
                 ("longitude", 0.0, "rad"),
+                ("ned_origin", 0.0, "m"),
             ],
             ExtrasComparator::Euler | ExtrasComparator::DyncompEuler => vec![
                 ("euler_roll", 0.0, "rad"),
@@ -1144,6 +1145,17 @@ impl ExtrasAccumulator {
                 self.update_max("altitude", (geo.altitude - ref_alt).abs());
                 self.update_max("latitude", (geo.latitude - ref_lat).abs());
                 self.update_max("longitude", angle_diff(geo.longitude, ref_lon));
+
+                // NED frame origin (`ned_state.cart_coords`) = the body's
+                // pfix position. Worst-component error vs the JEOD log.
+                let ned = body
+                    .ned_frame
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{case_name}: ned_frame not computed at idx {idx}"));
+                self.update_max(
+                    "ned_origin",
+                    (ned.position - r.cart_coords).abs().max_element(),
+                );
             }
             (ExtrasComparator::Euler, CsvRecords::Euler(recs)) => {
                 let r = &recs[idx];

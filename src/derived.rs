@@ -444,7 +444,7 @@ pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     )
 }
 
-pub use astrodyn_math::{compute_body_geodetic, compute_body_solar_beta};
+pub use astrodyn_math::{compute_body_geodetic, compute_body_ned_frame, compute_body_solar_beta};
 
 /// Compute the relative state between two bodies.
 ///
@@ -648,7 +648,9 @@ pub fn compute_body_lvlh_frame_typed<P: astrodyn_quantities::frame::Planet>(
     LvlhFrame::compute(position, velocity)
 }
 
-pub use astrodyn_math::{compute_body_geodetic_typed, compute_body_solar_beta_typed};
+pub use astrodyn_math::{
+    compute_body_geodetic_typed, compute_body_ned_frame_typed, compute_body_solar_beta_typed,
+};
 
 #[cfg(test)]
 mod tests {

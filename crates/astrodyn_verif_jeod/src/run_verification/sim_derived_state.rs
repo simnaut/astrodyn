@@ -258,6 +258,14 @@ fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
                 r_eq,
                 r_pol,
             }),
+            // Runtime NED frame: cross-validates the frame origin
+            // (`cart_coords`) against the JEOD SIM_NED log; orientation is
+            // unit-tested in `astrodyn_math::ned` (JEOD never logs it).
+            ned: Some(astrodyn::NedConfig {
+                source: astrodyn::FrameUid::of::<astrodyn::PlanetInertial<astrodyn::Earth>>(),
+                r_eq,
+                r_pol,
+            }),
             ..Default::default()
         },
         ..VehicleConfig::named("sim-derived-state-2")
@@ -288,6 +296,7 @@ pub fn ned_ell_inc() -> VerificationCase {
                 ("altitude", 8.938e-4),
                 ("latitude", 4.182e-8),
                 ("longitude", 6.493e-8),
+                ("ned_origin", 3.640e-1),
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: false }),
@@ -316,6 +325,7 @@ pub fn ned_ell_polar() -> VerificationCase {
                 ("altitude", 2.123e-4),
                 ("latitude", 1.089e-8),
                 ("longitude", 3.349e-5),
+                ("ned_origin", 3.701e-1),
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: false }),
@@ -339,6 +349,7 @@ pub fn ned_sph_inc() -> VerificationCase {
                 ("altitude", 4.02e-7),
                 ("latitude", 4.181e-8),
                 ("longitude", 6.493e-8),
+                ("ned_origin", 3.640e-1),
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: true }),
@@ -362,6 +373,7 @@ pub fn ned_sph_polar() -> VerificationCase {
                 ("altitude", 3.984e-7),
                 ("latitude", 1.083e-8),
                 ("longitude", 3.349e-5),
+                ("ned_origin", 3.701e-1),
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: true }),

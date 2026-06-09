@@ -325,6 +325,35 @@ pub fn assert_lvlh_eq(label: &str, a: &astrodyn::LvlhFrame, b: &astrodyn::LvlhFr
     println!("  {label}: bit-identical (18 LVLH frame components)");
 }
 
+/// Assert two NED frame poses are bit-identical (origin + orientation +
+/// the structurally-zero rate). Mirrors [`assert_lvlh_eq`] minus the
+/// origin velocity, which the NED frame does not carry.
+pub fn assert_ned_eq(label: &str, a: &astrodyn::NedFrame, b: &astrodyn::NedFrame) {
+    for i in 0..3 {
+        for j in 0..3 {
+            assert_bits_eq(
+                label,
+                &format!("t_parent_this[{i}][{j}]"),
+                a.t_parent_this.col(j)[i],
+                b.t_parent_this.col(j)[i],
+            );
+        }
+        assert_bits_eq(
+            label,
+            &format!("ang_vel[{i}]"),
+            a.ang_vel_this[i],
+            b.ang_vel_this[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+    }
+    println!("  {label}: bit-identical (15 NED frame components)");
+}
+
 // ── Lighting assertion helpers ──
 
 pub fn assert_lighting_body_eq(

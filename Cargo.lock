@@ -270,6 +270,7 @@ dependencies = [
  "glam 0.30.10",
  "proptest",
  "thiserror 2.0.18",
+ "uom",
 ]
 
 [[package]]

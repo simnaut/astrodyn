@@ -31,8 +31,8 @@ use astrodyn::{
     Acceleration, AerodynamicForce, AngularAcceleration, AtmosphereState, BodyFrame, DragConfig,
     DynamicsConfig, EulerSequence, FrameDerivatives, FrameSwitchConfig, GeodeticState,
     GravityAccelerationTyped, GravityControls, GravitySource, LvlhFrame, MassPropertiesTyped,
-    OrbitalElements, RadiationForce, RootInertial, RotationModel, RotationalStateTyped, SelfPlanet,
-    SelfRef, SrpModel, TotalForce, TranslationalStateTyped, VehicleConfig,
+    NedFrame, OrbitalElements, RadiationForce, RootInertial, RotationModel, RotationalStateTyped,
+    SelfPlanet, SelfRef, SrpModel, TotalForce, TranslationalStateTyped, VehicleConfig,
 };
 use astrodyn::{ContactFacet, FrameId, GroundFacet, IntegrationFrame, MassBodyId, MassPointState};
 
@@ -195,6 +195,8 @@ pub struct VehicleOutput {
     pub lvlh_frame: Option<LvlhFrame>,
     /// Geodetic state (latitude, longitude, altitude).
     pub geodetic_state: Option<GeodeticState>,
+    /// Runtime NED frame pose (origin + orientation) from the latest step.
+    pub ned_frame: Option<NedFrame>,
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
     /// Earth lighting state (sun/moon occlusion, albedo).
@@ -311,6 +313,7 @@ pub(crate) struct SimBody {
     pub euler_sequence: Option<EulerSequence>,
     pub compute_lvlh: bool,
     pub geodetic_planet: Option<(astrodyn::FrameUid, f64, f64)>,
+    pub ned_planet: Option<(astrodyn::FrameUid, f64, f64)>,
     pub compute_solar_beta: bool,
     pub earth_lighting_config: Option<(f64, f64, f64)>,
 
@@ -319,6 +322,7 @@ pub(crate) struct SimBody {
     pub euler_angles: Option<[f64; 3]>,
     pub lvlh_frame: Option<LvlhFrame>,
     pub geodetic_state: Option<GeodeticState>,
+    pub ned_frame: Option<NedFrame>,
     pub solar_beta: Option<f64>,
     pub earth_lighting: Option<astrodyn::EarthLightingState>,
 
@@ -399,6 +403,7 @@ impl SimBody {
             euler_sequence: config.derived.euler_sequence,
             compute_lvlh: config.derived.lvlh,
             geodetic_planet: config.derived.geodetic.map(|g| (g.source, g.r_eq, g.r_pol)),
+            ned_planet: config.derived.ned.map(|n| (n.source, n.r_eq, n.r_pol)),
             compute_solar_beta: config.derived.solar_beta,
             earth_lighting_config: config
                 .derived
@@ -409,6 +414,7 @@ impl SimBody {
             euler_angles: None,
             lvlh_frame: None,
             geodetic_state: None,
+            ned_frame: None,
             solar_beta: None,
             earth_lighting: None,
 
@@ -441,6 +447,7 @@ impl SimBody {
             euler_angles: self.euler_angles,
             lvlh_frame: self.lvlh_frame,
             geodetic_state: self.geodetic_state,
+            ned_frame: self.ned_frame,
             solar_beta: self.solar_beta,
             earth_lighting: self.earth_lighting.clone(),
         }

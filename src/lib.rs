@@ -150,9 +150,10 @@ pub use body_action::{BodyAction, LvlhAngularVelocityFrame, OrbitalElementSet};
 pub use derived::{
     compute_body_euler_angles, compute_body_euler_angles_typed, compute_body_geodetic,
     compute_body_geodetic_typed, compute_body_lvlh_frame, compute_body_lvlh_frame_typed,
-    compute_body_solar_beta, compute_body_solar_beta_typed, compute_lvlh_relative_state,
-    compute_lvlh_relative_state_typed, compute_orbital_elements, compute_orbital_elements_typed,
-    compute_relative_state, LvlhRelativeState, RelativeState, RelativeTranslation,
+    compute_body_ned_frame, compute_body_ned_frame_typed, compute_body_solar_beta,
+    compute_body_solar_beta_typed, compute_lvlh_relative_state, compute_lvlh_relative_state_typed,
+    compute_orbital_elements, compute_orbital_elements_typed, compute_relative_state,
+    LvlhRelativeState, RelativeState, RelativeTranslation,
 };
 pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use frame_orchestration::{
@@ -193,8 +194,8 @@ pub use vehicle_builder::{
     BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, VehicleBuilder,
 };
 pub use vehicle_config::{
-    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
-    SrpModel, SwitchSense, VehicleConfig,
+    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, NedConfig,
+    ShadowBody, SrpModel, SwitchSense, VehicleConfig,
 };
 pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, EdgeGeometry};
 
@@ -289,10 +290,13 @@ pub use astrodyn_interactions::{
 // constructs or reads frame nodes; `frame_compute_relative_state_via_storage`
 // drives cross-frame state queries. `FrameTree` (concrete arena) is the
 // reference arena-storage implementation — used by `astrodyn_runner`'s
-// `Simulation` state container.
+// `Simulation` state container. The typed siblings (`RefFrameStateTyped` et al.)
+// plus `topocentric_enu_state` expose the origin-anchored typed pose — the
+// site-relative `Position` transform a rotation-only `FrameTransform` can't do.
 pub use astrodyn_frames::{
-    compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameStorage,
-    FrameTree, FrameTreeError, RefFrameRot, RefFrameState, RefFrameTrans,
+    compute_relative_state as frame_compute_relative_state_via_storage, topocentric_enu_state,
+    FrameId, FrameStorage, FrameTree, FrameTreeError, RefFrameRot, RefFrameRotTyped, RefFrameState,
+    RefFrameStateTyped, RefFrameTrans, RefFrameTransTyped,
 };
 
 // astrodyn_time: simulation-time + leap-second + epoch surface that
@@ -418,7 +422,9 @@ pub fn dimensionless(value: f64) -> Ratio {
 pub use astrodyn_math::JeodQuat;
 
 // astrodyn_math: derived state types
-pub use astrodyn_math::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, OrbitalError};
+pub use astrodyn_math::{
+    EulerSequence, GeodeticState, LvlhFrame, NedFrame, OrbitalElements, OrbitalError,
+};
 // Geodetic conversions + site-anchored topocentric (ENU) frame builder, so a
 // consumer can build a site anchor and a local-horizon frame entirely through
 // the facade (e.g. a landing-site camera over DEM terrain). The ENU builder

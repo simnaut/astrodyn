@@ -15,8 +15,10 @@ use core::marker::PhantomData;
 use astrodyn_math::JeodQuat;
 use astrodyn_quantities::aliases::{AngularVelocity, Position, Velocity};
 use astrodyn_quantities::frame::Frame;
+use astrodyn_quantities::qty3::Qty3;
 use astrodyn_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 use glam::{DMat3, DVec3};
+use uom::si::Dimension;
 
 /// Translational state of a frame relative to its parent.
 ///
@@ -563,6 +565,50 @@ impl<P: Frame, C: Frame> RefFrameStateTyped<P, C> {
     ) -> RefFrameStateTyped<P, D> {
         let composed_untyped = self.to_untyped().incr_right(&s_cd.to_untyped());
         RefFrameStateTyped::<P, D>::from_untyped_unchecked(&composed_untyped)
+    }
+
+    /// Map a **position** expressed in the parent frame `P` into the child
+    /// frame `C`, **including the origin offset**:
+    /// `p_C = R_{P→C} · (p_P − s_P)`, where `s_P = self.trans.position` is the
+    /// child origin in `P` and `R_{P→C} = self.rot.t_parent_this()`.
+    ///
+    /// This is the operation a rotation-only
+    /// [`FrameTransform`](astrodyn_quantities::frame_transform::FrameTransform)
+    /// cannot express — it omits the `− s_P` shift, so applying *it* to a
+    /// position leaves the point rooted at the parent origin. Use this to place
+    /// a point known in the parent frame into an origin-anchored child frame
+    /// (e.g. a topocentric site; see [`crate::topocentric_pose`]).
+    #[inline]
+    pub fn position_parent_to_child(&self, p_parent: Position<P>) -> Position<C> {
+        let shifted = p_parent.raw_si() - self.trans.position.raw_si();
+        Position::<C>::from_raw_si(self.rot.t_parent_this() * shifted)
+    }
+
+    /// Inverse of [`Self::position_parent_to_child`]: map a position in the
+    /// child frame `C` back to the parent `P`, `p_P = Rᵀ · p_C + s_P`.
+    #[inline]
+    pub fn position_child_to_parent(&self, p_child: Position<C>) -> Position<P> {
+        let rotated = self.rot.t_parent_this().transpose() * p_child.raw_si();
+        Position::<P>::from_raw_si(rotated + self.trans.position.raw_si())
+    }
+
+    /// Rotate a **free vector** (no origin offset) from `P` to `C`:
+    /// `v_C = R_{P→C} · v_P`. Use for `Velocity`/`Acceleration`/any direction
+    /// quantity.
+    ///
+    /// This is a pure axis transform — it deliberately omits the `ω×r`
+    /// frame-rate coupling. It is therefore exact for a **static (zero-rate)
+    /// pose** such as a topocentric site, and only a building block for a
+    /// moving frame. The full kinematic transform of a rotating frame's
+    /// velocity goes through [`Self::negate`] / [`Self::incr_right`], which
+    /// carry the rate terms; this method does not, by design (named to make
+    /// the omission explicit).
+    #[inline]
+    pub fn rotate_vector_parent_to_child<D: ?Sized + Dimension>(
+        &self,
+        v_parent: Qty3<D, P>,
+    ) -> Qty3<D, C> {
+        Qty3::<D, C>::from_raw_si(self.rot.t_parent_this() * v_parent.raw_si())
     }
 }
 

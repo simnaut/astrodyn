@@ -113,6 +113,26 @@ pub struct GeodeticConfig {
     pub r_pol: f64,
 }
 
+// ── NED frame (runtime) ─────────────────────────────────────────────────
+
+/// Runtime NED-frame computation configuration (the per-step analog of
+/// JEOD's `NedDerivedState`). Takes the same inputs as [`GeodeticConfig`] —
+/// the planet-fixed rotation source plus ellipsoid radii. The computed
+/// [`NedFrame`](astrodyn_math::NedFrame) carries the frame **origin and
+/// orientation**; the origin velocity is deferred (it would require the
+/// source's planet-rotation rate, which the adapters do not surface — see the
+/// `NedFrame` docs).
+#[derive(Debug, Clone)]
+pub struct NedConfig {
+    /// The reference planet's inertial-frame identity (issue #668). The
+    /// source must have `t_inertial_pfix` for the planet-fixed rotation.
+    pub source: FrameUid,
+    /// Equatorial radius (m).
+    pub r_eq: f64,
+    /// Polar radius (m).
+    pub r_pol: f64,
+}
+
 // ── Earth lighting ──────────────────────────────────────────────────────
 
 /// Earth lighting computation configuration.
@@ -140,6 +160,8 @@ pub struct DerivedStateConfig {
     pub lvlh: bool,
     /// Geodetic computation config. `None` = skip.
     pub geodetic: Option<GeodeticConfig>,
+    /// Runtime NED-frame computation config. `None` = skip.
+    pub ned: Option<NedConfig>,
     /// Whether to compute solar beta angle. Requires `sun_source` on Simulation.
     pub solar_beta: bool,
     /// Earth lighting config. Requires `sun_source` and `moon_source`.

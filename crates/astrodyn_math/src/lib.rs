@@ -81,6 +81,7 @@ pub mod error;
 pub mod euler_angles;
 pub mod geodetic;
 pub mod lvlh;
+pub mod ned;
 pub mod orbital_elements;
 pub mod quaternion;
 pub mod solar_beta;
@@ -104,9 +105,10 @@ pub use geodetic::{
     geodetic_to_cartesian_typed, GeodeticState, GeodeticStateTyped,
 };
 pub use lvlh::{compute_lvlh_frame_typed, LvlhFrame};
+pub use ned::{compute_body_ned_frame, compute_body_ned_frame_typed, NedFrame};
 pub use orbital_elements::OrbitalElements;
 pub use solar_beta::{
     compute_body_solar_beta, compute_body_solar_beta_typed, solar_beta_angle_typed,
 };
-pub use topocentric::topocentric_enu_transform;
+pub use topocentric::{local_level_ned_axes, topocentric_enu_transform};
 pub use types::*;
