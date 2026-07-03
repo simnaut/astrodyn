@@ -124,7 +124,7 @@ rust-version = "1.95"
 notice = "NOTICE.md"
 
 [workspace.dependencies]
-glam = { version = "0.30", features = ["std"] }
+glam = { version = "0.32", features = ["std"] }
 bevy = { version = "0.19", default-features = false, features = [
     "bevy_log",
     "bevy_state",
