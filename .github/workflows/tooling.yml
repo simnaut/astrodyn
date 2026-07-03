@@ -35,7 +35,7 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -52,7 +52,7 @@ jobs:
     name: MSRV (1.95)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95
       - uses: Swatinem/rust-cache@v2
         with:
@@ -85,7 +85,7 @@ jobs:
     continue-on-error: true
     steps:
       # Full history so the `main` baseline rev below is available locally.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -119,7 +119,7 @@ jobs:
     name: cargo-hack (astrodyn_ephemeris feature-powerset)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
