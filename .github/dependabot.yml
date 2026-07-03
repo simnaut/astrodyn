@@ -34,7 +34,7 @@ updates:
           - minor
           - patch
     ignore:
-      # `dtolnay/rust-toolchain` uses Rust release tags (`@1.89`, `@stable`)
+      # `dtolnay/rust-toolchain` uses Rust release tags (`@1.95`, `@stable`)
       # as its version selector, not action-version tags. Dependabot misreads
       # these as action versions and tries to bump (e.g. PR #602 proposed
       # `@1.100`, a Rust release that doesn't exist). The single pinned use

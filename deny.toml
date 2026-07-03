@@ -32,10 +32,11 @@ ignore = [
     # `paste 1.0.15` — RUSTSEC-2024-0436. The maintainer declared the crate
     # complete and stopped accepting changes; this is an administrative
     # status, not a vulnerability. `paste` reaches us transitively via the
-    # Bevy 0.18 proc-macro chain (`bevy_ecs` macros → `paste`). We can drop
-    # this entry when Bevy ships a release that no longer depends on
-    # `paste`. Tracked in https://github.com/bevyengine/bevy as the chain
-    # migrates.
+    # `anise` ephemeris dep (`anise` → `nalgebra` → `simba` → `paste`); the
+    # Bevy macro chain dropped its own `paste` dependency as of Bevy 0.19,
+    # so this now hangs off the ephemeris stack alone. We can drop this
+    # entry once that chain no longer pulls `paste`
+    # (`cargo tree -i paste --workspace` returns nothing).
     "RUSTSEC-2024-0436",
     # `proc-macro-error2 2.0.1` — RUSTSEC-2026-0173. The author declared the
     # crate unmaintained (and the original `proc-macro-error` it forked);
@@ -54,7 +55,7 @@ ignore = [
 # -----------------------------------------------------------------------------
 # The workspace publishes under `MIT OR Apache-2.0` (see [workspace.package] in
 # Cargo.toml). The list below is the union of SPDX identifiers observed in the
-# resolved dep tree across Bevy 0.18, anise, pprof, and the proptest/serde
+# resolved dep tree across Bevy 0.19, anise, pprof, and the proptest/serde
 # ecosystems. Any new license entering the tree fails CI until explicitly
 # allowed — that's the audit hook this section provides.
 [licenses]

@@ -46,7 +46,7 @@ use astrodyn_bevy::{
     AstrodynPlugin, DynamicsConfigC, GravityAccelerationC, GravityControlsC, IntegrationDtR,
     MassPropertiesC, PlanetBundle, RotationalStateC, TranslationalStateC,
 };
-use bevy::ecs::schedule::ExecutorKind;
+use bevy::ecs::schedule::SingleThreadedExecutor;
 use bevy::prelude::*;
 use glam::DVec3;
 
@@ -68,10 +68,10 @@ fn build_minimal_app() -> App {
     // semantically equivalent here (every test panics in the same
     // schedule pass) and gives deterministic catch_unwind payloads.
     app.edit_schedule(Startup, |s| {
-        s.set_executor_kind(ExecutorKind::SingleThreaded);
+        s.set_executor(SingleThreadedExecutor::new());
     });
     app.edit_schedule(FixedUpdate, |s| {
-        s.set_executor_kind(ExecutorKind::SingleThreaded);
+        s.set_executor(SingleThreadedExecutor::new());
     });
     app
 }

@@ -76,7 +76,7 @@ wiki pages for architecture detail and the typed-quantity layer.
 
 ```toml
 [dependencies]
-bevy = "0.18"
+bevy = "0.19"
 astrodyn_bevy = "0.1"
 ```
 

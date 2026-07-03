@@ -102,17 +102,17 @@ version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/simnaut/astrodyn"
-# Declared MSRV. The binding constraint is bevy 0.18.1, which declares
-# `rust-version = "1.89"` in its own metadata — MSRV-aware resolution
+# Declared MSRV. The binding constraint is bevy 0.19, which declares
+# `rust-version = "1.95"` in its own metadata — MSRV-aware resolution
 # in cargo 1.85+ refuses to build with anything older. Our own direct
-# usage (`u{32,usize}::is_multiple_of`, stabilized in 1.87) sits below
-# this floor. Cargo surfaces a clean `error: package requires Rust 1.89`
-# for older toolchains instead of the cryptic transitive compile errors
-# users would otherwise see. The `clippy::incompatible_msrv` lint also
-# fires against any stdlib item stabilized after this floor, preventing
-# silent MSRV drift. See `README.md` § "Minimum supported Rust version"
-# for the bump policy.
-rust-version = "1.89"
+# usage (`u{32,usize}::is_multiple_of`, stabilized in 1.87) sits well
+# below this floor. Cargo surfaces a clean `error: package requires
+# Rust 1.95` for older toolchains instead of the cryptic transitive
+# compile errors users would otherwise see. The
+# `clippy::incompatible_msrv` lint also fires against any stdlib item
+# stabilized after this floor, preventing silent MSRV drift. See
+# `README.md` § "Minimum supported Rust version" for the bump policy.
+rust-version = "1.95"
 
 # Workspace-wide attribution metadata. `notice` points at the repo-root
 # NOTICE.md that documents the verbatim NASA JEOD source mirror under
@@ -125,13 +125,12 @@ notice = "NOTICE.md"
 
 [workspace.dependencies]
 glam = { version = "0.30", features = ["std"] }
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "bevy_log",
     "bevy_state",
     "std",
     "multi_threaded",
 ] }
-bevy_reflect = { version = "0.18", default-features = false }
 log = "0.4"
 thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }

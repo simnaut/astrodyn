@@ -40,8 +40,7 @@ use super::{
 /// removes the marker.
 // JEOD_INV: DB.21 — only unattached bodies integrate (frame-attach gate)
 // JEOD_INV: DB.13 — composite-body propagation delegated to parent frame
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct FrameAttachedC {
     /// Entity of the parent reference frame (`FrameEntityC.0` for the
     /// frame). Must point at a frame entity that carries

@@ -32,7 +32,6 @@ frame-doc = ["astrodyn/frame-doc"]
 astrodyn = { path = "../..", version = "0.2.0" }
 glam = { workspace = true }
 bevy = { workspace = true }
-bevy_reflect = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
