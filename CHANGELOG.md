@@ -21,13 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build the workspace on older toolchains. README § "Minimum supported
   Rust version" and the `tooling.yml` MSRV gate updated.
 - **Unified `glam` to 0.32** ([#707](https://github.com/simnaut/astrodyn/issues/707)).
-  Bumped the workspace `glam` 0.30 → 0.32 to match Bevy 0.19's math stack,
-  eliminating the benign duplicate (`glam 0.30.10` for astrodyn physics vs
-  `0.32.1` for Bevy's internal math) the Bevy bump introduced. A one-line
-  dependency change: glam 0.31/0.32 ship no numeric-implementation changes
-  to the operations astrodyn uses (only `DVec3`/`DMat3`/`DQuat`), so the
-  full Tier 3 cross-validation and bit-identity parity suites pass with
-  unchanged tolerances and baselines.
+  Bumped the workspace `glam` 0.30 → 0.32 to match Bevy 0.19's math stack, so
+  astrodyn physics and Bevy's internal math now share a single **compiled**
+  `glam 0.32.1` (`cargo tree -d --workspace` reports no glam duplicate)
+  instead of the 0.30/0.32 split the Bevy bump left. (`Cargo.lock` still
+  lists older glam versions as `nalgebra`'s disabled optional `convert-glam*`
+  deps — never compiled, and present since before this change.) A one-line
+  dependency change: glam 0.31/0.32 ship no numeric-implementation changes to
+  the operations astrodyn uses (only `DVec3`/`DMat3`/`DQuat`), so the full
+  Tier 3 cross-validation and bit-identity parity suites pass with unchanged
+  tolerances and baselines.
 
 ### Removed
 
