@@ -32,10 +32,11 @@ ignore = [
     # `paste 1.0.15` — RUSTSEC-2024-0436. The maintainer declared the crate
     # complete and stopped accepting changes; this is an administrative
     # status, not a vulnerability. `paste` reaches us transitively via the
-    # Bevy 0.18 proc-macro chain (`bevy_ecs` macros → `paste`). We can drop
-    # this entry when Bevy ships a release that no longer depends on
-    # `paste`. Tracked in https://github.com/bevyengine/bevy as the chain
-    # migrates.
+    # `anise` ephemeris dep (`anise` → `nalgebra` → `simba` → `paste`); the
+    # Bevy macro chain dropped its own `paste` dependency as of Bevy 0.19,
+    # so this now hangs off the ephemeris stack alone. We can drop this
+    # entry once that chain no longer pulls `paste`
+    # (`cargo tree -i paste --workspace` returns nothing).
     "RUSTSEC-2024-0436",
     # `proc-macro-error2 2.0.1` — RUSTSEC-2026-0173. The author declared the
     # crate unmaintained (and the original `proc-macro-error` it forked);
@@ -47,6 +48,24 @@ ignore = [
     # returns nothing). Tracked in
     # https://github.com/simnaut/astrodyn/issues/690.
     "RUSTSEC-2026-0173",
+    # `quick-xml 0.26.0` — RUSTSEC-2026-0194 (quadratic run time on
+    # duplicate attribute-name checks) and RUSTSEC-2026-0195 (unbounded
+    # namespace-declaration allocation in `NsReader`). Both are
+    # denial-of-service vectors that require feeding *adversarial XML* to
+    # the parser. `quick-xml` reaches us only through the dev/bench
+    # profiling chain `pprof → inferno → quick-xml` (inferno's flamegraph
+    # SVG writer, behind pprof's `flamegraph` feature), compiled solely
+    # for the `benches/` in `astrodyn_gravity` and `astrodyn_verif_jeod`.
+    # It never enters the library/production path, and inferno feeds it
+    # only the flamegraph data the benchmark itself generated — there is
+    # no untrusted input, so neither DoS is reachable. No in-range fix
+    # exists: the quick-xml patch is 0.41.0, but `pprof 0.15` pins
+    # `inferno ^0.11` (→ quick-xml 0.26.x) and even inferno 0.12 only
+    # reaches quick-xml 0.39. Drop both once the pprof/inferno chain
+    # adopts quick-xml ≥ 0.41 (`cargo tree -i quick-xml --all-features`
+    # returns nothing below 0.41).
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
 
 # -----------------------------------------------------------------------------
@@ -54,7 +73,7 @@ ignore = [
 # -----------------------------------------------------------------------------
 # The workspace publishes under `MIT OR Apache-2.0` (see [workspace.package] in
 # Cargo.toml). The list below is the union of SPDX identifiers observed in the
-# resolved dep tree across Bevy 0.18, anise, pprof, and the proptest/serde
+# resolved dep tree across Bevy 0.19, anise, pprof, and the proptest/serde
 # ecosystems. Any new license entering the tree fails CI until explicitly
 # allowed — that's the audit hook this section provides.
 [licenses]

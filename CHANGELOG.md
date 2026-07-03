@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Bevy 0.18 → 0.19** ([#706](https://github.com/simnaut/astrodyn/issues/706)).
+  Routine dependency bump; no 0.19 feature changes astrodyn's physics or
+  pipeline. Compile-level touch-points, all confined to test helpers: the
+  `ExecutorKind` API was removed (now
+  `Schedule::set_executor(SingleThreadedExecutor::new())`), and
+  `SystemState::get`/`get_mut` return a `Result` (SystemParam validation
+  moved to fetch time).
+- **MSRV bumped to 1.95** (was 1.89). Forced by `bevy 0.19` declaring its
+  own `rust-version = "1.95"`; cargo's MSRV-aware resolution refuses to
+  build the workspace on older toolchains. README § "Minimum supported
+  Rust version" and the `tooling.yml` MSRV gate updated.
+
+### Removed
+
+- Dropped the unused `bevy_reflect` dependency and the vestigial
+  `#[derive(Reflect)]` on `FrameAttachedC` — the only `Reflect` in the
+  workspace, with no `register_type`/registry consumer. bevy_reflect 0.19
+  moved to glam 0.32 (the workspace stays on glam 0.30), so the derive no
+  longer resolved; since nothing introspected the type, the derive and
+  dependency were removed rather than bumping glam across the physics core.
+
 ## [0.2.0] - 2026-06-08
 
 Second release. Headlined by the **frame-identity** work

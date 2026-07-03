@@ -64,7 +64,9 @@ fn build_app() -> (App, Entity) {
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
-    let mut commands = commands_state.get_mut(app.world_mut());
+    let mut commands = commands_state
+        .get_mut(app.world_mut())
+        .expect("Commands is an infallible SystemParam");
     let _ = cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands_state.apply(app.world_mut());
 
@@ -113,7 +115,9 @@ fn validation_fires_for_body_added_after_startup() {
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
-    let mut commands = commands_state.get_mut(app.world_mut());
+    let mut commands = commands_state
+        .get_mut(app.world_mut())
+        .expect("Commands is an infallible SystemParam");
     let _ = bogus_cfg.spawn_bevy::<astrodyn::Earth>(&mut commands);
     commands_state.apply(app.world_mut());
 
