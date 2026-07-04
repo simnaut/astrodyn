@@ -20,15 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own `rust-version = "1.95"`; cargo's MSRV-aware resolution refuses to
   build the workspace on older toolchains. README § "Minimum supported
   Rust version" and the `tooling.yml` MSRV gate updated.
+- **Unified `glam` to 0.32** ([#707](https://github.com/simnaut/astrodyn/issues/707)).
+  Bumped the workspace `glam` 0.30 → 0.32 to match Bevy 0.19's math stack, so
+  astrodyn physics and Bevy's internal math now share a single **compiled**
+  `glam 0.32.1` (`cargo tree -d --workspace` reports no glam duplicate)
+  instead of the 0.30/0.32 split the Bevy bump left. (`Cargo.lock` still
+  lists older glam versions as `nalgebra`'s disabled optional `convert-glam*`
+  deps — never compiled, and present since before this change.) A one-line
+  dependency change: glam 0.31/0.32 ship no numeric-implementation changes to
+  the operations astrodyn uses (only `DVec3`/`DMat3`/`DQuat`), so the full
+  Tier 3 cross-validation and bit-identity parity suites pass with unchanged
+  tolerances and baselines.
 
 ### Removed
 
 - Dropped the unused `bevy_reflect` dependency and the vestigial
   `#[derive(Reflect)]` on `FrameAttachedC` — the only `Reflect` in the
   workspace, with no `register_type`/registry consumer. bevy_reflect 0.19
-  moved to glam 0.32 (the workspace stays on glam 0.30), so the derive no
-  longer resolved; since nothing introspected the type, the derive and
-  dependency were removed rather than bumping glam across the physics core.
+  moved to glam 0.32 (the workspace was still on glam 0.30 at the time; it
+  was unified to 0.32 in #707), so the derive no longer resolved; since
+  nothing introspected the type, the derive and dependency were removed
+  rather than bumping glam across the physics core in the same PR.
 
 ## [0.2.0] - 2026-06-08
 
