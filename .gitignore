@@ -10,6 +10,3 @@ crates/astrodyn_verif_jeod/test_data/mercury_relativistic_mercury.csv
 # diagnostic test `attach_with_jeod_truth`; regenerate via
 # `cargo xtask regenerate-tier3 --force`)
 crates/astrodyn_verif_jeod/test_data/apollo_attach_truth.csv
-.claude/scheduled_tasks.lock
-.claude/settings.local.json
-.claude/worktrees/
