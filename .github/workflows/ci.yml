@@ -488,7 +488,7 @@ jobs:
             exit 1
           fi
       - name: Download previous perf-history (best-effort)
-        uses: dawidd6/action-download-artifact@v21
+        uses: dawidd6/action-download-artifact@v24
         with:
           workflow: ci.yml
           branch: main
