@@ -333,10 +333,7 @@ fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence)
     }
 
     // Compute phi and psi.
-    let phi;
-    let psi;
-
-    if alt_theta_val > GIMBAL_LOCK_THRESHOLD {
+    let (phi, psi) = if alt_theta_val > GIMBAL_LOCK_THRESHOLD {
         // Not gimbal-locked: correct signs and use atan2.
 
         if info.is_aerodynamics_sequence {
@@ -357,8 +354,7 @@ fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence)
         }
 
         // Compute phi and psi.
-        phi = sin_phi.atan2(cos_phi);
-        psi = sin_psi.atan2(cos_psi);
+        (sin_phi.atan2(cos_phi), sin_psi.atan2(cos_psi))
     } else {
         // Gimbal lock: use alternative matrix elements.
         let gl_sin_phi = t(trans, info.indices[1], info.alternate_z);
@@ -371,9 +367,8 @@ fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence)
             gl_sin_phi
         };
 
-        phi = corrected_sin_phi.atan2(gl_cos_phi);
-        psi = 0.0;
-    }
+        (corrected_sin_phi.atan2(gl_cos_phi), 0.0)
+    };
 
     [phi, theta, psi]
 }

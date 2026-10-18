@@ -698,7 +698,6 @@ mod tests {
         VehicleConfig, Velocity,
     };
     use astrodyn_runner::SimulationBuilderExt;
-    use bevy::prelude::*;
     use glam::DVec3;
 
     use super::*;
