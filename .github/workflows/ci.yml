@@ -28,20 +28,20 @@ jobs:
   changes:
     # Docs-only gate. Every job below skips when a PR touches nothing
     # that can affect a build, test, or guard script — e.g. a root
-    # README/CHANGELOG edit or a `.claude/` agent-config change. Before
-    # this gate, such a PR burned the full matrix (Tier 3, parity, the
-    # ~37 min earth_moon runtime-budget envelope) on prose.
+    # README/CHANGELOG edit. Before this gate, such a PR burned the full
+    # matrix (Tier 3, parity, the ~37 min earth_moon runtime-budget
+    # envelope) on prose.
     #
     # Job-level gating, deliberately NOT `on.pull_request.paths-ignore`:
-    # the "protect main" ruleset names seven jobs in this workflow as
+    # the "protect main" ruleset names several jobs in this workflow as
     # required status checks, and a workflow that never triggers leaves
     # its required checks pending forever — the PR can't merge. A job
     # skipped by an `if:` conditional reports success to branch
     # protection, so docs-only PRs merge cleanly.
     #
     # `code` matches any changed file OUTSIDE the curated safe-set. The
-    # safe-set is deliberately tight — root-level prose, `.claude/**`,
-    # `.gitignore`, license texts — because several .md files are
+    # safe-set is deliberately tight — root-level prose, `.gitignore`,
+    # license texts — because several .md files are
     # load-bearing and must keep running the full matrix:
     #   - docs/JEOD_invariants.md — parsed by tests/invariant_coverage.rs
     #   - crates/astrodyn_bevy/README.md — include_str!'d into rustdoc,
@@ -98,7 +98,6 @@ jobs:
             code:
               - '**'
               - '!*.md'
-              - '!.claude/**'
               - '!.gitignore'
               - '!LICENSE-*'
               - '!crates/*/LICENSE-*'

@@ -29,15 +29,6 @@ feature-depth = 1
 version = 2
 yanked = "deny"
 ignore = [
-    # `paste 1.0.15` — RUSTSEC-2024-0436. The maintainer declared the crate
-    # complete and stopped accepting changes; this is an administrative
-    # status, not a vulnerability. `paste` reaches us transitively via the
-    # `anise` ephemeris dep (`anise` → `nalgebra` → `simba` → `paste`); the
-    # Bevy macro chain dropped its own `paste` dependency as of Bevy 0.19,
-    # so this now hangs off the ephemeris stack alone. We can drop this
-    # entry once that chain no longer pulls `paste`
-    # (`cargo tree -i paste --workspace` returns nothing).
-    "RUSTSEC-2024-0436",
     # `proc-macro-error2 2.0.1` — RUSTSEC-2026-0173. The author declared the
     # crate unmaintained (and the original `proc-macro-error` it forked);
     # an administrative status, not a vulnerability. It reaches us

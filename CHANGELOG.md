@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Removed the subscription-backed Claude Code automation: automatic pull-request
+  reviews, `@claude` mention handling, and the Claude-only `/advance` command.
 - Dropped the unused `bevy_reflect` dependency and the vestigial
   `#[derive(Reflect)]` on `FrameAttachedC` — the only `Reflect` in the
   workspace, with no `register_type`/registry consumer. bevy_reflect 0.19
