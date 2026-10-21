@@ -111,11 +111,6 @@ const DEFERRED_GAPS: &[(&str, &str)] = &[
         "pre-recipe sibling exercising attach_to_frame — recipe factory \
          not yet defined; needs `pre_step` Bevy support too (#389 follow-up)",
     ),
-    (
-        "drag_ver",
-        "pre-recipe sibling — drag-family recipe factory not yet defined \
-         (#389 follow-up)",
-    ),
     // `lsode` (tier3_sim_lsode.rs) covered by two parity wrappers, both
     // satisfying this topic implicitly via the prefix-match in
     // `is_covered_by_parity` (so neither is listed in a gap array):
@@ -202,6 +197,13 @@ const PERMANENT_GAPS: &[(&str, &str)] = &[
     (
         "drag_analytical",
         "analytical drag verification — out of trait scope (no propagation)",
+    ),
+    (
+        "drag_ver",
+        "SIM_VER_DRAG is a non-propagating force-model verification — calls \
+         `compute_ballistic_drag` directly at JEOD-logged velocities, no \
+         `Simulation::step()`. Out of `VerificationCaseParityExt` trait scope; \
+         same shape as `drag_analytical`.",
     ),
     (
         "csr_compare",
